@@ -1,0 +1,23 @@
+{application, router,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, { router_app, []}},
+  {applications,
+   [kernel,
+     stdlib,
+     syntax_tools,
+     compiler,
+     crypto,
+     ssl,
+     lager,
+     ranch,
+     libp2p
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.

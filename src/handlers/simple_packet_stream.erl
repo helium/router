@@ -7,6 +7,8 @@
 
 -behavior(libp2p_framed_stream).
 
+-include_lib("helium_proto/src/pb/helium_proto_longfi_hotspot_pb.hrl").
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -62,9 +64,8 @@ handle_data(server, _Bin, #state{endpoint=undefined}=State) ->
 handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     lager:info("got data ~p", [Data]),
     case decode_data(Data) of
-        {ok, JSON} ->
-            Headers = [{<<"Content-Type">>, <<"application/json">>}],
-            try hackney:post(Endpoint, Headers, JSON, []) of
+        {ok, _Packet} ->
+            try hackney:post(Endpoint, [], Data, []) of
                 Result -> lager:info("got result ~p", [Result])
             catch
                 E:R -> lager:error("got error ~p", [{E, R}])
@@ -81,31 +82,20 @@ handle_info(_Type, _Msg, State) ->
     lager:warning("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
 
-
-
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec decode_data(binary()) -> {ok, binary()}.
+-spec decode_data(binary()) -> {ok, binary()} | {error, any()}.
 decode_data(Data) ->
-    {ok, jsx:encode(#{
-                      <<"hotspot_id">> => <<"unknown">>,
-                      <<"hotspot_address">> => <<"unknown">>,
-                      <<"seq_num">> => <<"unknown">>,
-                      <<"id">> => <<"unknown">>,
-                      <<"name">> => <<"test">>,
-                      <<"driver">> => <<"unknown">>,
-                      <<"model">> => <<"lime">>,
-                      <<"cargo">> => <<"unknown">>,
-                      <<"battery">> => <<"unknown">>,
-                      <<"coordinates">> => <<"unknown">>,
-                      <<"speed">> => <<"unknown">>,
-                      <<"elevation">> => <<"unknown">>,
-                      <<"rssi">> => <<"unknown">>,
-                      <<"reported">> => erlang:system_time(seconds),
-                      <<"raw_packet">> => base64:encode(Data)
-                     })}.
+    try helium_proto_longfi_hotspot_pb:decode_msg(Data, helium_proto_LongFiRxPacket_pb) of
+        Packet ->
+            {ok, Packet}
+    catch
+        E:R ->
+            lager:error("got error trying to decode  ~p", [{E, R}]),
+            {error, decoding}
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

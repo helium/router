@@ -2,6 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include_lib("helium_proto/src/pb/helium_proto_longfi_hotspot_pb.hrl").
 
 -export([
          all/0,
@@ -72,12 +73,12 @@ basic(_Config) ->
                                                    simple_packet_stream_test,
                                                    []
                                                   ),
-    Data = <<"data">>,
-    Stream ! Data,
+    Packet = #helium_proto_LongFiRxPacket_pb{},
+    EncodedPacket = helium_proto_longfi_hotspot_pb:encode_msg(Packet),
+    Stream ! EncodedPacket,
     receive
         {'POST', _, _, Body} ->
-            Payload = jsx:decode(Body, [return_maps]),
-            ?assertEqual( base64:encode(Data), maps:get(<<"raw_packet">>, Payload));
+            ?assertEqual(EncodedPacket, Body);
         Data ->
             ct:pal("wrong data ~p", [Data]),
             ct:fail("wrong data")

@@ -34,7 +34,7 @@ all() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_testcase(_, Config) ->
-    ok = application:set_env(router, endpoint, "http://127.0.0.1:8081"),
+    ok = application:set_env(router, simple_endpoint, "http://127.0.0.1:8081"),
     lager:info("STARTING ROUTER"),
     {ok, _} = application:ensure_all_started(router),
     Config.
@@ -53,7 +53,6 @@ end_per_testcase(_, _Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
-
 
 %%--------------------------------------------------------------------
 %% @public

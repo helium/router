@@ -69,9 +69,13 @@ start_link() ->
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
-    application:ensure_all_started(ranch),
-    application:ensure_all_started(lager),
-    P2PWorker = ?WORKER(router_p2p, [#{}]),
+    {ok, _} = application:ensure_all_started(ranch),
+    {ok, _} = application:ensure_all_started(lager),
+    {ok, _} = application:ensure_all_started(hackey),
+    P2PWorkerOpts = #{
+                      port => application:get_env(router, port, "0")
+                     },
+    P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
     {ok, { ?FLAGS, [P2PWorker]} }.
 
 %%====================================================================

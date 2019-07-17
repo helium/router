@@ -13,6 +13,44 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-define(SUP(I, Args), 
+        #{
+          id => I,
+          start => {I, start_link, Args},
+          restart => permanent,
+          shutdown => 5000,
+          type => supervisor,
+          modules => [I]
+         }).
+
+-define(WORKER(I, Args), 
+        #{
+          id => I,
+          start => {I, start_link, Args},
+          restart => permanent,
+          shutdown => 5000,
+          type => worker,
+          modules => [I]
+         }).
+
+-define(WORKER(I, Mod, Args), 
+        #{
+          id => I,
+          start => {Mod, start_link, Args},
+          restart => permanent,
+          shutdown => 5000,
+          type => worker,
+          modules => [I]
+         }).
+
+-define(FLAGS, 
+        #{
+          strategy => one_for_all,
+          intensity => 1,
+          period => 5
+         }).
+
+
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -33,7 +71,8 @@ start_link() ->
 init([]) ->
     application:ensure_all_started(ranch),
     application:ensure_all_started(lager),
-    {ok, { {one_for_all, 0, 1}, []} }.
+    P2PWorker = ?WORKER(router_p2p, [#{}]),
+    {ok, { ?FLAGS, [P2PWorker]} }.
 
 %%====================================================================
 %% Internal functions

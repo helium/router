@@ -71,7 +71,6 @@ start_link() ->
 init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
-    {ok, _} = application:ensure_all_started(hackey),
     P2PWorkerOpts = #{
                       port => application:get_env(router, port, "0")
                      },

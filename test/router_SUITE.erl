@@ -34,7 +34,7 @@ all() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_testcase(_, Config) ->
-    ok = application:set_env(router, simple_endpoint, "http://127.0.0.1:8081"),
+    ok = application:set_env(router, simple_http_endpoint, "http://127.0.0.1:8081"),
     lager:info("STARTING ROUTER"),
     {ok, _} = application:ensure_all_started(router),
     Config.
@@ -68,8 +68,8 @@ basic(_Config) ->
 
     {ok, Stream} = libp2p_swarm:dial_framed_stream(MinerSwarm,
                                                    RouterAddress,
-                                                   simple_packet_stream:version(),
-                                                   simple_packet_stream_test,
+                                                   simple_http_stream:version(),
+                                                   simple_http_stream_test,
                                                    []
                                                   ),
     Packet = #helium_proto_LongFiRxPacket_pb{},

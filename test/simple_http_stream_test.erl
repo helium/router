@@ -3,7 +3,7 @@
 %% == Simple Packet Stream ==
 %% @end
 %%%-------------------------------------------------------------------
--module(simple_packet_stream_test).
+-module(simple_http_stream_test).
 
 -behavior(libp2p_framed_stream).
 

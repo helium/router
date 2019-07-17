@@ -94,8 +94,8 @@ start_swarm(Port) ->
     {ok, Swarm} = libp2p_swarm:start(Name, []),
     ok = libp2p_swarm:add_stream_handler(
            Swarm,
-           simple_packet_stream:version(),
-           {libp2p_framed_stream, server, [simple_packet_stream, self()]}
+           simple_http_stream:version(),
+           {libp2p_framed_stream, server, [simple_http_stream, self()]}
           ),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++ Port),
     libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++ Port),

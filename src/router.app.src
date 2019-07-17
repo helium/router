@@ -5,18 +5,17 @@
   {mod, { router_app, []}},
   {applications,
    [kernel,
-     stdlib,
-     syntax_tools,
-     compiler,
-     crypto,
-     ssl,
-     lager,
-     ranch,
-     libp2p
+    stdlib,
+    syntax_tools,
+    compiler,
+    crypto,
+    ssl,
+    lager,
+    ranch,
+    libp2p
    ]},
   {env,[]},
   {modules, []},
-
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
   {links, []}

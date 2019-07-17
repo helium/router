@@ -16,3 +16,6 @@ _build
 .idea
 *.iml
 rebar3.crashdump
+log/
+data/
+src/pb/

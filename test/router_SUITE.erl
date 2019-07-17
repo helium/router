@@ -1,5 +1,8 @@
 -module(router_SUITE).
 
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
 -export([
          all/0,
          init_per_testcase/2,
@@ -30,6 +33,9 @@ all() ->
 %% @end
 %%--------------------------------------------------------------------
 init_per_testcase(_, Config) ->
+    ok = application:set_env(router, endpoint, "http://127.0.0.1:8081"),
+    lager:info("STARTING ROUTER"),
+    {ok, _} = application:ensure_all_started(router),
     Config.
 
 %%--------------------------------------------------------------------
@@ -39,6 +45,8 @@ init_per_testcase(_, Config) ->
 %% @end
 %%--------------------------------------------------------------------
 end_per_testcase(_, _Config) ->
+    lager:info("STOPPING ROUTER"),
+    ok = application:stop(router),
     ok.
 
 %%--------------------------------------------------------------------
@@ -52,5 +60,28 @@ end_per_testcase(_, _Config) ->
 %% @end
 %%--------------------------------------------------------------------
 basic(_Config) ->
-    {ok, _} = application:ensure_all_started(router),
+    {ok, _} = elli:start_link([{callback, echo_http_test}, {ip, {127,0,0,1}}, {port, 8081}, {callback_args, self()}]),
+    SwarmOpts = [{libp2p_nat, [{enabled, false}]}],
+    {ok, MinerSwarm} = libp2p_swarm:start(miner_swarm, SwarmOpts),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [RouterAddress|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(MinerSwarm,
+                                                   RouterAddress,
+                                                   simple_packet_stream:version(),
+                                                   simple_packet_stream_test,
+                                                   []
+                                                  ),
+    Data = <<"data">>,
+    Stream ! Data,
+    receive
+        {'POST', _, _, Body} ->
+            Payload = jsx:decode(Body, [return_maps]),
+            ?assertEqual( base64:encode(Data), maps:get(<<"raw_packet">>, Payload));
+        Data ->
+            ct:pal("wrong data ~p", [Data]),
+            ct:fail("wrong data")
+    after 2000 ->
+            ct:fail(timeout)
+    end,
     ok.

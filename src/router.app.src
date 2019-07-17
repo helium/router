@@ -10,9 +10,11 @@
     compiler,
     crypto,
     ssl,
+    public_key,
     lager,
     ranch,
-    libp2p
+    libp2p,
+    hackney
    ]},
   {env,[]},
   {modules, []},

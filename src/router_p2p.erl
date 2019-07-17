@@ -11,7 +11,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([
-         start_link/1
+         start_link/1,
+         swarm/0
         ]).
 
 %% ------------------------------------------------------------------
@@ -39,6 +40,10 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
+-spec swarm() -> {ok, pid()}.
+swarm() ->
+    gen_server:call(?SERVER, swarm).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -49,6 +54,8 @@ init(Args) ->
     lager:info("init with ~p", [Args]),
     {ok, #state{swarm=Swarm, port=Port}}.
 
+handle_call(swarm, _From, #state{swarm=Swarm}=State) ->
+    {reply, {ok, Swarm}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -84,10 +91,10 @@ terminate(_Reason,  #state{swarm=Swarm}) ->
 -spec start_swarm(string()) -> pid().
 start_swarm(Port) ->
     Name = erlang:node(),
-    {ok, Swarm} = libp2p_swarm_sup:start_link([Name, []]),
+    {ok, Swarm} = libp2p_swarm:start(Name, []),
     ok = libp2p_swarm:add_stream_handler(
            Swarm,
-           "packet/1.0.0",
+           simple_packet_stream:version(),
            {libp2p_framed_stream, server, [simple_packet_stream, self()]}
           ),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++ Port),

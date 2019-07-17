@@ -13,7 +13,8 @@
 
 -export([
          server/4,
-         client/2
+         client/2,
+         version/0
         ]).
 
 %% ------------------------------------------------------------------
@@ -42,6 +43,10 @@ server(Connection, Path, _TID, Args) ->
 client(Connection, Args) ->
     libp2p_framed_stream:client(?MODULE, Connection, Args).
 
+-spec version() -> string().
+version() ->
+    "simple_packet/1.0.0".
+
 %% ------------------------------------------------------------------
 %% libp2p_framed_stream Function Definitions
 %% ------------------------------------------------------------------
@@ -55,10 +60,11 @@ handle_data(server, _Bin, #state{endpoint=undefined}=State) ->
     lager:warning("server ignoring data ~p (cause no endpoint)", [_Bin]),
     {noreply, State};
 handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
+    lager:info("got data ~p", [Data]),
     case decode_data(Data) of
         {ok, JSON} ->
             Headers = [{<<"Content-Type">>, <<"application/json">>}],
-            try hackney:post(Endpoint, Headers, JSON, [with_body]) of
+            try hackney:post(Endpoint, Headers, JSON, []) of
                 Result -> lager:info("got result ~p", [Result])
             catch
                 E:R -> lager:error("got error ~p", [{E, R}])
@@ -74,6 +80,8 @@ handle_data(_Type, _Bin, State) ->
 handle_info(_Type, _Msg, State) ->
     lager:warning("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
+
+
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

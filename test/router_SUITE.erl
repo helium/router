@@ -72,11 +72,21 @@ basic(_Config) ->
                                                    simple_http_stream_test,
                                                    []
                                                   ),
-    Packet = #helium_proto_LongFiRxPacket_pb{},
+    Packet = #helium_proto_LongFiRxPacket_pb{crc_check = true,
+                                             timestamp = 15000,
+                                             rssi = -2.0,
+                                             snr = 1.0,
+                                             oui = 1,
+                                             device_id = 1,
+                                             mac = 12,
+                                             payload = <<"some data here">>
+                                            },
     EncodedPacket = helium_proto_longfi_hotspot_pb:encode_msg(Packet),
     Stream ! EncodedPacket,
+    ct:pal("packet ~p", [EncodedPacket]),
     receive
         {'POST', _, _, Body} ->
+            ct:pal("body ~p", [Body]),
             ?assertEqual(EncodedPacket, Body);
         Data ->
             ct:pal("wrong data ~p", [Data]),

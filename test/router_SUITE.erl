@@ -2,7 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("helium_proto/src/pb/helium_proto_longfi_hotspot_pb.hrl").
+-include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
 
 -export([
          all/0,
@@ -72,16 +72,16 @@ basic(_Config) ->
                                                    simple_http_stream_test,
                                                    []
                                                   ),
-    Packet = #helium_proto_LongFiRxPacket_pb{crc_check = true,
-                                             timestamp = 15000,
-                                             rssi = -2.0,
-                                             snr = 1.0,
-                                             oui = 1,
-                                             device_id = 1,
-                                             mac = 12,
-                                             payload = <<"some data here">>
-                                            },
-    EncodedPacket = helium_proto_longfi_hotspot_pb:encode_msg(Packet),
+    Packet = #helium_LongFiRxPacket_pb{crc_check = true,
+                                       timestamp = 15000,
+                                       rssi = -2.0,
+                                       snr = 1.0,
+                                       oui = 1,
+                                       device_id = 1,
+                                       mac = 12,
+                                       payload = <<"some data here">>
+                                      },
+    EncodedPacket = helium_longfi_pb:encode_msg(Packet),
     Stream ! EncodedPacket,
     ct:pal("packet ~p", [EncodedPacket]),
     receive

@@ -8,7 +8,7 @@
 
 -behavior(libp2p_framed_stream).
 
--include_lib("helium_proto/src/pb/helium_proto_longfi_hotspot_pb.hrl").
+-include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -90,7 +90,7 @@ handle_info(_Type, _Msg, State) ->
 
 -spec decode_data(binary()) -> {ok, binary()} | {error, any()}.
 decode_data(Data) ->
-    try helium_proto_longfi_hotspot_pb:decode_msg(Data, helium_proto_LongFiRxPacket_pb) of
+    try helium_longfi_pb:decode_msg(Data, helium_LongFiRxPacket_pb) of
         Packet ->
             {ok, Packet}
     catch

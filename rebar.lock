@@ -15,7 +15,7 @@
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.15.1">>},0},
  {<<"helium_proto">>,
   {git,"https://github.com/helium/proto.git",
-       {ref,"5587dcd2d4ae7fe0c564598f1930c24ad8ceacc1"}},
+       {ref,"6f98947f7d315366e1e69f7b38a83cf885ef409a"}},
   0},
  {<<"idna">>,{pkg,<<"idna">>,<<"6.0.0">>},1},
  {<<"inert">>,

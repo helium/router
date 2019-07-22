@@ -71,9 +71,14 @@ start_link() ->
 init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
+    SeedNodes = case application:get_env(router, seed_nodes) of
+                    {ok, ""} -> [];
+                    {ok, Seeds} -> string:split(Seeds, ",", all);
+                    _ -> []
+                end,
     P2PWorkerOpts = #{
                       port => application:get_env(router, port, "0"),
-                      seed_nodes => application:get_env(router, seed_nodes, [])
+                      seed_nodes => SeedNodes
                      },
     P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
     {ok, { ?FLAGS, [P2PWorker]} }.

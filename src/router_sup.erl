@@ -72,7 +72,8 @@ init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
     P2PWorkerOpts = #{
-                      port => application:get_env(router, port, "0")
+                      port => application:get_env(router, port, "0"),
+                      seed_nodes => application:get_env(router, seed_nodes, [])
                      },
     P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
     {ok, { ?FLAGS, [P2PWorker]} }.

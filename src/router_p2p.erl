@@ -31,7 +31,7 @@
 
 -record(state, {
                 swarm :: pid(),
-                port :: string()
+                args :: map()
                }).
 
 %% ------------------------------------------------------------------
@@ -49,10 +49,9 @@ swarm() ->
 %% ------------------------------------------------------------------
 init(Args) ->
     erlang:process_flag(trap_exit, true),
-    Port = maps:get(port, Args, "0"),
-    Swarm = start_swarm(Port),
+    Swarm = start_swarm(Args),
     lager:info("init with ~p", [Args]),
-    {ok, #state{swarm=Swarm, port=Port}}.
+    {ok, #state{swarm=Swarm, args=Args}}.
 
 handle_call(swarm, _From, #state{swarm=Swarm}=State) ->
     {reply, {ok, Swarm}, State};
@@ -65,9 +64,9 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', Swarm, Reason}, #state{swarm=Swarm,
-                                            port=Port}=State) ->
+                                            args=Args}=State) ->
     lager:error("swarm ~p went down: ~p, restarting", [Swarm, Reason]),
-    NewSwarm = start_swarm(Port),
+    NewSwarm = start_swarm(Args),
     {noreply, State#state{swarm=NewSwarm}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -88,10 +87,17 @@ terminate(_Reason,  #state{swarm=Swarm}) ->
 %% @doc
 %% @end
 %%--------------------------------------------------------------------
--spec start_swarm(string()) -> pid().
-start_swarm(Port) ->
+-spec start_swarm(map()) -> pid().
+start_swarm(Args) ->
+    Port = maps:get(port, Args, "0"),
+    SeeNodes = maps:get(seed_nodes, Args, []),
     Name = erlang:node(),
-    {ok, Swarm} = libp2p_swarm:start(Name, []),
+    SwarmOpts = [
+                 {libp2p_group_gossip, [
+                                        {seed_nodes, SeeNodes}
+                                       ]}
+                ],
+    {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
     ok = libp2p_swarm:add_stream_handler(
            Swarm,
            simple_http_stream:version(),

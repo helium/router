@@ -14,7 +14,8 @@
     lager,
     ranch,
     libp2p,
-    hackney
+    hackney,
+    helium_proto,
    ]},
   {env,[]},
   {modules, []},

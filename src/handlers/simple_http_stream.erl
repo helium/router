@@ -91,7 +91,7 @@ handle_info(_Type, _Msg, State) ->
 
 -spec decode_data(binary()) -> {ok, binary()} | {error, any()}.
 decode_data(Data) ->
-    try helium_longfi_pb:decode_msg(Data, helium_LongFiRxPacket_pb) of
+    try helium_longfi_pb:decode_msg(Data, helium_LongFiResp_pb) of
         Packet ->
             {ok, Packet}
     catch

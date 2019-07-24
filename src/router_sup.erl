@@ -78,7 +78,8 @@ init([]) ->
                 end,
     P2PWorkerOpts = #{
                       port => application:get_env(router, port, "0"),
-                      seed_nodes => SeedNodes
+                      seed_nodes => SeedNodes,
+                      base_dir => application:get_env(router, base_dir, "data")
                      },
     P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
     {ok, { ?FLAGS, [P2PWorker]} }.

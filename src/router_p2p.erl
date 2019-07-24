@@ -91,8 +91,9 @@ terminate(_Reason,  #state{swarm=Swarm}) ->
 start_swarm(Args) ->
     Port = maps:get(port, Args, 0),
     SeeNodes = maps:get(seed_nodes, Args, []),
+    BaseDir = maps:get(base_dir, Args, "data"),
     Name = erlang:node(),
-    SwarmOpts = [
+    SwarmOpts = [{base_dir, BaseDir},
                  {libp2p_group_gossip, [
                                         {seed_nodes, SeeNodes}
                                        ]}

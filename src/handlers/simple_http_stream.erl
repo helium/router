@@ -71,7 +71,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
             try hackney:post(Endpoint, Headers, Data, []) of
                 Result -> lager:info("got result ~p", [Result])
             catch
-                E:R -> lager:error("got error ~p", [{E, R}])
+                E:R -> lager:error("failed to post to ~p got error ~p", [Endpoint, {E, R}])
             end;
         {error, Reason} ->
             lager:error("packet decode failed ~p", [Reason])

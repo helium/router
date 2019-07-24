@@ -23,5 +23,5 @@ cover:
 rel:
 	$(REBAR) release
 
-console:
-	_build/default/rel/router/bin/router console
+run:
+	_build/default/rel/router/bin/router foreground

@@ -77,7 +77,7 @@ init([]) ->
                     _ -> []
                 end,
     BaseDir = application:get_env(router, base_dir, "data"),
-    SwarmKey = filename:join([BaseDir, "miner", "swarm_key"]),
+    SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
     {PublicKey, ECDHFun, SigFun} =
         case libp2p_crypto:load_keys(SwarmKey) of
@@ -89,7 +89,7 @@ init([]) ->
                 {PubKey, libp2p_crypto:mk_ecdh_fun(PrivKey0), libp2p_crypto:mk_sig_fun(PrivKey0)}
         end,
     P2PWorkerOpts = #{
-                      port => application:get_env(router, port, "0"),
+                      port => application:get_env(router, port, 0),
                       seed_nodes => SeedNodes,
                       base_dir => BaseDir,
                       key => {PublicKey, ECDHFun, SigFun}

@@ -93,7 +93,7 @@ start_swarm(Args) ->
     SeeNodes = maps:get(seed_nodes, Args, []),
     BaseDir = maps:get(base_dir, Args, "data"),
     Key = maps:get(key, Args, undefined),
-    Name = erlang:node(),
+    Name = router,
     SwarmOpts = [{base_dir, BaseDir},
                  {key, Key},
                  {libp2p_group_gossip, [

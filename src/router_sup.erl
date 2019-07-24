@@ -79,20 +79,19 @@ init([]) ->
     BaseDir = application:get_env(router, base_dir, "data"),
     SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
-    {PublicKey, ECDHFun, SigFun} =
-        case libp2p_crypto:load_keys(SwarmKey) of
-            {ok, #{secret := PrivKey0, public := PubKey}} ->
-                {PubKey, libp2p_crypto:mk_ecdh_fun(PrivKey0), libp2p_crypto:mk_sig_fun(PrivKey0)};
-            {error, enoent} ->
-                KeyMap = #{secret := PrivKey0, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-                ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
-                {PubKey, libp2p_crypto:mk_ecdh_fun(PrivKey0), libp2p_crypto:mk_sig_fun(PrivKey0)}
-        end,
+    Key = case libp2p_crypto:load_keys(SwarmKey) of
+              {ok, #{secret := PrivKey, public := PubKey}} ->
+                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
+              {error, enoent} ->
+                  KeyMap = #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+                  ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
+                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
+          end,
     P2PWorkerOpts = #{
                       port => application:get_env(router, port, 0),
                       seed_nodes => SeedNodes,
                       base_dir => BaseDir,
-                      key => {PublicKey, ECDHFun, SigFun}
+                      key => Key
                      },
     P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
     {ok, { ?FLAGS, [P2PWorker]} }.

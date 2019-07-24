@@ -66,6 +66,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     lager:info("got data ~p", [Data]),
     case decode_data(Data) of
         {ok, _Packet} ->
+            lager:info("decoded data ~p", [_Packet]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
             try hackney:post(Endpoint, Headers, Data, []) of
                 Result -> lager:info("got result ~p", [Result])

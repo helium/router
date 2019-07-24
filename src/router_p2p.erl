@@ -105,5 +105,5 @@ start_swarm(Args) ->
           ),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++ Port),
     libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++ Port),
-    lager:info("created swarm ~p @ ~p", [Name, Swarm]),
+    lager:info("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.

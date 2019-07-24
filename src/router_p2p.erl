@@ -89,7 +89,7 @@ terminate(_Reason,  #state{swarm=Swarm}) ->
 %%--------------------------------------------------------------------
 -spec start_swarm(map()) -> pid().
 start_swarm(Args) ->
-    Port = maps:get(port, Args, "0"),
+    Port = maps:get(port, Args, 0),
     SeeNodes = maps:get(seed_nodes, Args, []),
     Name = erlang:node(),
     SwarmOpts = [
@@ -103,7 +103,7 @@ start_swarm(Args) ->
            simple_http_stream:version(),
            {libp2p_framed_stream, server, [simple_http_stream, self()]}
           ),
-    libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++ Port),
-    libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++ Port),
+    libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
+    libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++  erlang:integer_to_list(Port)),
     lager:info("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.

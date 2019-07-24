@@ -19,3 +19,9 @@ typecheck:
 
 cover:
 	$(REBAR) cover
+
+rel:
+	$(REBAR) release
+
+console:
+	_build/default/rel/router/bin/router console

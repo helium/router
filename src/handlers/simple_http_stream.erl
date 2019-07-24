@@ -69,9 +69,13 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
             lager:info("decoded data ~p", [_Packet]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
             try hackney:post(Endpoint, Headers, Data, []) of
-                Result -> lager:info("got result ~p", [Result])
+                {ok, _StatusCode, _RespHeaders, _ClientRef} ->
+                    lager:info("got result ~p", [{_StatusCode, _RespHeaders, _ClientRef}]);
+                {error, _Reason} ->
+                    lager:error("failed to post to ~p got error ~p", [Endpoint, _Reason])
             catch
-                E:R -> lager:error("failed to post to ~p got error ~p", [Endpoint, {E, R}])
+                E:R ->
+                    lager:error("failed to post to ~p got error ~p", [Endpoint, {E, R}])
             end;
         {error, Reason} ->
             lager:error("packet decode failed ~p", [Reason])

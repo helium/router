@@ -51,6 +51,9 @@ client(Connection, Args) ->
 
 -spec add_stream_handler(pid()) -> ok.
 add_stream_handler(Swarm) ->
+    PoolName = ?MODULE,
+    Options = [{max_connections, 1000}],
+    ok = hackney_pool:start_pool(PoolName, Options),
     ok = libp2p_swarm:add_stream_handler(
            Swarm,
            ?VERSION,
@@ -79,7 +82,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
-            Opts = [],
+            Opts = [{pool, ?MODULE}],
             try hackney:post(Endpoint, Headers, Data, Opts) of
                 {ok, _StatusCode, _RespHeaders, _ClientRef} ->
                     lager:info("got result ~p", [_StatusCode]),

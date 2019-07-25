@@ -79,7 +79,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
-            Opts = [{use_default_pool, false}],
+            Opts = [],
             try hackney:post(Endpoint, Headers, Data, Opts) of
                 {ok, _StatusCode, _RespHeaders, _ClientRef} ->
                     lager:info("got result ~p", [_StatusCode]),

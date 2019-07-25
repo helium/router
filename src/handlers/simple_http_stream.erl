@@ -51,9 +51,6 @@ client(Connection, Args) ->
 
 -spec add_stream_handler(pid()) -> ok.
 add_stream_handler(Swarm) ->
-    PoolName = ?MODULE,
-    Options = [{max_connections, 1000}],
-    ok = hackney_pool:start_pool(PoolName, Options),
     ok = libp2p_swarm:add_stream_handler(
            Swarm,
            ?VERSION,

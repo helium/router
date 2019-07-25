@@ -82,7 +82,7 @@ basic(_Config) ->
                                        spreading = 'SF7',
                                        payload = <<"some data here">>
                                       },
-    Resp = #helium_LongFiResp_pb{id=0, kind={rx, Packet}},
+    Resp = #helium_LongFiResp_pb{id=0, kind={rx, Packet}, miner_name= <<"Miner-Name">>},
     EncodedPacket = helium_longfi_pb:encode_msg(Resp),
     Stream ! EncodedPacket,
     ct:pal("packet ~p", [EncodedPacket]),

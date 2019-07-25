@@ -17,6 +17,7 @@
 -export([
          server/4,
          client/2,
+         add_stream_handler/1,
          version/0
         ]).
 
@@ -33,6 +34,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+-define(VERSION, "simple_http/1.0.0").
+
 -record(state, {
                 endpoint :: string() | undefined
                }).
@@ -46,9 +49,17 @@ server(Connection, Path, _TID, Args) ->
 client(Connection, Args) ->
     libp2p_framed_stream:client(?MODULE, Connection, Args).
 
+-spec add_stream_handler(pid()) -> ok.
+add_stream_handler(Swarm) ->
+    ok = libp2p_swarm:add_stream_handler(
+           Swarm,
+           ?VERSION,
+           {libp2p_framed_stream, server, [?MODULE, self()]}
+          ).
+
 -spec version() -> string().
 version() ->
-    "simple_http/1.0.0".
+    ?VERSION.
 
 %% ------------------------------------------------------------------
 %% libp2p_framed_stream Function Definitions
@@ -68,7 +79,8 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
-            try hackney:post(Endpoint, Headers, Data, []) of
+            Opts = [{use_default_pool, false}],
+            try hackney:post(Endpoint, Headers, Data, Opts) of
                 {ok, _StatusCode, _RespHeaders, _ClientRef} ->
                     lager:info("got result ~p", [_StatusCode]),
                     lager:debug("got result ~p", [{_StatusCode, _RespHeaders, _ClientRef}]);
@@ -87,7 +99,7 @@ handle_data(_Type, _Bin, State) ->
     {noreply, State}.
 
 handle_info(_Type, _Msg, State) ->
-    lager:warning("~p got info ~p", [_Type, _Msg]),
+    lager:debug("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
 
 %% ------------------------------------------------------------------

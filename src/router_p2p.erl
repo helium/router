@@ -101,16 +101,11 @@ start_swarm(Args) ->
                                        ]},
                  {libp2p_nat, [{enabled, false}]},
                  {libp2p_proxy, [{limit, 0}]}
-                 
+
                 ],
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
-    ok = libp2p_swarm:add_stream_handler(
-           Swarm,
-           simple_http_stream:version(),
-           {libp2p_framed_stream, server, [simple_http_stream, self()]}
-          ),
+    ok = simple_http_stream:add_stream_handler(Swarm),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++  erlang:integer_to_list(Port)),
     lager:info("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.
-                 

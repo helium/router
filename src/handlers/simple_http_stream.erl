@@ -79,7 +79,6 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
             Headers = [{"Content-Type", "application/octet-stream"}],
-            _Opts = [{pool, ?MODULE}],
             Req = {Endpoint, Headers, "application/octet-stream", Data},
             try httpc:request(post, Req, [], []) of
                 {ok, {{_Version, _Code, _Reason}, _Body}}=OK ->

@@ -15,9 +15,6 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-    PoolName = simple_http_stream,
-    Options = [{max_connections, 1000}],
-    ok = hackney_pool:start_pool(PoolName, Options),
     router_sup:start_link().
 
 %%--------------------------------------------------------------------

@@ -15,7 +15,8 @@
     ranch,
     libp2p,
     hackney,
-    helium_proto
+    helium_proto,
+    observer_cli
    ]},
   {env,[]},
   {modules, []},

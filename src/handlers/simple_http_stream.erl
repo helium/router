@@ -72,7 +72,7 @@ init(client, _Conn, _Args) ->
 
 handle_data(server, _Bin, #state{endpoint=undefined}=State) ->
     lager:warning("server ignoring data ~p (cause no endpoint)", [_Bin]),
-    {noreply, State};
+    {stop, normal, State};
 handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     lager:info("got data ~p", [Data]),
     case decode_data(Data) of
@@ -97,7 +97,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
         {error, Reason} ->
             lager:error("packet decode failed ~p", [Reason])
     end,
-    {noreply, State};
+    {stop, normal, State};
 handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.

@@ -78,12 +78,16 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     case decode_data(Data) of
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
-            Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
-            Opts = [{pool, ?MODULE}],
-            try hackney:post(Endpoint, Headers, Data, Opts) of
-                {ok, _StatusCode, _RespHeaders, _ClientRef} ->
-                    lager:info("got result ~p", [_StatusCode]),
-                    lager:debug("got result ~p", [{_StatusCode, _RespHeaders, _ClientRef}]);
+            Headers = [{"Content-Type", "application/octet-stream"}],
+            _Opts = [{pool, ?MODULE}],
+            Req = {Endpoint, Headers, "application/octet-stream", Data},
+            try httpc:request(post, Req, [], []) of
+                {ok, {{_Version, _Code, _Reason}, _Body}}=OK ->
+                    lager:info("got result ~p, ~p", [_Code, _Body]),
+                    lager:debug("got result ~p", [OK]);
+                {ok, {{_Version, _Code, _Reason}, _Headers, _Body}}=OK ->
+                    lager:info("got result ~p, ~p", [_Code, _Body]),
+                    lager:debug("got result ~p", [OK]);
                 {error, _Reason} ->
                     lager:error("failed to post to ~p got error ~p", [Endpoint, _Reason])
             catch

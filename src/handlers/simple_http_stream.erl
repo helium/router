@@ -78,11 +78,11 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     case decode_data(Data) of
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
-            router_http_worker:send(Endpoint, Data);
+            ok = router_http_worker:send(Endpoint, Data);
         {error, Reason} ->
-            lager:error("packet decode failed ~p", [Reason])
+            lager:error("packet decode failed ~p ~p", [Reason, Data])
     end,
-    {stop, normal, State};
+    {noreply, State};
 handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.

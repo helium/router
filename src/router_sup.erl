@@ -93,8 +93,11 @@ init([]) ->
                       base_dir => BaseDir,
                       key => Key
                      },
-    P2PWorker = ?WORKER(router_p2p, [P2PWorkerOpts]),
-    {ok, { ?FLAGS, [P2PWorker]} }.
+    HTTPWorkerOpts = #{
+                       max_connections => application:get_env(router, max_connections, 250)
+                      },
+    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts]),
+                    ?WORKER(router_http_worker, [HTTPWorkerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

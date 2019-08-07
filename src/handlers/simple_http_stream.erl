@@ -65,7 +65,7 @@ version() ->
 %% libp2p_framed_stream Function Definitions
 %% ------------------------------------------------------------------
 init(server, _Conn, _Args) ->
-    Endpoint = application:get_env(router, simple_http_endpoint, undefined),
+    Endpoint = application:get_env(router, simple_http_endpoint, "http://localhost"),
     {ok, #state{endpoint=Endpoint}};
 init(client, _Conn, _Args) ->
     {ok, #state{}}.
@@ -78,21 +78,7 @@ handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     case decode_data(Data) of
         {ok, _Packet} ->
             lager:info("decoded data ~p", [_Packet]),
-            Headers = [{"Content-Type", "application/octet-stream"}],
-            Req = {Endpoint, Headers, "application/octet-stream", Data},
-            try httpc:request(post, Req, [], []) of
-                {ok, {{_Version, _Code, _Reason}, _Body}}=OK ->
-                    lager:info("got result ~p, ~p", [_Code, _Body]),
-                    lager:debug("got result ~p", [OK]);
-                {ok, {{_Version, _Code, _Reason}, _Headers, _Body}}=OK ->
-                    lager:info("got result ~p, ~p", [_Code, _Body]),
-                    lager:debug("got result ~p", [OK]);
-                {error, _Reason} ->
-                    lager:error("failed to post to ~p got error ~p", [Endpoint, _Reason])
-            catch
-                E:R ->
-                    lager:error("failed to post to ~p got error ~p", [Endpoint, {E, R}])
-            end;
+            router_http_worker:send(Endpoint, Data);
         {error, Reason} ->
             lager:error("packet decode failed ~p", [Reason])
     end,

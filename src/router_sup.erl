@@ -7,6 +7,8 @@
 
 -behaviour(supervisor).
 
+-include("router.hrl").
+
 %% API
 -export([start_link/0]).
 
@@ -50,7 +52,6 @@
           period => 5
          }).
 
-
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -71,6 +72,10 @@ start_link() ->
 init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
+
+    PoolOptions = [{max_connections, application:get_env(router, max_connections, 250)}],
+    ok = hackney_pool:start_pool(?HTTP_POOL, PoolOptions),
+
     SeedNodes = case application:get_env(router, seed_nodes) of
                     {ok, ""} -> [];
                     {ok, Seeds} -> string:split(Seeds, ",", all);
@@ -93,11 +98,7 @@ init([]) ->
                       base_dir => BaseDir,
                       key => Key
                      },
-    HTTPWorkerOpts = #{
-                       max_connections => application:get_env(router, max_connections, 250)
-                      },
-    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts]),
-                    ?WORKER(router_http_worker, [HTTPWorkerOpts])]} }.
+    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

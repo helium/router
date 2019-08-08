@@ -118,8 +118,8 @@ decode_data(Data) ->
 -spec send(string(), binary()) -> {ok, reference()} | {error, any()}.
 send(Endpoint, Data) ->
     case decode_data(Data) of
-        {ok, _Packet} ->
-            lager:info("decoded data ~p", [_Packet]),
+        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, _Packet}}} ->
+            lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
             Options = [{pool, ?HTTP_POOL}, async],
             hackney:post(Endpoint, Headers, Data, Options);

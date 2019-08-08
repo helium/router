@@ -104,7 +104,7 @@ handle_info(_Type, _Msg, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec decode_data(binary()) -> {ok, binary()} | {error, any()}.
+-spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->
     try helium_longfi_pb:decode_msg(Data, helium_LongFiResp_pb) of
         Packet ->

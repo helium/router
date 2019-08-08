@@ -66,7 +66,7 @@ version() ->
 %% libp2p_framed_stream Function Definitions
 %% ------------------------------------------------------------------
 init(server, _Conn, _Args) ->
-    Endpoint = application:get_env(router, simple_http_endpoint, "http://localhost"),
+    Endpoint = application:get_env(router, simple_http_endpoint, undefined),
     {ok, #state{endpoint=Endpoint}};
 init(client, _Conn, _Args) ->
     {ok, #state{}}.

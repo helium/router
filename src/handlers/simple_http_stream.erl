@@ -8,6 +8,7 @@
 
 -behavior(libp2p_framed_stream).
 
+-include("router.hrl").
 -include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
 
 %% ------------------------------------------------------------------
@@ -75,32 +76,26 @@ handle_data(server, _Bin, #state{endpoint=undefined}=State) ->
     {stop, normal, State};
 handle_data(server, Data, #state{endpoint=Endpoint}=State) ->
     lager:info("got data ~p", [Data]),
-    case decode_data(Data) of
-        {ok, _Packet} ->
-            lager:info("decoded data ~p", [_Packet]),
-            Headers = [{"Content-Type", "application/octet-stream"}],
-            Req = {Endpoint, Headers, "application/octet-stream", Data},
-            try httpc:request(post, Req, [], []) of
-                {ok, {{_Version, _Code, _Reason}, _Body}}=OK ->
-                    lager:info("got result ~p, ~p", [_Code, _Body]),
-                    lager:debug("got result ~p", [OK]);
-                {ok, {{_Version, _Code, _Reason}, _Headers, _Body}}=OK ->
-                    lager:info("got result ~p, ~p", [_Code, _Body]),
-                    lager:debug("got result ~p", [OK]);
-                {error, _Reason} ->
-                    lager:error("failed to post to ~p got error ~p", [Endpoint, _Reason])
-            catch
-                E:R ->
-                    lager:error("failed to post to ~p got error ~p", [Endpoint, {E, R}])
-            end;
-        {error, Reason} ->
-            lager:error("packet decode failed ~p", [Reason])
+    case send(Endpoint, Data) of
+        {ok, _Ref} ->
+            lager:info("~p data sent", [_Ref]);
+        {error, _Reason} ->
+            lager:error("packet decode failed ~p ~p", [_Reason, Data])
     end,
-    {stop, normal, State};
+    {noreply, State};
 handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
+handle_info(server, {hackney_response, _Ref, {status, 200, _Reason}}, State) ->
+    lager:info("~p got 200/~p", [_Ref, _Reason]),
+    {noreply, State};
+handle_info(server, {hackney_response, _Ref, {status, _StatusCode, _Reason}}, State) ->
+    lager:warning("~p got ~p/~p", [_Ref, _StatusCode, _Reason]),
+    {noreply, State};
+handle_info(server, {hackney_response, _Ref, done}, State) ->
+    lager:info("~p done", [_Ref]),
+    {noreply, State};
 handle_info(_Type, _Msg, State) ->
     lager:debug("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
@@ -118,6 +113,18 @@ decode_data(Data) ->
         E:R ->
             lager:error("got error trying to decode  ~p", [{E, R}]),
             {error, decoding}
+    end.
+
+-spec send(string(), binary()) -> {ok, reference()} | {error, any()}.
+send(Endpoint, Data) ->
+    case decode_data(Data) of
+        {ok, _Packet} ->
+            lager:info("decoded data ~p", [_Packet]),
+            Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
+            Options = [{pool, ?HTTP_POOL}, async],
+            hackney:post(Endpoint, Headers, Data, Options);
+        {error, _Reason}=Error ->
+            Error
     end.
 
 %% ------------------------------------------------------------------

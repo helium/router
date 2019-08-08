@@ -1,0 +1,7 @@
+version: '3'
+services:
+  router:
+    build: .
+    container_name: helium_router
+    ports:
+      - 2154:2154

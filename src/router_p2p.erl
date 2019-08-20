@@ -100,7 +100,7 @@ start_swarm(Args) ->
                                         {seed_nodes, SeeNodes}
                                        ]},
                  {libp2p_nat, [{enabled, false}]},
-                 {libp2p_proxy, [{limit, 0}]}
+                 {libp2p_proxy, [{limit, 1}]}
 
                 ],
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),

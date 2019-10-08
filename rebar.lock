@@ -16,7 +16,7 @@
  {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},2},
  {<<"goldrush">>,{pkg,<<"goldrush">>,<<"0.1.9">>},1},
  {<<"gpb">>,{pkg,<<"gpb">>,<<"4.2.1">>},1},
- {<<"hackney">>,{pkg,<<"hackney">>,<<"1.15.1">>},0},
+ {<<"hackney">>,{pkg,<<"hackney">>,<<"1.15.2">>},0},
  {<<"helium_proto">>,
   {git,"https://github.com/helium/proto.git",
        {ref,"f13b42208e0b2af4948e9c69693f1f2148ea5cc0"}},
@@ -68,7 +68,7 @@
   {git,"https://github.com/helium/erlang-splicer.git",
        {ref,"e1f47056786c76bf028b460e2a8cf70d7c31e7a6"}},
   1},
- {<<"ssl_verify_fun">>,{pkg,<<"ssl_verify_fun">>,<<"1.1.4">>},1},
+ {<<"ssl_verify_fun">>,{pkg,<<"ssl_verify_fun">>,<<"1.1.5">>},1},
  {<<"unicode_util_compat">>,{pkg,<<"unicode_util_compat">>,<<"0.4.1">>},2}]}.
 [
 {pkg_hash,[
@@ -81,7 +81,7 @@
  {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>},
  {<<"goldrush">>, <<"F06E5D5F1277DA5C413E84D5A2924174182FB108DABB39D5EC548B27424CD106">>},
  {<<"gpb">>, <<"3AE57FDFA1B78C155EA27D86886EB248002180C447D8B450D276A908DA272509">>},
- {<<"hackney">>, <<"9F8F471C844B8CE395F7B6D8398139E26DDCA9EBC171A8B91342EE15A19963F4">>},
+ {<<"hackney">>, <<"07E33C794F8F8964EE86CEBEC1A8ED88DB5070E52E904B8F12209773C1036085">>},
  {<<"idna">>, <<"689C46CBCDF3524C44D5F3DDE8001F364CD7608A99556D8FBD8239A5798D4C10">>},
  {<<"inet_cidr">>, <<"4814A5B78B969A5E069B0CECBB102622AB0C459B690053ED94543CD529915A43">>},
  {<<"intercept">>, <<"1F6C725E6FC070720643BD4D97EE53B1209365C80E520E1F5A1ACB36712A7EB5">>},
@@ -97,6 +97,6 @@
  {<<"recon">>, <<"2F7FCBEC2C35034BADE2F9717F77059DC54EB4E929A3049CA7BA6775C0BD66CD">>},
  {<<"rocksdb">>, <<"635F7D52C2B3E5399617C080BA5FE30AB255FD5D9D8180FFDD298E11EA1D62F4">>},
  {<<"small_ints">>, <<"82A824C8794A2DDC73CB5CD00EAD11331DB296521AD16A619C13D668572B868A">>},
- {<<"ssl_verify_fun">>, <<"F0EAFFF810D2041E93F915EF59899C923F4568F4585904D010387ED74988E77B">>},
+ {<<"ssl_verify_fun">>, <<"6EAF7AD16CB568BB01753DBBD7A95FF8B91C7979482B95F38443FE2C8852A79B">>},
  {<<"unicode_util_compat">>, <<"D869E4C68901DD9531385BB0C8C40444EBF624E60B6962D95952775CAC5E90CD">>}]}
 ].

@@ -128,6 +128,8 @@ make_send_fun(DID, OUI) ->
     case hackney:get(<<Endpoint/binary, "/api/router/devices/", (list_to_binary(integer_to_list(DID)))/binary, "?oui=", (list_to_binary(integer_to_list(OUI)))/binary>>,
                      [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
+            JSON = jsx:decode(Body, [return_maps]),
+            DeviceID = kvc:path([<<"id">>], JSON),
             ChannelFuns = lists:map(fun(Channel = #{<<"type">> := <<"http">>}) ->
                                             Headers = kvc:path([<<"credentials">>, <<"headers">>], Channel),
                                             lager:error("Headers ~p", [Headers]),
@@ -135,26 +137,26 @@ make_send_fun(DID, OUI) ->
                                             lager:error("URL ~p", [URL]),
                                             Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
                                             lager:error("Method ~p", [Method]),
-                                            ChannelID = kvc:path([<<"id">>], Channel),
+                                            ChannelID = kvc:path([<<"name">>], Channel),
                                             fun(Encoded, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
                                                     Result = case hackney:request(Method, URL, maps:to_list(Headers), Encoded, [with_body]) of
                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
-                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp,
+                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => success, description => ResponseBody};
                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
-                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp,
+                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
                                                                  {error, Reason} ->
-                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp,
+                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                                                              end,
                                                     lager:error("Result ~p", [Result]),
-                                                    hackney:post(<<Endpoint/binary, "/api/router/devices/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                                                    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
                                             end
-                                    end, kvc:path([<<"channels">>], jsx:decode(Body, [return_maps]))),
+                                    end, kvc:path([<<"channels">>], JSON)),
             fun(Input, DecodedInput) ->
                     [ spawn(fun() -> C(Input, DecodedInput) end) || C <- ChannelFuns]
             end;

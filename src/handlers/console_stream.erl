@@ -36,7 +36,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(VERSION, "console/1.0.0").
+-define(VERSION, "simple_http/1.0.0").
 
 -record(state, {}).
 
@@ -150,6 +150,7 @@ make_send_fun(DID, OUI) ->
                     [ spawn(fun() -> C(Input, DecodedInput) end) || C <- ChannelFuns]
             end;
         Other ->
+            lager:warning("unable to get channel ~p", [Other]),
             lager:warning("unable to get channel ~p", [Other]),
             erlang:error(bad_channel)
     end.

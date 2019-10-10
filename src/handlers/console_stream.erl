@@ -20,7 +20,7 @@
          client/2,
          add_stream_handler/1,
          version/0,
-         send/1
+         send/2
         ]).
 
 %% ------------------------------------------------------------------
@@ -38,7 +38,7 @@
 
 -define(VERSION, "simple_http/1.0.0").
 
--record(state, {}).
+-record(state, {cargo :: string() | undefined}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -65,13 +65,14 @@ version() ->
 %% libp2p_framed_stream Function Definitions
 %% ------------------------------------------------------------------
 init(server, _Conn, _Args) ->
-    {ok, #state{}};
+    CragoEndpoint = application:get_env(router, cargo_endpoint, undefined),
+    {ok, #state{cargo=CragoEndpoint}};
 init(client, _Conn, _Args) ->
     {ok, #state{}}.
 
-handle_data(server, Data, State) ->
+handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
     lager:info("got data ~p", [Data]),
-    case send(Data) of
+    case send(Data, CragoEndpoint) of
         {ok, _Ref} ->
             lager:info("~p data sent", [_Ref]);
         {error, _Reason} ->
@@ -82,6 +83,15 @@ handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
+handle_info(server, {hackney_response, _Ref, {status, 200, _Reason}}, State) ->
+    lager:info("~p got 200/~p", [_Ref, _Reason]),
+    {noreply, State};
+handle_info(server, {hackney_response, _Ref, {status, _StatusCode, _Reason}}, State) ->
+    lager:warning("~p got ~p/~p", [_Ref, _StatusCode, _Reason]),
+    {noreply, State};
+handle_info(server, {hackney_response, _Ref, done}, State) ->
+    lager:info("~p done", [_Ref]),
+    {noreply, State};
 handle_info(_Type, _Msg, State) ->
     lager:debug("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
@@ -90,15 +100,24 @@ handle_info(_Type, _Msg, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec send(binary()) -> any().
-send(Data) ->
+-spec send(binary(), string()) -> any().
+send(Data, CragoEndpoint) ->
     case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}}}=DecodedData} ->
+        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{oui=2}=_Packet}}} ->
+            lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
+            send_to_cargo(Data, CragoEndpoint);
+        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}=_Packet}}=DecodedData} ->
+            lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 600, fun() -> make_send_fun(DID, OUI) end),
             SendFun(Data, DecodedData);
         {error, _Reason}=Error ->
             Error
     end.
+
+send_to_cargo(Data, CragoEndpoint) ->
+    Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
+    Options = [{pool, ?HTTP_POOL}, async],
+    hackney:post(CragoEndpoint, Headers, Data, Options).
 
 -spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->

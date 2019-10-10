@@ -104,7 +104,7 @@ start_swarm(Args) ->
 
                 ],
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
-    ok = simple_http_stream:add_stream_handler(Swarm),
+    % ok = simple_http_stream:add_stream_handler(Swarm),
     ok = console_stream:add_stream_handler(Swarm),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     libp2p_swarm:listen(Swarm, "/ip6/::/tcp/" ++  erlang:integer_to_list(Port)),

@@ -38,8 +38,7 @@
 
 -define(VERSION, "console/1.0.0").
 
--record(state, {
-         }).
+-record(state, {}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -83,15 +82,6 @@ handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
-handle_info(server, {hackney_response, _Ref, {status, 200, _Reason}}, State) ->
-    lager:info("~p got 200/~p", [_Ref, _Reason]),
-    {noreply, State};
-handle_info(server, {hackney_response, _Ref, {status, _StatusCode, _Reason}}, State) ->
-    lager:warning("~p got ~p/~p", [_Ref, _StatusCode, _Reason]),
-    {noreply, State};
-handle_info(server, {hackney_response, _Ref, done}, State) ->
-    lager:info("~p done", [_Ref]),
-    {noreply, State};
 handle_info(_Type, _Msg, State) ->
     lager:debug("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
@@ -99,6 +89,16 @@ handle_info(_Type, _Msg, State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec send(binary()) -> any().
+send(Data) ->
+    case decode_data(Data) of
+        {ok, #helium_LongFiResp_pb{kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}}}=DecodedData} ->
+            SendFun = e2qc:cache(console_cache, {OUI, DID}, 600, fun() -> make_send_fun(DID, OUI) end),
+            SendFun(Data, DecodedData);
+        {error, _Reason}=Error ->
+            Error
+    end.
 
 -spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->
@@ -109,17 +109,6 @@ decode_data(Data) ->
         E:R ->
             lager:error("got error trying to decode  ~p", [{E, R}]),
             {error, decoding}
-    end.
-
-send(Data) ->
-    case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}}}=DecodedData} ->
-            SendFun = e2qc:cache(console_cache, {OUI, DID}, 600, fun() ->
-                                                                         make_send_fun(DID, OUI)
-                                                                 end),
-            SendFun(Data, DecodedData);
-        {error, _Reason}=Error ->
-            Error
     end.
 
 make_send_fun(DID, OUI) ->

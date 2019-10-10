@@ -121,11 +121,11 @@ make_send_fun(DID, OUI) ->
             DeviceID = kvc:path([<<"id">>], JSON),
             ChannelFuns = lists:map(fun(Channel = #{<<"type">> := <<"http">>}) ->
                                             Headers = kvc:path([<<"credentials">>, <<"headers">>], Channel),
-                                            lager:error("Headers ~p", [Headers]),
+                                            lager:info("Headers ~p", [Headers]),
                                             URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
-                                            lager:error("URL ~p", [URL]),
+                                            lager:info("URL ~p", [URL]),
                                             Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
-                                            lager:error("Method ~p", [Method]),
+                                            lager:info("Method ~p", [Method]),
                                             ChannelID = kvc:path([<<"name">>], Channel),
                                             fun(Encoded, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
                                                     Result = case hackney:request(Method, URL, maps:to_list(Headers), Encoded, [with_body]) of
@@ -142,7 +142,7 @@ make_send_fun(DID, OUI) ->
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                                                              end,
-                                                    lager:error("Result ~p", [Result]),
+                                                    lager:info("Result ~p", [Result]),
                                                     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
                                             end
                                     end, kvc:path([<<"channels">>], JSON)),
@@ -154,16 +154,22 @@ make_send_fun(DID, OUI) ->
             erlang:error(bad_channel)
     end.
 
+-spec get_token() -> binary().
 get_token() ->
     Endpoint = application:get_env(router, console_endpoint, undefined),
     Secret = application:get_env(router, console_secret, undefined),
-    e2qc:cache(console_cache, jwt, 600, fun() ->
-                                                case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [{<<"Content-Type">>, <<"application/json">>}], jsx:encode(#{secret => Secret}) , [with_body]) of
-                                                    {ok, 201, _Headers, Body} ->
-                                                        #{<<"jwt">> := JWT} = jsx:decode(Body, [return_maps]),
-                                                        JWT
-                                                end
-                                        end).
+    e2qc:cache(
+      console_cache,
+      jwt,
+      600,
+      fun() ->
+              case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [{<<"Content-Type">>, <<"application/json">>}], jsx:encode(#{secret => Secret}) , [with_body]) of
+                  {ok, 201, _Headers, Body} ->
+                      #{<<"jwt">> := JWT} = jsx:decode(Body, [return_maps]),
+                      JWT
+              end
+      end
+     ).
 
 
 %% ------------------------------------------------------------------

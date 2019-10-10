@@ -141,15 +141,15 @@ make_send_fun(DID, OUI) ->
                                             fun(Encoded, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
                                                     Result = case hackney:request(Method, URL, maps:to_list(Headers), Encoded, [with_body]) of
                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
-                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
+                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => success, description => ResponseBody};
                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
-                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
+                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
                                                                  {error, Reason} ->
-                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000000,
+                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
                                                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                                                              end,

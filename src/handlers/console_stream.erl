@@ -76,7 +76,9 @@ handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
         {ok, _Ref} ->
             lager:info("~p data sent", [_Ref]);
         {error, _Reason} ->
-            lager:error("packet decode failed ~p ~p", [_Reason, Data])
+            lager:error("packet decode failed ~p ~p", [_Reason, Data]);
+        _Ref ->
+            lager:info("~p data sent", [_Ref])
     end,
     {noreply, State};
 handle_data(_Type, _Bin, State) ->

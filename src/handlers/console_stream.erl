@@ -148,8 +148,8 @@ make_send_fun(DID, OUI) ->
                                             Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
                                             lager:info("Method ~p", [Method]),
                                             ChannelID = kvc:path([<<"name">>], Channel),
-                                            fun(Encoded, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
-                                                    Result = case hackney:request(Method, URL, maps:to_list(Headers), Encoded, [with_body]) of
+                                            fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
+                                                    Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
                                                                      #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
@@ -193,6 +193,23 @@ get_token() ->
       end
      ).
 
+
+packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
+                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp,
+                                                                                           oui=OUI, device_id=DeviceID, fingerprint=Fingerprint,
+                                                                                           sequence=Sequence, spreading=Spreading,
+                                                                                           snr=SNR
+                                                                                          }}}) ->
+    jsx:encode(#{timestamp => Timestamp,
+                 oui => OUI,
+                 device_id => DeviceID,
+                 fingerprint => Fingerprint,
+                 sequence => Sequence,
+                 spreading => Spreading,
+                 payload => base64:encode(Payload),
+                 gateway => MinerName,
+                 rssi => RSSI,
+                 snr => SNR}).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

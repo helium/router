@@ -16,7 +16,10 @@
     libp2p,
     helium_proto,
     observer_cli,
-    hackney
+    hackney,
+    e2qc,
+    kvc,
+    jsx
    ]},
   {env,[]},
   {modules, []},

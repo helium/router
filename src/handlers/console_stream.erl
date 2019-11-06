@@ -140,53 +140,53 @@ make_send_fun(DID, OUI) ->
         {ok, 200, _Headers, Body} ->
             JSON = jsx:decode(Body, [return_maps]),
             DeviceID = kvc:path([<<"id">>], JSON),
-           ChannelFuns = case kvc:path([<<"channels">>], JSON) of
-                                 [] ->
-                                         [fun(_Input, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
-                                                          spawn(fun() ->
-                                                                                Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                                           delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
-                                                                                           status => <<"No Channel">>},
-                                                                                hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
-                                                                end)
-                                          end];
-                                 Channels ->
-                                         lists:map(fun(Channel = #{<<"type">> := <<"http">>}) ->
-                                                                   Headers = kvc:path([<<"credentials">>, <<"headers">>], Channel),
-                                                                   lager:info("Headers ~p", [Headers]),
-                                                                   URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
-                                                                   lager:info("URL ~p", [URL]),
-                                                                   Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
-                                                                   lager:info("Method ~p", [Method]),
-                                                                   ChannelID = kvc:path([<<"name">>], Channel),
-                                                                   fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp}}}) ->
-                                                                                   Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
-                                                                                                    {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
-                                                                                                            #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                                                              delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
-                                                                                                              status => success, description => ResponseBody};
-                                                                                                    {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
-                                                                                                            #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                                                              delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
-                                                                                                              status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
-                                                                                                    {error, Reason} ->
-                                                                                                            #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                                                              delivered_at => erlang:system_time(second), rssi => RSSI, hotspot_name => MinerName,
-                                                                                                              status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
-                                                                                            end,
-                                                                                   lager:info("Result ~p", [Result]),
-                                                                                   hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
-                                                                   end
-                                                   end, Channels)
-                         end,
+            ChannelFuns = case kvc:path([<<"channels">>], JSON) of
+                              [] ->
+                                  [fun(_Input, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                           spawn(fun() ->
+                                                         Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                    delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                    status => <<"No Channel">>},
+                                                         hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                                                 end)
+                                   end];
+                              Channels ->
+                                  lists:map(fun(Channel = #{<<"type">> := <<"http">>}) ->
+                                                    Headers = kvc:path([<<"credentials">>, <<"headers">>], Channel),
+                                                    lager:info("Headers ~p", [Headers]),
+                                                    URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
+                                                    lager:info("URL ~p", [URL]),
+                                                    Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
+                                                    lager:info("Method ~p", [Method]),
+                                                    ChannelID = kvc:path([<<"name">>], Channel),
+                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                                            Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
+                                                                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
+                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                               status => success, description => ResponseBody};
+                                                                         {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
+                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                               status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
+                                                                         {error, Reason} ->
+                                                                             #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                               status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
+                                                                     end,
+                                                            lager:info("Result ~p", [Result]),
+                                                            hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                                                    end
+                                            end, Channels)
+                          end,
             fun(Input, DecodedInput) ->
                     [ spawn(fun() -> C(Input, DecodedInput) end) || C <- ChannelFuns]
             end;
         Other ->
             lager:warning("unable to get channel ~p", [Other]),
-           fun(_, _) ->
-                           ok
-           end
+            fun(_, _) ->
+                    ok
+            end
     end.
 
 -spec get_token() -> binary().

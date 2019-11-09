@@ -140,10 +140,12 @@ make_send_fun(DID, OUI) ->
         {ok, 200, _Headers, Body} ->
             JSON = jsx:decode(Body, [return_maps]),
             DeviceID = kvc:path([<<"id">>], JSON),
+            Key = base64:decode(kvc:path([<<"key">>], JSON)),
             ChannelFuns = case kvc:path([<<"channels">>], JSON) of
                               [] ->
-                                  [fun(_Input, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                  [fun(_Input, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
                                            spawn(fun() ->
+                                                         check_fingerprint(Packet, Key),
                                                          Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                     delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                     status => <<"No Channel">>},
@@ -159,7 +161,8 @@ make_send_fun(DID, OUI) ->
                                                     Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
                                                     lager:info("Method ~p", [Method]),
                                                     ChannelID = kvc:path([<<"name">>], Channel),
-                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                                            check_fingerprint(Packet, Key),
                                                             Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
                                                                          {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
                                                                              #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
@@ -223,6 +226,14 @@ packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
                  gateway => MinerName,
                  rssi => RSSI,
                  snr => SNR}).
+
+check_fingerprint(DecodedPacket = #helium_LongFiRxPacket_pb{fingerprint=FP}, Key) ->
+    case longfi:get_fingerprint(DecodedPacket, Key) of
+        FP ->
+            ok;
+        Other ->
+            lager:warning("Fingerprint mismatch for ~p : expected ~p got ~p", [DecodedPacket, FP, Other])
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

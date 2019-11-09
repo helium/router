@@ -230,9 +230,9 @@ packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
 check_fingerprint(DecodedPacket = #helium_LongFiRxPacket_pb{fingerprint=FP}, Key) ->
     case longfi:get_fingerprint(DecodedPacket, Key) of
         FP ->
-            ok;
+            lager:info("fingerprint ok");
         Other ->
-            lager:warning("Fingerprint mismatch for ~p : expected ~p got ~p", [DecodedPacket, FP, Other])
+            lager:warning("fingerprint mismatch for ~p : expected ~p got ~p", [DecodedPacket, FP, Other])
     end.
 
 %% ------------------------------------------------------------------

@@ -47,7 +47,7 @@
   0},
  {<<"longfi">>,
   {git,"https://github.com/helium/longfi-erlang",
-       {ref,"f56a9022d506a8b5917aa39a5322272f0318a968"}},
+       {ref,"f96138df709cca8bfd9ab44cbaeed9b5498ec0ea"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},1},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.2.0">>},1},

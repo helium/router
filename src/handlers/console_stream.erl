@@ -219,12 +219,12 @@ get_token() ->
 
 
 packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
-                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp,
+                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=_Timestamp,
                                                                                            oui=OUI, device_id=DeviceID, fingerprint=Fingerprint,
                                                                                            sequence=Sequence, spreading=Spreading,
                                                                                            snr=SNR
                                                                                           }}}) ->
-    jsx:encode(#{timestamp => Timestamp div 1000000,
+    jsx:encode(#{timestamp => erlang:system_time(seconds),
                  oui => OUI,
                  device_id => DeviceID,
                  fingerprint => Fingerprint,

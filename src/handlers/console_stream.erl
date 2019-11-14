@@ -224,7 +224,7 @@ packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
                                                                                            sequence=Sequence, spreading=Spreading,
                                                                                            snr=SNR
                                                                                           }}}) ->
-    jsx:encode(#{timestamp => Timestamp,
+    jsx:encode(#{timestamp => Timestamp div 1000000,
                  oui => OUI,
                  device_id => DeviceID,
                  fingerprint => Fingerprint,

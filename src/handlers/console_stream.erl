@@ -140,14 +140,20 @@ make_send_fun(DID, OUI) ->
         {ok, 200, _Headers, Body} ->
             JSON = jsx:decode(Body, [return_maps]),
             DeviceID = kvc:path([<<"id">>], JSON),
+            Key = base64:decode(kvc:path([<<"key">>], JSON)),
             ChannelFuns = case kvc:path([<<"channels">>], JSON) of
                               [] ->
-                                  [fun(_Input, #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
+                                  [fun(_Input, Decoded=#helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                            spawn(fun() ->
-                                                         Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                    delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                                                                    status => <<"No Channel">>},
-                                                         hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                                                         case check_fingerprint(Packet, Key) of
+                                                             ok ->
+                                                                 Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                            delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                            status => <<"No Channel">>},
+                                                                 hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body]);
+                                                             Other ->
+                                                                 lager:warning("fingerprint mismatch for packet ~p from ~p : expected ~p got ~p", [Decoded, {OUI, DID}, Other, FP])
+                                                         end
                                                  end)
                                    end];
                               Channels ->
@@ -159,23 +165,28 @@ make_send_fun(DID, OUI) ->
                                                     Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
                                                     lager:info("Method ~p", [Method]),
                                                     ChannelID = kvc:path([<<"name">>], Channel),
-                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, #helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, timestamp=Timestamp}}}) ->
-                                                            Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
-                                                                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
-                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                                                                               status => success, description => ResponseBody};
-                                                                         {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
-                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                                                                               status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
-                                                                         {error, Reason} ->
-                                                                             #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                                                                               status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
-                                                                     end,
-                                                            lager:info("Result ~p", [Result]),
-                                                            hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
+                                                            case check_fingerprint(Packet, Key) of
+                                                                ok ->
+                                                                    Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
+                                                                                 {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
+                                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                       delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                       status => success, description => ResponseBody};
+                                                                                 {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
+                                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                       delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                       status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
+                                                                                 {error, Reason} ->
+                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                       delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                       status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
+                                                                             end,
+                                                                    lager:info("Result ~p", [Result]),
+                                                                    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body]);
+                                                                Other ->
+                                                                    lager:warning("fingerprint mismatch for packet ~p from ~p : expected ~p got ~p", [Decoded, {OUI, DID}, Other, FP])
+                                                            end
                                                     end
                                             end, Channels)
                           end,
@@ -208,12 +219,12 @@ get_token() ->
 
 
 packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
-                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=Timestamp,
+                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=_Timestamp,
                                                                                            oui=OUI, device_id=DeviceID, fingerprint=Fingerprint,
                                                                                            sequence=Sequence, spreading=Spreading,
                                                                                            snr=SNR
                                                                                           }}}) ->
-    jsx:encode(#{timestamp => Timestamp,
+    jsx:encode(#{timestamp => erlang:system_time(seconds),
                  oui => OUI,
                  device_id => DeviceID,
                  fingerprint => Fingerprint,
@@ -223,6 +234,14 @@ packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
                  gateway => MinerName,
                  rssi => RSSI,
                  snr => SNR}).
+
+check_fingerprint(DecodedPacket = #helium_LongFiRxPacket_pb{fingerprint=FP}, Key) ->
+    case longfi:get_fingerprint(DecodedPacket, Key) of
+        FP ->
+            ok;
+        Other ->
+            Other
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

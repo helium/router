@@ -19,7 +19,8 @@
     hackney,
     e2qc,
     kvc,
-    jsx
+    jsx,
+    longfi
    ]},
   {env,[]},
   {modules, []},

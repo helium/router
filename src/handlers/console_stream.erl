@@ -105,9 +105,9 @@ handle_info(_Type, _Msg, State) ->
 -spec send(binary(), string()) -> any().
 send(Data, CragoEndpoint) ->
     case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{oui=2}=_Packet}}} ->
+        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{oui=2}=_Packet}=DecodedData}} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
-            send_to_cargo(Data, CragoEndpoint);
+            send_to_cargo(DecodedData, CragoEndpoint);
         {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}=_Packet}}=DecodedData} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_fun(DID, OUI) end),
@@ -116,10 +116,10 @@ send(Data, CragoEndpoint) ->
             Error
     end.
 
-send_to_cargo(Data, CragoEndpoint) ->
-    Headers = [{<<"Content-Type">>, <<"application/octet-stream">>}],
+send_to_cargo(DecodedData, CragoEndpoint) ->
+    Headers = [{<<"Content-Type">>, <<"application/json">>}],
     Options = [{pool, ?HTTP_POOL}, async],
-    hackney:post(CragoEndpoint, Headers, Data, Options).
+    hackney:post(CragoEndpoint, Headers, packet_to_json(DecodedData), Options).
 
 -spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->

@@ -168,7 +168,7 @@ make_send_fun(DID, OUI) ->
                                                     fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                                             case check_fingerprint(Packet, Key) of
                                                                 ok ->
-                                                                    Result = case hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
+                                                                    Result = try hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
                                                                                  {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
                                                                                      #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
@@ -181,6 +181,13 @@ make_send_fun(DID, OUI) ->
                                                                                      #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
+                                                                             catch
+                                                                                 What:Why:Stacktrace ->
+                                                                                     lager:info("Failed to post to channel ~p ~p ~p", [What, Why, Stacktrace]),
+                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                       delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                       status => failure, description => <<"invalid channel configuration">>}
+
                                                                              end,
                                                                     lager:info("Result ~p", [Result]),
                                                                     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body]);

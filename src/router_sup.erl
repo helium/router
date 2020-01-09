@@ -72,33 +72,39 @@ start_link() ->
 init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
+    {ok, _} = application:ensure_all_started(hackney),
 
     PoolOptions = [{max_connections, application:get_env(router, max_connections, 250)}],
     ok = hackney_pool:start_pool(?HTTP_POOL, PoolOptions),
 
-    SeedNodes = case application:get_env(router, seed_nodes) of
-                    {ok, ""} -> [];
-                    {ok, Seeds} -> string:split(Seeds, ",", all);
-                    _ -> []
-                end,
+    SeedNodes =
+        case application:get_env(router, seed_nodes) of
+            {ok, ""} -> [];
+            {ok, Seeds} -> string:split(Seeds, ",", all);
+            _ -> []
+        end,
     BaseDir = application:get_env(router, base_dir, "data"),
     SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
-    Key = case libp2p_crypto:load_keys(SwarmKey) of
-              {ok, #{secret := PrivKey, public := PubKey}} ->
-                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
-              {error, enoent} ->
-                  KeyMap = #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-                  ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
-                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
-          end,
-    P2PWorkerOpts = #{
-                      port => application:get_env(router, port, 0),
-                      seed_nodes => SeedNodes,
-                      base_dir => BaseDir,
-                      key => Key
-                     },
-    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts])]} }.
+    Key =
+        case libp2p_crypto:load_keys(SwarmKey) of
+            {ok, #{secret := PrivKey, public := PubKey}} ->
+                {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
+            {error, enoent} ->
+                KeyMap = #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+                ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
+                {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
+        end,
+    BlockchainOpts = [
+                      {key, Key},
+                      {seed_nodes, SeedNodes},
+                      {max_inbound_connections, 10},
+                      {port, 0},
+                      {base_dir, BaseDir},
+                      {update_dir, application:get_env(router, update_dir, undefined)}
+                     ],
+    RouterServerOpts = #{},
+    {ok, { ?FLAGS, [?SUP(blockchain_sup, [BlockchainOpts]), ?WORKER(router_server, [RouterServerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

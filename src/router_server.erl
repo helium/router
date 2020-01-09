@@ -1,78 +1,63 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Console Stream ==
-%% Routes a packet depending on Helium Console provided information.
+%% == Router Server ==
 %% @end
 %%%-------------------------------------------------------------------
--module(console_stream).
+-module(router_server).
 
--behavior(libp2p_framed_stream).
+-behavior(gen_server).
 
--include("router.hrl").
 -include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
-
 -export([
-         server/4,
-         client/2,
-         add_stream_handler/1,
-         version/0,
-         send/2
+         start_link/1
         ]).
 
 %% ------------------------------------------------------------------
-%% libp2p_framed_stream Function Exports
+%% gen_server Function Exports
 %% ------------------------------------------------------------------
 -export([
-         init/3,
-         handle_data/3,
-         handle_info/3
+         init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3
         ]).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
+-define(SERVER, ?MODULE).
 
--define(VERSION, "simple_http/1.0.0").
-
--record(state, {cargo :: string() | undefined}).
+-record(state, {}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-server(Connection, Path, _TID, Args) ->
-    libp2p_framed_stream:server(?MODULE, Connection, [Path | Args]).
-
-client(Connection, Args) ->
-    libp2p_framed_stream:client(?MODULE, Connection, Args).
-
--spec add_stream_handler(pid()) -> ok.
-add_stream_handler(Swarm) ->
-    ok = libp2p_swarm:add_stream_handler(
-           Swarm,
-           ?VERSION,
-           {libp2p_framed_stream, server, [?MODULE, self()]}
-          ).
-
--spec version() -> string().
-version() ->
-    ?VERSION.
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 %% ------------------------------------------------------------------
-%% libp2p_framed_stream Function Definitions
+%% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(server, _Conn, _Args) ->
-    CragoEndpoint = application:get_env(router, cargo_endpoint, undefined),
-    {ok, #state{cargo=CragoEndpoint}};
-init(client, _Conn, _Args) ->
+init(Args) ->
+    lager:info("init with ~p", [Args]),
+    ok = blockchain_state_channels_server:packet_forward(self()),
     {ok, #state{}}.
 
-handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
+handle_call(_Msg, _From, State) ->
+    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
+    {reply, ok, State}.
+
+handle_cast(_Msg, State) ->
+    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
+    {noreply, State}.
+
+handle_info({packet, Packet}, State) ->
+    Data = blockchain_state_channel_packet_v1:packet(Packet),
     lager:info("got data ~p", [Data]),
-    case send(Data, CragoEndpoint) of
+    case send(Data) of
         {ok, _Ref} ->
             lager:info("~p data sent", [_Ref]);
         {error, _Reason} ->
@@ -81,33 +66,32 @@ handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
             lager:info("~p data sent", [_Ref])
     end,
     {noreply, State};
-handle_data(_Type, _Bin, State) ->
-    lager:warning("~p got data ~p", [_Type, _Bin]),
-    {noreply, State}.
-
-handle_info(server, {hackney_response, _Ref, {status, 200, _Reason}}, State) ->
+handle_info({hackney_response, _Ref, {status, 200, _Reason}}, State) ->
     lager:info("~p got 200/~p", [_Ref, _Reason]),
     {noreply, State};
-handle_info(server, {hackney_response, _Ref, {status, _StatusCode, _Reason}}, State) ->
+handle_info({hackney_response, _Ref, {status, _StatusCode, _Reason}}, State) ->
     lager:warning("~p got ~p/~p", [_Ref, _StatusCode, _Reason]),
     {noreply, State};
-handle_info(server, {hackney_response, _Ref, done}, State) ->
+handle_info({hackney_response, _Ref, done}, State) ->
     lager:info("~p done", [_Ref]),
     {noreply, State};
-handle_info(_Type, _Msg, State) ->
-    lager:debug("~p got info ~p", [_Type, _Msg]),
+handle_info(_Msg, State) ->
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+terminate(_Reason, _State) ->
+    lager:error("~p terminated: ~p", [?MODULE, _Reason]).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec send(binary(), string()) -> any().
-send(Data, CragoEndpoint) ->
+-spec send(binary()) -> any() | {error, any()}.
+send(Data) ->
     case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{oui=2}=_Packet}=DecodedData}} ->
-            lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
-            send_to_cargo(DecodedData, CragoEndpoint);
         {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}=_Packet}}=DecodedData} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_fun(DID, OUI) end),
@@ -115,11 +99,6 @@ send(Data, CragoEndpoint) ->
         {error, _Reason}=Error ->
             Error
     end.
-
-send_to_cargo(DecodedData, CragoEndpoint) ->
-    Headers = [{<<"Content-Type">>, <<"application/json">>}],
-    Options = [{pool, ?HTTP_POOL}, async],
-    hackney:post(CragoEndpoint, Headers, packet_to_json(DecodedData), Options).
 
 -spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->
@@ -249,6 +228,7 @@ check_fingerprint(DecodedPacket = #helium_LongFiRxPacket_pb{fingerprint=FP}, Key
         Other ->
             Other
     end.
+
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

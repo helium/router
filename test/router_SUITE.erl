@@ -2,16 +2,13 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
+-include_lib("blockchain/include/blockchain_vars.hrl").
+
+-export([all/0, init_per_testcase/2, end_per_testcase/2]).
+
 
 -export([
-         all/0,
-         init_per_testcase/2,
-         end_per_testcase/2
-        ]).
-
--export([
-         basic/1
+         routing_test/1
         ]).
 
 %%--------------------------------------------------------------------
@@ -25,75 +22,123 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [basic].
+    [
+     routing_test
+    ].
 
 %%--------------------------------------------------------------------
-%% @public
-%% @doc
-%%   Special init config for test case
-%% @end
+%% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(_, Config) ->
-    ok = application:set_env(router, simple_http_endpoint, "http://127.0.0.1:8081"),
-    lager:info("STARTING ROUTER"),
-    {ok, _} = application:ensure_all_started(router),
-    Config.
+
+init_per_testcase(TestCase, Config) ->
+    BaseDir = "data/test_SUITE/" ++ erlang:atom_to_list(TestCase),
+    Balance = 5000,
+    {ok, Sup, {PrivKey, PubKey}} = test_utils:init(BaseDir),
+    {ok, GenesisMembers, ConsensusMembers, Keys} = test_utils:init_chain(Balance, {PrivKey, PubKey}),
+
+    Chain = blockchain_worker:blockchain(),
+    Swarm = blockchain_swarm:swarm(),
+    N = length(ConsensusMembers),
+
+                                                % Check ledger to make sure everyone has the right balance
+    Ledger = blockchain:ledger(Chain),
+    Entries = blockchain_ledger_v1:entries(Ledger),
+    _ = lists:foreach(fun(Entry) ->
+                              Balance = blockchain_ledger_entry_v1:balance(Entry),
+                              0 = blockchain_ledger_entry_v1:nonce(Entry)
+                      end, maps:values(Entries)),
+
+    [
+     {basedir, BaseDir},
+     {balance, Balance},
+     {sup, Sup},
+     {pubkey, PubKey},
+     {privkey, PrivKey},
+     {chain, Chain},
+     {swarm, Swarm},
+     {n, N},
+     {consensus_members, ConsensusMembers},
+     {genesis_members, GenesisMembers},
+     Keys
+     | Config
+    ].
 
 %%--------------------------------------------------------------------
-%% @public
-%% @doc
-%%   Special end config for test case
-%% @end
+%% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
-end_per_testcase(_, _Config) ->
-    lager:info("STOPPING ROUTER"),
-    ok = application:stop(router),
+end_per_testcase(_, Config) ->
+    Sup = proplists:get_value(sup, Config),
+                                                % Make sure blockchain saved on file = in memory
+    case erlang:is_process_alive(Sup) of
+        true ->
+            true = erlang:exit(Sup, normal),
+            ok = test_utils:wait_until(fun() -> false =:= erlang:is_process_alive(Sup) end);
+        false ->
+            ok
+    end,
     ok.
 
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-%%--------------------------------------------------------------------
-%% @public
-%% @doc
-%% @end
-%%--------------------------------------------------------------------
-basic(_Config) ->
-    {ok, _} = elli:start_link([{callback, echo_http_test}, {ip, {127,0,0,1}}, {port, 8081}, {callback_args, self()}]),
-    SwarmOpts = [{libp2p_nat, [{enabled, false}]}],
-    {ok, MinerSwarm} = libp2p_swarm:start(miner_swarm, SwarmOpts),
-    {ok, RouterSwarm} = router_p2p:swarm(),
-    [RouterAddress|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+routing_test(Config) ->
+    BaseDir = proplists:get_value(basedir, Config),
+    ConsensusMembers = proplists:get_value(consensus_members, Config),
+    BaseDir = proplists:get_value(basedir, Config),
+    Chain = proplists:get_value(chain, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    Ledger = blockchain:ledger(Chain),
 
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(MinerSwarm,
-                                                   RouterAddress,
-                                                   simple_http_stream:version(),
-                                                   simple_http_stream_test,
-                                                   []
-                                                  ),
-    Packet = #helium_LongFiRxPacket_pb{crc_check = true,
-                                       timestamp = 15000,
-                                       rssi = -2.0,
-                                       snr = 1.0,
-                                       oui = 1,
-                                       device_id = 1,
-                                       mac = 12,
-                                       spreading = 'SF7',
-                                       payload = <<"some data here">>
-                                      },
-    Resp = #helium_LongFiResp_pb{id=0, kind={rx, Packet}, miner_name= <<"Miner-Name">>},
-    EncodedPacket = helium_longfi_pb:encode_msg(Resp),
-    Stream ! EncodedPacket,
-    ct:pal("packet ~p", [EncodedPacket]),
-    receive
-        {'POST', _, _, Body} ->
-            ct:pal("body ~p", [Body]),
-            ?assertEqual(EncodedPacket, Body);
-        Data ->
-            ct:pal("wrong data ~p", [Data]),
-            ct:fail("wrong data")
-    after 2000 ->
-            ct:fail(timeout)
-    end,
+    [_, {Payer, {_, PayerPrivKey, _}}|_] = ConsensusMembers,
+    SigFun = libp2p_crypto:mk_sig_fun(PayerPrivKey),
+
+    meck:new(blockchain_txn_oui_v1, [no_link, passthrough]),
+    meck:expect(blockchain_txn_oui_v1, is_valid, fun(_, _) -> ok end),
+
+    OUI1 = 1,
+    Addresses0 = [erlang:list_to_binary(libp2p_swarm:p2p_address(Swarm))],
+    OUITxn0 = blockchain_txn_oui_v1:new(Payer, Addresses0, OUI1, 0, 0),
+    SignedOUITxn0 = blockchain_txn_oui_v1:sign(OUITxn0, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
+
+    Block0 = test_utils:create_block(ConsensusMembers, [SignedOUITxn0]),
+    _ = blockchain_gossip_handler:add_block(Swarm, Block0, Chain, self()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+
+    Routing0 = blockchain_ledger_routing_v1:new(OUI1, Payer, Addresses0, 0),
+    ?assertEqual({ok, Routing0}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
+
+    Addresses1 = [<<"/p2p/random">>],
+    OUITxn2 = blockchain_txn_routing_v1:new(OUI1, Payer, Addresses1, 0, 1),
+    SignedOUITxn2 = blockchain_txn_routing_v1:sign(OUITxn2, SigFun),
+    Block1 = test_utils:create_block(ConsensusMembers, [SignedOUITxn2]),
+    _ = blockchain_gossip_handler:add_block(Swarm, Block1, Chain, self()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 3} == blockchain:height(Chain) end),
+
+    Routing1 = blockchain_ledger_routing_v1:new(OUI1, Payer, Addresses1, 1),
+    ?assertEqual({ok, Routing1}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
+
+    OUI2 = 2,
+    Addresses0 = [erlang:list_to_binary(libp2p_swarm:p2p_address(Swarm))],
+    OUITxn3 = blockchain_txn_oui_v1:new(Payer, Addresses0, OUI2, 0, 0),
+    SignedOUITxn3 = blockchain_txn_oui_v1:sign(OUITxn3, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI2, Ledger)),
+
+    Block2 = test_utils:create_block(ConsensusMembers, [SignedOUITxn3]),
+    _ = blockchain_gossip_handler:add_block(Swarm, Block2, Chain, self()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 4} == blockchain:height(Chain) end),
+
+    Routing2 = blockchain_ledger_routing_v1:new(OUI2, Payer, Addresses0, 0),
+    ?assertEqual({ok, Routing2}, blockchain_ledger_v1:find_routing(OUI2, Ledger)),
+
+    ?assertEqual({ok, [2, 1]}, blockchain_ledger_v1:find_ouis(Payer, Ledger)),
+
+    ?assert(meck:validate(blockchain_txn_oui_v1)),
+    meck:unload(blockchain_txn_oui_v1),
     ok.

@@ -98,7 +98,7 @@ init([]) ->
                       base_dir => BaseDir,
                       key => Key
                      },
-    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts])]} }.
+    {ok, { ?FLAGS, [?SUP(router_mqtt_sup, []), ?WORKER(router_p2p, [P2PWorkerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

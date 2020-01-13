@@ -103,11 +103,8 @@ handle_info(_Type, _Msg, State) ->
 %% ------------------------------------------------------------------
 
 -spec send(binary(), string()) -> any().
-send(Data, CragoEndpoint) ->
+send(Data, _CragoEndpoint) ->
     case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{oui=2}=_Packet}=DecodedData}} ->
-            lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
-            send_to_cargo(DecodedData, CragoEndpoint);
         {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}=_Packet}}=DecodedData} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_fun(DID, OUI) end),
@@ -115,11 +112,6 @@ send(Data, CragoEndpoint) ->
         {error, _Reason}=Error ->
             Error
     end.
-
-send_to_cargo(DecodedData, CragoEndpoint) ->
-    Headers = [{<<"Content-Type">>, <<"application/json">>}],
-    Options = [{pool, ?HTTP_POOL}, async],
-    hackney:post(CragoEndpoint, Headers, packet_to_json(DecodedData), Options).
 
 -spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
 decode_data(Data) ->
@@ -132,9 +124,16 @@ decode_data(Data) ->
             {error, decoding}
     end.
 
+make_send_fun(DID, OUI=2) ->
+    Endpoint = application:get_env(router, staging_console_endpoint, undefined),
+    JWT = get_token(Endpoint, staging),
+    make_send_fun(OUI, DID, Endpoint, JWT);
 make_send_fun(DID, OUI) ->
     Endpoint = application:get_env(router, console_endpoint, undefined),
-    JWT = get_token(),
+    JWT = get_token(Endpoint, production),
+    make_send_fun(OUI, DID, Endpoint, JWT).
+
+make_send_fun(OUI, DID, Endpoint, JWT) ->
     case hackney:get(<<Endpoint/binary, "/api/router/devices/", (list_to_binary(integer_to_list(DID)))/binary, "?oui=", (list_to_binary(integer_to_list(OUI)))/binary>>,
                      [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
@@ -194,6 +193,40 @@ make_send_fun(DID, OUI) ->
                                                                 Other ->
                                                                     lager:warning("fingerprint mismatch for packet ~p from ~p : expected ~p got ~p", [Decoded, {OUI, DID}, Other, FP])
                                                             end
+                                                    end;
+                                               (Channel = #{<<"type">> := <<"mqtt">>}) ->
+                                                    URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
+                                                    Topic = kvc:path([<<"credentials">>, <<"topic">>], Channel),
+                                                    ChannelID = kvc:path([<<"name">>], Channel),
+                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
+                                                            case check_fingerprint(Packet, Key) of
+                                                                ok ->
+                                                                    Result = case router_mqtt_sup:get_connection(OUI bsl 4 + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
+                                                                                 {ok, Pid} ->
+                                                                                     case router_mqtt_worker:send(Pid, packet_to_json(Decoded)) of
+                                                                                         {ok, PacketID} ->
+                                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                               status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))};
+                                                                                         ok ->
+                                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                               status => success, description => <<"ok">> };
+                                                                                         {error, Reason} ->
+                                                                                             #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                               delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                               status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
+                                                                                     end;
+                                                                                 _ ->
+                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                       delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                                                                       status => failure, description => <<"invalid channel configuration">>}
+                                                                             end,
+                                                                    lager:info("Result ~p", [Result]),
+                                                                    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body]);
+                                                                Other ->
+                                                                    lager:warning("fingerprint mismatch for packet ~p from ~p : expected ~p got ~p", [Decoded, {OUI, DID}, Other, FP])
+                                                            end
                                                     end
                                             end, Channels)
                           end,
@@ -207,10 +240,14 @@ make_send_fun(DID, OUI) ->
             end
     end.
 
--spec get_token() -> binary().
-get_token() ->
-    Endpoint = application:get_env(router, console_endpoint, undefined),
-    Secret = application:get_env(router, console_secret, undefined),
+-spec get_token(binary(), atom()) -> binary().
+get_token(Endpoint, Env) ->
+    Secret = case Env of
+                 staging ->
+                     application:get_env(router, staging_console_secret, undefined);
+                 _ ->
+                     application:get_env(router, console_secret, undefined)
+             end,
     e2qc:cache(
       console_cache,
       jwt,

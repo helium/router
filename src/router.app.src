@@ -20,7 +20,8 @@
     e2qc,
     kvc,
     jsx,
-    longfi
+    longfi,
+    emqtt
    ]},
   {env,[]},
   {modules, []},

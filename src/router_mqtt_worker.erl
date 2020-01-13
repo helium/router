@@ -48,12 +48,12 @@ handle_info(_Msg, State) ->
 terminate(_Reason, State) ->
     emqtt:disconnect(State#state.connection).
 
-connect(ConnectionString, Mac, Name) ->
+connect(ConnectionString, Mac, Name) when is_binary(ConnectionString) ->
     case http_uri:parse(ConnectionString, [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}]) of
         {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when Scheme == mqtt orelse Scheme == mqtts ->
-            [Username, Password] = string:tokens(UserInfo, ":"),
+            [Username, Password] = binary:split(UserInfo, <<":">>),
             {ok, C} = emqtt:start_link([{host, Host}, {port, Port}, {client_id, list_to_binary(io_lib:format("~.16b", [Mac]))},
-                                        {username, list_to_binary(Username)}, {password, list_to_binary(Password)}, {logger, {lager, debug}},
+                                        {username, Username}, {password, Password}, {logger, {lager, debug}},
                                                 %manual_puback,
                                         {clean_sess, false},
                                         {keepalive, 30}

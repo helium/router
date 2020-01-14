@@ -52,7 +52,7 @@ connect(ConnectionString, Mac, Name) when is_binary(ConnectionString) ->
     case http_uri:parse(ConnectionString, [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}]) of
         {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when Scheme == mqtt orelse Scheme == mqtts ->
             [Username, Password] = binary:split(UserInfo, <<":">>),
-            {ok, C} = emqtt:start_link([{host, Host}, {port, Port}, {client_id, list_to_binary(io_lib:format("~.16b", [Mac]))},
+            {ok, C} = emqtt:start_link([{host, binary_to_list(Host)}, {port, Port}, {client_id, list_to_binary(io_lib:format("~.16b", [Mac]))},
                                         {username, Username}, {password, Password}, {logger, {lager, debug}},
                                                 %manual_puback,
                                         {clean_sess, false},

@@ -21,8 +21,8 @@ init([MAC, ChannelName, Args]) ->
     ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
     case connect(Endpoint, MAC, ChannelName) of
         {ok, Client} ->
-            PubTopic = list_to_binary(io_lib:format("~shelium/~.16b/rx", [Topic, MAC])),
-            SubTopic = list_to_binary(io_lib:format("~shelium/~.16b/tx/#", [Topic, MAC])),
+            PubTopic = list_to_binary(io_lib:format("~shelium/~16.16.0b/rx", [Topic, MAC])),
+            SubTopic = list_to_binary(io_lib:format("~shelium/~16.16.0b/tx/#", [Topic, MAC])),
             emqtt:subscribe(Client, {SubTopic, 1}),
             {ok, #state{connection=Client, pubtopic=PubTopic}};
         error ->

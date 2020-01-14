@@ -201,7 +201,7 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
                                                     fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                                             case check_fingerprint(Packet, Key) of
                                                                 ok ->
-                                                                    Result = case router_mqtt_sup:get_connection(OUI bsl 4 + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
+                                                                    Result = case router_mqtt_sup:get_connection((OUI bsl 32) + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
                                                                                  {ok, Pid} ->
                                                                                      case router_mqtt_worker:send(Pid, packet_to_json(Decoded)) of
                                                                                          {ok, PacketID} ->

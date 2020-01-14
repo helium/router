@@ -177,13 +177,13 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                        status => failure, description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary, " Body ", ResponseBody/binary>>};
                                                                                  {error, Reason} ->
-                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                                                                              catch
                                                                                  What:Why:Stacktrace ->
                                                                                      lager:info("Failed to post to channel ~p ~p ~p", [What, Why, Stacktrace]),
-                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                        status => failure, description => <<"invalid channel configuration">>}
 
@@ -213,12 +213,12 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
                                                                                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                                status => success, description => <<"ok">> };
                                                                                          {error, Reason} ->
-                                                                                             #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                             #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                                status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                                                                                      end;
                                                                                  _ ->
-                                                                                     #{channel_id => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                                                                     #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                                                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                                                                        status => failure, description => <<"invalid channel configuration">>}
                                                                              end,

@@ -19,7 +19,12 @@ get_connection(MAC, ChannelName, Args) ->
         [] ->
             supervisor:start_child(?MODULE, [MAC, ChannelName, Args]);
         [{{MAC, ChannelName}, Pid}] ->
-            {ok, Pid}
+            case is_process_alive(Pid) of
+                true ->
+                    {ok, Pid};
+                false ->
+                    supervisor:start_child(?MODULE, [MAC, ChannelName, Args])
+            end
     end.
 
 %%====================================================================

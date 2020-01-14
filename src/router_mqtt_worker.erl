@@ -18,6 +18,7 @@ send(Pid, Payload) ->
 
 init([MAC, ChannelName, Args]) ->
     #{endpoint := Endpoint, topic := Topic} = Args,
+    ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
     case connect(Endpoint, MAC, ChannelName) of
         {ok, Client} ->
             PubTopic = list_to_binary(io_lib:format("~shelium/~.16b/rx", [Topic, MAC])),

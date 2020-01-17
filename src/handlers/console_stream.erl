@@ -495,7 +495,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
                 _N ->
                     AppSKey = Device#device.app_s_key,
                     Data = reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~s~n", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, parse_fopts(FOpts), Data]),
+                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p~n", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, parse_fopts(FOpts), Data]),
                     {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=parse_fopts(Data), fport=FPort, data=Data, device=Device}}
             end
     end;

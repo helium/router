@@ -70,6 +70,7 @@ start_link() ->
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
+    ets:new(router_devices, [public, named_table, set, {keypos, 3}]),
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 

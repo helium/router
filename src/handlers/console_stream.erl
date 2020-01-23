@@ -9,7 +9,7 @@
 -behavior(libp2p_framed_stream).
 
 -include("router.hrl").
--include_lib("helium_proto/src/pb/helium_longfi_pb.hrl").
+-include_lib("helium_proto/src/pb/longfi_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -145,7 +145,7 @@ handle_info(_Type, _Msg, State) ->
 -spec send(binary(), string()) -> any().
 send(Data, _CragoEndpoint) ->
     case decode_data(Data) of
-        {ok, #helium_LongFiResp_pb{id=_ID, miner_name=_MinerName, kind={_, #helium_LongFiRxPacket_pb{device_id=DID, oui=OUI}=_Packet}}=DecodedData, Reply} ->
+        {ok, #'LongFiResp_pb'{id=_ID, miner_name=_MinerName, kind={_, #'LongFiRxPacket_pb'{device_id=DID, oui=OUI}=_Packet}}=DecodedData, Reply} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_fun(DID, OUI) end),
             R = SendFun(Data, DecodedData),
@@ -161,9 +161,9 @@ send(Data, _CragoEndpoint) ->
             Error
     end.
 
--spec decode_data(binary()) -> {ok, #helium_LongFiResp_pb{}} | {error, any()}.
+-spec decode_data(binary()) -> {ok, #'LongFiResp_pb'{}} | {error, any()}.
 decode_data(Data) ->
-    try helium_longfi_pb:decode_msg(Data, helium_LongFiResp_pb) of
+    try longfi_pb:decode_msg(Data, 'LongFiResp_pb') of
         Packet ->
             {ok, Packet, undefined}
     catch
@@ -182,18 +182,18 @@ decode_data(Data) ->
                             {reply, BinJSON};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-                            Res = #helium_LongFiResp_pb{miner_name= <<"fakey-fake-fakerson">>,
-                                                        kind={rx,
-                                                              #helium_LongFiRxPacket_pb{
-                                                                 rssi=proplists:get_value(<<"rssi">>, JSON),
-                                                                 snr=proplists:get_value(<<"lsnr">>, JSON),
-                                                                 oui=OUI,
-                                                                 device_id=DID,
-                                                                 sequence=Frame#frame.fcnt,
-                                                                 spreading=proplists:get_value(<<"datr">>, JSON),
-                                                                 payload=Frame#frame.data, fingerprint=yolo,
+                            Res = #'LongFiResp_pb'{miner_name= <<"fakey-fake-fakerson">>,
+                                                   kind={rx,
+                                                         #'LongFiRxPacket_pb'{
+                                                            rssi=proplists:get_value(<<"rssi">>, JSON),
+                                                            snr=proplists:get_value(<<"lsnr">>, JSON),
+                                                            oui=OUI,
+                                                            device_id=DID,
+                                                            sequence=Frame#frame.fcnt,
+                                                            spreading=proplists:get_value(<<"datr">>, JSON),
+                                                            payload=Frame#frame.data, fingerprint=yolo,
                                                 %tag_bits=TagBits,
-                                                                 timestamp=proplists:get_value(<<"tmst">>, JSON)}}},
+                                                            timestamp=proplists:get_value(<<"tmst">>, JSON)}}},
                             case Frame#frame.mtype == ?CONFIRMED_UP orelse length(Device#device.queue) > 0 of
                                 true ->
                                     %% we have some data to send, or an ACK to make, or both
@@ -271,7 +271,7 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
             Key = base64:decode(kvc:path([<<"key">>], JSON)),
             ChannelFuns = case kvc:path([<<"channels">>], JSON) of
                               [] ->
-                                  [fun(_Input, Decoded=#helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
+                                  [fun(_Input, Decoded=#'LongFiResp_pb'{miner_name=MinerName, kind={_, Packet=#'LongFiRxPacket_pb'{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                            spawn(fun() ->
                                                          case check_fingerprint(Packet, Key) of
                                                              ok ->
@@ -293,7 +293,7 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
                                                     Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
                                                     lager:info("Method ~p", [Method]),
                                                     ChannelID = kvc:path([<<"name">>], Channel),
-                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
+                                                    fun(_Encoded, Decoded = #'LongFiResp_pb'{miner_name=MinerName, kind={_, Packet=#'LongFiRxPacket_pb'{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                                             case check_fingerprint(Packet, Key) of
                                                                 ok ->
                                                                     Result = try hackney:request(Method, URL, maps:to_list(Headers), packet_to_json(Decoded), [with_body]) of
@@ -327,7 +327,7 @@ make_send_fun(OUI, DID, Endpoint, JWT) ->
                                                     URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
                                                     Topic = kvc:path([<<"credentials">>, <<"topic">>], Channel),
                                                     ChannelID = kvc:path([<<"name">>], Channel),
-                                                    fun(_Encoded, Decoded = #helium_LongFiResp_pb{miner_name=MinerName, kind={_, Packet=#helium_LongFiRxPacket_pb{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
+                                                    fun(_Encoded, Decoded = #'LongFiResp_pb'{miner_name=MinerName, kind={_, Packet=#'LongFiRxPacket_pb'{rssi=RSSI, snr=SNR, payload=Payload, fingerprint=FP, timestamp=Timestamp}}}) ->
                                                             case check_fingerprint(Packet, Key) of
                                                                 ok ->
                                                                     Result = case router_mqtt_sup:get_connection((OUI bsl 32) + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
@@ -391,16 +391,16 @@ get_token(Endpoint, Env) ->
      ).
 
 
-packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
-                                                                 #helium_LongFiRxPacket_pb{rssi=RSSI, payload=Payload, timestamp=_Timestamp,
-                                                                                           oui=OUI, device_id=DeviceID, fingerprint=Fingerprint,
-                                                                                           sequence=Sequence, spreading=Spreading,
-                                                                                           snr=SNR
-                                                                                          }}}) ->
+packet_to_json(#'LongFiResp_pb'{miner_name=MinerName, kind={_,
+                                                            #'LongFiRxPacket_pb'{rssi=RSSI, payload=Payload, timestamp=_Timestamp,
+                                                                                 oui=OUI, device_id=DeviceID, fingerprint=_Fingerprint,
+                                                                                 sequence=Sequence, spreading=Spreading,
+                                                                                 snr=SNR
+                                                                                }}}) ->
     jsx:encode(#{timestamp => erlang:system_time(seconds),
                  oui => OUI,
                  device_id => DeviceID,
-                 fingerprint => Fingerprint,
+                                                %fingerprint => Fingerprint,
                  sequence => Sequence,
                  spreading => Spreading,
                  payload => base64:encode(Payload),
@@ -408,9 +408,9 @@ packet_to_json(#helium_LongFiResp_pb{miner_name=MinerName, kind={_,
                  rssi => RSSI,
                  snr => SNR}).
 
-check_fingerprint(#helium_LongFiRxPacket_pb{fingerprint=yolo}, _Key) ->
+check_fingerprint(#'LongFiRxPacket_pb'{fingerprint=yolo}, _Key) ->
     ok;
-check_fingerprint(DecodedPacket = #helium_LongFiRxPacket_pb{fingerprint=FP}, Key) ->
+check_fingerprint(DecodedPacket = #'LongFiRxPacket_pb'{fingerprint=FP}, Key) ->
     case longfi:get_fingerprint(DecodedPacket, Key) of
         FP ->
             ok;
@@ -504,8 +504,15 @@ handle_lorawan_frame(Pkt) ->
     error.
 
 get_app_key(DID, OUI) ->
-    Endpoint = application:get_env(router, staging_console_endpoint, undefined),
-    JWT = get_token(Endpoint, staging),
+    {Endpoint, JWT} = case OUI of
+                          1 ->
+                              E = application:get_env(router, console_endpoint, undefined),
+                              {E, get_token(E, production)};
+                          2 ->
+                              E = application:get_env(router, staging_console_endpoint, undefined),
+                              {E, get_token(E, staging)}
+                      end,
+
     case hackney:get(<<Endpoint/binary, "/api/router/devices/", (list_to_binary(integer_to_list(DID)))/binary, "?oui=", (list_to_binary(integer_to_list(OUI)))/binary>>,
                      [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->

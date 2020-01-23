@@ -60,7 +60,7 @@
  {<<"libp2p_crypto">>,{pkg,<<"libp2p_crypto">>,<<"1.0.1">>},1},
  {<<"longfi">>,
   {git,"https://github.com/helium/longfi-erlang",
-       {ref,"f96138df709cca8bfd9ab44cbaeed9b5498ec0ea"}},
+       {ref,"391ef1eaaeba1f1310ed2d410a34dab9a63d9b1a"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},1},
  {<<"mimerl">>,{pkg,<<"mimerl">>,<<"1.2.0">>},1},

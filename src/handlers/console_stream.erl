@@ -154,10 +154,10 @@ send(Data, _CragoEndpoint) ->
                 undefined ->
                     {ok, R};
                 _ ->
-                    {reply, blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{msg = {response, #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Reply})}
+                    {reply, blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{msg = {response, #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Reply}}})}
             end;
         {reply, Reply} ->
-            {reply, blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{msg = {response, #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Reply})}
+            {reply, blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{msg = {response, #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Reply}}})};
         {error, _Reason}=Error ->
             Error;
         _ ->

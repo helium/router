@@ -10,6 +10,7 @@
 
 -include("router.hrl").
 -include_lib("helium_proto/src/pb/longfi_pb.hrl").
+-include_lib("helium_proto/src/pb/blockchain_state_channel_v1_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -158,42 +159,64 @@ send(Data, _CragoEndpoint) ->
         {reply, Bin} ->
             {reply, Bin};
         {error, _Reason}=Error ->
-            Error
+            Error;
+        _ ->
+            {error, bleh}
     end.
 
 -spec decode_data(binary()) -> {ok, #'LongFiResp_pb'{}} | {error, any()}.
 decode_data(Data) ->
     try longfi_pb:decode_msg(Data, 'LongFiResp_pb') of
+        #'LongFiResp_pb'{kind={parse_err, _}} ->
+            parse_state_channel_msg(Data);
         Packet ->
             {ok, Packet, undefined}
     catch
-        E:R ->
-            try jsx:decode(Data) of
-                JSON ->
-                    PacketData = base64:decode(proplists:get_value(<<"data">>, JSON)),
-                    case handle_lorawan_frame(PacketData) of
+        _E:_R ->
+            parse_state_channel_msg(Data)
+    end.
+
+parse_state_channel_msg(Data) ->
+    case blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+        #blockchain_state_channel_message_v1_pb{msg = {packet, SignedPBPacket}} ->
+            #blockchain_state_channel_packet_v1_pb{
+               packet = #helium_packet_pb{
+                           oui = OUI,
+                           type = Type,
+                           payload = Payload,
+                           timestamp = Time,
+                           signal_strength = RSSI,
+                           frequency = Freq,
+                           snr = SNR,
+                           datarate = DataRate
+                          },
+               hotspot = PubkeyBin} = SignedPBPacket,
+            case Type of
+                lora ->
+                    case handle_lorawan_frame(Payload) of
                         error ->
                             {error, decoding};
                         {join, Reply} ->
-                            RW = lorawan_mac_region:join1_window(<<"US902-928">>, maps:from_list(JSON)),
-                            TX = maps:merge(#{ipol => true, imme => false, rfch => 0, modu => <<"LORA">>, size => byte_size(Reply), data => base64:encode(Reply)}, RW),
-                            ReplyJSON = [{<<"txpk">>, TX}],
-                            BinJSON = jsx:encode(ReplyJSON),
-                            {reply, BinJSON};
+                            #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:join1_window(<<"US902-928">>,
+                                                                                                                    #{<<"tmst">> => Time, <<"freq">> => Freq,
+                                                                                                                      <<"datr">> => DataRate, <<"codr">> => <<"lol">>}),
+                            TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
+                            {reply, TxPacket};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-                            Res = #'LongFiResp_pb'{miner_name= <<"fakey-fake-fakerson">>,
+                            {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
+                            Res = #'LongFiResp_pb'{miner_name=AName,
                                                    kind={rx,
                                                          #'LongFiRxPacket_pb'{
-                                                            rssi=proplists:get_value(<<"rssi">>, JSON),
-                                                            snr=proplists:get_value(<<"lsnr">>, JSON),
+                                                            rssi=RSSI,
+                                                            snr=SNR,
                                                             oui=OUI,
                                                             device_id=DID,
                                                             sequence=Frame#frame.fcnt,
-                                                            spreading=proplists:get_value(<<"datr">>, JSON),
+                                                            spreading=DataRate,
                                                             payload=Frame#frame.data, fingerprint=yolo,
                                                 %tag_bits=TagBits,
-                                                            timestamp=proplists:get_value(<<"tmst">>, JSON)}}},
+                                                            timestamp=Time}}},
                             case Frame#frame.mtype == ?CONFIRMED_UP orelse length(Device#device.queue) > 0 of
                                 true ->
                                     %% we have some data to send, or an ACK to make, or both
@@ -217,18 +240,24 @@ decode_data(Data) ->
                                                     ?UNCONFIRMED_DOWN
                                             end,
                                     ets:insert(router_devices, Device#device{queue=NewQueue}),
-                                    {ok, Res, make_reply(JSON, #frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=Payload}, Device)};
+                                    Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=Payload}, Device),
+                                    #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
+                                                                                                                          #{<<"tmst">> => Time, <<"freq">> => Freq,
+                                                                                                                            <<"datr">> => DataRate, <<"codr">> => <<"lol">>}),
+                                    TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
+
+                                    {ok, Res, TxPacket};
                                 false ->
                                     {ok, Res, undefined}
                             end
                     end
-            catch E2:R2 ->
-                    lager:error("got error trying to decode  ~p - ~p", [{E, R}, {E2, R2}]),
-                    {error, decoding}
+                    %% TODO longfi
             end
     end.
 
-make_reply(Packet, Frame, Device) ->
+
+
+make_reply(Frame, Device) ->
     {FOpts, FOptsLen} = encode_fopts(Frame#frame.fopts),
     PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (reverse(Frame#frame.devaddr))/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1, (Frame#frame.fpending):1, FOptsLen:4, (Frame#frame.fcnt):16/integer-unsigned-little, FOpts:FOptsLen/binary>>,
     PktBody = case Frame#frame.data of
@@ -246,11 +275,7 @@ make_reply(Packet, Frame, Device) ->
     lager:info("PktBody ~p", [PktBody]),
     Msg = <<PktHdr/binary, PktBody/binary>>,
     MIC = crypto:cmac(aes_cbc128, Device#device.nwk_s_key, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
-    Pkt = <<Msg/binary, MIC/binary>>,
-    R = lorawan_mac_region:rx1_window(<<"US902-928">>, Device#device.offset, maps:from_list(Packet)),
-    TX = maps:merge(#{ipol => true, imme => false, rfch => 0, modu => <<"LORA">>, size => byte_size(Pkt), data => base64:encode(Pkt)}, R),
-    JSON = [{<<"txpk">>, TX}],
-    jsx:encode(JSON).
+    <<Msg/binary, MIC/binary>>.
 
 
 make_send_fun(DID, OUI=2) ->

@@ -21,7 +21,8 @@
     kvc,
     jsx,
     longfi,
-    emqtt
+    emqtt,
+    erl_angry_purple_tiger
    ]},
   {env,[]},
   {modules, []},

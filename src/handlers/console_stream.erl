@@ -244,6 +244,7 @@ parse_state_channel_msg(Data) ->
                                     ets:insert(router_devices, Device#device{queue=NewQueue}),
                                     Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=ReplyPayload}, Device),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
+                                                                                                                          Device#device.offset,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                                             <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
                                     TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},

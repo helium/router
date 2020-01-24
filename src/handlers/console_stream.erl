@@ -204,6 +204,7 @@ parse_state_channel_msg(Data) ->
                             TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                             {reply, TxPacket};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
+                            lager:info("OUI ~p AppEUI ~p", [OUI, AppEUI]),
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
                             Res = #'LongFiResp_pb'{miner_name=AName,
                                                    kind={rx,
@@ -503,7 +504,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
             lager:info("packet from unknown device ~s received by ~s", [binary_to_hex(DevAddr), AName]),
             error;
         #device{fcnt=FCnt, app_eui=AppEUI} ->
-            lager:info("discarding duplicate packet from ~p received by ~s", [binary_to_hex(AppEUI), AName]),
+            lager:info("discarding duplicate packet ~b from ~p received by ~s", [FCnt, binary_to_hex(AppEUI), AName]),
             error;
         Device0 ->
             NwkSKey = Device0#device.nwk_s_key,

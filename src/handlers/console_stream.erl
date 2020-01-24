@@ -199,7 +199,7 @@ parse_state_channel_msg(Data) ->
                         {join, Reply} ->
                             #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:join1_window(<<"US902-928">>,
                                                                                                                     #{<<"tmst">> => Time, <<"freq">> => Freq,
-                                                                                                                      <<"datr">> => DataRate, <<"codr">> => <<"lol">>}),
+                                                                                                                      <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
                             TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
                             {reply, TxPacket};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
@@ -243,7 +243,7 @@ parse_state_channel_msg(Data) ->
                                     Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=Payload}, Device),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
-                                                                                                                            <<"datr">> => DataRate, <<"codr">> => <<"lol">>}),
+                                                                                                                            <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
                                     TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
 
                                     {ok, Res, TxPacket};

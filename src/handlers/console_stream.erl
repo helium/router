@@ -418,7 +418,7 @@ get_token(Endpoint, Env) ->
 
 packet_to_json(#'LongFiResp_pb'{miner_name=MinerName, kind={_,
                                                             #'LongFiRxPacket_pb'{rssi=RSSI, payload=Payload, timestamp=_Timestamp,
-                                                                                 oui=OUI, device_id=DeviceID, fingerprint=_Fingerprint,
+                                                                                 oui=OUI, device_id=DeviceID, fingerprint=Fingerprint,
                                                                                  sequence=Sequence, spreading=Spreading,
                                                                                  snr=SNR
                                                                                 }}}) ->

@@ -227,12 +227,13 @@ parse_state_channel_msg(Data) ->
                                                   1;
                                               false -> 0
                                           end,
-                                    {{Confirmed, Port, Payload}, NewQueue} = case Device#device.queue of
-                                                                                 [] -> {{false, undefined, <<>>}, []};
-                                                                                 [H|T] ->
-                                                                                     lager:info("replying with ~p", [H]),
-                                                                                     {H, T}
-                                                                             end,
+                                    {{Confirmed, Port, ReplyPayload}, NewQueue} = case Device#device.queue of
+                                                                                      [] ->
+                                                                                          {{false, undefined, <<>>}, []};
+                                                                                      [H|T] ->
+                                                                                          lager:info("replying with ~p", [H]),
+                                                                                          {H, T}
+                                                                                  end,
                                     MType = case Confirmed of
                                                 true ->
                                                     lager:info("Replying with confirmed send"),
@@ -241,7 +242,7 @@ parse_state_channel_msg(Data) ->
                                                     ?UNCONFIRMED_DOWN
                                             end,
                                     ets:insert(router_devices, Device#device{queue=NewQueue}),
-                                    Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=Payload}, Device),
+                                    Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=ReplyPayload}, Device),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                                             <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),

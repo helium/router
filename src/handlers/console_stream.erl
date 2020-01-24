@@ -191,9 +191,10 @@ parse_state_channel_msg(Data) ->
                            datarate = DataRate
                           },
                hotspot = PubkeyBin} = SignedPBPacket,
+            {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
             case Type of
                 lorawan ->
-                    case handle_lorawan_frame(Payload) of
+                    case handle_lorawan_frame(Payload, AName) of
                         error ->
                             {error, decoding};
                         {join, Reply} ->
@@ -204,7 +205,6 @@ parse_state_channel_msg(Data) ->
                             {reply, TxPacket};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-                            {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
                             Res = #'LongFiResp_pb'{miner_name=AName,
                                                    kind={rx,
                                                          #'LongFiRxPacket_pb'{
@@ -443,7 +443,7 @@ check_fingerprint(DecodedPacket = #'LongFiRxPacket_pb'{fingerprint=FP}, Key) ->
             Other
     end.
 
-handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary, MIC:4/binary>> = Pkt) when MType == 0 ->
+handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary, MIC:4/binary>> = Pkt, AName) when MType == 0 ->
     Msg = binary:part(Pkt, {0, byte_size(Pkt) -4}),
     {AppEUI, DevEUI} = {reverse(AppEUI0), reverse(DevEUI0)},
                                                 %AppKey = <<16#3B,16#C0,16#FB,16#09,16#32,16#4F,16#0B,16#9F,16#50,16#9E,16#5F,16#11,16#E4,16#CC,16#5B,16#84>>,
@@ -453,7 +453,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
     NetID = <<"He2">>,
     case AppKey of
         undefined ->
-            lager:info("no key for ~p ~p", [binary_to_hex(DevEUI), binary_to_hex(AppEUI)]),
+            lager:info("no key for ~p ~p received by ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), AName]),
             error;
                                                 %_ when DevNonce =< PrevDevNonce ->
                                                 %lager:info("duplicate join request, ignoring"),
@@ -461,7 +461,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
         _ ->
             case ets:lookup(router_devices, AppEUI) of
                 [#device{join_nonce=OldNonce}] when DevNonce == OldNonce ->
-                    lager:info("Device ~p ~p tried to join with stale nonce ~p", [OUI, DID, DevNonce]),
+                    lager:info("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
                     error;
                 _ ->
                     case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
@@ -481,15 +481,15 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                             ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>,
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
-                            lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), DevNonce]),
+                            lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), DevNonce, AName]),
                             {join, <<ReplyHdr/binary, EncryptedReply/binary>>};
                         _ ->
-                            lager:info("Device ~s with AppEUI ~s tried to join but had a bad Message Intregity Code~n", [binary_to_hex(DevEUI), binary_to_hex(AppEUI)]),
+                            lager:info("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), AName]),
                             error
                     end
             end
     end;
-handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Pkt) ->
+handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Pkt, AName) ->
     Msg = binary:part(Pkt, {0, byte_size(Pkt) -4}),
     Body = binary:part(PayloadAndMIC, {0, byte_size(PayloadAndMIC) -4}),
     MIC = binary:part(PayloadAndMIC, {byte_size(PayloadAndMIC), -4}),
@@ -500,10 +500,10 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
     DevAddr = reverse(DevAddr0),
     case get_device_by_mic(get_devices(), <<(b0(MType band 1, DevAddr, FCnt, byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
-            lager:info("unknown device ~s", [binary_to_hex(DevAddr)]),
+            lager:info("packet from unknown device ~s received by ~s", [binary_to_hex(DevAddr), AName]),
             error;
         #device{fcnt=FCnt, app_eui=AppEUI} ->
-            lager:info("discarding duplicate packet from ~p", [binary_to_hex(AppEUI)]),
+            lager:info("discarding duplicate packet from ~p received by ~s", [binary_to_hex(AppEUI), AName]),
             error;
         Device0 ->
             NwkSKey = Device0#device.nwk_s_key,
@@ -512,20 +512,20 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
             case FPort of
                 0 when FOptsLen == 0 ->
                     Data = reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with fopts ~p~n", [mtype(MType), binary_to_hex(Device#device.app_eui), parse_fopts(Data)]),
+                    lager:info("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), parse_fopts(Data), AName]),
                     {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=parse_fopts(Data), fport=0, data = <<>>, device=Device}};
                 0 ->
-                    lager:info("Bad ~s packet from ~s -- double fopts~n", [mtype(MType), binary_to_hex(Device#device.app_eui)]),
+                    lager:info("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), binary_to_hex(Device#device.app_eui), AName]),
                     error;
                 _N ->
                     AppSKey = Device#device.app_s_key,
                     Data = reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p~n", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, parse_fopts(FOpts), Data]),
+                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, parse_fopts(FOpts), Data, AName]),
                     {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=parse_fopts(Data), fport=FPort, data=Data, device=Device}}
             end
     end;
-handle_lorawan_frame(Pkt) ->
-    lager:info("Bad packet ~s~n", [binary_to_hex(Pkt)]),
+handle_lorawan_frame(Pkt, AName) ->
+    lager:info("Bad packet ~s received by ~s", [binary_to_hex(Pkt), AName]),
     error.
 
 get_app_key(DID, OUI) ->

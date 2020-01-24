@@ -200,7 +200,7 @@ parse_state_channel_msg(Data) ->
                             #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:join1_window(<<"US902-928">>,
                                                                                                                     #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                                       <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
-                            TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
+                            TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                             {reply, TxPacket};
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
@@ -244,7 +244,7 @@ parse_state_channel_msg(Data) ->
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                                             <<"datr">> => list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
-                                    TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=28, frequency=TxFreq},
+                                    TxPacket = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
 
                                     {ok, Res, TxPacket};
                                 false ->

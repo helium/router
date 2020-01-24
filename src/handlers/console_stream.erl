@@ -206,7 +206,7 @@ parse_state_channel_msg(Data) ->
                         {ok, #frame{device=#device{app_eui=AppEUI}=Device} = Frame} ->
                             lager:info("OUI ~p AppEUI ~p", [OUI, AppEUI]),
                             <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-                            Res = #'LongFiResp_pb'{miner_name=AName,
+                            Res = #'LongFiResp_pb'{miner_name=list_to_binary(AName),
                                                    kind={rx,
                                                          #'LongFiRxPacket_pb'{
                                                             rssi=RSSI,
@@ -214,7 +214,7 @@ parse_state_channel_msg(Data) ->
                                                             oui=OUI,
                                                             device_id=DID,
                                                             sequence=Frame#frame.fcnt,
-                                                            spreading=DataRate,
+                                                            spreading=list_to_binary(DataRate),
                                                             payload=Frame#frame.data, fingerprint=yolo,
                                                 %tag_bits=TagBits,
                                                             timestamp=Time}}},

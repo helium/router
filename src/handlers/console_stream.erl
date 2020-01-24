@@ -192,7 +192,7 @@ parse_state_channel_msg(Data) ->
                           },
                hotspot = PubkeyBin} = SignedPBPacket,
             case Type of
-                lora ->
+                lorawan ->
                     case handle_lorawan_frame(Payload) of
                         error ->
                             {error, decoding};

@@ -251,10 +251,10 @@ parse_state_channel_msg(Data) ->
                                                     []
                                             end,
                                     ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, Frame#frame.fopts) of
-                                                            {link_adr_ans, 1, 1, 1} ->
+                                                            {link_adr_ans, 1, 1, 1} when Device#device.channel_correction == false ->
                                                                 true;
                                                             _ ->
-                                                                false
+                                                                Device#device.channel_correction
                                                         end,
                                     Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fopts=Fopts, fport=Port, ack=ACK, data=ReplyPayload}, Device),
                                     ets:insert(router_devices, Device#device{queue=NewQueue, channel_correction=ChannelsCorrected, fcntdown=(Device#device.fcntdown + 1)}),

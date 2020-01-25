@@ -74,6 +74,7 @@
                  fcnt,
                  fcntdown=0,
                  offset=0,
+                 channel_correction=false,
                  queue=[]
                 }).
 
@@ -241,8 +242,16 @@ parse_state_channel_msg(Data) ->
                                                 false ->
                                                     ?UNCONFIRMED_DOWN
                                             end,
-                                    ets:insert(router_devices, Device#device{queue=NewQueue}),
-                                    Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fport=Port, ack=ACK, data=ReplyPayload}, Device),
+                                    Fopts = case Device#device.channel_correction of
+                                                false ->
+                                                    %% we want to enable only channels 48-55
+                                                    %% but we have to also, at the same time change the data rate and the transmit power
+                                                    lorawan_mac_region:set_channels(<<"US902-28">>, {30, list_to_binary(DataRate), [{48, 55}]}, []);
+                                                true ->
+                                                    []
+                                            end,
+                                    Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fopts=Fopts, fport=Port, ack=ACK, data=ReplyPayload}, Device),
+                                    ets:insert(router_devices, Device#device{queue=NewQueue, fcntdown=(Device#device.fcntdown + 1)}),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
                                                                                                                           Device#device.offset,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
@@ -261,7 +270,7 @@ parse_state_channel_msg(Data) ->
 
 
 make_reply(Frame, Device) ->
-    {FOpts, FOptsLen} = encode_fopts(Frame#frame.fopts),
+    {FOpts, FOptsLen} = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
     PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (reverse(Frame#frame.devaddr))/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1, (Frame#frame.fpending):1, FOptsLen:4, (Frame#frame.fcnt):16/integer-unsigned-little, FOpts:FOptsLen/binary>>,
     PktBody = case Frame#frame.data of
                   <<>> ->
@@ -479,9 +488,16 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                             ets:insert(router_devices, Device),
                             RxDelay = 0, % 1 second, section 5.7
                             DLSettings = 0, % section 5.4
+
+                            %% optimistically set the CFList field to the 1.1 compliant version that limits the active channels to the ones we use
+                            %% See section 2.5.4 in the 1.1 lorawan params document
+                            %%         Channels 0-15 disabled        Channels 16-31 disabled       Channels 32-47 disabled       Channels 48-55 enabled, 56-63 disabled   Channels 64-71 disabled
+                            CFList = <<0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 16#00ff:16/integer-unsigned-little,      0:16/integer-unsigned-little,
+                                       %%         RFU                           RFU                           CFListType - 0x01
+                                       0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 1:8/integer-unsigned-little>>,
                             lager:info("~p ~p ~p ~p ~p", [AppNonce, NetID, DevAddr, DLSettings, RxDelay]),
                             ReplyHdr = <<2#001:3, 0:3, 0:2>>,
-                            ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>,
+                            ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, CFList/binary>>,
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                             lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), DevNonce, AName]),
@@ -515,16 +531,16 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
             case FPort of
                 0 when FOptsLen == 0 ->
                     Data = reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), parse_fopts(Data), AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=parse_fopts(Data), fport=0, data = <<>>, device=Device}};
+                    lager:info("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
                 0 ->
                     lager:info("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), binary_to_hex(Device#device.app_eui), AName]),
                     error;
                 _N ->
                     AppSKey = Device#device.app_s_key,
                     Data = reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, parse_fopts(FOpts), Data, AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=parse_fopts(Data), fport=FPort, data=Data, device=Device}}
+                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=Data, device=Device}}
             end
     end;
 handle_lorawan_frame(Pkt, AName) ->
@@ -605,27 +621,6 @@ hex_to_binary(undefined) ->
     undefined;
 hex_to_binary(Id) ->
     <<<<Z>> || <<X:8,Y:8>> <= Id,Z <- [binary_to_integer(<<X,Y>>,16)]>>.
-
-parse_fopts(<<16#02, Rest/binary>>) ->
-    [link_check_req | parse_fopts(Rest)];
-parse_fopts(<<16#03, _RFU:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, Rest/binary>>) ->
-    [{link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} | parse_fopts(Rest)];
-parse_fopts(<<16#04, Rest/binary>>) ->
-    [duty_cycle_ans | parse_fopts(Rest)];
-parse_fopts(<<16#05, _RFU:5, RX1DROffsetACK:1, RX2DataRateACK:1, ChannelACK:1, Rest/binary>>) ->
-    [{rx_param_setup_ans, RX1DROffsetACK, RX2DataRateACK, ChannelACK} | parse_fopts(Rest)];
-parse_fopts(<<16#06, Battery:8, _RFU:2, Margin:6, Rest/binary>>) ->
-    [{dev_status_ans, Battery, Margin} | parse_fopts(Rest)];
-parse_fopts(<<16#07, _RFU:6, DataRateRangeOK:1, ChannelFreqOK:1, Rest/binary>>) ->
-    [{new_channel_ans, DataRateRangeOK, ChannelFreqOK} | parse_fopts(Rest)];
-parse_fopts(<<16#08, Rest/binary>>) ->
-    [rx_timing_setup_ans | parse_fopts(Rest)];
-parse_fopts(<<>>) ->
-    [];
-parse_fopts(Unknown) ->
-    [{unknown, Unknown}].
-
-encode_fopts([]) -> {<<>>, 0}.
 
 get_device_by_mic([], _, _) ->
     undefined;

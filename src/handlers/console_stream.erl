@@ -498,12 +498,12 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                             %% optimistically set the CFList field to the 1.1 compliant version that limits the active channels to the ones we use
                             %% See section 2.5.4 in the 1.1 lorawan params document
                             %%         Channels 0-15 disabled        Channels 16-31 disabled       Channels 32-47 disabled       Channels 48-55 enabled, 56-63 disabled   Channels 64-71 disabled
-                            CFList = <<0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 16#00ff:16/integer-unsigned-little,      0:16/integer-unsigned-little,
+                            _CFList = <<0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 16#00ff:16/integer-unsigned-little,      0:16/integer-unsigned-little,
                                        %%         RFU                           RFU                           CFListType - 0x01
                                        0:16/integer-unsigned-little, 0:16/integer-unsigned-little, 1:8/integer-unsigned-little>>,
                             lager:info("~p ~p ~p ~p ~p", [AppNonce, NetID, DevAddr, DLSettings, RxDelay]),
                             ReplyHdr = <<2#001:3, 0:3, 0:2>>,
-                            ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, CFList/binary>>,
+                            ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>, %, CFList/binary>>,
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                             lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), DevNonce, AName]),

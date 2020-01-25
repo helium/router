@@ -250,8 +250,14 @@ parse_state_channel_msg(Data) ->
                                                 true ->
                                                     []
                                             end,
+                                    ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, Frame#frame.fopts) of
+                                                            {link_adr_ans, 1, 1, 1} ->
+                                                                true;
+                                                            _ ->
+                                                                false
+                                                        end,
                                     Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fopts=Fopts, fport=Port, ack=ACK, data=ReplyPayload}, Device),
-                                    ets:insert(router_devices, Device#device{queue=NewQueue, fcntdown=(Device#device.fcntdown + 1)}),
+                                    ets:insert(router_devices, Device#device{queue=NewQueue, channel_correction=ChannelsCorrected, fcntdown=(Device#device.fcntdown + 1)}),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>,
                                                                                                                           Device#device.offset,
                                                                                                                           #{<<"tmst">> => Time, <<"freq">> => Freq,
@@ -284,7 +290,7 @@ make_reply(Frame, Device) ->
                       lager:info("port ~p outbound", [Frame#frame.fport]),
                       <<(Frame#frame.fport):8/integer-unsigned, (reverse(cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>
               end,
-    lager:info("PktBody ~p", [PktBody]),
+    lager:info("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),
     Msg = <<PktHdr/binary, PktBody/binary>>,
     MIC = crypto:cmac(aes_cbc128, Device#device.nwk_s_key, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.

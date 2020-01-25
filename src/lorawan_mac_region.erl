@@ -265,21 +265,21 @@ set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut)
   when Region == <<"US902">>; Region == <<"US902-PR">>; Region == <<"AU915">> ->
     case all_bit({0,63}, Chans) of
         true ->
-            [{link_adr_req, DataRate, TXPower, build_bin(Chans, {64, 71}), 6, 0} | FOptsOut];
+            [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}), 6, 0} | FOptsOut];
         false ->
-            [{link_adr_req, DataRate, TXPower, build_bin(Chans, {64, 71}), 7, 0} |
-             append_mask(3, {TXPower, DataRate, Chans}, FOptsOut)]
+            [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}), 7, 0} |
+             append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)]
     end;
 set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut)
   when Region == <<"CN470">> ->
     case all_bit({0,95}, Chans) of
         true ->
-            [{link_adr_req, DataRate, TXPower, 0, 6, 0} | FOptsOut];
+            [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, 0, 6, 0} | FOptsOut];
         false ->
-            append_mask(5, {TXPower, DataRate, Chans}, FOptsOut)
+            append_mask(Region, 5, {TXPower, DataRate, Chans}, FOptsOut)
     end;
-set_channels(_Region, {TXPower, DataRate, Chans}, FOptsOut) ->
-    [{link_adr_req, DataRate, TXPower, build_bin(Chans, {0, 15}), 0, 0} | FOptsOut].
+set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
+    [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {0, 15}), 0, 0} | FOptsOut].
 
 some_bit(MinMax, Chans) ->
     lists:any(
@@ -332,13 +332,13 @@ build_bin0({Min, Max}, {A, B}) ->
         N -> <<0:(Bits-N), Bin/bits>>
     end.
 
-append_mask(Idx, _, FOptsOut) when Idx < 0 ->
+append_mask(_Region, Idx, _, FOptsOut) when Idx < 0 ->
     FOptsOut;
-append_mask(Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
-    append_mask(Idx-1, {TXPower, DataRate, Chans},
+append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
+    append_mask(Region, Idx-1, {TXPower, DataRate, Chans},
                 case build_bin(Chans, {16*Idx, 16*(Idx+1)-1}) of
                     0 -> FOptsOut;
-                    ChMask -> [{link_adr_req, DataRate, TXPower, ChMask, Idx, 0} | FOptsOut]
+                    ChMask -> [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, ChMask, Idx, 0} | FOptsOut]
                 end).
 
                                                 % transmission time estimation

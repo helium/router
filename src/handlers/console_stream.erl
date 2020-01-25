@@ -246,7 +246,7 @@ parse_state_channel_msg(Data) ->
                                                 false ->
                                                     %% we want to enable only channels 48-55
                                                     %% but we have to also, at the same time change the data rate and the transmit power
-                                                    lorawan_mac_region:set_channels(<<"US902-28">>, {30, list_to_binary(DataRate), [{48, 55}]}, []);
+                                                    lorawan_mac_region:set_channels(<<"US902-28">>, {0, list_to_binary(DataRate), [{48, 55}]}, []);
                                                 true ->
                                                     []
                                             end,

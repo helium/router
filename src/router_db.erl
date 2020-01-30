@@ -33,7 +33,8 @@
 -define(CFS, ["default", "devices"]).
 
 -record(state, {
-                db :: rocksdb:db_handle()
+                db :: rocksdb:db_handle(),
+                cfs :: [rocksdb:cf_handle()]
                }).
 
 %% ------------------------------------------------------------------
@@ -51,11 +52,11 @@ get() ->
 %% ------------------------------------------------------------------
 init([Dir]=Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, DB} = open_db(Dir),
-    {ok, #state{db=DB}}.
+    {ok, DB, CFs} = open_db(Dir),
+    {ok, #state{db=DB, cfs=CFs}}.
 
-handle_call(get, _From, #state{db=DB}=State) ->
-    {reply, {ok, DB}, State};
+handle_call(get, _From, #state{db=DB, cfs=CFs}=State) ->
+    {reply, {ok, DB, CFs}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

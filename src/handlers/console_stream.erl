@@ -21,8 +21,8 @@
          client/2,
          add_stream_handler/1,
          version/0,
-         send/2,
-         enqueue_packet/3
+         send/3,
+         enqueue_packet/5
         ]).
 
 %% ------------------------------------------------------------------
@@ -40,7 +40,11 @@
 
 -define(VERSION, "simple_http/1.0.0").
 
--record(state, {cargo :: string() | undefined}).
+-record(state, {
+                cargo :: string() | undefined,
+                db :: {rocksdb:db_handle(), rocksdb:cf_handle()},
+                cf :: rocksdb:cf_handle()
+               }).
 
 
 -define(JOIN_REQUEST, 2#000).
@@ -104,13 +108,14 @@ version() ->
 %% ------------------------------------------------------------------
 init(server, _Conn, _Args) ->
     CragoEndpoint = application:get_env(router, cargo_endpoint, undefined),
-    {ok, #state{cargo=CragoEndpoint}};
+    {ok, DB, [_DefaultCF, DevicesCF]} = router_db:get(),
+    {ok, #state{cargo=CragoEndpoint, db=DB, cf=DevicesCF}};
 init(client, _Conn, _Args) ->
     {ok, #state{}}.
 
-handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
+handle_data(server, Data, #state{cargo=CragoEndpoint, db=DB, cf=CF}=State) ->
     lager:info("got data ~p", [Data]),
-    case send(Data, CragoEndpoint) of
+    case send(Data, CragoEndpoint, {DB, CF}) of
         {ok, _Ref} ->
             lager:info("~p data sent", [_Ref]),
             {noreply, State};
@@ -144,9 +149,9 @@ handle_info(_Type, _Msg, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec send(binary(), string()) -> any().
-send(Data, _CragoEndpoint) ->
-    case decode_data(Data) of
+-spec send(binary(), string(), {rocksdb:db_handle(), rocksdb:cf_handle()}) -> any().
+send(Data, _CragoEndpoint, {DB, CF}) ->
+    case decode_data(Data, {DB, CF}) of
         {ok, #'LongFiResp_pb'{id=_ID, miner_name=_MinerName, kind={_, #'LongFiRxPacket_pb'{device_id=DID, oui=OUI}=_Packet}}=DecodedData, Reply} ->
             lager:info("decoded from ~p (id=~p) data ~p", [_MinerName, _ID, lager:pr(_Packet, ?MODULE)]),
             SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_fun(DID, OUI) end),
@@ -165,19 +170,19 @@ send(Data, _CragoEndpoint) ->
             {error, bleh}
     end.
 
--spec decode_data(binary()) -> {ok, #'LongFiResp_pb'{}} | {error, any()}.
-decode_data(Data) ->
+-spec decode_data(binary(), {rocksdb:db_handle(), rocksdb:cf_handle()}) -> {ok, #'LongFiResp_pb'{}} | {error, any()}.
+decode_data(Data, {DB, CF}) ->
     try longfi_pb:decode_msg(Data, 'LongFiResp_pb') of
         #'LongFiResp_pb'{kind={parse_err, _}} ->
-            parse_state_channel_msg(Data);
+            parse_state_channel_msg(Data, {DB, CF});
         Packet ->
             {ok, Packet, undefined}
     catch
         _E:_R ->
-            parse_state_channel_msg(Data)
+            parse_state_channel_msg(Data, {DB, CF})
     end.
 
-parse_state_channel_msg(Data) ->
+parse_state_channel_msg(Data, {DB, CF}) ->
     case blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
         #blockchain_state_channel_message_v1_pb{msg = {packet, SignedPBPacket}} ->
             #blockchain_state_channel_packet_v1_pb{
@@ -195,7 +200,7 @@ parse_state_channel_msg(Data) ->
             {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
             case Type of
                 lorawan ->
-                    case handle_lorawan_frame(Payload, AName) of
+                    case handle_lorawan_frame(Payload, AName, {DB, CF}) of
                         error ->
                             {error, decoding};
                         {join, Reply} ->
@@ -257,7 +262,9 @@ parse_state_channel_msg(Data) ->
                                                                 Device#device.channel_correction
                                                         end,
                                     Reply = make_reply(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=Device#device.fcntdown, fopts=Fopts, fport=Port, ack=ACK, data=ReplyPayload}, Device),
-                                    ets:insert(router_devices, Device#device{queue=NewQueue, channel_correction=ChannelsCorrected, fcntdown=(Device#device.fcntdown + 1)}),
+
+                                    Device1 = Device#device{queue=NewQueue, channel_correction=ChannelsCorrected, fcntdown=(Device#device.fcntdown + 1)},
+                                    ok = insert_device(DB, CF, Device1),
                                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
                                                                                                                               Device#device.offset,
                                                                                                                               #{<<"tmst">> => Time, <<"freq">> => Freq,
@@ -462,7 +469,7 @@ check_fingerprint(DecodedPacket = #'LongFiRxPacket_pb'{fingerprint=FP}, Key) ->
             Other
     end.
 
-handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary, MIC:4/binary>> = Pkt, AName) when MType == 0 ->
+handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary, MIC:4/binary>> = Pkt, AName, {DB, CF}) when MType == 0 ->
     Msg = binary:part(Pkt, {0, byte_size(Pkt) -4}),
     {AppEUI, DevEUI} = {reverse(AppEUI0), reverse(DevEUI0)},
                                                 %AppKey = <<16#3B,16#C0,16#FB,16#09,16#32,16#4F,16#0B,16#9F,16#50,16#9E,16#5F,16#11,16#E4,16#CC,16#5B,16#84>>,
@@ -478,8 +485,8 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                                                 %lager:info("duplicate join request, ignoring"),
                                                 %error;
         _ ->
-            case ets:lookup(router_devices, AppEUI) of
-                [#device{join_nonce=OldNonce}] when DevNonce == OldNonce ->
+            case get_device(DB, CF, AppEUI) of
+                {ok, #device{join_nonce=OldNonce}} when DevNonce == OldNonce ->
                     lager:info("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
                     error;
                 _ ->
@@ -492,7 +499,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                                                            padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
                             DevAddr = <<OUI:32/integer-unsigned-big>>,
                             Device = #device{mac=DevEUI, app_eui=AppEUI, app_s_key=AppSKey, nwk_s_key=NwkSKey, join_nonce=DevNonce, fcntdown=0, queue=[]},
-                            ets:insert(router_devices, Device),
+                            ok = insert_device(DB, CF, Device),
                             RxDelay = 0, % 1 second, section 5.7
                             DLSettings = 0, % section 5.4
 
@@ -515,7 +522,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                     end
             end
     end;
-handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Pkt, AName) ->
+handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Pkt, AName, {DB, CF}) ->
     Msg = binary:part(Pkt, {0, byte_size(Pkt) -4}),
     Body = binary:part(PayloadAndMIC, {0, byte_size(PayloadAndMIC) -4}),
     MIC = binary:part(PayloadAndMIC, {byte_size(PayloadAndMIC), -4}),
@@ -524,7 +531,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
                               <<Port:8, Payload/binary>> -> {Port, Payload}
                           end,
     DevAddr = reverse(DevAddr0),
-    case get_device_by_mic(get_devices(), <<(b0(MType band 1, DevAddr, FCnt, byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
+    case get_device_by_mic(get_devices(DB, CF), <<(b0(MType band 1, DevAddr, FCnt, byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
             lager:info("packet from unknown device ~s received by ~s", [binary_to_hex(DevAddr), AName]),
             error;
@@ -534,7 +541,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
         Device0 ->
             NwkSKey = Device0#device.nwk_s_key,
             Device = Device0#device{fcnt=FCnt},
-            ets:insert(router_devices, Device),
+            ok = insert_device(DB, CF, Device),
             case FPort of
                 0 when FOptsLen == 0 ->
                     Data = reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
@@ -550,7 +557,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
                     {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
             end
     end;
-handle_lorawan_frame(Pkt, AName) ->
+handle_lorawan_frame(Pkt, AName, {_DB, _CF}) ->
     lager:info("Bad packet ~s received by ~s", [binary_to_hex(Pkt), AName]),
     error.
 
@@ -640,16 +647,34 @@ get_device_by_mic([Device|Tail], Bin, MIC) ->
             get_device_by_mic(Tail, Bin, MIC)
     end.
 
-get_devices() ->
-    ets:tab2list(router_devices).
+get_devices(DB, CF) ->
+    rocksdb:fold(
+      DB,
+      CF,
+      fun(BinDevice, Acc) ->
+              [erlang:binary_to_term(BinDevice)|Acc]
+      end,
+      [{sync, true}],
+      []
+     ).
 
-enqueue_packet(AppEUI, Payload, Confirm) ->
-    case ets:lookup(router_devices, hex_to_binary(AppEUI)) of
-        [#device{}=Device] ->
-            ets:insert(router_devices, Device#device{queue=Device#device.queue ++ [{Confirm, 1, Payload}]});
-        [] ->
+enqueue_packet(AppEUI, Payload, Confirm, DB, CF) ->
+    case get_device(DB, CF, hex_to_binary(AppEUI)) of
+        {ok, Device} ->
+            insert_device(DB, CF, Device#device{queue=Device#device.queue ++ [{Confirm, 1, Payload}]});
+        _ ->
             {error, not_found}
     end.
+
+get_device(DB, CF, AppEUI) ->
+    case rocksdb:get(DB, CF, AppEUI, [{sync, true}]) of
+        {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
+        not_found -> {error, not_found};
+        Error -> Error
+    end.
+
+insert_device(DB, CF, #device{app_eui=AppEUI}=Device) ->
+    ok = rocksdb:put(DB, CF, AppEUI, erlang:term_to_binary(Device), [{sync, true}]).
 
 
 %% ------------------------------------------------------------------

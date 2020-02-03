@@ -100,6 +100,7 @@ init([]) ->
                      },
     DBOpts = [BaseDir],
     {ok, { ?FLAGS, [?WORKER(router_db, [DBOpts]),
+                    ?WORKER(router_devices_server, [#{}]),
                     ?SUP(router_mqtt_sup, []),
                     ?WORKER(router_p2p, [P2PWorkerOpts])]} }.
 

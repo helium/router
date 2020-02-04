@@ -74,16 +74,16 @@ init(_Args) ->
 
 handle_call({insert, Device}, _From, #state{db=DB, cf=CF}=State) ->
     Reply = insert_device(DB, CF, Device),
-    {noreply, Reply, State};
+    {reply, Reply, State};
 handle_call({update, AppEUI, Updates}, _From, #state{db=DB, cf=CF}=State) ->
     Reply = update_device(DB, CF, AppEUI, Updates),
-    {noreply, Reply, State};
+    {reply, Reply, State};
 handle_call({get, AppEUI}, _From, #state{db=DB, cf=CF}=State) ->
     Reply = get_device(DB, CF, AppEUI),
-    {noreply, Reply, State};
+    {reply, Reply, State};
 handle_call(get_all, _From, #state{db=DB, cf=CF}=State) ->
     Reply = get_devices(DB, CF),
-    {noreply, Reply, State};
+    {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -100,7 +100,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{db=DB}) ->
-    ok = rocksdb:close(DB).
+    catch rocksdb:close(DB).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -154,7 +154,7 @@ get_devices(DB, CF) ->
     rocksdb:fold(
       DB,
       CF,
-      fun(BinDevice, Acc) ->
+      fun({_Key, BinDevice}, Acc) ->
               [erlang:binary_to_term(BinDevice)|Acc]
       end,
       [{sync, true}],

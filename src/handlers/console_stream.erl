@@ -108,9 +108,6 @@ handle_data(server, Data, #state{cargo=CragoEndpoint}=State) ->
             {noreply, State, Reply};
         {error, _Reason} ->
             lager:error("packet decode failed ~p ~p", [_Reason, Data]),
-            {noreply, State};
-        _Ref ->
-            lager:info("~p data sent", [_Ref]),
             {noreply, State}
     end;
 handle_data(_Type, _Bin, State) ->
@@ -155,7 +152,7 @@ send(Data, _CragoEndpoint) ->
             {error, bleh}
     end.
 
--spec decode_data(binary()) -> {ok, #'LongFiResp_pb'{}} | {error, any()}.
+-spec decode_data(binary()) -> {ok, #'LongFiResp_pb'{}, undefined | #helium_packet_pb{}} | {reply, #helium_packet_pb{}} | {error, any()}.
 decode_data(Data) ->
     try longfi_pb:decode_msg(Data, 'LongFiResp_pb') of
         #'LongFiResp_pb'{kind={parse_err, _}} ->
@@ -214,24 +211,45 @@ parse_state_channel_msg(Data) ->
                                     %% we have some data to send, or an ACK to make, or both
                                     ACK = case Frame#frame.mtype == ?CONFIRMED_UP of
                                               true ->
-                                                  lager:info("Replying due to ack request"),
                                                   1;
-                                              false -> 0
+                                              false ->
+                                                  0
                                           end,
                                     {{Confirmed, Port, ReplyPayload}, NewQueue} = case Device#device.queue of
                                                                                       [] ->
-                                                                                          {{false, undefined, <<>>}, []};
+                                                                                          {{undefined, undefined, <<>>}, []};
                                                                                       [H|T] ->
                                                                                           lager:info("replying with ~p", [H]),
                                                                                           {H, T}
                                                                                   end,
                                     MType = case Confirmed of
                                                 true ->
-                                                    lager:info("Replying with confirmed send"),
                                                     ?CONFIRMED_DOWN;
                                                 false ->
+                                                    ?UNCONFIRMED_DOWN;
+                                                undefined ->
                                                     ?UNCONFIRMED_DOWN
                                             end,
+
+                                    case {ACK == 1, Port == undefined} of
+                                        {true, true} ->
+                                            case Confirmed of
+                                                true ->
+                                                    report_status(Device#device.mac, {OUI, DID}, success, AName, <<"Sending ACK and confirmed data in response to fcnt ", (list_to_binary(integer_to_list(Device#device.fcnt)))/binary>>);
+                                                false ->
+                                                    report_status(Device#device.mac, {OUI, DID}, success, AName, <<"Sending ACK and unconfirmed data in response to fcnt ", (list_to_binary(integer_to_list(Device#device.fcnt)))/binary>>)
+                                            end;
+                                        {true, false} ->
+                                            report_status(Device#device.mac, {OUI, DID}, success, AName, <<"Sending ACK in response to fcnt ", (list_to_binary(integer_to_list(Device#device.fcnt)))/binary>>);
+                                        {false, true} ->
+                                            case Confirmed of
+                                                true ->
+                                                    report_status(Device#device.mac, {OUI, DID}, success, AName, <<"Sending confirmed data in response to fcnt ", (list_to_binary(integer_to_list(Device#device.fcnt)))/binary>>);
+                                                false ->
+                                                    report_status(Device#device.mac, {OUI, DID}, success, AName, <<"Sending unconfirmed data in response to fcnt ", (list_to_binary(integer_to_list(Device#device.fcnt)))/binary>>)
+                                            end
+                                    end,
+
                                     Fopts = case Device#device.channel_correction of
                                                 false ->
                                                     %% we want to enable only channels 48-55
@@ -467,6 +485,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
     case AppKey of
         undefined ->
             lager:info("no key for ~p ~p received by ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), AName]),
+            report_status(DevEUI, {OUI, DID}, failure, AName, <<"No device for AppEUI: ", (binary_to_hex(AppEUI))/binary, " DevEUI: ", (binary_to_hex(DevEUI))/binary>>),
             error;
                                                 %_ when DevNonce =< PrevDevNonce ->
                                                 %lager:info("duplicate join request, ignoring"),
@@ -475,6 +494,7 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
             case router_devices_server:get(AppEUI) of
                 {ok, #device{join_nonce=OldNonce}} when DevNonce == OldNonce ->
                     lager:info("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
+                    report_status(DevEUI, {OUI, DID}, failure, AName, <<"Stale join nonce ", (binary_to_hex(OldNonce))/binary, " for AppEUI: ", (binary_to_hex(AppEUI))/binary, " DevEUI: ", (binary_to_hex(DevEUI))/binary>>),
                     error;
                 _ ->
                     case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
@@ -502,9 +522,12 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                             lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), DevNonce, AName]),
+
+                            report_status(DevEUI, {OUI, DID}, success, AName, <<"Join attempt from AppEUI: ", (binary_to_hex(AppEUI))/binary, " DevEUI: ", (binary_to_hex(DevEUI))/binary>>),
                             {join, <<ReplyHdr/binary, EncryptedReply/binary>>};
                         _ ->
                             lager:info("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [binary_to_hex(DevEUI), binary_to_hex(AppEUI), AName]),
+                            report_status(DevEUI, {OUI, DID}, failure, AName, <<"Bad Message Integrity Code on join for AppEUI: ", (binary_to_hex(AppEUI))/binary, " DevEUI: ", (binary_to_hex(DevEUI))/binary, ", check AppKey">>),
                             error
                     end
             end
@@ -539,6 +562,8 @@ handle_lorawan_frame(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1, 
                     {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
                 0 ->
                     lager:info("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), binary_to_hex(Device#device.app_eui), AName]),
+                    <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
+                    report_status(Device#device.mac, {OUI, DID}, failure, AName, <<"Packet with double fopts received from AppEUI: ", (binary_to_hex(Device#device.app_eui))/binary, " DevEUI: ", (binary_to_hex(Device#device.mac))/binary>>),
                     error;
                 _N ->
                     AppSKey = Device#device.app_s_key,
@@ -638,17 +663,35 @@ get_device_by_mic([Device|Tail], Bin, MIC) ->
     end.
 
 enqueue_packet(AppEUI, Payload, Confirm) ->
-    case router_devices_server:get(hex_to_binary(AppEUI)) of
-        {ok, Device} ->
-            NewQueue = Device#device.queue ++ [{Confirm, 1, Payload}],
-            DeviceUpdates = [
-                             {queue, NewQueue}
-                            ],
-            ok = router_devices_server:update(AppEUI, DeviceUpdates);
-        _ ->
+    case ets:lookup(router_devices, hex_to_binary(AppEUI)) of
+        [#device{}=Device] ->
+            ets:insert(router_devices, Device#device{queue=Device#device.queue ++ [{Confirm, 1, Payload}]});
+        [] ->
             {error, not_found}
     end.
 
+report_status(_DevEUI, {OUI, DID}, Status, AName, Msg) ->
+    case OUI of
+        2 ->
+            Endpoint = application:get_env(router, staging_console_endpoint, undefined),
+            JWT = get_token(Endpoint, staging);
+        _ ->
+            Endpoint = application:get_env(router, console_endpoint, undefined),
+            JWT = get_token(Endpoint, production)
+    end,
+    case hackney:get(<<Endpoint/binary, "/api/router/devices/", (list_to_binary(integer_to_list(DID)))/binary, "?oui=", (list_to_binary(integer_to_list(OUI)))/binary>>,
+                     [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
+        {ok, 200, _Headers, Body} ->
+            JSON = jsx:decode(Body, [return_maps]),
+            DeviceID = kvc:path([<<"id">>], JSON),
+
+            Result = #{status => Status, description => Msg,
+                       delivered_at => erlang:system_time(second), hotspot_name => list_to_binary(AName)},
+
+            hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body]);
+        _ ->
+            ok
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

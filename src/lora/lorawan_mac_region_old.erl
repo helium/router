@@ -1,8 +1,10 @@
-                                                %
-                                                % Copyright (c) 2016-2017 Petr Gotthard <petr.gotthard@centrum.cz>
-                                                % All rights reserved.
-                                                % Distributed under the terms of the MIT License. See the LICENSE file.
-                                                %
+%%%-------------------------------------------------------------------
+%% @doc
+%% Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
+%% All rights reserved.
+%% Distributed under the terms of the MIT License. See the LICENSE file.
+%% @end
+%%%-------------------------------------------------------------------
 -module(lorawan_mac_region_old).
 
 -export([join1_window/2, join2_window/2, rx1_window/3, rx2_window/2, rx2_rf/2]).

@@ -1,8 +1,10 @@
-                                                %
-                                                % Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
-                                                % All rights reserved.
-                                                % Distributed under the terms of the MIT License. See the LICENSE file.
-                                                %
+%%%-------------------------------------------------------------------
+%% @doc
+%% Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
+%% All rights reserved.
+%% Distributed under the terms of the MIT License. See the LICENSE file.
+%% @end
+%%%-------------------------------------------------------------------
 -module(lorawan_mac_commands).
 
 -export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, encode_fopts/1]).

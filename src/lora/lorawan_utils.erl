@@ -1,8 +1,10 @@
-                                                %
-                                                % Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
-                                                % All rights reserved.
-                                                % Distributed under the terms of the MIT License. See the LICENSE file.
-                                                %
+%%%-------------------------------------------------------------------
+%% @doc
+%% Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
+%% All rights reserved.
+%% Distributed under the terms of the MIT License. See the LICENSE file.
+%% @end
+%%%-------------------------------------------------------------------
 -module(lorawan_utils).
 
 -export([binary_to_hex/1, hex_to_binary/1, reverse/1]).

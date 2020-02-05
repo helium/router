@@ -176,16 +176,16 @@ get_token(Endpoint, Env) ->
     e2qc:cache(console_cache, jwt, 600, CacheFun).
 
 -spec get_env(OUI :: integer()) -> atom().
-get_env(1) ->
-    production;
 get_env(2) ->
-    staging.
+    staging;
+get_env(_) ->
+    production.
 
 -spec get_endpoint(OUI :: integer()) -> binary().
-get_endpoint(1) ->
-    application:get_env(router, console_endpoint, undefined);
 get_endpoint(2) ->
-    application:get_env(router, staging_console_endpoint, undefined).
+    application:get_env(router, staging_console_endpoint, undefined);
+get_endpoint(_) ->
+    application:get_env(router, console_endpoint, undefined).
 
 -spec get_secret(Env :: atom()) -> binary().
 get_secret(production) ->

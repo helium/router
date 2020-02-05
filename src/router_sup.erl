@@ -70,12 +70,8 @@ start_link() ->
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
-    ets:new(router_devices, [public, named_table, set, {keypos, 3}]),
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
-
-    PoolOptions = [{max_connections, application:get_env(router, max_connections, 250)}],
-    ok = hackney_pool:start_pool(?HTTP_POOL, PoolOptions),
 
     SeedNodes = case application:get_env(router, seed_nodes) of
                     {ok, ""} -> [];
@@ -99,7 +95,11 @@ init([]) ->
                       base_dir => BaseDir,
                       key => Key
                      },
-    {ok, { ?FLAGS, [?SUP(router_mqtt_sup, []), ?WORKER(router_p2p, [P2PWorkerOpts])]} }.
+    DBOpts = [BaseDir],
+    {ok, { ?FLAGS, [?WORKER(router_db, [DBOpts]),
+                    ?WORKER(router_devices_server, [#{}]),
+                    ?SUP(router_mqtt_sup, []),
+                    ?WORKER(router_p2p, [P2PWorkerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

@@ -1,9 +1,13 @@
-                                                %
-                                                % Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
-                                                % All rights reserved.
-                                                % Distributed under the terms of the MIT License. See the LICENSE file.
-                                                %
+%%%-------------------------------------------------------------------
+%% @doc
+%% Copyright (c) 2016-2019 Petr Gotthard <petr.gotthard@centrum.cz>
+%% All rights reserved.
+%% Distributed under the terms of the MIT License. See the LICENSE file.
+%% @end
+%%%-------------------------------------------------------------------
 -module(lorawan_mac_region).
+
+-dialyzer([no_return, no_unused, no_match]).
 
 -export([freq/1, net_freqs/1, datars/1, datar_to_dr/2, dr_to_datar/2]).
 -export([join1_window/2, join2_window/2, rx1_window/3, rx2_window/2, rx2_rf/2]).

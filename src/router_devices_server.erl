@@ -157,8 +157,8 @@ get_devices(DB, CF) ->
       fun({_Key, BinDevice}, Acc) ->
               [erlang:binary_to_term(BinDevice)|Acc]
       end,
-      [{sync, true}],
-      []
+      [],
+      [{sync, true}]
      ).
 
 -spec insert_device(rocksdb:db_handle(), rocksdb:cf_handle(), device()) ->

@@ -20,7 +20,9 @@
     e2qc,
     kvc,
     jsx,
-    longfi
+    longfi,
+    emqtt,
+    erl_angry_purple_tiger
    ]},
   {env,[]},
   {modules, []},

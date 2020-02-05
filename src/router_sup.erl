@@ -73,9 +73,6 @@ init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
-    PoolOptions = [{max_connections, application:get_env(router, max_connections, 250)}],
-    ok = hackney_pool:start_pool(?HTTP_POOL, PoolOptions),
-
     SeedNodes = case application:get_env(router, seed_nodes) of
                     {ok, ""} -> [];
                     {ok, Seeds} -> string:split(Seeds, ",", all);
@@ -98,7 +95,11 @@ init([]) ->
                       base_dir => BaseDir,
                       key => Key
                      },
-    {ok, { ?FLAGS, [?WORKER(router_p2p, [P2PWorkerOpts])]} }.
+    DBOpts = [BaseDir],
+    {ok, { ?FLAGS, [?WORKER(router_db, [DBOpts]),
+                    ?WORKER(router_devices_server, [#{}]),
+                    ?SUP(router_mqtt_sup, []),
+                    ?WORKER(router_p2p, [P2PWorkerOpts])]} }.
 
 %%====================================================================
 %% Internal functions

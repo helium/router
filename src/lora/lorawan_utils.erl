@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_utils).
 
+-dialyzer(no_match).
+
 -export([binary_to_hex/1, hex_to_binary/1, reverse/1]).
 -export([index_of/2]).
 -export([precise_universal_time/0, time_to_gps/0, time_to_gps/1, time_to_unix/0, time_to_unix/1]).

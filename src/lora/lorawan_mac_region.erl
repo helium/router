@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_region).
 
+-dialyzer([no_return, no_unused, no_match]).
+
 -export([freq/1, net_freqs/1, datars/1, datar_to_dr/2, dr_to_datar/2]).
 -export([join1_window/2, join2_window/2, rx1_window/3, rx2_window/2, rx2_rf/2]).
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).

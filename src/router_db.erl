@@ -43,7 +43,7 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec get() -> {ok, rocksdb:db_handle()}.
+-spec get() -> {ok, rocksdb:db_handle(), [rocksdb:cf_handle()]}.
 get() ->
     gen_statem:call(?SERVER, get).
 

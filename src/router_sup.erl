@@ -73,9 +73,6 @@ init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
-    PoolOptions = [{max_connections, application:get_env(router, max_connections, 250)}],
-    ok = hackney_pool:start_pool(?HTTP_POOL, PoolOptions),
-
     SeedNodes = case application:get_env(router, seed_nodes) of
                     {ok, ""} -> [];
                     {ok, Seeds} -> string:split(Seeds, ",", all);

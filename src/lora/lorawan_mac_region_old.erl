@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_region_old).
 
+-dialyzer(no_match).
+
 -export([join1_window/2, join2_window/2, rx1_window/3, rx2_window/2, rx2_rf/2]).
 -export([default_adr/1, default_rxwin/1, max_adr/1, eirp_limits/1]).
 -export([dr_to_tuple/2, datar_to_dr/2, freq_range/1, datar_to_tuple/1, powe_to_num/2, regional_config/2]).

@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_commands).
 
+-dialyzer([no_match, no_return]).
+
 -export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, encode_fopts/1]).
 
 -include("lorawan_db.hrl").
@@ -25,7 +27,7 @@ handle_fopts({Network, Profile, Node}, Gateways, ADR, FOpts) ->
                   {MC, N2} = handle_fopts0(
                                {Network, Profile, store_actual_adr(Gateways, ADR, Network, N0)},
                                Gateways, FOptsIn),
-                  ok = lorawan_admin:write(N2),
+                %   ok = lorawan_admin:write(N2),
                   {MC, N2}
           end),
                                                 % process requests

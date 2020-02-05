@@ -2,10 +2,30 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, get_connection/3]).
+-export([
+         start_link/0,
+         get_connection/3
+        ]).
 
 %% Supervisor callbacks
 -export([init/1]).
+
+-define(WORKER(I), 
+        #{
+          id => I,
+          start => {I, start_link, []},
+          restart => temporary,
+          shutdown => 1000,
+          type => worker,
+          modules => [I]
+         }).
+
+-define(FLAGS, 
+        #{
+          strategy => simple_one_for_one,
+          intensity => 3,
+          period => 60
+         }).
 
 %%====================================================================
 %% API functions
@@ -38,8 +58,4 @@ get_connection(MAC, ChannelName, Args) ->
 init([]) ->
     ets:new(router_mqtt_workers, [public, named_table, set]),
     {ok, _} = application:ensure_all_started(emqtt),
-    {ok, {{simple_one_for_one, 3, 60},
-          [{router_mqtt_worker,
-            {router_mqtt_worker, start_link, []},
-            temporary, 1000, worker, [router_mqtt_worker]}
-          ]}}.
+    {ok, {?FLAGS, [?WORKER(router_mqtt_worker)]}}.

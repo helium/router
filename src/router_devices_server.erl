@@ -56,7 +56,7 @@ insert(Device) ->
 update(AppEUI, Updates) ->
     gen_server:call(?SERVER, {update, AppEUI, Updates}).
 
--spec get(device()) -> {ok, device()} | {error, any()}.
+-spec get(binary()) -> {ok, device()} | {error, any()}.
 get(AppEUI) ->
     gen_server:call(?SERVER, {get, AppEUI}).
 
@@ -107,7 +107,7 @@ terminate(_Reason, #state{db=DB}) ->
 %% ------------------------------------------------------------------
 
 -spec update_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), [{atom(), any()}]) ->
-                           ok | {error, any()}.
+          ok | {error, any()}.
 update_device(DB, CF, AppEUI, Updates) ->
     case get_device(DB, CF, AppEUI) of
         {error, _}=Error ->
@@ -141,7 +141,7 @@ update_device(Device, [{queue, Value}|Updates]) ->
     update_device(Device#device{queue=Value}, Updates).
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) ->
-                        {ok, device()} | {error, any()}.
+          {ok, device()} | {error, any()}.
 get_device(DB, CF, AppEUI) ->
     case rocksdb:get(DB, CF, AppEUI, [{sync, true}]) of
         {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
@@ -162,6 +162,6 @@ get_devices(DB, CF) ->
      ).
 
 -spec insert_device(rocksdb:db_handle(), rocksdb:cf_handle(), device()) ->
-                           ok | {error, any()}.
+          ok | {error, any()}.
 insert_device(DB, CF, #device{app_eui=AppEUI}=Device) ->
     rocksdb:put(DB, CF, AppEUI, erlang:term_to_binary(Device), [{sync, true}]).

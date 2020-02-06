@@ -121,7 +121,7 @@ handle_server_data(Data) ->
         {ok, #helium_packet_pb{type=lorawan}=Packet0, PubkeyBin} ->
             case handle_lora_packet(Packet0, PubkeyBin) of
                 {ok, Packet1, #{oui := OUI, device_id := DID}=MapData} ->
-                    SendFun = e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> router_console:send_data_fun(DID, OUI) end),
+                    SendFun = router_console:send_data_fun(DID, OUI),
                     _ = SendFun(MapData),
                     case Packet1 of
                         undefined -> ok;

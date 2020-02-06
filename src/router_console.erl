@@ -81,7 +81,7 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"http">>}=Ch
     lager:info("Method ~p", [Method]),
     ChannelID = kvc:path([<<"name">>], Channel),
     fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName,  timestamp := Timestamp}=DataMap) ->
-            Result = try hackney:request(Method, URL, maps:to_list(Headers), encode_data(OUI, DeviceID, DataMap), [with_body]) of
+            Result = try hackney:request(Method, URL, maps:to_list(Headers), encode_data(OUI, DID, DataMap), [with_body]) of
                          {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
                              #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
@@ -112,7 +112,7 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"mqtt">>}=Ch
     fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName,  timestamp := Timestamp}=DataMap) ->
             Result = case router_mqtt_sup:get_connection((OUI bsl 32) + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
                          {ok, Pid} ->
-                             case router_mqtt_worker:send(Pid, encode_data(OUI, DeviceID, DataMap)) of
+                             case router_mqtt_worker:send(Pid, encode_data(OUI, DID, DataMap)) of
                                  {ok, PacketID} ->
                                      #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
@@ -135,11 +135,11 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"mqtt">>}=Ch
             hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
     end.
 
--spec encode_data(integer(), binary(), map()) -> binary().
-encode_data(OUI, DeviceID, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, sequence := Seq, spreading := Spreading}) ->
+-spec encode_data(integer(), integer(), map()) -> binary().
+encode_data(OUI, DID, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, sequence := Seq, spreading := Spreading}) ->
     jsx:encode(#{timestamp => erlang:system_time(seconds),
                  oui => OUI,
-                 device_id => DeviceID,
+                 device_id => DID,
                  sequence => Seq,
                  spreading => Spreading,
                  payload => base64:encode(Payload),

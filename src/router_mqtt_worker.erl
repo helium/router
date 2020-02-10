@@ -75,14 +75,16 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({publish, Msg}, State) ->
-    try jsx:decode(Msg, [return_maps]) of
+handle_info({publish, Msg=#{payload := Pay}}, State) ->
+    try jsx:decode(Pay, [return_maps]) of
         JSON ->
             case maps:find(<<"payload_raw">>, JSON) of
                 {ok, Payload} ->
-                    case router_devices_server:get(State#state.mac) of
+                    case router_devices_server:get(<<(State#state.mac):64/integer-unsigned-big>>) of
                         {ok, Device} ->
-                            router_devices_server:update(State#state.mac, [{queue, Device#device.queue ++ [base64:decode(Payload)]}]);
+                            lager:info("queueing ~p for downlink to ~p", [Payload, State#state.mac]),
+                            %% TODO figure out port and confirmation mode
+                            router_devices_server:update(<<(State#state.mac):64/integer-unsigned-big>>, [{queue, Device#device.queue ++ [{false, 1, base64:decode(Payload)}]}]);
                         {error, Reason} ->
                             lager:info("could not find device ~p : ~p", [State#state.mac, Reason])
                     end;

@@ -56,7 +56,7 @@ init([MAC, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
             ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/rx", [Topic, MAC])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/tx/#", [Topic, MAC])),
-            %5 TODO use a better QoS to add some back pressure
+            %% TODO use a better QoS to add some back pressure
             emqtt:subscribe(Conn, {SubTopic, 0}),
             {ok, #state{mac=MAC, connection=Conn, pubtopic=PubTopic}};
         error ->
@@ -78,7 +78,7 @@ handle_cast(_Msg, State) ->
 handle_info({publish, Msg}, State) ->
     try jsx:decode(Msg, [return_maps]) of
         JSON ->
-            case maps:find(<<"raw payload">>, JSON) of
+            case maps:find(<<"payload_raw">>, JSON) of
                 {ok, Payload} ->
                     case router_devices_server:get(State#state.mac) of
                         {ok, Device} ->

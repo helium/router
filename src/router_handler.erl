@@ -113,12 +113,12 @@ handle_info(_Type, _Msg, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec handle_server_data(binary()) -> ok | {ok, #helium_packet_pb{}} | {error, any()}.
+-spec handle_server_data(binary()) -> ok | {ok, #packet_pb{}} | {error, any()}.
 handle_server_data(Data) ->
     case decode_data(Data) of
         {error, _Reason}=Error ->
             Error;
-        {ok, #helium_packet_pb{type=lorawan}=Packet0, PubkeyBin} ->
+        {ok, #packet_pb{type=lorawan}=Packet0, PubkeyBin} ->
             case handle_lora_packet(Packet0, PubkeyBin) of
                 {ok, Packet1, #{oui := OUI, device_id := DID}=MapData} ->
                     SendFun = router_console:send_data_fun(DID, OUI),
@@ -130,16 +130,16 @@ handle_server_data(Data) ->
                 Else ->
                     Else
             end;
-        {ok, #helium_packet_pb{type=Type}, _PubkeyBin} ->
+        {ok, #packet_pb{type=Type}, _PubkeyBin} ->
             {error, {unknown_packet_type, Type}}
     end.
 
--spec encode_resp(#helium_packet_pb{}) -> binary().
+-spec encode_resp(#packet_pb{}) -> binary().
 encode_resp(Packet) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg = {response, #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet}}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
--spec decode_data(binary()) -> {ok, #helium_packet_pb{}, libp2p_crypto:pubkey_bin()} | {error, any()}.
+-spec decode_data(binary()) -> {ok, #packet_pb{}, libp2p_crypto:pubkey_bin()} | {error, any()}.
 decode_data(Data) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
         #blockchain_state_channel_message_v1_pb{msg={packet, Packet}} ->
@@ -153,9 +153,9 @@ decode_data(Data) ->
             {error, {decode_failed, _E, _R}}
     end.
 
--spec handle_lora_packet(#helium_packet_pb{}, libp2p_crypto:pubkey_bin()) -> {ok, #helium_packet_pb{}} | {ok, #helium_packet_pb{} | undefined, map()} | {error, any()}.
-handle_lora_packet(#helium_packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
-                                     datarate=DataRate, payload=Payload, signal_strength=RSSI, snr=SNR}, PubkeyBin) ->
+-spec handle_lora_packet(#packet_pb{}, libp2p_crypto:pubkey_bin()) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
+handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
+                              datarate=DataRate, payload=Payload, signal_strength=RSSI, snr=SNR}, PubkeyBin) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     case handle_lorawan_payload(Payload, AName) of
         {error, _Reason}=Error ->
@@ -168,7 +168,7 @@ handle_lora_packet(#helium_packet_pb{oui=OUI, type=Type, timestamp=Time, frequen
                                                                       <<"freq">> => Freq,
                                                                       <<"datr">> => erlang:list_to_binary(DataRate),
                                                                       <<"codr">> => <<"lol">>}),
-            Packet = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+            Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
             {ok, Packet};
         {ok, #frame{device=#device{queue=Queue0, fcnt=FCNT, app_eui=AppEUI, channel_correction=ChannelCorrection, fcntdown=FCNTDown, offset=Offset}=Device,
                     mtype=MType0, fopts=FOpts0, devaddr=DevAddr, data=Data}} ->
@@ -249,7 +249,7 @@ handle_lora_packet(#helium_packet_pb{oui=OUI, type=Type, timestamp=Time, frequen
                                                                                                               Offset,
                                                                                                               #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                                 <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
-                    Packet = #helium_packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+                    Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                     {ok, Packet, MapData}
             end
     end.

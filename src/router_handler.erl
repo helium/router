@@ -273,9 +273,14 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI
         AppKey ->
             case router_devices_server:get(AppEUI) of
                 {ok, #device{join_nonce=OldNonce}} when DevNonce == OldNonce ->
-                    lager:debug("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
-                    StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                    case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                        {ok, _, _} ->
+                            lager:debug("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
+                            StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg);
+                        _ ->
+                            ok
+                    end,
                     {error, bad_nonce};
                 _ ->
                     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
@@ -302,13 +307,23 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                             lager:debug("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-                            StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg),
+                            case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                                {ok, _, _} ->
+                                    StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
+                                _ ->
+                                    ok
+                            end,
                             {join, <<ReplyHdr/binary, EncryptedReply/binary>>};
                         _ ->
-                            lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-                            StatusMsg = <<"Bad Message Integrity Code on join for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary, ", check AppKey">>,
-                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                            case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                                {ok, _, _} ->
+                                    lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
+                                    StatusMsg = <<"Bad Message Integrity Code on join for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary, ", check AppKey">>,
+                                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg);
+                                _ ->
+                                    ok
+                            end,
                             {error, bad_mic}
                     end
             end

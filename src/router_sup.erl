@@ -80,6 +80,7 @@ init([]) ->
                 end,
     BaseDir = application:get_env(router, base_dir, "data"),
     SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
+    throttle:setup(join_dedup, 1, per_minute),
     ok = filelib:ensure_dir(SwarmKey),
     Key = case libp2p_crypto:load_keys(SwarmKey) of
               {ok, #{secret := PrivKey, public := PubKey}} ->

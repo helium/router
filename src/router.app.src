@@ -21,7 +21,8 @@
     kvc,
     jsx,
     emqtt,
-    erl_angry_purple_tiger
+    erl_angry_purple_tiger,
+    throttle
    ]},
   {env,[]},
   {modules, []},

@@ -155,7 +155,7 @@ decode_data(Data) ->
 
 -spec handle_lora_packet(#packet_pb{}, libp2p_crypto:pubkey_bin()) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
 handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
-                                     datarate=DataRate, payload=Payload}=Packet, PubkeyBin) ->
+                              datarate=DataRate, payload=Payload}=Packet, PubkeyBin) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     case handle_lorawan_payload(Payload, AName) of
         {error, _Reason}=Error ->
@@ -176,7 +176,7 @@ handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq
 
 -spec handle_lorawan_frame(string(), #packet_pb{}, #frame{}) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
 handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
-                                              datarate=DataRate, signal_strength=RSSI, snr=SNR},
+                                       datarate=DataRate, signal_strength=RSSI, snr=SNR},
                      #frame{device=#device{queue=Queue0, fcnt=FCNT, app_eui=AppEUI, channel_correction=ChannelCorrection, fcntdown=FCNTDown, offset=Offset}=Device,
                             mtype=MType0, fopts=FOpts0, devaddr=DevAddr, data=Data}) ->
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,

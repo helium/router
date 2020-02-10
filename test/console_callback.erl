@@ -14,16 +14,17 @@ handle('GET', [<<"api">>, <<"router">>, <<"sessions">>], _Req) ->
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req) ->
     Body = #{
-        <<"id">> => <<DID/binary, "_id">>,
-        <<"key">> => <<DID/binary, "_key">>,
-        <<"channels">> => []
-    },
+             <<"id">> => <<DID/binary, "_id">>,
+             <<"key">> => <<DID/binary, "_key">>,
+             <<"channels">> => []
+            },
     {200, [], jsx:encode(Body)};
 %% POST to channel
 handle('POST', [<<"channel">>], _Req) ->
     {200, [], <<"Success: got data">>};
 %% Report status
-handle('POST', [<<"api">>, <<"router">>, <<"devices">>, _DID, <<"event">>], _Req) ->
+handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
+                _DID, <<"event">>], _Req) ->
     {200, [], <<>>};
 handle(_Method, _Path, _Req) ->
     {404, [], <<"Not Found">>}.

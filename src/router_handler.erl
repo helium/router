@@ -190,28 +190,28 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                 spreading => erlang:list_to_binary(DataRate),
                 payload => Data,
                 timestamp => Time
-                },
+               },
     case MType0 == ?CONFIRMED_UP orelse erlang:length(Queue0) > 0 of
         false ->
             {ok, undefined, MapData};
         true ->
             ACK = case MType0 == ?CONFIRMED_UP of
-                        true -> 1;
-                        false -> 0
-                    end,
+                      true -> 1;
+                      false -> 0
+                  end,
             {{Confirmed, Port, ReplyPayload}, Queue1} =
                 case Queue0 of
                     [] -> {{undefined, undefined, <<>>}, []};
                     [H|T] -> {H, T}
                 end,
             MType1 = case Confirmed of
-                            true ->
-                                ?CONFIRMED_DOWN;
-                            false ->
-                                ?UNCONFIRMED_DOWN;
-                            undefined ->
-                                ?UNCONFIRMED_DOWN
-                        end,
+                         true ->
+                             ?CONFIRMED_DOWN;
+                         false ->
+                             ?UNCONFIRMED_DOWN;
+                         undefined ->
+                             ?UNCONFIRMED_DOWN
+                     end,
             case {ACK == 1, Port == undefined} of
                 {true, true} ->
                     case Confirmed of
@@ -236,9 +236,9 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                     end
             end,
             FOpts1 = case ChannelCorrection of
-                            false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
-                            true -> []
-                        end,
+                         false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                         true -> []
+                     end,
             ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, FOpts0) of
                                     {link_adr_ans, 1, 1, 1} when ChannelCorrection == false ->
                                         true;
@@ -246,15 +246,15 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                                         ChannelCorrection
                                 end,
             DeviceUpdates = [
-                                {queue, Queue1},
-                                {channel_correction, ChannelsCorrected},
-                                {fcntdown, (FCNTDown + 1)}
+                             {queue, Queue1},
+                             {channel_correction, ChannelsCorrected},
+                             {fcntdown, (FCNTDown + 1)}
                             ],
             ok = router_devices_server:update(AppEUI, DeviceUpdates),
             Reply = lorawan_reply(#frame{mtype=MType1, devaddr=DevAddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device),
             #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                                                                        Offset,
-                                                                                                        #{<<"tmst">> => Time, <<"freq">> => Freq,
+                                                                                                      Offset,
+                                                                                                      #{<<"tmst">> => Time, <<"freq">> => Freq,
                                                                                                         <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
             Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
             {ok, Packet, MapData}

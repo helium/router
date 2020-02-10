@@ -82,7 +82,7 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"http">>}=Ch
     ChannelID = kvc:path([<<"name">>], Channel),
     fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}=DataMap) ->
             Result = try hackney:request(Method, URL, maps:to_list(Headers), encode_data(OUI, DID, DataMap), [with_body]) of
-                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
+                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
                              #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                status => success, description => ResponseBody};

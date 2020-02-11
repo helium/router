@@ -155,7 +155,7 @@ decode_data(Data) ->
 
 -spec handle_lora_packet(#packet_pb{}, libp2p_crypto:pubkey_bin()) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
 handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
-                              datarate=DataRate, payload=Payload}=Packet, PubkeyBin) ->
+                              datarate=DataRate, payload=Payload}=Packet0, PubkeyBin) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     case handle_lorawan_payload(Payload, AName) of
         {error, _Reason}=Error ->
@@ -168,10 +168,10 @@ handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq
                                                                       <<"freq">> => Freq,
                                                                       <<"datr">> => erlang:list_to_binary(DataRate),
                                                                       <<"codr">> => <<"lol">>}),
-            Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-            {ok, Packet};
+            Packet1 = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+            {ok, Packet1};
         {ok, #frame{}=Frame} ->
-            handle_lorawan_frame(AName, Packet, Frame)
+            handle_lorawan_frame(AName, Packet0, Frame)
     end.
 
 -spec handle_lorawan_frame(string(), #packet_pb{}, #frame{}) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.

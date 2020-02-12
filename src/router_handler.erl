@@ -190,26 +190,26 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                 spreading => erlang:list_to_binary(DataRate),
                 payload => Data,
                 timestamp => Time
-                },
+               },
     case MType0 == ?CONFIRMED_UP orelse erlang:length(Queue0) > 0 of
         false ->
             {ok, undefined, MapData};
         true ->
             ACK = case MType0 == ?CONFIRMED_UP of
-                        true -> 1;
-                        false -> 0
-                    end,
+                      true -> 1;
+                      false -> 0
+                  end,
             {{Confirmed, Port, ReplyPayload}, Queue1} =
                 case Queue0 of
                     [] -> {{false, undefined, <<>>}, []};
                     [H|T] -> {H, T}
                 end,
             MType1 = case Confirmed of
-                            true ->
-                                ?CONFIRMED_DOWN;
-                            false ->
-                                ?UNCONFIRMED_DOWN
-                        end,
+                         true ->
+                             ?CONFIRMED_DOWN;
+                         false ->
+                             ?UNCONFIRMED_DOWN
+                     end,
             case {ACK == 1, Port /= undefined} of
                 {true, true} ->
                     case Confirmed of
@@ -223,46 +223,40 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                 {true, false} ->
                     StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCNT))/binary>>,
                     ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-                false ->
-                    StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
-            end;
-        {true, false} ->
-            StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-        {false, true} ->
-            case Confirmed of
-                true ->
-                    StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-                false ->
-                    StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
-            end
-    end,
-    FOpts1 = case ChannelCorrection of
-                    false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
-                    true -> []
-                end,
-    ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, FOpts0) of
-                            {link_adr_ans, 1, 1, 1} when ChannelCorrection == false ->
-                                true;
-                            _ ->
-                                ChannelCorrection
-                        end,
-    DeviceUpdates = [
-                        {queue, Queue1},
-                        {channel_correction, ChannelsCorrected},
-                        {fcntdown, (FCNTDown + 1)}
-                    ],
-    ok = router_devices_server:update(AppEUI, DeviceUpdates),
-    Reply = lorawan_reply(#frame{mtype=MType1, devaddr=DevAddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device),
-    #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                                                                Offset,
-                                                                                                #{<<"tmst">> => Time, <<"freq">> => Freq,
-                                                                                                <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
-    Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-    {ok, Packet, MapData}.
+                {false, true} ->
+                    case Confirmed of
+                        true ->
+                            StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
+                        false ->
+                            StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
+                    end
+            end,
+            FOpts1 = case ChannelCorrection of
+                         false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                         true -> []
+                     end,
+            ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, FOpts0) of
+                                    {link_adr_ans, 1, 1, 1} when ChannelCorrection == false ->
+                                        true;
+                                    _ ->
+                                        ChannelCorrection
+                                end,
+            DeviceUpdates = [
+                             {queue, Queue1},
+                             {channel_correction, ChannelsCorrected},
+                             {fcntdown, (FCNTDown + 1)}
+                            ],
+            ok = router_devices_server:update(AppEUI, DeviceUpdates),
+            Reply = lorawan_reply(#frame{mtype=MType1, devaddr=DevAddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device),
+            #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
+                                                                                                      Offset,
+                                                                                                      #{<<"tmst">> => Time, <<"freq">> => Freq,
+                                                                                                        <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
+            Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+            {ok, Packet, MapData}
+    end.
 
 -spec handle_lorawan_payload(binary(), string()) -> {ok, #frame{}} | {join, binary()} | {error, any()}.
 handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary, MIC:4/binary>> =Payload, AName) when MType == 0 ->
@@ -349,27 +343,32 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1
         #device{fcnt=FCnt, app_eui=AppEUI} ->
             lager:debug("discarding duplicate packet ~b from ~p received by ~s", [FCnt, lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, duplicate_packet};
-        Device0 ->
-            NwkSKey = Device0#device.nwk_s_key,
-            DeviceUpdates = [{fcnt, FCnt}],
-            ok = router_devices_server:update(Device0#device.app_eui, DeviceUpdates),
-            Device = Device0#device{fcnt=FCnt},
-            case FPort of
-                0 when FOptsLen == 0 ->
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                    lager:debug("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
-                0 ->
-                    lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), AName]),
-                    <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
-                    StatusMsg = <<"Packet with double fopts received from AppEUI: ", (lorawan_utils:binary_to_hex(Device#device.app_eui))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(Device#device.mac))/binary>>,
-                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
-                    {error, double_fopts};
-                _N ->
-                    AppSKey = Device#device.app_s_key,
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:debug("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
+        #device{app_eui=AppEUI, mac=MAC}=Device0 ->
+            case throttle:check(packet_dedup, {MAC, AppEUI, FCnt}) of
+                {ok, _, _} ->
+                    NwkSKey = Device0#device.nwk_s_key,
+                    DeviceUpdates = [{fcnt, FCnt}],
+                    ok = router_devices_server:update(Device0#device.app_eui, DeviceUpdates),
+                    Device = Device0#device{fcnt=FCnt},
+                    case FPort of
+                        0 when FOptsLen == 0 ->
+                            Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
+                            lager:debug("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+                            {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
+                        0 ->
+                            lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), AName]),
+                            <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
+                            StatusMsg = <<"Packet with double fopts received from AppEUI: ", (lorawan_utils:binary_to_hex(Device#device.app_eui))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(Device#device.mac))/binary>>,
+                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                            {error, double_fopts};
+                        _N ->
+                            AppSKey = Device#device.app_s_key,
+                            Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
+                            lager:debug("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+                            {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
+                    end;
+                _ ->
+                    {error, duplicate_packet}
             end
     end;
 handle_lorawan_payload(Payload, AName) ->

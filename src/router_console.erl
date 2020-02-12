@@ -16,7 +16,7 @@ get_app_key(DID, OUI) ->
             undefined
     end.
 
--spec report_status(integer(), integer(), atom(), string(), binary()) -> ok | {error, any()}.
+-spec report_status(integer(), integer(), atom(), string(), binary()) -> ok.
 report_status(OUI, DID, Status, AName, Msg) ->
     case get_device(DID, OUI) of
         {ok, JSON} ->
@@ -58,7 +58,7 @@ make_send_data_fun(OUI, DID, Endpoint, JWT) ->
             ChannelFuns =
                 case kvc:path([<<"channels">>], JSON) of
                     [] ->
-                        [fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName,  timestamp := Timestamp}) ->
+                        [fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}) ->
                                  Result = #{id => DID, oui => OUI, payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
                                             delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                             status => <<"No Channel">>},
@@ -80,9 +80,9 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"http">>}=Ch
     Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
     lager:info("Method ~p", [Method]),
     ChannelID = kvc:path([<<"name">>], Channel),
-    fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName,  timestamp := Timestamp}=DataMap) ->
+    fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}=DataMap) ->
             Result = try hackney:request(Method, URL, maps:to_list(Headers), encode_data(OUI, DID, DataMap), [with_body]) of
-                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >=200, StatusCode =< 300 ->
+                         {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
                              #{channel_name => ChannelID, id => DID, oui => OUI, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                status => success, description => ResponseBody};
@@ -109,7 +109,7 @@ channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, #{<<"type">> := <<"mqtt">>}=Ch
     URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
     Topic = kvc:path([<<"credentials">>, <<"topic">>], Channel),
     ChannelID = kvc:path([<<"name">>], Channel),
-    fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName,  timestamp := Timestamp}=DataMap) ->
+    fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}=DataMap) ->
             Result = case router_mqtt_sup:get_connection((OUI bsl 32) + DID, ChannelID, #{endpoint => URL, topic => Topic}) of
                          {ok, Pid} ->
                              case router_mqtt_worker:send(Pid, encode_data(OUI, DID, DataMap)) of

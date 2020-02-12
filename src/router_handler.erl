@@ -8,7 +8,7 @@
 
 -behavior(libp2p_framed_stream).
 
--include_lib("helium_proto/src/pb/blockchain_state_channel_v1_pb.hrl").
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include("router.hrl").
 -include("device.hrl").
 
@@ -155,7 +155,7 @@ decode_data(Data) ->
 
 -spec handle_lora_packet(#packet_pb{}, libp2p_crypto:pubkey_bin()) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
 handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
-                              datarate=DataRate, payload=Payload, signal_strength=RSSI, snr=SNR}, PubkeyBin) ->
+                              datarate=DataRate, payload=Payload}=Packet0, PubkeyBin) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     case handle_lorawan_payload(Payload, AName) of
         {error, _Reason}=Error ->
@@ -168,90 +168,96 @@ handle_lora_packet(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq
                                                                       <<"freq">> => Freq,
                                                                       <<"datr">> => erlang:list_to_binary(DataRate),
                                                                       <<"codr">> => <<"lol">>}),
-            Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-            {ok, Packet};
-        {ok, #frame{device=#device{queue=Queue0, fcnt=FCNT, app_eui=AppEUI, channel_correction=ChannelCorrection, fcntdown=FCNTDown, offset=Offset}=Device,
-                    mtype=MType0, fopts=FOpts0, devaddr=DevAddr, data=Data}} ->
-            <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-            MapData = #{
-                        miner_name => erlang:list_to_binary(AName),
-                        rssi => RSSI,
-                        snr => SNR,
-                        oui => OUI,
-                        device_id => DID,
-                        sequence => FCNT,
-                        spreading => erlang:list_to_binary(DataRate),
-                        payload => Data,
-                        timestamp => Time
-                       },
-            case MType0 == ?CONFIRMED_UP orelse erlang:length(Queue0) > 0 of
-                false ->
-                    {ok, undefined, MapData};
-                true ->
-                    ACK = case MType0 == ?CONFIRMED_UP of
-                              true -> 1;
-                              false -> 0
-                          end,
-                    {{Confirmed, Port, ReplyPayload}, Queue1} =
-                        case Queue0 of
-                            [] -> {{undefined, undefined, <<>>}, []};
-                            [H|T] -> {H, T}
-                        end,
-                    MType1 = case Confirmed of
-                                 true ->
-                                     ?CONFIRMED_DOWN;
-                                 false ->
-                                     ?UNCONFIRMED_DOWN;
-                                 undefined ->
-                                     ?UNCONFIRMED_DOWN
-                             end,
-                    case {ACK == 1, Port == undefined} of
-                        {true, true} ->
-                            case Confirmed of
-                                true ->
-                                    StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-                                false ->
-                                    StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
-                            end;
-                        {true, false} ->
-                            StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+            Packet1 = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+            {ok, Packet1};
+        {ok, #frame{}=Frame} ->
+            handle_lorawan_frame(AName, Packet0, Frame)
+    end.
+
+-spec handle_lorawan_frame(string(), #packet_pb{}, #frame{}) -> {ok, #packet_pb{}} | {ok, #packet_pb{} | undefined, map()} | {error, any()}.
+handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq,
+                                       datarate=DataRate, signal_strength=RSSI, snr=SNR},
+                     #frame{device=#device{queue=Queue0, fcnt=FCNT, app_eui=AppEUI, channel_correction=ChannelCorrection, fcntdown=FCNTDown, offset=Offset}=Device,
+                            mtype=MType0, fopts=FOpts0, devaddr=DevAddr, data=Data}) ->
+    <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
+    MapData = #{
+                miner_name => erlang:list_to_binary(AName),
+                rssi => RSSI,
+                snr => SNR,
+                oui => OUI,
+                device_id => DID,
+                sequence => FCNT,
+                spreading => erlang:list_to_binary(DataRate),
+                payload => Data,
+                timestamp => Time
+               },
+    case MType0 == ?CONFIRMED_UP orelse erlang:length(Queue0) > 0 of
+        false ->
+            {ok, undefined, MapData};
+        true ->
+            ACK = case MType0 == ?CONFIRMED_UP of
+                      true -> 1;
+                      false -> 0
+                  end,
+            {{Confirmed, Port, ReplyPayload}, Queue1} =
+                case Queue0 of
+                    [] -> {{undefined, undefined, <<>>}, []};
+                    [H|T] -> {H, T}
+                end,
+            MType1 = case Confirmed of
+                         true ->
+                             ?CONFIRMED_DOWN;
+                         false ->
+                             ?UNCONFIRMED_DOWN;
+                         undefined ->
+                             ?UNCONFIRMED_DOWN
+                     end,
+            case {ACK == 1, Port == undefined} of
+                {true, true} ->
+                    case Confirmed of
+                        true ->
+                            StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
                             ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-                        {false, true} ->
-                            case Confirmed of
-                                true ->
-                                    StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
-                                false ->
-                                    StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
-                            end
-                    end,
-                    FOpts1 = case ChannelCorrection of
-                                 false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
-                                 true -> []
-                             end,
-                    ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, FOpts0) of
-                                            {link_adr_ans, 1, 1, 1} when ChannelCorrection == false ->
-                                                true;
-                                            _ ->
-                                                ChannelCorrection
-                                        end,
-                    DeviceUpdates = [
-                                     {queue, Queue1},
-                                     {channel_correction, ChannelsCorrected},
-                                     {fcntdown, (FCNTDown + 1)}
-                                    ],
-                    ok = router_devices_server:update(AppEUI, DeviceUpdates),
-                    Reply = lorawan_reply(#frame{mtype=MType1, devaddr=DevAddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device),
-                    #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                                                                              Offset,
-                                                                                                              #{<<"tmst">> => Time, <<"freq">> => Freq,
-                                                                                                                <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
-                    Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-                    {ok, Packet, MapData}
-            end
+                        false ->
+                            StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
+                    end;
+                {true, false} ->
+                    StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
+                {false, true} ->
+                    case Confirmed of
+                        true ->
+                            StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
+                        false ->
+                            StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
+                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg)
+                    end
+            end,
+            FOpts1 = case ChannelCorrection of
+                         false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                         true -> []
+                     end,
+            ChannelsCorrected = case lists:keyfind(link_adr_ans, 1, FOpts0) of
+                                    {link_adr_ans, 1, 1, 1} when ChannelCorrection == false ->
+                                        true;
+                                    _ ->
+                                        ChannelCorrection
+                                end,
+            DeviceUpdates = [
+                             {queue, Queue1},
+                             {channel_correction, ChannelsCorrected},
+                             {fcntdown, (FCNTDown + 1)}
+                            ],
+            ok = router_devices_server:update(AppEUI, DeviceUpdates),
+            Reply = lorawan_reply(#frame{mtype=MType1, devaddr=DevAddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device),
+            #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} = lorawan_mac_region_old:rx1_window(<<"US902-928">>,
+                                                                                                      Offset,
+                                                                                                      #{<<"tmst">> => Time, <<"freq">> => Freq,
+                                                                                                        <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"lol">>}),
+            Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+            {ok, Packet, MapData}
     end.
 
 -spec handle_lorawan_payload(binary(), string()) -> {ok, #frame{}} | {join, binary()} | {error, any()}.
@@ -432,4 +438,15 @@ int_to_bin(Int) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
+
+decode_data_test() ->
+    Data = <<34,174,1,10,64,8,196,150,210,162,15,16,1,26,22,128,244,84,139,68,128,88,59,2,32,25,215,122,114,59,171,202,
+             182,121,113,18,1,32,244,146,162,133,14,45,0,0,242,194,53,102,70,100,68,58,9,83,70,49,48,66,87,49,50,53,69,
+             0,0,24,193,18,33,0,1,86,151,55,4,246,215,110,58,215,36,20,219,226,167,201,82,118,91,30,35,99,12,42,205,10,
+             120,121,209,73,225,43,26,71,48,69,2,33,0,201,47,36,48,31,30,50,50,90,235,234,143,82,255,220,207,202,60,91,
+             83,116,249,53,106,56,92,6,128,37,12,139,86,2,32,116,146,78,146,141,48,57,230,250,87,47,70,198,247,63,77,2,
+             114,228,223,250,71,85,37,177,137,96,187,238,163,81,55>>,
+    ?assertMatch({ok, #packet_pb{}, _}, decode_data(Data)),
+    ok.
+
 -endif.

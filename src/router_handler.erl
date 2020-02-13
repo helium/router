@@ -88,17 +88,16 @@ init(client, _Conn, _Args) ->
     {ok, #state{}}.
 
 handle_data(server, Data, State) ->
-    lager:info("got data ~p", [Data]),
+    lager:debug("got data ~p", [Data]),
     case handle_server_data(Data) of
         ok ->
-            lager:info("data sent, no reply"),
+            lager:debug("data sent, no reply"),
             {noreply, State};
         {ok, Packet} ->
-            lager:info("data sent, reply ~p", [Packet]),
+            lager:debug("data sent, reply ~p", [Packet]),
             {noreply, State, encode_resp(Packet)};
         {error, _Reason} ->
-            lager:warning("failed to transmit data ~p", [_Reason]),
-            lager:debug("failed to transmit data  ~p", [Data]),
+            lager:debug("failed to transmit data ~p", [_Reason]),
             {noreply, State}
     end;
 handle_data(_Type, _Bin, State) ->
@@ -106,7 +105,7 @@ handle_data(_Type, _Bin, State) ->
     {noreply, State}.
 
 handle_info(_Type, _Msg, State) ->
-    lager:debug("~p got info ~p", [_Type, _Msg]),
+    lager:warning("~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
 
 %% ------------------------------------------------------------------
@@ -304,7 +303,7 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI
                             ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>, %, CFList/binary>>,
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
-                            lager:debug("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
+                            lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
                             case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
                                 {ok, _, _} ->
                                     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
@@ -353,7 +352,7 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1
                     case FPort of
                         0 when FOptsLen == 0 ->
                             Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                            lager:debug("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+                            lager:info("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
                             {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
                         0 ->
                             lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), AName]),
@@ -364,11 +363,11 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1
                         _N ->
                             AppSKey = Device#device.app_s_key,
                             Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                            lager:debug("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+                            lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
                             {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
                     end;
                 _ ->
-                    {error, duplicate_packet}
+                    {error, throttle_duplicate_packet}
             end
     end;
 handle_lorawan_payload(Payload, AName) ->

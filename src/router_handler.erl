@@ -201,18 +201,16 @@ handle_lorawan_frame(AName, #packet_pb{oui=OUI, type=Type, timestamp=Time, frequ
                   end,
             {{Confirmed, Port, ReplyPayload}, Queue1} =
                 case Queue0 of
-                    [] -> {{undefined, undefined, <<>>}, []};
+                    [] -> {{false, undefined, <<>>}, []};
                     [H|T] -> {H, T}
                 end,
             MType1 = case Confirmed of
                          true ->
                              ?CONFIRMED_DOWN;
                          false ->
-                             ?UNCONFIRMED_DOWN;
-                         undefined ->
                              ?UNCONFIRMED_DOWN
                      end,
-            case {ACK == 1, Port == undefined} of
+            case {ACK == 1, Port /= undefined} of
                 {true, true} ->
                     case Confirmed of
                         true ->
@@ -273,9 +271,14 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI
         AppKey ->
             case router_devices_server:get(AppEUI) of
                 {ok, #device{join_nonce=OldNonce}} when DevNonce == OldNonce ->
-                    lager:debug("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
-                    StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                    case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                        {ok, _, _} ->
+                            lager:debug("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, DevNonce, AName]),
+                            StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg);
+                        _ ->
+                            ok
+                    end,
                     {error, bad_nonce};
                 _ ->
                     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
@@ -302,13 +305,23 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI
                             ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
                             EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                             lager:debug("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-                            StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                            ok = router_console:report_status(OUI, DID, success, AName, StatusMsg),
+                            case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                                {ok, _, _} ->
+                                    StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                                    ok = router_console:report_status(OUI, DID, success, AName, StatusMsg);
+                                _ ->
+                                    ok
+                            end,
                             {join, <<ReplyHdr/binary, EncryptedReply/binary>>};
                         _ ->
-                            lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-                            StatusMsg = <<"Bad Message Integrity Code on join for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary, ", check AppKey">>,
-                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                            case throttle:check(join_dedup, {DevEUI, AppEUI, DevNonce}) of
+                                {ok, _, _} ->
+                                    lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
+                                    StatusMsg = <<"Bad Message Integrity Code on join for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary, ", check AppKey">>,
+                                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg);
+                                _ ->
+                                    ok
+                            end,
                             {error, bad_mic}
                     end
             end
@@ -330,27 +343,32 @@ handle_lorawan_payload(<<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, ADR:1
         #device{fcnt=FCnt, app_eui=AppEUI} ->
             lager:debug("discarding duplicate packet ~b from ~p received by ~s", [FCnt, lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, duplicate_packet};
-        Device0 ->
-            NwkSKey = Device0#device.nwk_s_key,
-            DeviceUpdates = [{fcnt, FCnt}],
-            ok = router_devices_server:update(Device0#device.app_eui, DeviceUpdates),
-            Device = Device0#device{fcnt=FCnt},
-            case FPort of
-                0 when FOptsLen == 0 ->
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                    lager:debug("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
-                0 ->
-                    lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), AName]),
-                    <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
-                    StatusMsg = <<"Packet with double fopts received from AppEUI: ", (lorawan_utils:binary_to_hex(Device#device.app_eui))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(Device#device.mac))/binary>>,
-                    ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
-                    {error, double_fopts};
-                _N ->
-                    AppSKey = Device#device.app_s_key,
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:debug("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
-                    {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
+        #device{app_eui=AppEUI, mac=MAC}=Device0 ->
+            case throttle:check(packet_dedup, {MAC, AppEUI, FCnt}) of
+                {ok, _, _} ->
+                    NwkSKey = Device0#device.nwk_s_key,
+                    DeviceUpdates = [{fcnt, FCnt}],
+                    ok = router_devices_server:update(Device0#device.app_eui, DeviceUpdates),
+                    Device = Device0#device{fcnt=FCnt},
+                    case FPort of
+                        0 when FOptsLen == 0 ->
+                            Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
+                            lager:debug("~s packet from ~s with fopts ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+                            {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=0, data = <<>>, device=Device}};
+                        0 ->
+                            lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), AName]),
+                            <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
+                            StatusMsg = <<"Packet with double fopts received from AppEUI: ", (lorawan_utils:binary_to_hex(Device#device.app_eui))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(Device#device.mac))/binary>>,
+                            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg),
+                            {error, double_fopts};
+                        _N ->
+                            AppSKey = Device#device.app_s_key,
+                            Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
+                            lager:debug("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s", [mtype(MType), lorawan_utils:binary_to_hex(Device#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+                            {ok, #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU, fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data, device=Device}}
+                    end;
+                _ ->
+                    {error, duplicate_packet}
             end
     end;
 handle_lorawan_payload(Payload, AName) ->

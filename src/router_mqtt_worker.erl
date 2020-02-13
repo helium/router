@@ -6,6 +6,7 @@
 -module(router_mqtt_worker).
 
 -behaviour(gen_server).
+-include("device.hrl").
 
 -dialyzer({nowarn_function, init/1}).
 
@@ -32,6 +33,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+                mac :: pos_integer(),
                 connection :: pid(),
                 pubtopic :: binary()
                }).
@@ -54,8 +56,9 @@ init([MAC, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
             ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/rx", [Topic, MAC])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/tx/#", [Topic, MAC])),
-            emqtt:subscribe(Conn, {SubTopic, 1}),
-            {ok, #state{connection=Conn, pubtopic=PubTopic}};
+            %% TODO use a better QoS to add some back pressure
+            emqtt:subscribe(Conn, {SubTopic, 0}),
+            {ok, #state{mac=MAC, connection=Conn, pubtopic=PubTopic}};
         error ->
             {stop, mqtt_connection_failed}
     end.
@@ -72,6 +75,27 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info({publish, Msg=#{payload := Pay}}, State) ->
+    try jsx:decode(Pay, [return_maps]) of
+        JSON ->
+            case maps:find(<<"payload_raw">>, JSON) of
+                {ok, Payload} ->
+                    case router_devices_server:get(<<(State#state.mac):64/integer-unsigned-big>>) of
+                        {ok, Device} ->
+                            lager:info("queueing ~p for downlink to ~p", [Payload, State#state.mac]),
+                            %% TODO figure out port and confirmation mode
+                            router_devices_server:update(<<(State#state.mac):64/integer-unsigned-big>>, [{queue, Device#device.queue ++ [{false, 1, base64:decode(Payload)}]}]);
+                        {error, Reason} ->
+                            lager:info("could not find device ~p : ~p", [State#state.mac, Reason])
+                    end;
+                error ->
+                    lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
+            end
+    catch
+        _:_ ->
+            lager:info("could not parse json downlink message ~p", [Msg])
+    end,
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

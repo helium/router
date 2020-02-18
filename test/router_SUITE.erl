@@ -87,7 +87,8 @@ http_test(Config) ->
     ok = wait_for_reply(),
 
     %% Check that device is in cache now
-    {ok, Device} = router_devices_server:get(?APPEUI),
+    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, Device} = router_devices_db:get(DB, CF, ?APPEUI),
     ct:pal("DEVICE= ~p", [Device]),
 
     %% Send join packet

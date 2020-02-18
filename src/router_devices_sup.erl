@@ -70,7 +70,7 @@ init([]) ->
 -spec start_worker(binary(), map()) -> {ok, pid()} | {error, any()}.
 start_worker(ID, Args) ->
     {ok, DB, [_DefaultCF, DevicesCF]} = router_db:get(),
-    Map = maps:merge(Args, #{db => DB, cf => DevicesCF}),
+    Map = maps:merge(Args, #{db => DB, cf => DevicesCF, id => ID}),
     case supervisor:start_child(?MODULE, [Map]) of
         {error, _Err}=Err ->
             Err;

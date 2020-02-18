@@ -80,7 +80,7 @@ handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
-handle_info(server, {packet, Packet}, State) ->
+handle_info(server, {packet, #packet_pb{}=Packet}, State) ->
     {noreply, State, encode_resp(Packet)};
 handle_info(_Type, _Msg, State) ->
     lager:warning("~p got info ~p", [_Type, _Msg]),

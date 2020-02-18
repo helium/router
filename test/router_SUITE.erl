@@ -18,6 +18,7 @@
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
+-define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -88,7 +89,7 @@ http_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    {ok, Device} = router_devices_db:get(DB, CF, ?APPEUI),
+    {ok, Device} = get_device(DB, CF, router_devices_sup:id(?APPEUI, ?DEVEUI)),
     ct:pal("DEVICE= ~p", [Device]),
 
     %% Send join packet
@@ -164,7 +165,7 @@ join_packet(PubKeyBin, AppKey) ->
     MHDRRFU = 0,
     Major = 0,
     AppEUI = lorawan_utils:reverse(?APPEUI),
-    DevEUI = lorawan_utils:reverse(<<0,0,0,0,0,0,0,1>>),
+    DevEUI = lorawan_utils:reverse(?DEVEUI),
     DevNonce = <<0,0>>,
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
     MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
@@ -214,3 +215,11 @@ frame_packet(PubKeyBin, SessionKey) ->
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, #device{}} | {error, any()}.
+get_device(DB, CF, ID) ->
+    case rocksdb:get(DB, CF, ID, [{sync, true}]) of
+        {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
+        not_found -> {error, not_found};
+        Error -> Error
+    end.

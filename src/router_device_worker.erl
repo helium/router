@@ -8,8 +8,8 @@
 -behavior(gen_server).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include("device.hrl").
--include("frame.hrl").
+-include("device_worker.hrl").
+-include("lorawan_vars.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -33,12 +33,6 @@
 
 
 -define(SERVER, ?MODULE).
--define(UNCONFIRMED_DOWN, 2#011).
--define(CONFIRMED_UP, 2#100).
--define(CONFIRMED_DOWN, 2#101).
--define(RX_DELAY, 5).
--define(REPLY_DELAY, 2500).
-
 -record(state, {
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
@@ -190,7 +184,7 @@ handle_join(#packet_pb{oui=OUI, payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI
             lager:debug("Device ~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, OldNonce, AName]),
             StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = router_console:report_status(OUI, DID, failure, AName, StatusMsg);
+            ok = report_status(failure, AName, StatusMsg);
         _ ->
             ok
     end,

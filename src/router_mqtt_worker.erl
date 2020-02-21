@@ -6,7 +6,7 @@
 -module(router_mqtt_worker).
 
 -behaviour(gen_server).
--include("device.hrl").
+-include("device_worker.hrl").
 
 -dialyzer({nowarn_function, init/1}).
 

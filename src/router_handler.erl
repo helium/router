@@ -9,7 +9,7 @@
 -behavior(libp2p_framed_stream).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include("device.hrl").
+-include("device_worker.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports

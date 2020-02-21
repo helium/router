@@ -1,0 +1,5 @@
+-define(UNCONFIRMED_DOWN, 2#011).
+-define(CONFIRMED_UP, 2#100).
+-define(CONFIRMED_DOWN, 2#101).
+-define(RX_DELAY, 5).
+-define(REPLY_DELAY, 2500).

@@ -143,10 +143,9 @@ terminate(_Reason, #state{db=DB}) ->
 
 -spec handle_packet(#packet_pb{}, string(), pid()) -> ok | {error, any()}.
 handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
-                                    _DevNonce:2/binary, _MIC:4/binary>>}=Packet, PubkeyBin, Pid) when MType == 0 ->
+                                    _DevNonce:2/binary, _MIC:4/binary>>}=Packet, PubkeyBin, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    WorkerID = router_devices_sup:id(AppEUI, DevEUI),
-    case router_devices_sup:maybe_start_worker(WorkerID, #{}) of
+    case maybe_start_worker(AppEUI, DevEUI) of
         {error, _Reason}=Error ->
             Error;
         {ok, WorkerPid} ->
@@ -169,8 +168,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
             lager:debug("discarding duplicate packet ~b from ~p received by ~s", [FCnt, lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, duplicate_packet};
         #device{app_eui=AppEUI, mac=MAC} ->
-            WorkerID = router_devices_sup:id(AppEUI, MAC),
-            case router_devices_sup:maybe_start_worker(WorkerID, #{}) of
+            case maybe_start_worker(AppEUI, MAC) of
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
@@ -180,11 +178,16 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
 handle_packet(#packet_pb{payload=Payload}, AName, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
+-spec maybe_start_worker(binary(), binary()) -> {ok, pid()} | {error, any()}.
+maybe_start_worker(AppEUI, MAC) ->
+    WorkerID = router_devices_sup:id(AppEUI, MAC),
+    router_devices_sup:maybe_start_worker(WorkerID, #{}).
+
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), #device{}) -> {ok, #packet_pb{}, #device{}} | {error, any()}.
 handle_join(#packet_pb{oui=OUI, payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                            DevEUI0:8/binary, OldNonce:2/binary, _MIC:4/binary>>},
             PubkeyBin,
-            #device{join_nonce=OldNonce}) when MType == 0 ->
+            #device{join_nonce=OldNonce}) when MType == ?JOIN_REQ ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
@@ -342,7 +345,7 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame, false) ->
                                                     <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
             Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
                                  timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-            Device1 = Device0#device{channel_correction=ChannelsCorrected},
+            Device1 = Device0#device{channel_correction=ChannelsCorrected, fcntdown=(FCNTDown + 1)},
             {send, Device1, Packet1}
     end;
 handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|T]}=Device0, Frame, _AllowDelay) ->
@@ -511,14 +514,14 @@ binxor(<<A, RestA/binary>>, <<B, RestB/binary>>, Acc) ->
     binxor(RestA, RestB, <<(A bxor B), Acc/binary>>).
 
 -spec mtype(integer()) -> string().
-mtype(2#000) -> "Join request";
-mtype(2#001) -> "Join accept";
-mtype(2#010) -> "Unconfirmed data up";
-mtype(2#011) -> "Unconfirmed data down";
-mtype(2#100) -> "Confirmed data up";
-mtype(2#101) -> "Confirmed data down";
-mtype(2#110) -> "RFU";
-mtype(2#111) -> "Proprietary".
+mtype(?JOIN_REQ) -> "Join request";
+mtype(?JOIN_ACCEPT) -> "Join accept";
+mtype(?UNCONFIRMED_UP) -> "Unconfirmed data up";
+mtype(?UNCONFIRMED_DOWN) -> "Unconfirmed data down";
+mtype(?CONFIRMED_UP) -> "Confirmed data up";
+mtype(?CONFIRMED_DOWN) -> "Confirmed data down";
+mtype(?RFU) -> "RFU";
+mtype(?PRIORITY) -> "Proprietary".
 
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->

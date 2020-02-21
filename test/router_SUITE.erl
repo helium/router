@@ -102,7 +102,7 @@ http_test(Config) ->
     ok = wait_for_ack(?REPLY_DELAY + 250),
 
     %% Adding a message to queue
-    
+
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg = {false, 1, <<"somepayload">>},
     router_device_worker:queue_message(WorkerPid, Msg),
@@ -112,7 +112,7 @@ http_test(Config) ->
     ?assertEqual(Device1#device.queue, [Msg]),
 
     %% Sending CONFIRMED_UP frame packet and then we should get back message that was in queue
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
     ok = wait_for_post_channel(),
     ok = wait_for_report_status(),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
@@ -187,7 +187,7 @@ wait_for_ack(Timeout) ->
     end.
 
 join_packet(PubKeyBin, AppKey) ->
-    MType = 2#00,
+    MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
     AppEUI = lorawan_utils:reverse(?APPEUI),

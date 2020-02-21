@@ -80,14 +80,15 @@ handle_info({publish, Msg=#{payload := Pay}}, State) ->
         JSON ->
             case maps:find(<<"payload_raw">>, JSON) of
                 {ok, Payload} ->
-                    case router_devices_server:get(<<(State#state.mac):64/integer-unsigned-big>>) of
-                        {ok, Device} ->
-                            lager:info("queueing ~p for downlink to ~p", [Payload, State#state.mac]),
-                            %% TODO figure out port and confirmation mode
-                            router_devices_server:update(<<(State#state.mac):64/integer-unsigned-big>>, [{queue, Device#device.queue ++ [{false, 1, base64:decode(Payload)}]}]);
-                        {error, Reason} ->
-                            lager:info("could not find device ~p : ~p", [State#state.mac, Reason])
-                    end;
+                    lager:info("JSON downlink not implented yet, sorry ~p", [Payload]);
+                                                % case router_devices_server:get(<<(State#state.mac):64/integer-unsigned-big>>) of
+                                                %     {ok, Device} ->
+                                                %         lager:info("queueing ~p for downlink to ~p", [Payload, State#state.mac]),
+                                                %         %% TODO figure out port and confirmation mode
+                                                %         router_devices_server:update(<<(State#state.mac):64/integer-unsigned-big>>, [{queue, Device#device.queue ++ [{false, 1, base64:decode(Payload)}]}]);
+                                                %     {error, Reason} ->
+                                                %         lager:info("could not find device ~p : ~p", [State#state.mac, Reason])
+                                                % end;
                 error ->
                     lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
             end

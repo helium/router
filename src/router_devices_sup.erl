@@ -6,6 +6,7 @@
 -export([
          start_link/0,
          maybe_start_worker/2,
+         lookup_device_worker/1,
          id/2
         ]).
 
@@ -48,6 +49,18 @@ maybe_start_worker(ID, Args) ->
                 false ->
                     _ = ets:delete(?ETS, ID),
                     start_worker(ID, Args)
+            end
+    end.
+
+-spec lookup_device_worker(binary()) -> {ok, pid()} | {error, not_found}.
+lookup_device_worker(ID) ->
+    case ets:lookup(?ETS, ID) of
+        [] ->
+            {error, not_found};
+        [{ID, Pid}] ->
+            case erlang:is_process_alive(Pid) of
+                true -> {ok, Pid};
+                false -> {error, not_found}
             end
     end.
 

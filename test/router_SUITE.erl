@@ -90,15 +90,36 @@ http_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    {ok, Device} = get_device(DB, CF, router_devices_sup:id(?APPEUI, ?DEVEUI)),
-    ct:pal("DEVICE= ~p", [Device]),
+    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    {ok, Device0} = get_device(DB, CF, WorkerID),
+    ct:pal("DEVICE= ~p", [Device0]),
 
-    %% Send frame packet
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device#device.nwk_s_key)},
+    %% Send CONFIRMED_UP frame packet needing an ack back
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
 
     ok = wait_for_post_channel(),
     ok = wait_for_report_status(),
     ok = wait_for_ack(?REPLY_DELAY + 250),
+
+    %% Adding a message to queue
+    
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    Msg = {false, 1, <<"somepayload">>},
+    router_device_worker:queue_message(WorkerPid, Msg),
+
+    timer:sleep(200),
+    {ok, Device1} = get_device(DB, CF, WorkerID),
+    ?assertEqual(Device1#device.queue, [Msg]),
+
+    %% Sending CONFIRMED_UP frame packet and then we should get back message that was in queue
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
+    ok = wait_for_post_channel(),
+    ok = wait_for_report_status(),
+    %% Message shoud come in fast as it is already in the queue no neeed to wait
+    ok = wait_for_ack(250),
+
+    {ok, Device2} = get_device(DB, CF, WorkerID),
+    ?assertEqual(Device2#device.queue, []),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -186,7 +207,7 @@ join_packet(PubKeyBin, AppKey) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
-frame_packet(MType, PubKeyBin, SessionKey) ->
+frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
     MHDRRFU = 0,
     Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
@@ -196,7 +217,6 @@ frame_packet(MType, PubKeyBin, SessionKey) ->
     ACK = 0,
     RFU = 0,
     FOptsLen = 0,
-    FCnt = 0,
     FOpts = <<>>,
     Body = <<1:8>>,
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,

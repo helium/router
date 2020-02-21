@@ -16,7 +16,8 @@
 %% ------------------------------------------------------------------
 -export([
          start_link/1,
-         handle_packet/2
+         handle_packet/2,
+         queue_message/2
         ]).
 
 %% ------------------------------------------------------------------
@@ -55,6 +56,10 @@ handle_packet(Packet, PubkeyBin) ->
             ok
     end.
 
+-spec queue_message(pid(), {{boolean(), integer(), binary()}}) -> ok.
+queue_message(Pid, Msg) ->
+    gen_server:cast(Pid, {queue_message, Msg}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -73,6 +78,10 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0}=State) ->
+    Device1 = Device0#device{queue=lists:append(Device0#device.queue, [Msg])},
+    {ok, _} = save_device(DB, CF, Device1),
+    {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubkeyBin, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
     case handle_join(Packet0, PubkeyBin, Device0) of
         {error, _Reason} ->

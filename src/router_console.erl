@@ -65,10 +65,20 @@ make_send_data_fun(OUI, DID, Endpoint, JWT) ->
                                  hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
                          end];
                     Channels ->
-                        lists:map(fun(Channel) -> channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, Channel) end, Channels)
+                        lists:map(fun(Channel) -> {channel_to_fun(OUI, DID, Endpoint, JWT, DeviceID, Channel), Channel} end, Channels)
                 end,
-            fun(MapData) ->
-                    [spawn(fun() -> F(MapData) end) || F <- ChannelFuns]
+            fun(#{sequence := FCNT}=MapData) ->
+                    lists:foreach(
+                      fun({F, #{<<"show_dupes">> := true, <<"id">> := ID}}) ->
+                              case throttle:check(packet_dedup, {OUI, DID, ID, FCNT}) of
+                                  {ok, _, _} -> spawn(fun() -> F(MapData) end);
+                                  _ -> ok
+                              end;
+                         ({F, _Channel}) ->
+                              spawn(fun() -> F(MapData) end)
+                      end,
+                      ChannelFuns
+                     )
             end
     end.
 

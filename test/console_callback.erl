@@ -15,7 +15,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, _Args) ->
                                            <<"headers">> => #{},
                                            <<"endpoint">> => <<"http://localhost:3000/channel">>,
                                            <<"method">> => <<"POST">>
-                                          }
+                                          },
+                    <<"show_dupes">> => false
                    },
     Body = #{
              <<"id">> => <<DID/binary, "_id">>,

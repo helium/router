@@ -275,49 +275,42 @@ handle_frame_packet(Packet, AName, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
-    AppEUI = Device0#device.app_eui,
-    MAC = Device0#device.mac,
-    case throttle:check(packet_dedup, {AppEUI, MAC, FCnt}) of
-        {ok, _, _} ->
-            {FPort, FRMPayload} = extract_frame_port_payload(PayloadAndMIC),
-            case FPort of
-                0 when FOptsLen == 0 ->
-                    NwkSKey = Device0#device.nwk_s_key,
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with fopts ~p received by ~s",
-                               [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
-                    {error, mac_command_not_handled};
-                0 ->
-                    lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n",
-                                [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), AName]),
-                    StatusMsg = <<"Packet with double fopts received from AppEUI: ",
-                                  (lorawan_utils:binary_to_hex(Device0#device.app_eui))/binary, " DevEUI: ",
-                                  (lorawan_utils:binary_to_hex(Device0#device.mac))/binary>>,
-                    ok = report_status(failure, AName, StatusMsg),
-                    {error, double_fopts};
-                _N ->
-                    AppSKey = Device0#device.app_s_key,
-                    Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-                    lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s",
-                               [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
-                    %% If frame countain ACK=1 we should clear message from queue and go on next
-                    Queue = case ACK of
-                                0 ->
-                                    Device0#device.queue;
-                                1 ->
-                                    case Device0#device.queue of
-                                        [] -> [];
-                                        %% TODO: Check if confirmed down link
-                                        [_Acked|T] -> T
-                                    end
-                            end,
-                    Device1 = Device0#device{fcnt=FCnt, queue=Queue},
-                    Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
-                                   fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
-                    {ok, Frame, Device1}
-            end;
-        _ ->
-            {error, throttle_duplicate_packet}
+    {FPort, FRMPayload} = extract_frame_port_payload(PayloadAndMIC),
+    case FPort of
+        0 when FOptsLen == 0 ->
+            NwkSKey = Device0#device.nwk_s_key,
+            Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
+            lager:info("~s packet from ~s with fopts ~p received by ~s",
+                       [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+            {error, mac_command_not_handled};
+        0 ->
+            lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n",
+                        [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), AName]),
+            StatusMsg = <<"Packet with double fopts received from AppEUI: ",
+                          (lorawan_utils:binary_to_hex(Device0#device.app_eui))/binary, " DevEUI: ",
+                          (lorawan_utils:binary_to_hex(Device0#device.mac))/binary>>,
+            ok = report_status(failure, AName, StatusMsg),
+            {error, double_fopts};
+        _N ->
+            AppSKey = Device0#device.app_s_key,
+            Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
+            lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s",
+                       [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+            %% If frame countain ACK=1 we should clear message from queue and go on next
+            Queue = case ACK of
+                        0 ->
+                            Device0#device.queue;
+                        1 ->
+                            case Device0#device.queue of
+                                [] -> [];
+                                %% TODO: Check if confirmed down link
+                                [_Acked|T] -> T
+                            end
+                    end,
+            Device1 = Device0#device{fcnt=FCnt, queue=Queue},
+            Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
+                           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
+            {ok, Frame, Device1}
     end.
 
 -spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}, boolean()) -> noop | {delay, integer()} | {send,#device{}, #packet_pb{}}.
@@ -526,7 +519,6 @@ mtype(?PRIORITY) -> "Proprietary".
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->
     erlang:list_to_binary(erlang:integer_to_list(Int)).
-
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, #device{}} | {error, any()}.
 get_device(DB, CF, AppEUI) ->

@@ -9,6 +9,5 @@
                 fcnt,
                 fopts = [],
                 fport,
-                data,
-                device
+                data
                }).

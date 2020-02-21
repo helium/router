@@ -141,6 +141,11 @@ terminate(_Reason, #state{db=DB}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% Handle packet_pb and figures out if JOIN_REQ or frame packet
+%% @end
+%%%-------------------------------------------------------------------
 -spec handle_packet(#packet_pb{}, string(), pid()) -> ok | {error, any()}.
 handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                     _DevNonce:2/binary, _MIC:4/binary>>}=Packet, PubkeyBin, Pid) when MType == ?JOIN_REQ ->
@@ -178,11 +183,22 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
 handle_packet(#packet_pb{payload=Payload}, AName, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% Maybe start a router device worker
+%% @end
+%%%-------------------------------------------------------------------
 -spec maybe_start_worker(binary(), binary()) -> {ok, pid()} | {error, any()}.
 maybe_start_worker(AppEUI, MAC) ->
     WorkerID = router_devices_sup:id(AppEUI, MAC),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% Handle join request, dedup multiple if needed, report statsus
+%% to console and sends back join resp
+%% @end
+%%%-------------------------------------------------------------------
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), #device{}) -> {ok, #packet_pb{}, #device{}} | {error, any()}.
 handle_join(#packet_pb{oui=OUI, payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                            DevEUI0:8/binary, OldNonce:2/binary, _MIC:4/binary>>},
@@ -270,6 +286,13 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
             end
     end.
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% Handle frame packet, figures out FPort/FOptsLen to see if
+%% frame is valid and check if packet is ACKnowledging
+%% previous packet sent 
+%% @end
+%%%-------------------------------------------------------------------
 -spec handle_frame_packet(#packet_pb{}, string(), #device{}) -> {ok, #frame{}, #device{}} | {error, any()}.
 handle_frame_packet(Packet, AName, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
@@ -313,6 +336,12 @@ handle_frame_packet(Packet, AName, Device0) ->
             {ok, Frame, Device1}
     end.
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% Check device's message queue to potentially wait or send reply
+%% right away
+%% @end
+%%%-------------------------------------------------------------------
 -spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}, boolean()) -> noop | {delay, integer()} | {send,#device{}, #packet_pb{}}.
 handle_frame(_Packet, _AName, #device{queue=[]}, _Frame, true) ->
     {delay, ?REPLY_DELAY};

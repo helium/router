@@ -2,13 +2,20 @@
 
 -behaviour(elli_handler).
 
--export([handle/2, handle_event/3]).
+-export([
+         handle/2,
+         handle_event/3
+        ]).
 
 handle(Req, _Args) ->
     handle(elli_request:method(Req), elli_request:path(Req), Req, _Args).
 
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, _Args) ->
+    ShowDupes = case ets:lookup(suite_config, show_dupes) of
+        [] -> false;
+        [{show_dupes, B}] -> B
+    end,
     HTTPChannel = #{
                     <<"type">> => <<"http">>,
                     <<"credentials">> => #{
@@ -16,7 +23,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, _Args) ->
                                            <<"endpoint">> => <<"http://localhost:3000/channel">>,
                                            <<"method">> => <<"POST">>
                                           },
-                    <<"show_dupes">> => false
+                    <<"show_dupes">> => ShowDupes,
+                    <<"id">> => <<"12345">>
                    },
     Body = #{
              <<"id">> => <<DID/binary, "_id">>,
@@ -30,11 +38,13 @@ handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
     {201, [], jsx:encode(Body)};
 %% Report status
 handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
-                _DID, <<"event">>], Req, [Pid]=_Args) ->
+                _DID, <<"event">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
     Pid ! {report_status, elli_request:body(Req)},
     {200, [], <<>>};
 %% POST to channel
-handle('POST', [<<"channel">>], Req, [Pid]=_Args) ->
+handle('POST', [<<"channel">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
     Pid ! {channel, elli_request:body(Req)},
     {200, [], <<"success">>};
 handle(_Method, _Path, _Req, _Args) ->

@@ -69,7 +69,7 @@ make_send_data_fun(OUI, DID, Endpoint, JWT) ->
                 end,
             fun(#{sequence := FCNT}=MapData) ->
                     lists:foreach(
-                      fun({F, #{<<"show_dupes">> := true, <<"id">> := ID}}) ->
+                      fun({F, #{<<"show_dupes">> := false, <<"id">> := ID}}) ->
                               case throttle:check(packet_dedup, {OUI, DID, ID, FCNT}) of
                                   {ok, _, _} -> spawn(fun() -> F(MapData) end);
                                   _ -> ok

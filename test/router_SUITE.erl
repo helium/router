@@ -13,13 +13,15 @@
         ]).
 
 -export([
-         http_test/1
+         http_test/1,
+         dupes/1
         ]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
+-define(ETS, suite_config).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -33,7 +35,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-     http_test
+     http_test,
+     dupes
     ].
 
 %%--------------------------------------------------------------------
@@ -48,11 +51,12 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, staging_console_secret, <<"secret">>),
     ElliOpts = [
                 {callback, console_callback},
-                {callback_args, [self()]},
+                {callback_args, #{forward => self()}},
                 {port, 3000}
                ],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
+    ets:new(?ETS, [public, named_table, set]),
     [{elli, Pid}, {base_dir, BaseDir}|Config].
 
 %%--------------------------------------------------------------------
@@ -62,6 +66,7 @@ end_per_testcase(_TestCase, Config) ->
     Pid = proplists:get_value(elli, Config),
     ok = elli:stop(Pid),
     ok = application:stop(router),
+    ets:delete(?ETS),
     ok.
 
 %%--------------------------------------------------------------------
@@ -84,7 +89,7 @@ http_test(Config) ->
     Stream ! {send, join_packet(PubKeyBin, <<"appkey_000000001">>)},
 
     %% Waiting for console repor status sent
-    ok = wait_for_report_status(),
+    ok = wait_for_report_status(PubKeyBin),
     %% Waiting for reply resp form router
     ok = wait_for_reply(),
 
@@ -92,13 +97,12 @@ http_test(Config) ->
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
     {ok, Device0} = get_device(DB, CF, WorkerID),
-    ct:pal("DEVICE= ~p", [Device0]),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
 
-    ok = wait_for_post_channel(),
-    ok = wait_for_report_status(),
+    ok = wait_for_post_channel(PubKeyBin),
+    ok = wait_for_report_status(PubKeyBin),
     ok = wait_for_ack(?REPLY_DELAY + 250),
 
     %% Adding a message to queue
@@ -113,8 +117,8 @@ http_test(Config) ->
 
     %% Sending CONFIRMED_UP frame packet and then we should get back message that was in queue
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
-    ok = wait_for_post_channel(),
-    ok = wait_for_report_status(),
+    ok = wait_for_post_channel(PubKeyBin),
+    ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     ok = wait_for_ack(250),
 
@@ -124,28 +128,81 @@ http_test(Config) ->
     libp2p_swarm:stop(Swarm),
     ok.
 
+dupes(Config) ->
+    ets:insert(?ETS, {show_dupes, true}),
+    BaseDir = proplists:get_value(base_dir, Config),
+    Swarm = start_swarm(BaseDir, dupes_test_swarm, 3617),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
+
+    %% Send join packet
+    Stream ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>)},
+
+    %% Waiting for console repor status sent
+    ok = wait_for_report_status(PubKeyBin1),
+    
+    %% Waiting for reply resp form router
+    ok = wait_for_reply(),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    {ok, Device0} = get_device(DB, CF, WorkerID),
+
+    %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, Device0#device.nwk_s_key, 0)},
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 0)},
+
+    ok = wait_for_post_channel(PubKeyBin1),
+    ok = wait_for_report_status(PubKeyBin1),
+    ok = wait_for_post_channel(PubKeyBin2),
+    ok = wait_for_report_status(PubKeyBin2),
+
+    libp2p_swarm:stop(Swarm),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
 
-wait_for_report_status() ->
+wait_for_report_status(PubKeyBin) ->
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    BinName = erlang:list_to_binary(AName),
     receive
         {report_status, Body} ->
-            #{<<"status">> := <<"success">>} = jsx:decode(Body, [return_maps]),
+            Map = jsx:decode(Body, [return_maps]),
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+            #{
+              <<"status">> := <<"success">>,
+              <<"hotspot_name">> := BinName
+             } = Map,
             ok
     after 250 ->
             ct:fail("report_status timeout")
     end.
 
-wait_for_post_channel() ->
+wait_for_post_channel(PubKeyBin) ->
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    BinName = erlang:list_to_binary(AName),
     receive
         {channel, Data} ->
+            Map = jsx:decode(Data, [return_maps]),
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
             #{
               <<"device_id">> := 1,
               <<"oui">> := 2,
               <<"payload">> := <<>>,
-              <<"spreading">> := <<"SF8BW125">>
-             } = jsx:decode(Data, [return_maps]),
+              <<"spreading">> := <<"SF8BW125">>,
+              <<"gateway">> := BinName
+             } = Map,
             ok
     after 250 ->
             ct:fail("wait_for_post_channel timeout")

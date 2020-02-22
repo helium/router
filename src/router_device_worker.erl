@@ -169,9 +169,6 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
         undefined ->
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
             {error, unknown_device};
-        #device{fcnt=FCnt, app_eui=AppEUI} ->
-            lager:debug("discarding duplicate packet ~b from ~p received by ~s", [FCnt, lorawan_utils:binary_to_hex(AppEUI), AName]),
-            {error, duplicate_packet};
         #device{app_eui=AppEUI, mac=MAC} ->
             case maybe_start_worker(AppEUI, MAC) of
                 {error, _Reason}=Error ->

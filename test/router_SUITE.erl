@@ -44,11 +44,13 @@ all() ->
 %%--------------------------------------------------------------------
 
 init_per_testcase(TestCase, Config) ->
-    BaseDir = erlang:atom_to_list(TestCase) ++ "_data",
-    ok = application:set_env(router, base_dir, BaseDir),
+    BaseDir = erlang:atom_to_list(TestCase),
+    ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
     ok = application:set_env(router, staging_console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, staging_console_secret, <<"secret">>),
+    filelib:ensure_dir(BaseDir ++ "/log"),
+    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     ElliOpts = [
                 {callback, console_callback},
                 {callback_args, #{forward => self()}},
@@ -131,7 +133,7 @@ http_test(Config) ->
 dupes(Config) ->
     ets:insert(?ETS, {show_dupes, true}),
     BaseDir = proplists:get_value(base_dir, Config),
-    Swarm = start_swarm(BaseDir, dupes_test_swarm, 3617),
+    Swarm = start_swarm(BaseDir,dupes_test_swarm, 3617),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -308,7 +310,7 @@ start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
     SwarmOpts = [
-                 {base_dir, BaseDir},
+                 {base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
                  {key, Key},
                  {libp2p_group_gossip, [{seed_nodes, []}]},
                  {libp2p_nat, [{enabled, false}]},

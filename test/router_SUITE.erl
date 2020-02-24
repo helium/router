@@ -51,24 +51,32 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, staging_console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    Tab = ets:new(?ETS, [public, set]),
     ElliOpts = [
                 {callback, console_callback},
-                {callback_args, #{forward => self()}},
+                {callback_args, #{forward => self(), ets => Tab}},
                 {port, 3000}
                ],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-    ets:new(?ETS, [public, named_table, set]),
-    [{elli, Pid}, {base_dir, BaseDir}|Config].
+    [{ets, Tab}, {elli, Pid}, {base_dir, BaseDir}|Config].
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(_TestCase, Config) ->
     Pid = proplists:get_value(elli, Config),
+    {ok, Acceptors} = elli:get_acceptors(Pid),
     ok = elli:stop(Pid),
+    timer:sleep(500),
+    [ catch erlang:exit(A, kill) || A <- Acceptors ],
     ok = application:stop(router),
-    ets:delete(?ETS),
+    ok = application:stop(lager),
+    e2qc:teardown(console_cache),
+    ok = application:stop(e2qc),
+    ok = application:stop(throttle),
+    Tab = proplists:get_value(ets, Config),
+    ets:delete(Tab),
     ok.
 
 %%--------------------------------------------------------------------
@@ -131,7 +139,8 @@ http_test(Config) ->
     ok.
 
 dupes(Config) ->
-    ets:insert(?ETS, {show_dupes, true}),
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {show_dupes, true}),
     BaseDir = proplists:get_value(base_dir, Config),
     Swarm = start_swarm(BaseDir,dupes_test_swarm, 3617),
     {ok, RouterSwarm} = router_p2p:swarm(),

@@ -11,8 +11,9 @@ handle(Req, _Args) ->
     handle(elli_request:method(Req), elli_request:path(Req), Req, _Args).
 
 %% Get Device
-handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, _Args) ->
-    ShowDupes = case ets:lookup(suite_config, show_dupes) of
+handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
+    Tab = maps:get(ets, Args),
+    ShowDupes = case ets:lookup(Tab, show_dupes) of
         [] -> false;
         [{show_dupes, B}] -> B
     end,

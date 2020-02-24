@@ -9,3 +9,4 @@
 
 -define(RX_DELAY, 5).
 -define(REPLY_DELAY, 2500).
+-define(JOIN_DELAY, 2000).

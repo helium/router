@@ -37,7 +37,8 @@
 -record(state, {
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
-                device :: #device{}
+                device :: #device{},
+                join_requests = #{}
                }).
 
 %% ------------------------------------------------------------------
@@ -82,14 +83,24 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     Device1 = Device0#device{queue=lists:append(Device0#device.queue, [Msg])},
     {ok, _} = save_device(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
-handle_cast({join, Packet0, PubkeyBin, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_cast({join, Packet0, PubkeyBin, Pid}, #state{device=Device0, join_requests=Map0}=State) ->
     case handle_join(Packet0, PubkeyBin, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Packet1, Device1} ->
-            {ok, _} = save_device(DB, CF, Device1),
-            Pid ! {packet, Packet1},
-            {noreply, State#state{device=Device1}}
+            JoinNonce = Device1#device.join_nonce,
+            RSSI0 = Packet0#packet_pb.signal_strength,
+            Map1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Map0),
+            case maps:get(JoinNonce, Map0, undefined) of
+                undefined ->
+                    _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
+                    {noreply, State#state{join_requests=Map1}};
+                {RSSI1, _, _, _, _} ->
+                    case RSSI0 > RSSI1 of
+                        false -> {noreply, State};
+                        true -> {noreply, State#state{join_requests=Map1}}
+                    end
+            end
     end;
 handle_cast({frame, Packet, PubkeyBin, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
@@ -113,6 +124,18 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_requests=Map0}=State) ->
+    {_, Packet, Device, Pid, PubkeyBin} = maps:get(JoinNonce, Map0, undefined),
+    Pid ! {packet, Packet},
+    {ok, _} = save_device(DB, CF, Device),
+    DevEUI = Device#device.mac, 
+    AppEUI = Device#device.app_eui,
+    StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                  (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
+    ok = report_status(success, AName, StatusMsg),
+    Map1 = maps:remove(JoinNonce, Map0),
+    {noreply, State#state{device=Device, join_requests=Map1}};
 handle_info({delay_timeout, Packet, AName, Frame, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
     case handle_frame(Packet, AName, Device0, Frame, false) of
         {send, Device1, Packet1} ->
@@ -122,6 +145,8 @@ handle_info({delay_timeout, Packet, AName, Frame, Pid}, #state{db=DB, cf=CF, dev
         noop ->
             {noreply, State}
     end;
+handle_info({report_status, _, _, _}, #state{device=#device{app_eui=undefined}}=State) ->
+    {noreply, State};
 handle_info({report_status, Status, AName, Msg}, #state{device=Device}=State) ->
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = Device#device.app_eui,
     ok = router_console:report_status(OUI, DID, Status, AName, Msg),
@@ -257,14 +282,6 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                                                                               <<"codr">> => <<"lol">>}),
                     lager:info("Device ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-                    case throttle:check(join_dedup, {AppEUI, DevEUI, DevNonce}) of
-                        {ok, _, _} ->
-                            StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                                          (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                            ok = report_status(success, AName, StatusMsg);
-                        _ ->
-                            ok
-                    end,
                     Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                     Device = #device{mac=DevEUI, app_eui=AppEUI, app_s_key=AppSKey, nwk_s_key=NwkSKey, join_nonce=DevNonce, fcntdown=0, queue=[]},
                     {ok, Packet, Device};

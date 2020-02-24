@@ -14,9 +14,9 @@ handle(Req, _Args) ->
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
     ShowDupes = case ets:lookup(Tab, show_dupes) of
-        [] -> false;
-        [{show_dupes, B}] -> B
-    end,
+                    [] -> false;
+                    [{show_dupes, B}] -> B
+                end,
     HTTPChannel = #{
                     <<"type">> => <<"http">>,
                     <<"credentials">> => #{

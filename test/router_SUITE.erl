@@ -14,7 +14,8 @@
 
 -export([
          http_test/1,
-         dupes/1
+         dupes/1,
+         join_test/1
         ]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
@@ -36,7 +37,8 @@
 all() ->
     [
      http_test,
-     dupes
+     dupes,
+     join_test
     ].
 
 %%--------------------------------------------------------------------
@@ -69,7 +71,7 @@ end_per_testcase(_TestCase, Config) ->
     {ok, Acceptors} = elli:get_acceptors(Pid),
     ok = elli:stop(Pid),
     timer:sleep(500),
-    [ catch erlang:exit(A, kill) || A <- Acceptors ],
+    [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
     e2qc:teardown(console_cache),
@@ -97,6 +99,8 @@ http_test(Config) ->
 
     %% Send join packet
     Stream ! {send, join_packet(PubKeyBin, <<"appkey_000000001">>)},
+
+    timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin),
@@ -142,7 +146,7 @@ dupes(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {show_dupes, true}),
     BaseDir = proplists:get_value(base_dir, Config),
-    Swarm = start_swarm(BaseDir,dupes_test_swarm, 3617),
+    Swarm = start_swarm(BaseDir, dupes_test_swarm, 3617),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -157,7 +161,7 @@ dupes(Config) ->
 
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin1),
-    
+
     %% Waiting for reply resp form router
     ok = wait_for_reply(),
 
@@ -178,6 +182,40 @@ dupes(Config) ->
     ok = wait_for_report_status(PubKeyBin2),
 
     libp2p_swarm:stop(Swarm),
+    ok.
+
+join_test(Config) ->
+    BaseDir = proplists:get_value(base_dir, Config),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    Swarm0 = start_swarm(BaseDir, join_test_swarm_0, 3620),
+    Swarm1 = start_swarm(BaseDir, join_test_swarm_1, 3621),
+    PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
+    PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm1),
+    {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
+                                                    Address,
+                                                    router_handler_test:version(),
+                                                    router_handler_test,
+                                                    [self(), PubKeyBin0]),
+    {ok, Stream1} = libp2p_swarm:dial_framed_stream(Swarm1,
+                                                    Address,
+                                                    router_handler_test:version(),
+                                                    router_handler_test,
+                                                    [self(), PubKeyBin1]),
+
+
+    %% Send join packet
+    Stream0 ! {send, join_packet(PubKeyBin0, <<"appkey_000000001">>, -100)},
+    Stream1 ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>, -80)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for console repor status sent
+    ok = wait_for_report_status(PubKeyBin1),
+    %% Waiting for reply resp form router
+    ok = wait_for_reply(PubKeyBin1),
+
+    libp2p_swarm:stop(Swarm0),
+    libp2p_swarm:stop(Swarm1),
     ok.
 
 %% ------------------------------------------------------------------
@@ -236,6 +274,23 @@ wait_for_reply() ->
             ct:fail("reply timeout")
     end.
 
+wait_for_reply(PubKeyBin) ->
+    receive
+        {client_data, PubKeyBin, Data} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
+                    ok;
+                _Else ->
+                    ct:fail("wrong reply message ~p ", [_Else])
+            catch
+                _E:_R ->
+                    ct:fail("failed to decode reply ~p ~p", [Data, {_E, _R}])
+            end
+    after 250 ->
+            ct:fail("reply timeout")
+    end.
+
 wait_for_ack(Timeout) ->
     receive
         {client_data, Data} ->
@@ -255,6 +310,9 @@ wait_for_ack(Timeout) ->
     end.
 
 join_packet(PubKeyBin, AppKey) ->
+    join_packet(PubKeyBin, AppKey, 0).
+
+join_packet(PubKeyBin, AppKey, RSSI) ->
     MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
@@ -268,6 +326,7 @@ join_packet(PubKeyBin, AppKey) ->
                       type=lorawan,
                       oui=2,
                       payload=Payload1,
+                      signal_strength=RSSI,
                       frequency=923.3,
                       datarate= <<"SF8BW125">>
                      },

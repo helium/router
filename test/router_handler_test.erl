@@ -25,7 +25,10 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--record(state, {pid :: pid()}).
+-record(state, {
+                pid :: pid(),
+                key = undefined :: binary() | undefined
+               }).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -49,10 +52,16 @@ init(server, _Conn, _Args) ->
     {ok, #state{}};
 init(client, _Conn, [Pid]=_Args) ->
     lager:info("client started with ~p", [_Args]),
-    {ok, #state{pid=Pid}}.
+    {ok, #state{pid=Pid}};
+init(client, _Conn, [Pid, Pubkeybin]=_Args) ->
+    lager:info("client started with ~p", [_Args]),
+    {ok, #state{pid=Pid, key=Pubkeybin}}.
 
-handle_data(client, Data, #state{pid=Pid}=State) ->
+handle_data(client, Data, #state{pid=Pid, key=undefined}=State) ->
     Pid ! {client_data, Data},
+    {noreply, State};
+handle_data(client, Data, #state{pid=Pid, key=Pubkeybin}=State) ->
+    Pid ! {client_data, Pubkeybin, Data},
     {noreply, State};
 handle_data(_Type, _Data, State) ->
     lager:warning("~p got data ~p", [_Type, _Data]),

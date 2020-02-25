@@ -19,10 +19,10 @@ RUN make
 ADD include/ include/
 ADD src/ src/
 ADD test/ test/
-ADD config/vm.args config/vm.args
-ADD config/docker-sys.config config/sys.config
 RUN make
 
+ADD config/vm.args config/vm.args
+ADD config/sys.config.src config/sys.config.src
 RUN ./rebar3 release
 
-CMD ["export", "RELX_REPLACE_OS_VARS=true", "_build/default/rel/router/bin/router", "foreground"]
+CMD ["_build/default/rel/router/bin/router", "foreground"]

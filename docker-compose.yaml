@@ -2,6 +2,7 @@ version: '3'
 services:
   router:
     build: .
+    image: helium/router:latest
     container_name: helium_router
     ports:
       - 2154:2154

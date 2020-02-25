@@ -1,4 +1,4 @@
-FROM erlang:21
+FROM erlang:22
 
 WORKDIR /opt/router
 
@@ -17,8 +17,10 @@ RUN ./rebar3 get-deps
 RUN make
 
 ADD config/ config/
+ADD include/ include/
 ADD src/ src/
 ADD test/ test/
+ADD config/ config/
 RUN make
 
 RUN ./rebar3 release

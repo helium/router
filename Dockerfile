@@ -16,13 +16,13 @@ ADD rebar.lock rebar.lock
 RUN ./rebar3 get-deps
 RUN make
 
-ADD config/ config/
 ADD include/ include/
 ADD src/ src/
 ADD test/ test/
-ADD config/ config/
+ADD config/vm.args config/vm.args
+ADD config/docker-sys.config config/sys.config
 RUN make
 
 RUN ./rebar3 release
 
-CMD ["_build/default/rel/router/bin/router", "foreground"]
+CMD ["export", "RELX_REPLACE_OS_VARS=true", "_build/default/rel/router/bin/router", "foreground"]

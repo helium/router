@@ -5,6 +5,7 @@ services:
     image: helium/router:latest
     container_name: helium_router
     restart: always
+    env_file: .env
     ports:
       - 2154:2154
     volumes:

@@ -38,7 +38,8 @@
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: #device{},
-                join_requests = #{}
+                join_cache = #{},
+                frame_cache = #{}
                }).
 
 %% ------------------------------------------------------------------
@@ -83,49 +84,52 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     Device1 = Device0#device{queue=lists:append(Device0#device.queue, [Msg])},
     {ok, _} = save_device(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
-handle_cast({join, Packet0, PubkeyBin, Pid}, #state{device=Device0, join_requests=Map0}=State) ->
+handle_cast({join, Packet0, PubkeyBin, Pid}, #state{device=Device0, join_cache=Cache0}=State) ->
     case handle_join(Packet0, PubkeyBin, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Packet1, Device1} ->
             JoinNonce = Device1#device.join_nonce,
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Map1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Map0),
-            case maps:get(JoinNonce, Map0, undefined) of
+            Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Cache0),
+            case maps:get(JoinNonce, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
-                    {noreply, State#state{join_requests=Map1}};
+                    {noreply, State#state{join_cache=Cache1}};
                 {RSSI1, _, _, _, _} ->
                     case RSSI0 > RSSI1 of
                         false -> {noreply, State};
-                        true -> {noreply, State#state{join_requests=Map1}}
+                        true -> {noreply, State#state{join_cache=Cache1}}
                     end
             end
     end;
-handle_cast({frame, Packet, PubkeyBin, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache=Cache0}=State) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
-    case handle_frame_packet(Packet, AName, Device0) of
+    case handle_frame_packet(Packet0, AName, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
-            ok = send_to_channel(Packet, Device1, Frame, AName),
-            case handle_frame(Packet, AName, Device1, Frame, true) of
-                {send, Device2, Packet1} ->
-                    {ok, _} = save_device(DB, CF, Device2),
-                    Pid ! {packet, Packet1},
-                    {noreply, State#state{device=Device2}};
-                {delay, Time} ->
-                    {ok, _} = save_device(DB, CF, Device1),
-                    erlang:send_after(Time, self(), {delay_timeout, Packet, AName, Frame, Pid}),
-                    {noreply, State#state{device=Device1}}
+            ok = send_to_channel(Packet0, Device1, Frame, AName),
+            FCnt = Device1#device.fcnt,
+            RSSI0 = Packet0#packet_pb.signal_strength,
+            Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Device1, Frame, Pid}, Cache0),
+            case maps:get(FCnt, Cache0, undefined) of
+                undefined ->
+                    _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
+                    {noreply, State#state{frame_cache=Cache1}};
+                {RSSI1, _, _, _, _, _} ->
+                    case RSSI0 > RSSI1 of
+                        false -> {noreply, State};
+                        true -> {noreply, State#state{frame_cache=Cache1}}
+                    end
             end
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_requests=Map0}=State) ->
-    {_, Packet, Device, Pid, PubkeyBin} = maps:get(JoinNonce, Map0, undefined),
+handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=State) ->
+    {_, Packet, Device, Pid, PubkeyBin} = maps:get(JoinNonce, Cache0, undefined),
     Pid ! {packet, Packet},
     {ok, _} = save_device(DB, CF, Device),
     DevEUI = Device#device.mac, 
@@ -134,14 +138,17 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_requests=Map0}=
                   (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     ok = report_status(success, AName, StatusMsg),
-    Map1 = maps:remove(JoinNonce, Map0),
-    {noreply, State#state{device=Device, join_requests=Map1}};
-handle_info({delay_timeout, Packet, AName, Frame, Pid}, #state{db=DB, cf=CF, device=Device0}=State) ->
-    case handle_frame(Packet, AName, Device0, Frame, false) of
+    Cache1 = maps:remove(JoinNonce, Cache0),
+    {noreply, State#state{device=Device, join_cache=Cache1}};
+
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=State) ->
+    {_, Packet0, AName, Device0, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+    case handle_frame(Packet0, AName, Device0, Frame) of
         {send, Device1, Packet1} ->
             {ok, _} = save_device(DB, CF, Device1),
             Pid ! {packet, Packet1},
-            {noreply, State#state{device=Device1}};
+            Cache1 = maps:remove(FCnt, Cache0),
+            {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             {noreply, State}
     end;
@@ -356,10 +363,8 @@ handle_frame_packet(Packet, AName, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}, boolean()) -> noop | {delay, integer()} | {send,#device{}, #packet_pb{}}.
-handle_frame(_Packet, _AName, #device{queue=[]}, _Frame, true) ->
-    {delay, ?REPLY_DELAY};
-handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame, false) ->
+-spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}) -> noop | {send,#device{}, #packet_pb{}}.
+handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     case ACK of
         0 ->
@@ -384,7 +389,7 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame, false) ->
             Device1 = Device0#device{channel_correction=ChannelsCorrected, fcntdown=(FCNTDown + 1)},
             {send, Device1, Packet1}
     end;
-handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|T]}=Device0, Frame, _AllowDelay) ->
+handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|T]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),

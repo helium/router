@@ -395,7 +395,15 @@ handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|
     ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
     FCNTDown = Device0#device.fcntdown,
-    Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload}, Device0),
+    FPending = case T of
+                   [] ->
+                       %% no more packets
+                       0;
+                   _ ->
+                       %% more pending downlinks
+                       1
+               end,
+    Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCNTDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload, fpending=FPending}, Device0),
     DataRate = Packet0#packet_pb.datarate,
     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
         lorawan_mac_region_old:rx1_window(<<"US902-928">>,

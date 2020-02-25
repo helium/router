@@ -197,7 +197,7 @@ dupes(Config) ->
             ct:pal("got reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb)]),
             ok
     after 0 ->
-              ct:fail("missing_reply")
+            ct:fail("missing_reply")
     end,
 
 
@@ -206,7 +206,7 @@ dupes(Config) ->
         {client_data, Data2} ->
             ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data2, blockchain_state_channel_message_v1_pb)])
     after 0 ->
-              ok
+            ok
     end,
 
     libp2p_swarm:stop(Swarm),

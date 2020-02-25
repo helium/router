@@ -172,6 +172,13 @@ dupes(Config) ->
     WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    Msg = {false, 1, <<"somepayload">>},
+    router_device_worker:queue_message(WorkerPid, Msg),
+    %% XXX the following lines cause the test to fail
+    Msg2 = {false, 1, <<"someotherpayload">>},
+    router_device_worker:queue_message(WorkerPid, Msg2),
+
     %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, Device0#device.nwk_s_key, 0)},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
@@ -182,6 +189,23 @@ dupes(Config) ->
     ok = wait_for_report_status(PubKeyBin1),
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
+
+    receive
+        {client_data, Data} ->
+            ct:pal("got reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb)]),
+            ok
+    after 0 ->
+              ct:fail("missing_reply")
+    end,
+
+
+
+    receive
+        {client_data, Data2} ->
+            ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data2, blockchain_state_channel_message_v1_pb)])
+    after 0 ->
+              ok
+    end,
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -232,11 +256,15 @@ wait_for_report_status(PubKeyBin) ->
         {report_status, Body} ->
             Map = jsx:decode(Body, [return_maps]),
             ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
-            #{
-              <<"status">> := <<"success">>,
-              <<"hotspot_name">> := BinName
-             } = Map,
-            ok
+            case Map of
+                #{<<"status">> := <<"success">>,
+                  <<"hotspot_name">> := BinName} ->
+                    ok;
+                _ ->
+                    wait_for_report_status(PubKeyBin),
+                    self()  ! {report_status, Body},
+                    ok
+            end
     after 250 ->
             ct:fail("report_status timeout")
     end.

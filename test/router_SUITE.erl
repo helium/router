@@ -190,6 +190,8 @@ dupes(Config) ->
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
 
+    timer:sleep(1000),
+
     receive
         {client_data, Data} ->
             ct:pal("got reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb)]),

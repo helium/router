@@ -4,5 +4,8 @@ services:
     build: .
     image: helium/router:latest
     container_name: helium_router
+    restart: always
     ports:
       - 2154:2154
+    volumes:
+      - "/var/data:/var/data"

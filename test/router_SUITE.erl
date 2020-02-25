@@ -175,8 +175,7 @@ dupes(Config) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg = {false, 1, <<"somepayload">>},
     router_device_worker:queue_message(WorkerPid, Msg),
-    %% XXX the following lines cause the test to fail
-    Msg2 = {false, 1, <<"someotherpayload">>},
+    Msg2 = {true, 2, <<"someotherpayload">>},
     router_device_worker:queue_message(WorkerPid, Msg2),
 
     %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
@@ -194,8 +193,25 @@ dupes(Config) ->
 
     receive
         {client_data, Data} ->
-            ct:pal("got reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb)]),
-            ok
+            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
+                    ct:pal("packet ~p", [Packet]),
+                    Frame = deframe_packet(Packet, Device0#device.nwk_s_key),
+                    ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
+                    true = (element(3, Msg) == Frame#frame.data),
+                    %% we queued an unconfirmed packet
+                    ?UNCONFIRMED_DOWN = Frame#frame.mtype,
+                    1 = Frame#frame.fpending,
+                    %% nothing to ack
+                    0 = Frame#frame.ack,
+                    1 = Frame#frame.fport,
+                    %% fdowncnt starts at 0
+                    0 = Frame#frame.fcnt,
+                    ok
+            catch _:_ ->
+                    ct:fail("invalid client data")
+            end
     after 0 ->
             ct:fail("missing_reply")
     end,
@@ -203,10 +219,130 @@ dupes(Config) ->
 
 
     receive
-        {client_data, Data2} ->
-            ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(Data2, blockchain_state_channel_message_v1_pb)])
+        {client_data, _Data2} ->
+            ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data2, blockchain_state_channel_message_v1_pb)])
     after 0 ->
             ok
+    end,
+
+
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 1)},
+
+    ok = wait_for_post_channel(PubKeyBin2),
+    ok = wait_for_report_status(PubKeyBin2),
+
+    timer:sleep(1000),
+
+    receive
+        {client_data, Data2} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data2, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp2}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet2} = Resp2,
+                    ct:pal("packet ~p", [Packet2]),
+                    Frame2 = deframe_packet(Packet2, Device0#device.nwk_s_key),
+                    ct:pal("~p", [lager:pr(Frame2, ?MODULE)]),
+                    true = (element(3, Msg2) == Frame2#frame.data),
+                    %% should be a confirmed packet because we enqueued a confirmed packet
+                    ?CONFIRMED_DOWN = Frame2#frame.mtype,
+                    %% should be no more pending data
+                    0 = Frame2#frame.fpending,
+                    %% ack for the previous confirmed transmission
+                    1 = Frame2#frame.ack,
+                    %% should be on fport 2 because we queued the packet on port 2
+                    2 = Frame2#frame.fport,
+                    %% fdowncnt should have incremented
+                    1 = Frame2#frame.fcnt,
+                    ok
+            catch _:_ ->
+                    ct:fail("invalid client data")
+            end
+    after 0 ->
+            ct:fail("missing_reply")
+    end,
+
+    %% check we get the second downlink again because we didn't ACK it
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2)},
+
+    ok = wait_for_post_channel(PubKeyBin2),
+    ok = wait_for_report_status(PubKeyBin2),
+
+    timer:sleep(1000),
+
+    receive
+        {client_data, Data3} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data3, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp3}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet3} = Resp3,
+                    ct:pal("packet ~p", [Packet3]),
+                    Frame3 = deframe_packet(Packet3, Device0#device.nwk_s_key),
+                    ct:pal("~p", [lager:pr(Frame3, ?MODULE)]),
+                    true = (element(3, Msg2) == Frame3#frame.data),
+                    %% should be a confirmed packet because we enqueued a confirmed packet and have not acked it yet
+                    ?CONFIRMED_DOWN = Frame3#frame.mtype,
+                    %% should be no more pending data
+                    0 = Frame3#frame.fpending,
+                    %% previous transmission was not confirmed
+                    0 = Frame3#frame.ack,
+                    %% should be on fport 2 because we queued the packet on port 3
+                    2 = Frame3#frame.fport,
+                    %% fdowncnt should not have incremented because we did not ack
+                    1 = Frame3#frame.fcnt,
+                    ok
+            catch _:_ ->
+                    ct:fail("invalid client data")
+            end
+    after 0 ->
+            ct:fail("missing_reply")
+    end,
+
+    %% ack the packet, we don't expect a reply here
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, true)},
+
+    ok = wait_for_post_channel(PubKeyBin2),
+    ok = wait_for_report_status(PubKeyBin2),
+
+    timer:sleep(1000),
+
+    receive
+        {client_data, _Data3} ->
+            ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data3, blockchain_state_channel_message_v1_pb)])
+    after 0 ->
+            ok
+    end,
+
+    %% send a confimed up to provoke a 'bare ack'
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3, false)},
+
+    ok = wait_for_post_channel(PubKeyBin2),
+    ok = wait_for_report_status(PubKeyBin2),
+
+    timer:sleep(1000),
+
+    receive
+        {client_data, Data4} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data4, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp4}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet4} = Resp4,
+                    ct:pal("packet ~p", [Packet4]),
+                    Frame4 = deframe_packet(Packet4, Device0#device.nwk_s_key),
+                    ct:pal("~p", [lager:pr(Frame4, ?MODULE)]),
+                    <<>> = Frame4#frame.data,
+                    %% should be a confirmed packet because we enqueued a confirmed packet and have not acked it yet
+                    ?UNCONFIRMED_DOWN = Frame4#frame.mtype,
+                    %% should be no more pending data
+                    0 = Frame4#frame.fpending,
+                    %% previous transmission was confirmed
+                    1 = Frame4#frame.ack,
+                    %% XXX apparently??
+                    undefined = Frame4#frame.fport,
+                    %% fdowncnt should have incremented
+                    2 = Frame4#frame.fcnt,
+                    ok
+            catch _:_ ->
+                    ct:fail("invalid client data")
+            end
+    after 0 ->
+            ct:fail("missing_reply")
     end,
 
     libp2p_swarm:stop(Swarm),
@@ -368,13 +504,19 @@ join_packet(PubKeyBin, AppKey, RSSI) ->
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
 frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
+    frame_packet(MType, PubKeyBin, SessionKey, FCnt, false).
+
+frame_packet(MType, PubKeyBin, SessionKey, FCnt, ShouldAck) ->
     MHDRRFU = 0,
     Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
     DevAddr = <<OUI:32/integer-unsigned-big>>,
     ADR = 0,
     ADRACKReq = 0,
-    ACK = 0,
+    ACK = case ShouldAck of
+              true -> 1;
+              false -> 0
+          end,
     RFU = 0,
     FOptsLen = 0,
     FOpts = <<>>,
@@ -395,6 +537,14 @@ frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
+deframe_packet(Packet, SessionKey) ->
+    <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, RFU:1, ACK:1, FPending:1,
+      FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
+    DevAddr = lorawan_utils:reverse(DevAddrReversed),
+    {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
+    Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)),
+    #frame{mtype=MType, devaddr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
+           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data}.
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.

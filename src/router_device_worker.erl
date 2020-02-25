@@ -116,11 +116,11 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
             case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
-                    {noreply, State#state{frame_cache=Cache1}};
+                    {noreply, State#state{frame_cache=Cache1, device=Device1}};
                 {RSSI1, _, _, _, _, _} ->
                     case RSSI0 > RSSI1 of
-                        false -> {noreply, State};
-                        true -> {noreply, State#state{frame_cache=Cache1}}
+                        false -> {noreply, State#state{device=Device1}};
+                        true -> {noreply, State#state{frame_cache=Cache1, device=Device1}}
                     end
             end
     end;
@@ -145,6 +145,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=Stat
     {_, Packet0, AName, Device0, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     case handle_frame(Packet0, AName, Device0, Frame) of
         {send, Device1, Packet1} ->
+            lager:info("sending downlink ~p", [Packet1]),
             {ok, _} = save_device(DB, CF, Device1),
             Pid ! {packet, Packet1},
             Cache1 = maps:remove(FCnt, Cache0),
@@ -319,17 +320,17 @@ handle_frame_packet(Packet, AName, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
-    {FPort, FRMPayload} = extract_frame_port_payload(PayloadAndMIC),
+    {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = Device0#device.nwk_s_key,
-            Data = lorawan_utils:reverse(cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
+            Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
             lager:info("~s packet from ~s with fopts ~p received by ~s",
-                       [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
+                       [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), lorawan_mac_commands:parse_fopts(Data), AName]),
             {error, mac_command_not_handled};
         0 ->
             lager:debug("Bad ~s packet from ~s received by ~s -- double fopts~n",
-                        [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), AName]),
+                        [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), AName]),
             StatusMsg = <<"Packet with double fopts received from AppEUI: ",
                           (lorawan_utils:binary_to_hex(Device0#device.app_eui))/binary, " DevEUI: ",
                           (lorawan_utils:binary_to_hex(Device0#device.mac))/binary>>,
@@ -337,21 +338,23 @@ handle_frame_packet(Packet, AName, Device0) ->
             {error, double_fopts};
         _N ->
             AppSKey = Device0#device.app_s_key,
-            Data = lorawan_utils:reverse(cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
+            Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
             lager:info("~s packet from ~s with ACK ~p fopts ~p and data ~p received by ~s",
-                       [mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
+                       [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(Device0#device.app_eui), ACK, lorawan_mac_commands:parse_fopts(FOpts), Data, AName]),
             %% If frame countain ACK=1 we should clear message from queue and go on next
-            Queue = case ACK of
-                        0 ->
-                            Device0#device.queue;
-                        1 ->
-                            case Device0#device.queue of
-                                [] -> [];
-                                %% TODO: Check if confirmed down link
-                                [_Acked|T] -> T
-                            end
-                    end,
-            Device1 = Device0#device{fcnt=FCnt, queue=Queue},
+            Device1 = case ACK of
+                          0 ->
+                              Device0#device{fcnt=FCnt};
+                          1 ->
+                              case Device0#device.queue of
+                                  %% Check if confirmed down link
+                                  [{true, _, _}|T] ->
+                                      Device0#device{fcnt=FCnt, queue=T, fcntdown=Device0#device.fcntdown+1};
+                                  _ ->
+                                      lager:warning("Got ack when no confirmed downlinks in queue"),
+                                      Device0#device{fcnt=FCnt}
+                              end
+                      end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
             {ok, Frame, Device1}
@@ -366,6 +369,7 @@ handle_frame_packet(Packet, AName, Device0) ->
 -spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}) -> noop | {send,#device{}, #packet_pb{}}.
 handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
+    lager:info("downlink with no queue ~p", [ACK]),
     case ACK of
         0 ->
             noop;
@@ -438,13 +442,6 @@ channel_correction_and_fopts(Packet, Device, Frame) ->
              end,
     {ChannelsCorrected, FOpts1}.
 
--spec extract_frame_port_payload(binary()) -> {undefined | integer(), binary()}.
-extract_frame_port_payload(PayloadAndMIC) ->
-    case binary:part(PayloadAndMIC, {0, erlang:byte_size(PayloadAndMIC) -4}) of
-        <<>> -> {undefined, <<>>};
-        <<Port:8, Payload/binary>> -> {Port, Payload}
-    end.
-
 -spec mtype_to_ack(integer()) -> 0 | 1.
 mtype_to_ack(?CONFIRMED_UP) -> 1;
 mtype_to_ack(_) -> 0.
@@ -509,10 +506,13 @@ frame_to_packet_payload(Frame, Device) ->
                   <<Payload/binary>> when Frame#frame.fport == 0 ->
                       lager:debug("port 0 outbound"),
                       %% port 0 payload, encrypt with network key
-                      <<0:8/integer-unsigned, (lorawan_utils:reverse(cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
+                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
                   <<Payload/binary>> ->
                       lager:debug("port ~p outbound", [Frame#frame.fport]),
-                      <<(Frame#frame.fport):8/integer-unsigned, (lorawan_utils:reverse(cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>
+                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
+                      Payload = lorawan_utils:reverse(lorawan_utils:cipher(EncPayload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
+                      ct:pal("sending downlink ~p ~p ~p", [Payload, EncPayload, Device#device.nwk_s_key]),
+                      <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
     lager:debug("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),
     Msg = <<PktHdr/binary, PktBody/binary>>,
@@ -538,39 +538,9 @@ padded(Bytes, Msg) ->
         N -> <<Msg/bitstring, 0:(8*Bytes-N)>>
     end.
 
-cipher(Bin, Key, Dir, DevAddr, FCnt) ->
-    cipher(Bin, Key, Dir, DevAddr, FCnt, 1, <<>>).
-
-cipher(<<Block:16/binary, Rest/binary>>, Key, Dir, DevAddr, FCnt, I, Acc) ->
-    Si = crypto:block_encrypt(aes_ecb, Key, ai(Dir, DevAddr, FCnt, I)),
-    cipher(Rest, Key, Dir, DevAddr, FCnt, I+1, <<(binxor(Block, Si, <<>>))/binary, Acc/binary>>);
-cipher(<<>>, _Key, _Dir, _DevAddr, _FCnt, _I, Acc) -> Acc;
-cipher(<<LastBlock/binary>>, Key, Dir, DevAddr, FCnt, I, Acc) ->
-    Si = crypto:block_encrypt(aes_ecb, Key, ai(Dir, DevAddr, FCnt, I)),
-    <<(binxor(LastBlock, binary:part(Si, 0, byte_size(LastBlock)), <<>>))/binary, Acc/binary>>.
-
--spec ai(integer(), binary(), integer(), integer()) -> binary().
-ai(Dir, DevAddr, FCnt, I) ->
-    <<16#01, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, I>>.
-
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
-
--spec binxor(binary(), binary(), binary()) -> binary().
-binxor(<<>>, <<>>, Acc) -> Acc;
-binxor(<<A, RestA/binary>>, <<B, RestB/binary>>, Acc) ->
-    binxor(RestA, RestB, <<(A bxor B), Acc/binary>>).
-
--spec mtype(integer()) -> string().
-mtype(?JOIN_REQ) -> "Join request";
-mtype(?JOIN_ACCEPT) -> "Join accept";
-mtype(?UNCONFIRMED_UP) -> "Unconfirmed data up";
-mtype(?UNCONFIRMED_DOWN) -> "Unconfirmed data down";
-mtype(?CONFIRMED_UP) -> "Confirmed data up";
-mtype(?CONFIRMED_DOWN) -> "Confirmed data down";
-mtype(?RFU) -> "RFU";
-mtype(?PRIORITY) -> "Proprietary".
 
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->

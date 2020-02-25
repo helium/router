@@ -23,9 +23,8 @@ report_status(OUI, DID, Status, AName, Msg) ->
             DeviceID = kvc:path([<<"id">>], JSON),
             Result = #{status => Status, description => Msg,
                        delivered_at => erlang:system_time(second), hotspot_name => list_to_binary(AName)},
-            Endpoint = get_endpoint(OUI),
-            Env = get_env(OUI),
-            JWT = get_token(Endpoint, Env),
+            Endpoint = get_endpoint(),
+            JWT = get_token(Endpoint),
             hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                          [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
                          jsx:encode(Result), [with_body]),
@@ -36,16 +35,15 @@ report_status(OUI, DID, Status, AName, Msg) ->
 
 -spec send_data_fun(integer(), integer()) -> function().
 send_data_fun(DID, OUI) ->
-    e2qc:cache(console_cache, {OUI, DID}, 300, fun() -> make_send_data_fun(DID, OUI) end).
+    e2qc:cache(console_cache, {OUI, DID}, 60, fun() -> make_send_data_fun(DID, OUI) end).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
 make_send_data_fun(DID, OUI) ->
-    Endpoint = get_endpoint(OUI),
-    Env = get_env(OUI),
-    JWT = get_token(Endpoint, Env),
+    Endpoint = get_endpoint(),
+    JWT = get_token(Endpoint),
     make_send_data_fun(OUI, DID, Endpoint, JWT).
 
 make_send_data_fun(OUI, DID, Endpoint, JWT) ->
@@ -159,9 +157,8 @@ encode_data(OUI, DID, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name
 
 -spec get_device(integer(), integer()) -> {ok, map()} | {error, any()}.
 get_device(DID, OUI) ->
-    Endpoint = get_endpoint(OUI),
-    Env = get_env(OUI),
-    JWT = get_token(Endpoint, Env),
+    Endpoint = get_endpoint(),
+    JWT = get_token(Endpoint),
     BinDID = erlang:list_to_binary(erlang:integer_to_list(DID)),
     BinOUI = erlang:list_to_binary(erlang:integer_to_list(OUI)),
     case hackney:get(<<Endpoint/binary, "/api/router/devices/", BinDID/binary, "?oui=", BinOUI/binary>>,
@@ -172,9 +169,9 @@ get_device(DID, OUI) ->
             {error, {get_device_failed, _Other}}
     end.
 
--spec get_token(binary(), atom()) -> binary().
-get_token(Endpoint, Env) ->
-    Secret = get_secret(Env),
+-spec get_token(binary()) -> binary().
+get_token(Endpoint) ->
+    Secret = get_secret(),
     CacheFun = fun() ->
                        case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [{<<"Content-Type">>, <<"application/json">>}],
                                          jsx:encode(#{secret => Secret}) , [with_body]) of
@@ -185,20 +182,11 @@ get_token(Endpoint, Env) ->
                end,
     e2qc:cache(console_cache, jwt, 600, CacheFun).
 
--spec get_env(OUI :: integer()) -> atom().
-get_env(2) ->
-    staging;
-get_env(_) ->
-    production.
 
--spec get_endpoint(OUI :: integer()) -> binary().
-get_endpoint(2) ->
-    application:get_env(router, staging_console_endpoint, undefined);
-get_endpoint(_) ->
+-spec get_endpoint() -> binary().
+get_endpoint() ->
     application:get_env(router, console_endpoint, undefined).
 
--spec get_secret(Env :: atom()) -> binary().
-get_secret(production) ->
-    application:get_env(router, console_secret, undefined);
-get_secret(staging) ->
-    application:get_env(router, staging_console_secret, undefined).
+-spec get_secret() -> binary().
+get_secret() ->
+    application:get_env(router, console_secret, undefined).

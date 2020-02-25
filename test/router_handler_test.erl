@@ -58,7 +58,7 @@ init(client, _Conn, [Pid, Pubkeybin]=_Args) ->
     {ok, #state{pid=Pid, key=Pubkeybin}}.
 
 handle_data(client, Data, #state{pid=Pid, key=undefined}=State) ->
-    Pid ! {client_data, Data},
+    Pid ! {client_data, undefined, Data},
     {noreply, State};
 handle_data(client, Data, #state{pid=Pid, key=Pubkeybin}=State) ->
     Pid ! {client_data, Pubkeybin, Data},

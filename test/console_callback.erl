@@ -29,7 +29,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                    },
     Body = #{
              <<"id">> => <<DID/binary, "_id">>,
-             <<"key">> => base64:encode(<<"appkey_00000000", DID/binary>>),
+             <<"key">> => base64:encode(maps:get(app_key, Args)),
              <<"channels">> => [HTTPChannel]
             },
     {200, [], jsx:encode(Body)};

@@ -54,14 +54,15 @@ init_per_testcase(TestCase, Config) ->
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     Tab = ets:new(?ETS, [public, set]),
+    AppKey = crypto:strong_rand_bytes(16),
     ElliOpts = [
                 {callback, console_callback},
-                {callback_args, #{forward => self(), ets => Tab}},
+                {callback_args, #{forward => self(), ets => Tab, app_key => AppKey}},
                 {port, 3000}
                ],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-    [{ets, Tab}, {elli, Pid}, {base_dir, BaseDir}|Config].
+    [{app_key, AppKey}, {ets, Tab}, {elli, Pid}, {base_dir, BaseDir}|Config].
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
@@ -87,6 +88,7 @@ end_per_testcase(_TestCase, Config) ->
 
 http_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
+    AppKey = proplists:get_value(app_key, Config),
     Swarm = start_swarm(BaseDir, http_test_swarm, 3616),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
@@ -98,7 +100,8 @@ http_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
     %% Send join packet
-    Stream ! {send, join_packet(PubKeyBin, <<"appkey_000000001">>)},
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
 
     timer:sleep(?JOIN_DELAY),
 
@@ -144,6 +147,7 @@ http_test(Config) ->
 
 dupes(Config) ->
     Tab = proplists:get_value(ets, Config),
+    AppKey = proplists:get_value(app_key, Config),
     ets:insert(Tab, {show_dupes, true}),
     BaseDir = proplists:get_value(base_dir, Config),
     Swarm = start_swarm(BaseDir, dupes_test_swarm, 3617),
@@ -157,7 +161,8 @@ dupes(Config) ->
     PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
 
     %% Send join packet
-    Stream ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>)},
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce)},
 
     timer:sleep(?JOIN_DELAY),
 
@@ -191,7 +196,7 @@ dupes(Config) ->
 
     %% Make sure we did not get a duplicate
     receive
-        {client_data, _Data2} ->
+        {client_data, _, _Data2} ->
             ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data2, blockchain_state_channel_message_v1_pb)])
     after 0 ->
             ok
@@ -214,7 +219,7 @@ dupes(Config) ->
     ok = wait_for_report_status(PubKeyBin2),
     timer:sleep(1000),
     receive
-        {client_data, _Data3} ->
+        {client_data, _,  _Data3} ->
             ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data3, blockchain_state_channel_message_v1_pb)])
     after 0 ->
             ok
@@ -230,6 +235,7 @@ dupes(Config) ->
     ok.
 
 join_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
     BaseDir = proplists:get_value(base_dir, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
@@ -249,16 +255,39 @@ join_test(Config) ->
                                                     [self(), PubKeyBin1]),
 
 
+    Stream0 ! {send, join_packet(PubKeyBin0, crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(2), -100)},
+
+    receive
+        {client_data, _,  _Data3} ->
+            ct:fail("join didn't fail")
+    after 0 ->
+            ok
+    end,
+
+
     %% Send join packet
-    Stream0 ! {send, join_packet(PubKeyBin0, <<"appkey_000000001">>, -100)},
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream0 ! {send, join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
     timer:sleep(500),
-    Stream1 ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>, -80)},
+    Stream1 ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin1),
     %% Waiting for reply resp form router
-    ok = wait_for_reply(PubKeyBin1),
+                                                %ok = wait_for_reply(PubKeyBin1),
+
+    %% Waiting for reply resp form router
+    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    {ok, Device0} = get_device(DB, CF, WorkerID),
+
+    NwkSKey = Device0#device.nwk_s_key,
+    AppSKey = Device0#device.app_s_key,
+    JoinNonce = Device0#device.join_nonce,
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
@@ -309,7 +338,7 @@ wait_for_post_channel(PubKeyBin) ->
 
 wait_for_reply() ->
     receive
-        {client_data, Data} ->
+        {client_data, undefined, Data} ->
             try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                 #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                     #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
@@ -324,27 +353,27 @@ wait_for_reply() ->
             ct:fail("reply timeout")
     end.
 
-wait_for_reply(PubKeyBin) ->
-    receive
-        {client_data, PubKeyBin, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                    ok;
-                _Else ->
-                    ct:fail("wrong reply message ~p ", [_Else])
-            catch
-                _E:_R ->
-                    ct:fail("failed to decode reply ~p ~p", [Data, {_E, _R}])
-            end
-    after 250 ->
-            ct:fail("reply timeout")
-    end.
+                                                %wait_for_reply(PubKeyBin) ->
+                                                %receive
+                                                %{client_data, PubKeyBin, Data} ->
+                                                %try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                                                %#blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                                                %#blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
+                                                %ok;
+                                                %_Else ->
+                                                %ct:fail("wrong reply message ~p ", [_Else])
+                                                %catch
+                                                %_E:_R ->
+                                                %ct:fail("failed to decode reply ~p ~p", [Data, {_E, _R}])
+                                                %end
+                                                %after 250 ->
+                                                %ct:fail("reply timeout")
+                                                %end.
 
 wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {Msg, Device, Type, FPending, Ack, Fport, FCnt}]),
     receive
-        {client_data, Data} ->
+        {client_data, undefined, Data} ->
             try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                 #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                     #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
@@ -366,9 +395,26 @@ wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
             ct:fail("missing_reply for ~p", [Msg])
     end.
 
+wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
+    receive
+        {client_data, PubKeyBin, Data} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
+                    ct:pal("packet ~p", [Packet]),
+                    Frame = deframe_join_packet(Packet, JoinNonce, AppKey),
+                    ct:pal("Join response ~p", [Frame]),
+                    Frame
+            catch _:_ ->
+                    ct:fail("invalid join response")
+            end
+    after 1000 ->
+            ct:fail("missing_join for")
+    end.
+
 wait_for_ack(Timeout) ->
     receive
-        {client_data, Data} ->
+        {client_data, undefined, Data} ->
             try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                 #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                     #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
@@ -384,16 +430,15 @@ wait_for_ack(Timeout) ->
             ct:fail("ack timeout")
     end.
 
-join_packet(PubKeyBin, AppKey) ->
-    join_packet(PubKeyBin, AppKey, 0).
+join_packet(PubKeyBin, AppKey, DevNonce) ->
+    join_packet(PubKeyBin, AppKey, DevNonce, 0).
 
-join_packet(PubKeyBin, AppKey, RSSI) ->
+join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
     AppEUI = lorawan_utils:reverse(?APPEUI),
     DevEUI = lorawan_utils:reverse(?DEVEUI),
-    DevNonce = <<0,0>>,
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
     MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
     Payload1 = <<Payload0/binary, MIC:4/binary>>,
@@ -442,6 +487,22 @@ frame_packet(MType, PubKeyBin, SessionKey, FCnt, ShouldAck) ->
     Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>}, DevNonce, AppKey) when MType == ?JOIN_ACCEPT ->
+    ct:pal("Enc join ~w", [EncPayload]),
+    <<AppNonce:3/binary, NetID:3/binary, DevAddr:4/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, MIC:4/binary>> = Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
+    ct:pal("Dec join ~w", [Payload]),
+                                                %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
+    MIC = crypto:cmac(aes_cbc128, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
+    NetID = <<"He2">>,
+    NwkSKey = crypto:block_encrypt(aes_ecb,
+                                   AppKey,
+                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+    AppSKey = crypto:block_encrypt(aes_ecb,
+                                   AppKey,
+                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+    {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
 
 deframe_packet(Packet, SessionKey) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, RFU:1, ACK:1, FPending:1,

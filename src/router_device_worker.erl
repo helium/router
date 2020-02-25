@@ -269,17 +269,17 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                     AppNonce = crypto:strong_rand_bytes(3),
                     NwkSKey = crypto:block_encrypt(aes_ecb,
                                                    AppKey,
-                                                   padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+                                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
                     AppSKey = crypto:block_encrypt(aes_ecb,
                                                    AppKey,
-                                                   padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+                                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
                     DevAddr = <<OUI:32/integer-unsigned-big>>,
                     RxDelay = ?RX_DELAY,
                     DLSettings = 0,
-                    ReplyHdr = <<2#001:3, 0:3, 0:2>>,
+                    ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
                     ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>,
                     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
-                    EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
+                    EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
                     Reply = <<ReplyHdr/binary, EncryptedReply/binary>>,
                     #{tmst := TxTime,
                       datr := TxDataRate,
@@ -511,7 +511,6 @@ frame_to_packet_payload(Frame, Device) ->
                       lager:debug("port ~p outbound", [Frame#frame.fport]),
                       EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
                       Payload = lorawan_utils:reverse(lorawan_utils:cipher(EncPayload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
-                      ct:pal("sending downlink ~p ~p ~p", [Payload, EncPayload, Device#device.nwk_s_key]),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
     lager:debug("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),
@@ -529,13 +528,6 @@ get_device_by_mic([Device|Tail], Bin, MIC) ->
             Device;
         _ ->
             get_device_by_mic(Tail, Bin, MIC)
-    end.
-
--spec padded(integer(), binary()) -> binary().
-padded(Bytes, Msg) ->
-    case bit_size(Msg) rem (8*Bytes) of
-        0 -> Msg;
-        N -> <<Msg/bitstring, 0:(8*Bytes-N)>>
     end.
 
 -spec b0(integer(), binary(), integer(), integer()) -> binary().

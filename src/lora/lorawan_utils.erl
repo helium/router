@@ -14,7 +14,7 @@
 -export([precise_universal_time/0, time_to_gps/0, time_to_gps/1, time_to_unix/0, time_to_unix/1]).
 -export([ms_diff/2, datetime_to_timestamp/1, apply_offset/2]).
 -export([throw_info/2, throw_info/3, throw_warning/2, throw_warning/3, throw_error/2, throw_error/3]).
--export([extract_frame_port_payload/1, cipher/5, mtype/1]).
+-export([extract_frame_port_payload/1, cipher/5, mtype/1, padded/2]).
 
 -include("lorawan.hrl").
 -include("lorawan_vars.hrl").
@@ -46,6 +46,12 @@ extract_frame_port_payload(PayloadAndMIC) ->
         <<Port:8, Payload/binary>> -> {Port, Payload}
     end.
 
+-spec padded(integer(), binary()) -> binary().
+padded(Bytes, Msg) ->
+    case bit_size(Msg) rem (8*Bytes) of
+        0 -> Msg;
+        N -> <<Msg/bitstring, 0:(8*Bytes-N)>>
+    end.
 
 cipher(Bin, Key, Dir, DevAddr, FCnt) ->
     cipher(Bin, Key, Dir, DevAddr, FCnt, 1, <<>>).

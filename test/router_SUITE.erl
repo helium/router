@@ -159,6 +159,8 @@ dupes(Config) ->
     %% Send join packet
     Stream ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>)},
 
+    timer:sleep(?JOIN_DELAY),
+
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin1),
 
@@ -206,6 +208,7 @@ join_test(Config) ->
 
     %% Send join packet
     Stream0 ! {send, join_packet(PubKeyBin0, <<"appkey_000000001">>, -100)},
+    timer:sleep(500),
     Stream1 ! {send, join_packet(PubKeyBin1, <<"appkey_000000001">>, -80)},
     timer:sleep(?JOIN_DELAY),
 

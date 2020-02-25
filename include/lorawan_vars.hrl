@@ -7,6 +7,6 @@
 -define(RFU ,2#110).
 -define(PRIORITY ,2#111).
 
--define(RX_DELAY, 5).
--define(REPLY_DELAY, 2500).
+-define(RX_DELAY, 0).
+-define(REPLY_DELAY, 200).
 -define(JOIN_DELAY, 2000).

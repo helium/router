@@ -88,8 +88,7 @@ handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0
     case handle_join(Packet0, PubkeyBin, AppKey, Name, Device0) of
         {error, _Reason} ->
             {noreply, State0};
-        {ok, Packet1, Device1} ->
-            JoinNonce = Device1#device.join_nonce,
+        {ok, Packet1, Device1, JoinNonce} ->
             RSSI0 = Packet0#packet_pb.signal_strength,
             Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Cache0),
             State = State0#state{device=Device1},
@@ -132,7 +131,7 @@ handle_cast(_Msg, State) ->
 handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=State) ->
     {_, Packet, Device, Pid, PubkeyBin} = maps:get(JoinNonce, Cache0, undefined),
     Pid ! {packet, Packet},
-    {ok, _} = save_device(DB, CF, Device),
+    {ok, _} = save_device(DB, CF, Device#device{join_nonce=JoinNonce}),
     DevEUI = Device#device.dev_eui, 
     AppEUI = Device#device.app_eui,
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
@@ -140,13 +139,14 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     ok = report_status(success, AName, StatusMsg),
     Cache1 = maps:remove(JoinNonce, Cache0),
-    {noreply, State#state{device=Device, join_cache=Cache1}};
+    {noreply, State#state{device=Device#device{join_nonce=JoinNonce}, join_cache=Cache1}};
 
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=State) ->
     {_, Packet0, AName, Device0, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     Cache1 = maps:remove(FCnt, Cache0),
     case handle_frame(Packet0, AName, Device0, Frame) of
         {ok, Device1} ->
+            {ok, _} = save_device(DB, CF, Device1),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink ~p", [Packet1]),
@@ -204,9 +204,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                 {ok, _, _} ->
                     lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
                                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-                    StatusMsg = <<"Bad Message Integrity Code on join for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
-                                  " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary, ", check AppKey">>,
-                    ok = report_status(failure, AName, StatusMsg);
+                    ok;
                 _ ->
                     ok
             end,
@@ -305,8 +303,9 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
     lager:info("Device ~s DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                [Name, lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
     Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-    Device = Device0#device{name=Name, dev_eui=DevEUI, app_eui=AppEUI, app_s_key=AppSKey, nwk_s_key=NwkSKey, join_nonce=DevNonce, fcntdown=0, channel_correction=false},
-    {ok, Packet, Device}.
+    %% don't set the join nonce here yet as we have not chosen the best join request yet
+    Device = Device0#device{name=Name, dev_eui=DevEUI, app_eui=AppEUI, app_s_key=AppSKey, nwk_s_key=NwkSKey, fcntdown=0, channel_correction=false},
+    {ok, Packet, Device, DevNonce}.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -376,7 +375,7 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
             Port = 0, %% Not sure about that?
             ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),
             {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
-            case ChannelsCorrected andalso (Device0#device.channel_correction == false) of
+            case ChannelsCorrected andalso (Device0#device.channel_correction == false) andalso (ACK == 0) of
                 true ->
                     %% we corrected the channels but don't have anything else to send so just update the device
                     {ok, Device0#device{channel_correction=true}};
@@ -437,7 +436,7 @@ channel_correction_and_fopts(Packet, Device, Frame) ->
     DataRate = Packet#packet_pb.datarate,
     ChannelCorrectionNeeded = Device#device.channel_correction == false,
     FOpts1 = case ChannelsCorrected andalso ChannelCorrectionNeeded of
-                 false -> lorawan_mac_region:set_channels(<<"US902-28">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                 false -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
                  true -> []
              end,
     {ChannelsCorrected, FOpts1}.

@@ -6,7 +6,7 @@
                  nwk_s_key,
                  app_s_key,
                  join_nonce,
-                 fcnt,
+                 fcnt=0,
                  fcntdown=0,
                  offset=0,
                  channel_correction=false,

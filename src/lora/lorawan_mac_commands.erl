@@ -9,7 +9,7 @@
 
 -dialyzer([no_match, no_return]).
 
--export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, encode_fopts/1]).
+-export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, parse_fdownopts/1, encode_fopts/1]).
 
 -include("lorawan_db.hrl").
 
@@ -107,6 +107,16 @@ parse_fopts(<<>>) ->
     [];
 parse_fopts(Unknown) ->
     lager:warning("Unknown command ~p", [lorawan_utils:binary_to_hex(Unknown)]),
+    [].
+
+parse_fdownopts(<<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4, Rest/binary>>) ->
+    [{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep}| parse_fdownopts(Rest) ];
+parse_fdownopts(<<16#02, Margin, GwCnt, Rest/binary>>) ->
+    [{link_check_ans, Margin, GwCnt} | parse_fdownopts(Rest)];
+parse_fdownopts(<<>>) ->
+    [];
+parse_fdownopts(Unknown) ->
+    lager:warning("Unknown downlink command ~p", [lorawan_utils:binary_to_hex(Unknown)]),
     [].
 
 encode_fopts([{link_check_ans, Margin, GwCnt} | Rest]) ->

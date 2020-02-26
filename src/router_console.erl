@@ -79,12 +79,12 @@ make_send_data_fun(Device, Endpoint, JWT) ->
                 case kvc:path([<<"channels">>], JSON) of
                     [] ->
                         [{fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}) ->
-                                 Result = #{payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
-                                            delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                                            status => failure, description => <<"No channels configured">>},
-                                 lager:info("No channel for ~p ~p", [DeviceID, Result]),
-                                 hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
-                         end, #{}}];
+                                  Result = #{payload_size => byte_size(Payload), reported_at => Timestamp div 1000000,
+                                             delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
+                                             status => failure, description => <<"No channels configured">>},
+                                  lager:info("No channel for ~p ~p", [DeviceID, Result]),
+                                  hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                          end, #{}}];
                     Channels ->
                         lists:map(fun(Channel) -> {channel_to_fun(Device, Endpoint, JWT, Channel), Channel} end, Channels)
                 end,

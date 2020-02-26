@@ -168,8 +168,7 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{db=DB}) ->
-    catch rocksdb:close(DB),
+terminate(_Reason, _State) ->
     ok.
 
 %% ------------------------------------------------------------------
@@ -388,10 +387,10 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
                                                     Device0),
                     DataRate = Packet0#packet_pb.datarate,
                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
-                    lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                      Device0#device.offset,
-                                                      #{<<"tmst">> => Packet0#packet_pb.timestamp, <<"freq">> => Packet0#packet_pb.frequency,
-                                                        <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
+                        lorawan_mac_region_old:rx1_window(<<"US902-928">>,
+                                                          Device0#device.offset,
+                                                          #{<<"tmst">> => Packet0#packet_pb.timestamp, <<"freq">> => Packet0#packet_pb.frequency,
+                                                            <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
                     Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
                                          timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                     Device1 = Device0#device{channel_correction=ChannelsCorrected, fcntdown=(FCNTDown + 1)},
@@ -565,12 +564,12 @@ get_devices(DB, CF) ->
               [erlang:binary_to_term(BinDevice)|Acc]
       end,
       [],
-      [{sync, true}]
+      []
      ).
 
 -spec save_device(rocksdb:db_handle(), rocksdb:cf_handle(), #device{}) -> {ok, #device{}} | {error, any()}.
 save_device(DB, CF, #device{id=Id}=Device) ->
-    case rocksdb:put(DB, CF, <<Id/binary>>, erlang:term_to_binary(Device), [{sync, true}]) of
+    case rocksdb:put(DB, CF, <<Id/binary>>, erlang:term_to_binary(Device), []) of
         {error, _}=Error -> Error;
         ok -> {ok, Device}
     end.

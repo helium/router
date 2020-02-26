@@ -73,7 +73,8 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{db=DB}) ->
-    ok = rocksdb:close(DB).
+    catch rocksdb:close(DB),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

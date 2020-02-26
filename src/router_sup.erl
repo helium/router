@@ -47,7 +47,7 @@
 
 -define(FLAGS, 
         #{
-          strategy => one_for_all,
+          strategy => rest_for_one,
           intensity => 1,
           period => 5
          }).

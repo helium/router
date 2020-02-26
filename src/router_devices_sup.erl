@@ -7,7 +7,7 @@
          start_link/0,
          maybe_start_worker/2,
          lookup_device_worker/1,
-         id/2
+         id/1
         ]).
 
 %% Supervisor callbacks
@@ -64,9 +64,9 @@ lookup_device_worker(ID) ->
             end
     end.
 
--spec id(binary(), binary()) -> binary().
-id(AppEUI, DevEUI) ->
-    <<AppEUI:8/binary, DevEUI:8/binary>>.
+-spec id(binary()) -> binary().
+id(DeviceId) ->
+    DeviceId.
 
 %%====================================================================
 %% Supervisor callbacks

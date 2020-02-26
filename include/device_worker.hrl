@@ -1,5 +1,7 @@
 -record(device, {
-                 mac,
+                 id,
+                 name,
+                 dev_eui,
                  app_eui,
                  nwk_s_key,
                  app_s_key,

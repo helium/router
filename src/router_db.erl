@@ -45,7 +45,7 @@ start_link(Args) ->
 
 -spec get() -> {ok, rocksdb:db_handle(), [rocksdb:cf_handle()]}.
 get() ->
-    gen_statem:call(?SERVER, get).
+    gen_server:call(?SERVER, get).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

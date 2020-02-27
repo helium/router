@@ -45,7 +45,7 @@ start_link(Args) ->
 
 -spec get() -> {ok, rocksdb:db_handle(), [rocksdb:cf_handle()]}.
 get() ->
-    gen_statem:call(?SERVER, get).
+    gen_server:call(?SERVER, get).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -73,7 +73,8 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{db=DB}) ->
-    ok = rocksdb:close(DB).
+    catch rocksdb:close(DB),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

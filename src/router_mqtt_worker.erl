@@ -53,6 +53,7 @@ send(Pid, Payload) ->
 init([MAC, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
     case connect(Endpoint, MAC, ChannelName) of
         {ok, Conn} ->
+            erlang:send_after(25000, self(), {ping, Conn}),
             ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/rx", [Topic, MAC])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/tx/#", [Topic, MAC])),
@@ -96,6 +97,11 @@ handle_info({publish, Msg=#{payload := Pay}}, State) ->
         _:_ ->
             lager:info("could not parse json downlink message ~p", [Msg])
     end,
+    {noreply, State};
+handle_info({ping, Connection}, State = #state{connection=Connection}) ->
+    erlang:send_after(25000, self(), {ping, Connection}),
+    Res = (catch emqtt:ping(Connection)),
+    lager:info("pinging MQTT connection ~p", [Res]),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),

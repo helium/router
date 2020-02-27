@@ -9,7 +9,7 @@
 
 -dialyzer([no_match, no_return]).
 
--export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, encode_fopts/1]).
+-export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, parse_fdownopts/1, encode_fopts/1, encode_fupopts/1]).
 
 -include("lorawan_db.hrl").
 
@@ -109,6 +109,16 @@ parse_fopts(Unknown) ->
     lager:warning("Unknown command ~p", [lorawan_utils:binary_to_hex(Unknown)]),
     [].
 
+parse_fdownopts(<<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4, Rest/binary>>) ->
+    [{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep}| parse_fdownopts(Rest) ];
+parse_fdownopts(<<16#02, Margin, GwCnt, Rest/binary>>) ->
+    [{link_check_ans, Margin, GwCnt} | parse_fdownopts(Rest)];
+parse_fdownopts(<<>>) ->
+    [];
+parse_fdownopts(Unknown) ->
+    lager:warning("Unknown downlink command ~p", [lorawan_utils:binary_to_hex(Unknown)]),
+    [].
+
 encode_fopts([{link_check_ans, Margin, GwCnt} | Rest]) ->
     <<16#02, Margin, GwCnt, (encode_fopts(Rest))/binary>>;
 encode_fopts([{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep} | Rest]) ->
@@ -131,6 +141,11 @@ encode_fopts([{device_time_ans, MsSinceEpoch} | Rest]) ->
     Ms = trunc((MsSinceEpoch rem 1000) / 3.90625), % 0.5^8
     <<16#0D, (MsSinceEpoch div 1000):32/little-unsigned-integer, Ms, (encode_fopts(Rest))/binary>>;
 encode_fopts([]) ->
+    <<>>.
+
+encode_fupopts([{link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} | Rest]) ->
+    <<16#03, 0:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, (encode_fopts(Rest))/binary>>;
+encode_fupopts([]) ->
     <<>>.
 
 

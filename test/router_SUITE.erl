@@ -112,7 +112,7 @@ http_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
@@ -174,7 +174,7 @@ dupes(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
@@ -192,7 +192,9 @@ dupes(Config) ->
     ok = wait_for_report_status(PubKeyBin1),
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    ok = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
+    {ok, Reply1} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
+    ct:pal("Reply ~p", [Reply1]),
+    true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
 
     %% Make sure we did not get a duplicate
     receive
@@ -205,31 +207,41 @@ dupes(Config) ->
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 1)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    ok = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
+    {ok, Reply2} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
+
+    %% check we're still getting ADR commands
+    true = lists:keymember(link_adr_req, 1, Reply2#frame.fopts),
 
     %% check we get the second downlink again because we didn't ACK it
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2)},
+    %% also ack the ADR adjustments
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    ok = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
+    {ok, Reply3} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
+
+    %% check NOT we're still getting ADR commands
+    false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, true)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{should_ack => true})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     timer:sleep(1000),
     receive
         {client_data, _,  _Data3} ->
-            ct:fail("double_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data3, blockchain_state_channel_message_v1_pb)])
+            ct:fail("unexpected_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data3, blockchain_state_channel_message_v1_pb)])
     after 0 ->
             ok
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3, false)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    ok = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
+    {ok, Reply4} = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
+
+    %% check NOT we're still getting ADR commands
+    false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -273,16 +285,15 @@ join_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
-    ok = wait_for_report_status(PubKeyBin1),
-    %% Waiting for reply resp form router
-                                                %ok = wait_for_reply(PubKeyBin1),
+                                                %ok = wait_for_report_status(PubKeyBin0, <<"failure">>),
+    ok = wait_for_report_status(PubKeyBin1, <<"success">>),
 
     %% Waiting for reply resp form router
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(?APPEUI, ?DEVEUI),
+    WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
     NwkSKey = Device0#device.nwk_s_key,
@@ -298,14 +309,16 @@ join_test(Config) ->
 %% ------------------------------------------------------------------
 
 wait_for_report_status(PubKeyBin) ->
+    wait_for_report_status(PubKeyBin, <<"success">>).
+
+wait_for_report_status(PubKeyBin, Status) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     BinName = erlang:list_to_binary(AName),
     receive
         {report_status, Body} ->
             Map = jsx:decode(Body, [return_maps]),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
             case Map of
-                #{<<"status">> := <<"success">>,
+                #{<<"status">> := Status,
                   <<"hotspot_name">> := BinName} ->
                     ok;
                 _ ->
@@ -323,10 +336,12 @@ wait_for_post_channel(PubKeyBin) ->
     receive
         {channel, Data} ->
             Map = jsx:decode(Data, [return_maps]),
+            AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
+            DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
             ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
             #{
-              <<"device_id">> := 1,
-              <<"oui">> := 2,
+              <<"app_eui">> := AppEUI,
+              <<"dev_eui">> := DevEUI,
               <<"payload">> := <<>>,
               <<"spreading">> := <<"SF8BW125">>,
               <<"gateway">> := BinName
@@ -353,23 +368,6 @@ wait_for_reply() ->
             ct:fail("reply timeout")
     end.
 
-                                                %wait_for_reply(PubKeyBin) ->
-                                                %receive
-                                                %{client_data, PubKeyBin, Data} ->
-                                                %try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                                                %#blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                                                %#blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                                                %ok;
-                                                %_Else ->
-                                                %ct:fail("wrong reply message ~p ", [_Else])
-                                                %catch
-                                                %_E:_R ->
-                                                %ct:fail("failed to decode reply ~p ~p", [Data, {_E, _R}])
-                                                %end
-                                                %after 250 ->
-                                                %ct:fail("reply timeout")
-                                                %end.
-
 wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {Msg, Device, Type, FPending, Ack, Fport, FCnt}]),
     receive
@@ -387,7 +385,7 @@ wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
                     ?assertEqual(Ack, Frame#frame.ack),
                     ?assertEqual(Fport, Frame#frame.fport),
                     ?assertEqual(FCnt, Frame#frame.fcnt),
-                    ok
+                    {ok, Frame}
             catch _:_ ->
                     ct:fail("invalid client data for ~p", [Msg])
             end
@@ -455,25 +453,25 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
 frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
-    frame_packet(MType, PubKeyBin, SessionKey, FCnt, false).
+    frame_packet(MType, PubKeyBin, SessionKey, FCnt, #{}).
 
-frame_packet(MType, PubKeyBin, SessionKey, FCnt, ShouldAck) ->
+frame_packet(MType, PubKeyBin, SessionKey, FCnt, Options) ->
     MHDRRFU = 0,
     Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
     DevAddr = <<OUI:32/integer-unsigned-big>>,
     ADR = 0,
     ADRACKReq = 0,
-    ACK = case ShouldAck of
+    ACK = case maps:get(should_ack, Options, false) of
               true -> 1;
               false -> 0
           end,
     RFU = 0,
-    FOptsLen = 0,
-    FOpts = <<>>,
-    Body = <<1:8>>,
+    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
+    FOptsLen = byte_size(FOptsBin),
+    Body = maps:get(body, Options, <<1:8>>),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, Body/binary>>,
+                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Body/binary>>,
     B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, SessionKey, <<B0/binary, Payload0/binary>>, 4),
     Payload1 = <<Payload0/binary, MIC:4/binary>>,
@@ -510,15 +508,16 @@ deframe_packet(Packet, SessionKey) ->
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)),
+    ct:pal("FOpts ~p", [FOpts]),
     #frame{mtype=MType, devaddr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
-           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data}.
+           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fdownopts(FOpts), fport=FPort, data=Data}.
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, #device{}} | {error, any()}.
 get_device(DB, CF, ID) ->
-    case rocksdb:get(DB, CF, ID, [{sync, true}]) of
+    case rocksdb:get(DB, CF, ID, []) of
         {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error

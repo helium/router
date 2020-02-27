@@ -70,7 +70,7 @@ handle_data(_Type, _Data, State) ->
 handle_info(client, {send, Data}, State) ->
     {noreply, State, Data};
 handle_info(_Type, _Msg, State) ->
-    lager:warning("~p got info ~p", [_Type, _Msg]),
+    lager:warning("test ~p got info ~p", [_Type, _Msg]),
     {noreply, State}.
 
 %% ------------------------------------------------------------------

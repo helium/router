@@ -28,11 +28,16 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     <<"id">> => <<"12345">>
                    },
     Body = #{
-             <<"id">> => <<DID/binary, "_id">>,
-             <<"key">> => base64:encode(maps:get(app_key, Args)),
+             <<"id">> => <<"yolo_id">>,
+             <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
              <<"channels">> => [HTTPChannel]
             },
-    {200, [], jsx:encode(Body)};
+    case DID == <<"yolo">> of
+        true ->
+            {200, [], jsx:encode([Body])};
+        false ->
+            {200, [], jsx:encode(Body)}
+    end;
 %% Get token
 handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
     Body = #{<<"jwt">> => <<"console_callback_token">>},

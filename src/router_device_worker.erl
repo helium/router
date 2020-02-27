@@ -251,7 +251,7 @@ maybe_start_worker(DeviceId) ->
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), #device{}) -> {ok, #packet_pb{}, #device{}} | {error, any()}.
+-spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), #device{}) -> {ok, #packet_pb{}, #device{}, binary()} | {error, any()}.
 handle_join(#packet_pb{oui=OUI, payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                            DevEUI0:8/binary, OldNonce:2/binary, _MIC:4/binary>>},
             PubkeyBin, _AppKey, Name,
@@ -365,7 +365,7 @@ handle_frame_packet(Packet, AName, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}) -> noop | {send,#device{}, #packet_pb{}}.
+-spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}) -> noop | {ok, #device{}} | {send,#device{}, #packet_pb{}}.
 handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     lager:info("downlink with no queue ~p and channels corrected ~p", [ACK, Device0#device.channel_correction]),
@@ -435,9 +435,9 @@ channel_correction_and_fopts(Packet, Device, Frame) ->
     ChannelsCorrected = were_channels_corrected(Frame),
     DataRate = Packet#packet_pb.datarate,
     ChannelCorrectionNeeded = Device#device.channel_correction == false,
-    FOpts1 = case ChannelsCorrected andalso ChannelCorrectionNeeded of
-                 false -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
-                 true -> []
+    FOpts1 = case ChannelCorrectionNeeded andalso not ChannelsCorrected of
+                 true -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                 _ -> []
              end,
     {ChannelsCorrected, FOpts1}.
 

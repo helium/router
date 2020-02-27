@@ -194,6 +194,7 @@ dupes(Config) ->
     ok = wait_for_report_status(PubKeyBin2),
     {ok, Reply1} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
     ct:pal("Reply ~p", [Reply1]),
+    true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
 
     %% Make sure we did not get a duplicate
     receive
@@ -206,16 +207,23 @@ dupes(Config) ->
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 1)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    {ok, _} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
+    {ok, Reply2} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
+
+    %% check we're still getting ADR commands
+    true = lists:keymember(link_adr_req, 1, Reply2#frame.fopts),
 
     %% check we get the second downlink again because we didn't ACK it
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2)},
+    %% also ack the ADR adjustments
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    {ok, _} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
+    {ok, Reply3} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
+
+    %% check NOT we're still getting ADR commands
+    false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, true)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{should_ack => true})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     timer:sleep(1000),
@@ -227,10 +235,13 @@ dupes(Config) ->
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3, false)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
-    {ok, _} = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
+    {ok, Reply4} = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
+
+    %% check NOT we're still getting ADR commands
+    false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -442,25 +453,25 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
 frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
-    frame_packet(MType, PubKeyBin, SessionKey, FCnt, false).
+    frame_packet(MType, PubKeyBin, SessionKey, FCnt, #{}).
 
-frame_packet(MType, PubKeyBin, SessionKey, FCnt, ShouldAck) ->
+frame_packet(MType, PubKeyBin, SessionKey, FCnt, Options) ->
     MHDRRFU = 0,
     Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
     DevAddr = <<OUI:32/integer-unsigned-big>>,
     ADR = 0,
     ADRACKReq = 0,
-    ACK = case ShouldAck of
+    ACK = case maps:get(should_ack, Options, false) of
               true -> 1;
               false -> 0
           end,
     RFU = 0,
-    FOptsLen = 0,
-    FOpts = <<>>,
-    Body = <<1:8>>,
+    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
+    FOptsLen = byte_size(FOptsBin),
+    Body = maps:get(body, Options, <<1:8>>),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, Body/binary>>,
+                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Body/binary>>,
     B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, SessionKey, <<B0/binary, Payload0/binary>>, 4),
     Payload1 = <<Payload0/binary, MIC:4/binary>>,

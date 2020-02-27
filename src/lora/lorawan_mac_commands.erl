@@ -9,7 +9,7 @@
 
 -dialyzer([no_match, no_return]).
 
--export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, parse_fdownopts/1, encode_fopts/1]).
+-export([handle_fopts/4, build_fopts/2, merge_rxwin/2, parse_fopts/1, parse_fdownopts/1, encode_fopts/1, encode_fupopts/1]).
 
 -include("lorawan_db.hrl").
 
@@ -141,6 +141,11 @@ encode_fopts([{device_time_ans, MsSinceEpoch} | Rest]) ->
     Ms = trunc((MsSinceEpoch rem 1000) / 3.90625), % 0.5^8
     <<16#0D, (MsSinceEpoch div 1000):32/little-unsigned-integer, Ms, (encode_fopts(Rest))/binary>>;
 encode_fopts([]) ->
+    <<>>.
+
+encode_fupopts([{link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} | Rest]) ->
+    <<16#03, 0:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, (encode_fopts(Rest))/binary>>;
+encode_fupopts([]) ->
     <<>>.
 
 

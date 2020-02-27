@@ -139,26 +139,26 @@ channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"http">>}=Channel) ->
 channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"mqtt">>}=Channel) ->
     URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
     Topic = kvc:path([<<"credentials">>, <<"topic">>], Channel),
-    ChannelID = kvc:path([<<"name">>], Channel),
+    ChannelName = kvc:path([<<"name">>], Channel),
     fun(#{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := Timestamp}=DataMap) ->
-            Result = case router_mqtt_sup:get_connection(Device#device.id, ChannelID, #{endpoint => URL, topic => Topic}) of
+            Result = case router_mqtt_sup:get_connection(Device#device.id, ChannelName, #{endpoint => URL, topic => Topic}) of
                          {ok, Pid} ->
                              case router_mqtt_worker:send(Pid, encode_data(Device, DataMap)) of
                                  {ok, PacketID} ->
-                                     #{channel_name => ChannelID, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
+                                     #{channel_name => ChannelName, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                        status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))};
                                  ok ->
-                                     #{channel_name => ChannelID, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
+                                     #{channel_name => ChannelName, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                        status => success, description => <<"ok">> };
                                  {error, Reason} ->
-                                     #{channel_name => ChannelID, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
+                                     #{channel_name => ChannelName, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                        delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                        status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))}
                              end;
                          _ ->
-                             #{channel_name => ChannelID, id => Device#device.id, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
+                             #{channel_name => ChannelName, id => Device#device.id, payload_size => erlang:byte_size(Payload), reported_at => Timestamp div 1000000,
                                delivered_at => erlang:system_time(second), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
                                status => failure, description => <<"invalid channel configuration">>}
                      end,

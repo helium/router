@@ -34,16 +34,16 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-get_connection(MAC, ChannelName, Args) ->
-    case ets:lookup(router_mqtt_workers, {MAC, ChannelName}) of
+get_connection(DeviceID, ChannelName, Args) ->
+    case ets:lookup(router_mqtt_workers, {DeviceID, ChannelName}) of
         [] ->
-            supervisor:start_child(?MODULE, [MAC, ChannelName, Args]);
-        [{{MAC, ChannelName}, Pid}] ->
+            supervisor:start_child(?MODULE, [DeviceID, ChannelName, Args]);
+        [{{DeviceID, ChannelName}, Pid}] ->
             case is_process_alive(Pid) of
                 true ->
                     {ok, Pid};
                 false ->
-                    supervisor:start_child(?MODULE, [MAC, ChannelName, Args])
+                    supervisor:start_child(?MODULE, [DeviceID, ChannelName, Args])
             end
     end.
 

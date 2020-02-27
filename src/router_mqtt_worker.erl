@@ -33,7 +33,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
-                mac :: pos_integer(),
+                device_id :: binary(),
                 connection :: pid(),
                 pubtopic :: binary()
                }).
@@ -41,8 +41,8 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(MAC, ChannelName, Args) ->
-    gen_server:start_link(?SERVER, [MAC, ChannelName, Args], []).
+start_link(DeviceID, ChannelName, Args) ->
+    gen_server:start_link(?SERVER, [DeviceID, ChannelName, Args], []).
 
 send(Pid, Payload) ->
     gen_server:call(Pid, {send, Payload}).
@@ -50,16 +50,16 @@ send(Pid, Payload) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([MAC, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
-    case connect(Endpoint, MAC, ChannelName) of
+init([DeviceID, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
+    case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             erlang:send_after(25000, self(), {ping, Conn}),
-            ets:insert(router_mqtt_workers, {{MAC, ChannelName}, self()}),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/rx", [Topic, MAC])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~16.16.0b/tx/#", [Topic, MAC])),
+            ets:insert(router_mqtt_workers, {{DeviceID, ChannelName}, self()}),
+            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [Topic, DeviceID])),
+            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [Topic, DeviceID])),
             %% TODO use a better QoS to add some back pressure
             emqtt:subscribe(Conn, {SubTopic, 0}),
-            {ok, #state{mac=MAC, connection=Conn, pubtopic=PubTopic}};
+            {ok, #state{device_id=DeviceID, connection=Conn, pubtopic=PubTopic}};
         error ->
             {stop, mqtt_connection_failed}
     end.
@@ -76,20 +76,19 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({publish, Msg=#{payload := Pay}}, State) ->
+handle_info({publish, Msg=#{payload := Pay}}, #state{device_id=DeviceID}=State) ->
     try jsx:decode(Pay, [return_maps]) of
         JSON ->
             case maps:find(<<"payload_raw">>, JSON) of
                 {ok, Payload} ->
-                    lager:info("JSON downlink not implented yet, sorry ~p", [Payload]);
-                %% case router_devices_server:get(<<(State#state.mac):64/integer-unsigned-big>>) of
-                %%     {ok, Device} ->
-                %%         lager:info("queueing ~p for downlink to ~p", [Payload, State#state.mac]),
-                %%         %% TODO figure out port and confirmation mode
-                %%         router_devices_server:update(<<(State#state.mac):64/integer-unsigned-big>>, [{queue, Device#device.queue ++ [{false, 1, base64:decode(Payload)}]}]);
-                %%     {error, Reason} ->
-                %%         lager:info("could not find device ~p : ~p", [State#state.mac, Reason])
-                %% end;
+                    lager:info("JSON downlink not implented yet, sorry ~p", [Payload]),
+                    case router_devices_sup:lookup_device_worker(DeviceID) of
+                        {error, _Reason} ->
+                            lager:info("could not find device ~p : ~p", [DeviceID, _Reason]);
+                        {ok, Pid} ->
+                            Msg = {false, 1, base64:decode(Payload)},
+                            router_device_worker:queue_message(Pid, Msg)
+                    end;
                 error ->
                     lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
             end
@@ -117,8 +116,8 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec connect(binary(), any(), any()) -> {ok, pid()} | error.
-connect(ConnectionString, Mac, Name) when is_binary(ConnectionString) ->
+-spec connect(binary(), binary(), any()) -> {ok, pid()} | error.
+connect(ConnectionString, DeviceID, Name) when is_binary(ConnectionString) ->
     Opts = [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}],
     case http_uri:parse(ConnectionString, Opts) of
         {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when Scheme == mqtt orelse
@@ -127,7 +126,7 @@ connect(ConnectionString, Mac, Name) when is_binary(ConnectionString) ->
             EmqttOpts = [
                          {host, erlang:binary_to_list(Host)},
                          {port, Port},
-                         {client_id, erlang:list_to_binary(io_lib:format("~.16b", [Mac]))},
+                         {client_id, DeviceID},
                          {username, Username},
                          {password, Password},
                          {logger, {lager, debug}},

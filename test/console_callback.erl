@@ -17,20 +17,39 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     [] -> false;
                     [{show_dupes, B}] -> B
                 end,
-    HTTPChannel = #{
-                    <<"type">> => <<"http">>,
-                    <<"credentials">> => #{
-                                           <<"headers">> => #{},
-                                           <<"endpoint">> => <<"http://localhost:3000/channel">>,
-                                           <<"method">> => <<"POST">>
-                                          },
-                    <<"show_dupes">> => ShowDupes,
-                    <<"id">> => <<"12345">>
-                   },
+    ChannelType = case ets:lookup(Tab, channel_type) of
+                      [] -> http;
+                      [{channel_type, Type}] -> Type
+                  end,
+    Channel = case ChannelType of
+                  http ->
+                      #{
+                        <<"type">> => <<"http">>,
+                        <<"credentials">> => #{
+                                               <<"headers">> => #{},
+                                               <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                               <<"method">> => <<"POST">>
+                                              },
+                        <<"show_dupes">> => ShowDupes,
+                        <<"id">> => <<"12345">>,
+                        <<"name">> => <<"fake_http">>
+                       };
+                  mqtt ->
+                      #{
+                        <<"type">> => <<"mqtt">>,
+                        <<"credentials">> => #{
+                                               <<"endpoint">> => <<"mqtt://user:pass@test.com:1883">>,
+                                               <<"topic">> => <<"test/">>
+                                              },
+                        <<"show_dupes">> => ShowDupes,
+                        <<"id">> => <<"56789">>,
+                        <<"name">> => <<"fake_mqtt">>
+                       }
+              end,
     Body = #{
              <<"id">> => <<"yolo_id">>,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-             <<"channels">> => [HTTPChannel]
+             <<"channels">> => [Channel]
             },
     case DID == <<"yolo">> of
         true ->

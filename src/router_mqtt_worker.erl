@@ -53,6 +53,7 @@ send(Pid, Payload) ->
 init([DeviceID, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, connected]),
             erlang:send_after(25000, self(), {ping, Conn}),
             ets:insert(router_mqtt_workers, {{DeviceID, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [Topic, DeviceID])),
@@ -76,7 +77,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({publish, Msg=#{payload := Pay}}, #state{device_id=DeviceID}=State) ->
+handle_info({publish, #{payload := Pay}=Map}, #state{device_id=DeviceID}=State) ->
     try jsx:decode(Pay, [return_maps]) of
         JSON ->
             case maps:find(<<"payload_raw">>, JSON) of
@@ -94,7 +95,7 @@ handle_info({publish, Msg=#{payload := Pay}}, #state{device_id=DeviceID}=State) 
             end
     catch
         _:_ ->
-            lager:info("could not parse json downlink message ~p", [Msg])
+            lager:info("could not parse json downlink message ~p", [Map])
     end,
     {noreply, State};
 handle_info({ping, Connection}, State = #state{connection=Connection}) ->

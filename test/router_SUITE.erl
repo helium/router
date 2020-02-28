@@ -15,7 +15,8 @@
 -export([
          http_test/1,
          dupes/1,
-         join_test/1
+         join_test/1,
+         mqtt_test/1
         ]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
@@ -38,7 +39,8 @@ all() ->
     [
      http_test,
      dupes,
-     join_test
+     join_test,
+     mqtt_test
     ].
 
 %%--------------------------------------------------------------------
@@ -132,7 +134,7 @@ http_test(Config) ->
     {ok, Device1} = get_device(DB, CF, WorkerID),
     ?assertEqual(Device1#device.queue, [Msg]),
 
-    %% Sending CONFIRMED_UP frame packet and then we should get back message that was in queue
+    %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
@@ -303,6 +305,86 @@ join_test(Config) ->
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
     ok.
+
+mqtt_test(Config) ->
+    Self = self(),
+    meck:new(emqtt, [passthrough]),
+    meck:expect(emqtt, start_link, fun(_Opts) -> {ok, self()} end),
+    meck:expect(emqtt, connect, fun(_Pid) -> {ok, []} end),
+    meck:expect(emqtt, ping, fun(_Pid) -> ok end),
+    meck:expect(emqtt, disconnect, fun(_Pid) -> ok end),
+    meck:expect(
+        emqtt,
+        subscribe,
+        fun(_Pid, {_Topic, _QoS}) ->
+                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
+                ok
+        end
+    ),
+    meck:expect(
+        emqtt,
+        publish,
+        fun(_Pid, _Topic, Payload, _QoS) ->
+                Self ! {channel, Payload},
+                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, Payload}]),
+                ok
+        end
+    ),
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, mqtt}),
+    BaseDir = proplists:get_value(base_dir, Config),
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = start_swarm(BaseDir, http_test_swarm, 3616),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
+
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for console repor status sent
+    ok = wait_for_report_status(PubKeyBin),
+    %% Waiting for reply resp form router
+    ok = wait_for_reply(),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(<<"yolo_id">>),
+    {ok, Device0} = get_device(DB, CF, WorkerID),
+    
+    %% Send CONFIRMED_UP frame packet needing an ack back
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
+
+    ok = wait_for_post_channel(PubKeyBin),
+    ok = wait_for_report_status(PubKeyBin),
+    ok = wait_for_ack(?REPLY_DELAY + 250),
+
+
+    ETSKey = {<<"yolo_id">>, <<"fake_mqtt">>},
+    Msg0 = {false, 1, <<"mqttpayload">>},
+    [{ETSKey, MQQTTWorkerPid}] = ets:lookup(router_mqtt_workers, ETSKey),
+    Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
+    MQQTTWorkerPid ! {publish, #{payload => Payload}},
+
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
+    ok = wait_for_post_channel(PubKeyBin),
+    ok = wait_for_report_status(PubKeyBin),
+    {ok, _} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
+
+
+    libp2p_swarm:stop(Swarm),
+    ?assert(meck:validate(emqtt)),
+    meck:unload(emqtt),
+    ok.
+
 
 %% ------------------------------------------------------------------
 %% Helper functions

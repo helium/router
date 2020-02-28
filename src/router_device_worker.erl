@@ -96,10 +96,14 @@ handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State#state{join_cache=Cache1}};
-                {RSSI1, _, _, _, _} ->
+                {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
-                        false -> {noreply, State};
-                        true -> {noreply, State#state{join_cache=Cache1}}
+                        false ->
+                            catch Pid ! {packet, undefined},
+                            {noreply, State};
+                        true ->
+                            catch Pid2 ! {packet, undefined},
+                            {noreply, State#state{join_cache=Cache1}}
                     end
             end
     end;
@@ -117,10 +121,14 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
                     {noreply, State#state{frame_cache=Cache1, device=Device1}};
-                {RSSI1, _, _, _, _, _} ->
+                {RSSI1, _, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
-                        false -> {noreply, State#state{device=Device1}};
-                        true -> {noreply, State#state{frame_cache=Cache1, device=Device1}}
+                        false ->
+                            catch Pid ! {packet, undefined},
+                            {noreply, State#state{device=Device1}};
+                        true ->
+                            catch Pid2 ! {packet, undefined},
+                            {noreply, State#state{frame_cache=Cache1, device=Device1}}
                     end
             end
     end;

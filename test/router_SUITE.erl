@@ -314,22 +314,22 @@ mqtt_test(Config) ->
     meck:expect(emqtt, ping, fun(_Pid) -> ok end),
     meck:expect(emqtt, disconnect, fun(_Pid) -> ok end),
     meck:expect(
-        emqtt,
-        subscribe,
-        fun(_Pid, {_Topic, _QoS}) ->
-                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
-                ok
-        end
-    ),
+      emqtt,
+      subscribe,
+      fun(_Pid, {_Topic, _QoS}) ->
+              ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
+              ok
+      end
+     ),
     meck:expect(
-        emqtt,
-        publish,
-        fun(_Pid, _Topic, Payload, _QoS) ->
-                Self ! {channel, Payload},
-                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, Payload}]),
-                ok
-        end
-    ),
+      emqtt,
+      publish,
+      fun(_Pid, _Topic, Payload, _QoS) ->
+              Self ! {channel, Payload},
+              ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, Payload}]),
+              ok
+      end
+     ),
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
     BaseDir = proplists:get_value(base_dir, Config),
@@ -359,7 +359,7 @@ mqtt_test(Config) ->
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
-    
+
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
 

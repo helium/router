@@ -96,10 +96,14 @@ handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State#state{join_cache=Cache1}};
-                {RSSI1, _, _, _, _} ->
+                {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
-                        false -> {noreply, State};
-                        true -> {noreply, State#state{join_cache=Cache1}}
+                        false ->
+                            catch Pid ! {packet, undefined},
+                            {noreply, State};
+                        true ->
+                            catch Pid2 ! {packet, undefined},
+                            {noreply, State#state{join_cache=Cache1}}
                     end
             end
     end;
@@ -117,10 +121,14 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
                     {noreply, State#state{frame_cache=Cache1, device=Device1}};
-                {RSSI1, _, _, _, _, _} ->
+                {RSSI1, _, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
-                        false -> {noreply, State#state{device=Device1}};
-                        true -> {noreply, State#state{frame_cache=Cache1, device=Device1}}
+                        false ->
+                            catch Pid ! {packet, undefined},
+                            {noreply, State#state{device=Device1}};
+                        true ->
+                            catch Pid2 ! {packet, undefined},
+                            {noreply, State#state{frame_cache=Cache1, device=Device1}}
                     end
             end
     end;
@@ -147,6 +155,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=Stat
     case handle_frame(Packet0, AName, Device0, Frame) of
         {ok, Device1} ->
             {ok, _} = save_device(DB, CF, Device1),
+            Pid ! {packet, undefined},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink ~p", [Packet1]),
@@ -154,6 +163,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=Stat
             Pid ! {packet, Packet1},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
+            Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
 handle_info({report_status, _, _, _}, #state{device=#device{app_eui=undefined}}=State) ->
@@ -223,7 +233,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
                            <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
-            {error, unknown_device};
+            {error, {unknown_device, lorawan_utils:binary_to_hex(DevAddr)}};
         #device{id=DeviceId} ->
             case maybe_start_worker(DeviceId) of
                 {error, _Reason}=Error ->
@@ -276,7 +286,6 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
             Device0) when MType == 0 ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = AppEUI,
     NetID = <<"He2">>,
     AppNonce = crypto:strong_rand_bytes(3),
     NwkSKey = crypto:block_encrypt(aes_ecb,
@@ -368,9 +377,10 @@ handle_frame_packet(Packet, AName, Device0) ->
 -spec handle_frame(#packet_pb{}, string(), #device{}, #frame{}) -> noop | {ok, #device{}} | {send,#device{}, #packet_pb{}}.
 handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
-    lager:info("downlink with no queue ~p and channels corrected ~p", [ACK, Device0#device.channel_correction]),
+    WereChannelsCorrected = were_channels_corrected(Frame),
+    lager:info("downlink with no queue, ACK ~p and channels corrected ~p", [ACK, Device0#device.channel_correction orelse WereChannelsCorrected]),
     case ACK of
-        X when X == 1 orelse Device0#device.channel_correction == false ->
+        X when X == 1 orelse (Device0#device.channel_correction == false andalso not WereChannelsCorrected) ->
             ConfirmedDown = false,
             Port = 0, %% Not sure about that?
             ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),
@@ -439,7 +449,7 @@ channel_correction_and_fopts(Packet, Device, Frame) ->
                  true -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
                  _ -> []
              end,
-    {ChannelsCorrected, FOpts1}.
+    {ChannelsCorrected orelse Device#device.channel_correction, FOpts1}.
 
 were_channels_corrected(Frame) ->
     FOpts0 = Frame#frame.fopts,

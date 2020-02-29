@@ -412,6 +412,8 @@ handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
+    WereChannelsCorrected = were_channels_corrected(Frame),
+    lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p", [ReplyPayload, ConfirmedDown, Port, ACK, Device0#device.channel_correction orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
     FCNTDown = Device0#device.fcntdown,
     FPending = case T of
@@ -524,11 +526,10 @@ frame_to_packet_payload(Frame, Device) ->
                   <<Payload/binary>> when Frame#frame.fport == 0 ->
                       lager:debug("port 0 outbound"),
                       %% port 0 payload, encrypt with network key
-                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
+                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
                   <<Payload/binary>> ->
                       lager:debug("port ~p outbound", [Frame#frame.fport]),
-                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
-                      Payload = lorawan_utils:reverse(lorawan_utils:cipher(EncPayload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
+                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
     lager:debug("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),

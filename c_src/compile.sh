@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION="793a01b74282391d2c5b9e1019cbb066f249d14d"
+VERSION="e4c02439932dbcdfcd65199a2a361d90ccef99e5"
 
 
 if [ ! -d c_src/LoRaMac-node ]; then

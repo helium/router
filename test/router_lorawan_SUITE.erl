@@ -76,6 +76,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
+    catch exit(whereis(client_swarm), kill),
     ok.
 
 %%--------------------------------------------------------------------
@@ -88,6 +89,7 @@ join_test(Config) ->
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     Swarm0 = start_swarm(BaseDir, join_test_swarm_0, 3620),
+    register(client_swarm, Swarm0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
                                                     Address,
@@ -124,22 +126,35 @@ join_test(Config) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg1 = {true, 2, <<"someotherpayload">>},
     router_device_worker:queue_message(WorkerPid, Msg1),
+    Msg2 = {false, 55, <<"sharkfed">>},
+    router_device_worker:queue_message(WorkerPid, Msg2),
 
-    receive rx -> ok end,
+
+    receive rx -> ok
+    after 1000 -> ct:fail("nothing received from device")
+    end,
     wait_for_post_channel(PubKeyBin0),
 
-    receive rx -> ok end,
+    receive rx -> ok
+    after 1000 -> ct:fail("nothing received from device")
+    end,
     wait_for_post_channel(PubKeyBin0),
 
     Stream0 ! get_channel_mask,
     receive {channel_mask, Mask} ->
             ExpectedMask = lists:seq(48, 55),
             Mask = ExpectedMask
+    after 100 ->
+            ct:fail("channel mask not corrected")
     end,
 
     %% check the device got our downlink
-    %% TODO parse/decrypt the payload properly so we can check it more thoroughly
-    receive {tx, _Data} -> ok end,
+    receive {tx, 2, true, <<"someotherpayload">>} -> ok
+    after 5000 -> ct:fail("device did not see downlink 1")
+    end,
+    receive {tx, 55, false, <<"sharkfed">>} -> ok
+    after 5000 -> ct:fail("device did not see downlink 2")
+    end,
 
     libp2p_swarm:stop(Swarm0),
     ok.

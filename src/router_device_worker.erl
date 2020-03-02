@@ -116,12 +116,12 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
             ok = send_to_channel(Packet0, Device1, Frame, AName),
             FCnt = Device1#device.fcnt,
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Device1, Frame, Pid}, Cache0),
+            Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, Cache0),
             case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
                     {noreply, State#state{frame_cache=Cache1, device=Device1}};
-                {RSSI1, _, _, _, _, Pid2} ->
+                {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
@@ -149,10 +149,10 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device#device{join_nonce=JoinNonce}, join_cache=Cache1}};
 
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=State) ->
-    {_, Packet0, AName, Device0, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
+    {_, Packet0, AName, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, AName, Device0, Frame) of
+    case handle_frame(Packet0, AName, Device, Frame) of
         {ok, Device1} ->
             {ok, _} = save_device(DB, CF, Device1),
             Pid ! {packet, undefined},

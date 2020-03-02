@@ -458,7 +458,7 @@ wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
                 #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                     #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
                     ct:pal("packet ~p", [Packet]),
-                    Frame = deframe_packet(Packet, Device#device.nwk_s_key),
+                    Frame = deframe_packet(Packet, Device#device.app_s_key),
                     ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
                     ?assertEqual(FrameData, Frame#frame.data),
                     %% we queued an unconfirmed packet

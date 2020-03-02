@@ -126,10 +126,17 @@ handle_info(client, {Port, {data,{eol,LogMsg}}}, State = #state{port=Port}) ->
                      Mask = parse_channel_mask(<<A/binary, B/binary, C/binary, D/binary, E/binary>>),
                      lager:info("channel mask ~w", [Mask]),
                      State#state{channel_mask=Mask};
-                 <<"RX DATA     : ", HexPayload/binary>> ->
+                 <<"RX CONFIRMED DATA     : ", HexPort:2/binary, " ", HexPayload/binary>> ->
                      Payload = lorawan_utils:hex_to_binary(binary:replace(HexPayload, <<" ">>, <<>>, [global])),
                      lager:info("Device got payload ~p", [Payload]),
-                     State#state.pid ! {tx, Payload},
+                     <<FramePort:8/integer-unsigned>> = lorawan_utils:hex_to_binary(HexPort),
+                     State#state.pid ! {tx, FramePort, true, Payload},
+                     State;
+                 <<"RX DATA     : ", HexPort:2/binary, " ", HexPayload/binary>> ->
+                     Payload = lorawan_utils:hex_to_binary(binary:replace(HexPayload, <<" ">>, <<>>, [global])),
+                     lager:info("Device got payload ~p", [Payload]),
+                     <<FramePort:8/integer-unsigned>> = lorawan_utils:hex_to_binary(HexPort),
+                     State#state.pid ! {tx, FramePort, false, Payload},
                      State;
                  _ ->
                      State

@@ -53,7 +53,6 @@ send(Pid, Payload) ->
 init([DeviceID, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, connected]),
             erlang:send_after(25000, self(), {ping, Conn}),
             ets:insert(router_mqtt_workers, {{DeviceID, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [Topic, DeviceID])),

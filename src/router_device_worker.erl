@@ -58,7 +58,7 @@ handle_packet(Packet, PubkeyBin) ->
             ok
     end.
 
--spec queue_message(pid(), {{boolean(), integer(), binary()}}) -> ok.
+-spec queue_message(pid(), {boolean(), integer(), binary()}) -> ok.
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
@@ -116,12 +116,12 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
             ok = send_to_channel(Packet0, Device1, Frame, AName),
             FCnt = Device1#device.fcnt,
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Device1, Frame, Pid}, Cache0),
+            Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, Cache0),
             case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
                     {noreply, State#state{frame_cache=Cache1, device=Device1}};
-                {RSSI1, _, _, _, _, Pid2} ->
+                {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
@@ -149,10 +149,10 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device#device{join_nonce=JoinNonce}, join_cache=Cache1}};
 
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=State) ->
-    {_, Packet0, AName, Device0, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
+    {_, Packet0, AName, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, AName, Device0, Frame) of
+    case handle_frame(Packet0, AName, Device, Frame) of
         {ok, Device1} ->
             {ok, _} = save_device(DB, CF, Device1),
             Pid ! {packet, undefined},
@@ -405,6 +405,9 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
                     Device1 = Device0#device{channel_correction=ChannelsCorrected, fcntdown=(FCNTDown + 1)},
                     {send, Device1, Packet1}
             end;
+        _ when ACK == 0 andalso Device0#device.channel_correction == false andalso WereChannelsCorrected == true ->
+            %% we corrected the channels but don't have anything else to send so just update the device
+            {ok, Device0#device{channel_correction=true}};
         _ ->
             noop
     end;
@@ -412,6 +415,8 @@ handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
+    WereChannelsCorrected = were_channels_corrected(Frame),
+    lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p", [ReplyPayload, ConfirmedDown, Port, ACK, Device0#device.channel_correction orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
     FCNTDown = Device0#device.fcntdown,
     FPending = case T of
@@ -455,6 +460,10 @@ were_channels_corrected(Frame) ->
     FOpts0 = Frame#frame.fopts,
     case lists:keyfind(link_adr_ans, 1, FOpts0) of
         {link_adr_ans, 1, 1, 1} ->
+            true;
+        {link_adr_ans, 1, 1, 0} ->
+            lager:info("device rejected channel adjustment"),
+            %% XXX we should get this to report_status somehow, but it's a bit tricky right now
             true;
         _ ->
             false
@@ -524,11 +533,10 @@ frame_to_packet_payload(Frame, Device) ->
                   <<Payload/binary>> when Frame#frame.fport == 0 ->
                       lager:debug("port 0 outbound"),
                       %% port 0 payload, encrypt with network key
-                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
+                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
                   <<Payload/binary>> ->
                       lager:debug("port ~p outbound", [Frame#frame.fport]),
-                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
-                      Payload = lorawan_utils:reverse(lorawan_utils:cipher(EncPayload, Device#device.nwk_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
+                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, Device#device.app_s_key, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
     lager:debug("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),

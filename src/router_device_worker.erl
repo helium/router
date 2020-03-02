@@ -145,7 +145,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                   (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
-    ok = report_status(success, AName, StatusMsg),
+    ok = report_status(success, AName, StatusMsg, activation, 0, 0),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device#device{join_nonce=JoinNonce}, join_cache=Cache1}};
 
@@ -166,10 +166,10 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, frame_cache=Cache0}=Stat
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info({report_status, _, _, _}, #state{device=#device{app_eui=undefined}}=State) ->
+handle_info({report_status, _, _, _, _, _, _}, #state{device=#device{app_eui=undefined}}=State) ->
     {noreply, State};
-handle_info({report_status, Status, AName, Msg}, #state{device=Device}=State) ->
-    ok = router_console:report_status(Device#device.id, Status, AName, Msg),
+handle_info({report_status, Status, AName, Msg, Category, FCnt, FCntDown}, #state{device=Device}=State) ->
+    ok = router_console:report_status(Device#device.id, Status, AName, Msg, Category, FCnt, FCntDown),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -207,7 +207,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
         false ->
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
             StatusMsg = <<"No device for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(failure, AName, StatusMsg),
+            ok = report_status(failure, AName, StatusMsg, error, 0, 0),
             {error, undefined_app_key};
         undefined ->
             case throttle:check(join_dedup, {AppEUI, DevEUI, DevNonce}) of
@@ -274,7 +274,7 @@ handle_join(#packet_pb{oui=OUI, payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI
             lager:debug("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [Name, OUI, DID, OldNonce, AName]),
             StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(OldNonce))/binary, " for AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(failure, AName, StatusMsg);
+            ok = report_status(failure, AName, StatusMsg, error, 0, 0);
         _ ->
             ok
     end,
@@ -342,7 +342,7 @@ handle_frame_packet(Packet, AName, Device0) ->
             StatusMsg = <<"Packet with double fopts received from AppEUI: ",
                           (lorawan_utils:binary_to_hex(Device0#device.app_eui))/binary, " DevEUI: ",
                           (lorawan_utils:binary_to_hex(Device0#device.dev_eui))/binary>>,
-            ok = report_status(failure, AName, StatusMsg),
+            ok = report_status(failure, AName, StatusMsg, error, FCnt, Device0#device.fcntdown),
             {error, double_fopts};
         _N ->
             AppSKey = Device0#device.app_s_key,
@@ -383,7 +383,7 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
         X when X == 1 orelse (Device0#device.channel_correction == false andalso not WereChannelsCorrected) ->
             ConfirmedDown = false,
             Port = 0, %% Not sure about that?
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
             {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
             case ChannelsCorrected andalso (Device0#device.channel_correction == false) andalso (ACK == 0) of
                 true ->
@@ -411,7 +411,7 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
 handle_frame(Packet0, AName, #device{queue=[{ConfirmedDown, Port, ReplyPayload}|T]}=Device0, Frame) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
-    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0#device.fcnt),
+    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
     FCNTDown = Device0#device.fcntdown,
     FPending = case T of
@@ -468,29 +468,29 @@ mtype_to_ack(_) -> 0.
 ack_to_mtype(true) -> ?CONFIRMED_DOWN;
 ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
--spec report_frame_status(integer(), boolean(), any(), string(), integer()) -> ok.
-report_frame_status(0, false, 0, AName, FCNT) ->
+-spec report_frame_status(integer(), boolean(), any(), string(), #device{}) -> ok.
+report_frame_status(0, false, 0, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Correcting channel mask in response to ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg);
-report_frame_status(1, _ConfirmedDown, undefined, AName, FCNT) ->
+    ok = report_status(success, AName, StatusMsg, down, FCNT, FDownCnt);
+report_frame_status(1, _ConfirmedDown, undefined, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg);
-report_frame_status(1, true, _Port, AName, FCNT) ->
+    ok = report_status(success, AName, StatusMsg, ack, FCNT, FDownCnt);
+report_frame_status(1, true, _Port, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg);
-report_frame_status(1, false, _Port, AName, FCNT) ->
+    ok = report_status(success, AName, StatusMsg, ack, FCNT, FDownCnt);
+report_frame_status(1, false, _Port, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg);
-report_frame_status(_, true, _Port, AName, FCNT) ->
+    ok = report_status(success, AName, StatusMsg, ack, FCNT, FDownCnt);
+report_frame_status(_, true, _Port, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg);
-report_frame_status(_, false, _Port, AName, FCNT) ->
+    ok = report_status(success, AName, StatusMsg, down, FCNT, FDownCnt);
+report_frame_status(_, false, _Port, AName, #device{fcnt=FCNT, fcntdown=FDownCnt}) ->
     StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCNT))/binary>>,
-    ok = report_status(success, AName, StatusMsg).
+    ok = report_status(success, AName, StatusMsg, down, FCNT, FDownCnt).
 
--spec report_status(atom(), string(), binary()) -> ok.
-report_status(Type, AName, Msg) ->
-    self() ! {report_status, Type, AName, Msg},
+-spec report_status(atom(), string(), binary(), atom(), non_neg_integer(), non_neg_integer()) -> ok.
+report_status(Type, AName, Msg, Category, FCnt, FDownCnt) ->
+    self() ! {report_status, Type, AName, Msg, Category, FCnt, FDownCnt},
     ok.
 
 -spec send_to_channel(#packet_pb{}, #device{}, #frame{}, string()) -> ok.

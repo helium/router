@@ -58,7 +58,7 @@ handle_packet(Packet, PubkeyBin) ->
             ok
     end.
 
--spec queue_message(pid(), {{boolean(), integer(), binary()}}) -> ok.
+-spec queue_message(pid(), {boolean(), integer(), binary()}) -> ok.
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 

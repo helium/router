@@ -405,6 +405,9 @@ handle_frame(Packet0, AName, #device{queue=[]}=Device0, Frame) ->
                     Device1 = Device0#device{channel_correction=ChannelsCorrected, fcntdown=(FCNTDown + 1)},
                     {send, Device1, Packet1}
             end;
+        _ when ACK == 0 andalso Device0#device.channel_correction == false andalso WereChannelsCorrected == true ->
+            %% we corrected the channels but don't have anything else to send so just update the device
+            {ok, Device0#device{channel_correction=true}};
         _ ->
             noop
     end;
@@ -457,6 +460,10 @@ were_channels_corrected(Frame) ->
     FOpts0 = Frame#frame.fopts,
     case lists:keyfind(link_adr_ans, 1, FOpts0) of
         {link_adr_ans, 1, 1, 1} ->
+            true;
+        {link_adr_ans, 1, 1, 0} ->
+            lager:info("device rejected channel adjustment"),
+            %% XXX we should get this to report_status somehow, but it's a bit tricky right now
             true;
         _ ->
             false

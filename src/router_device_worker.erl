@@ -575,7 +575,8 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
             sequence => router_device:fcnt(Device),
             spreading => erlang:list_to_binary(DataRate),
             payload => Data,
-            timestamp => Time
+            timestamp => Time,
+            id => router_device:id(Device)
            },
     SendFun = router_console:send_data_fun(Device),
     _ = SendFun(Map),

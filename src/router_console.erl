@@ -165,7 +165,7 @@ channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"mqtt">>}=Channel) ->
     end.
 
 -spec encode_data(router_device:device(), map()) -> binary().
-encode_data(Device, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, sequence := Seq, spreading := Spreading}) ->
+encode_data(Device, #{id := DeviceID, payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, sequence := Seq, spreading := Spreading}) ->
     jsx:encode(#{timestamp => erlang:system_time(seconds),
                  sequence => Seq,
                  spreading => Spreading,
@@ -175,7 +175,8 @@ encode_data(Device, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name :
                  dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
                  app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
                  name => router_device:name(Device),
-                 snr => SNR}).
+                 snr => SNR,
+                 id => DeviceID}).
 
 -spec get_device_channels(router_device:device()) -> {ok, map()} | {error, any()}.
 get_device_channels(Device) ->

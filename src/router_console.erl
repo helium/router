@@ -1,7 +1,5 @@
 -module(router_console).
 
--include("device_worker.hrl").
-
 -export([
          get_app_key_by_eui/4,
          report_status/7,
@@ -49,9 +47,9 @@ report_status(DeviceID, Status, AName, Msg, Category, Fcnt, FcntDown) ->
                  jsx:encode(Result), [with_body]),
     ok.
 
--spec send_data_fun(#device{}) -> function().
+-spec send_data_fun(router_device:device()) -> function().
 send_data_fun(Device) ->
-    e2qc:cache(console_cache, Device#device.id, 60, fun() -> make_send_data_fun(Device) end).
+    e2qc:cache(console_cache, router_device:id(Device), 60, fun() -> make_send_data_fun(Device) end).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -63,15 +61,17 @@ make_send_data_fun(Device) ->
     make_send_data_fun(Device, Endpoint, JWT).
 
 make_send_data_fun(Device, Endpoint, JWT) ->
+    DeviceId = router_device:id(Device),
+    FCntDown = router_device:fcntdown(Device),
     case get_device_channels(Device) of
         {error, _Reason} ->
-            lager:warning("unable to get get_device for ~s : ~p", [Device#device.name, _Reason]),
+            lager:warning("unable to get get_device for ~s : ~p", [router_device:name(Device), _Reason]),
             fun(#{rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := _Timestamp, payload := Payload, sequence := FCNT}) ->
                     Result = #{payload => base64:encode(Payload), payload_size => byte_size(Payload), reported_at => erlang:system_time(seconds),
                                rssi => RSSI, snr => SNR, hotspot_name => MinerName, channel_name => nil, category => <<"up">>, frame_up => FCNT,
-                               frame_down => Device#device.fcntdown, status => failure, description => <<"Cannot get channel configuration">>},
-                    lager:info("No channel for ~p ~p", [Device#device.id, Result]),
-                    hackney:post(<<Endpoint/binary, "/api/router/devices/", (Device#device.id)/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+                               frame_down => FCntDown, status => failure, description => <<"Cannot get channel configuration">>},
+                    lager:info("No channel for ~p ~p", [DeviceId, Result]),
+                    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
             end;
         {ok, JSON} ->
             DeviceID = kvc:path([<<"id">>], JSON),
@@ -82,7 +82,7 @@ make_send_data_fun(Device, Endpoint, JWT) ->
                                   Result = #{payload => base64:encode(Payload), payload_size => byte_size(Payload),
                                              reported_at => erlang:system_time(seconds),
                                              rssi => RSSI, snr => SNR, hotspot_name => MinerName, channel_name => nil, category => <<"up">>,
-                                             frame_up => FCNT, frame_down => Device#device.fcntdown,
+                                             frame_up => FCNT, frame_down => FCntDown,
                                              status => failure, description => <<"No channels configured">>},
                                   lager:info("No channel for ~p ~p", [DeviceID, Result]),
                                   hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
@@ -93,7 +93,7 @@ make_send_data_fun(Device, Endpoint, JWT) ->
             fun(#{sequence := FCNT}=MapData) ->
                     lists:foreach(
                       fun({F, #{<<"show_dupes">> := false, <<"id">> := ID}}) ->
-                              case throttle:check(packet_dedup, {Device#device.id, ID, FCNT}) of
+                              case throttle:check(packet_dedup, {DeviceId, ID, FCNT}) of
                                   {ok, _, _} -> spawn(fun() -> F(MapData) end);
                                   _ -> ok
                               end;
@@ -113,10 +113,12 @@ channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"http">>}=Channel) ->
     Method = list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], Channel))),
     lager:info("Method ~p", [Method]),
     ChannelName = kvc:path([<<"name">>], Channel),
+    DeviceId = router_device:id(Device),
+    FCntDown = router_device:fcntdown(Device),
     fun(#{rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := _Timestamp, payload := Payload, sequence := FCNT}=DataMap) ->
             Result0 = #{channel_name => ChannelName, payload => base64:encode(Payload), payload_size => erlang:byte_size(Payload), 
                         reported_at => erlang:system_time(seconds), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                        category => <<"up">>, frame_up => FCNT, frame_down => Device#device.fcntdown},
+                        category => <<"up">>, frame_up => FCNT, frame_down => FCntDown},
             Result = try hackney:request(Method, URL, maps:to_list(Headers), encode_data(Device, DataMap), [with_body]) of
                          {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
                              maps:merge(Result0, #{status => success, description => ResponseBody});
@@ -133,17 +135,19 @@ channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"http">>}=Channel) ->
 
                      end,
             lager:info("Result ~p", [Result]),
-            hackney:post(<<Endpoint/binary, "/api/router/devices/", (Device#device.id)/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+            hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
     end;
 channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"mqtt">>}=Channel) ->
     URL = kvc:path([<<"credentials">>, <<"endpoint">>], Channel),
     Topic = kvc:path([<<"credentials">>, <<"topic">>], Channel),
     ChannelName= kvc:path([<<"name">>], Channel),
+    DeviceId = router_device:id(Device),
+    FCntDown = router_device:fcntdown(Device),
     fun(#{rssi := RSSI, snr := SNR, miner_name := MinerName, timestamp := _Timestamp, payload := Payload, sequence := FCNT}=DataMap) ->
             Result0 = #{channel_name => ChannelName, payload => base64:encode(Payload), payload_size => erlang:byte_size(Payload), 
                         reported_at => erlang:system_time(seconds), rssi => RSSI, snr => SNR, hotspot_name => MinerName,
-                        category => <<"up">>, frame_up => FCNT, frame_down => Device#device.fcntdown},
-            Result = case router_mqtt_sup:get_connection(Device#device.id, ChannelName, #{endpoint => URL, topic => Topic}) of
+                        category => <<"up">>, frame_up => FCNT, frame_down => FCntDown},
+            Result = case router_mqtt_sup:get_connection(DeviceId, ChannelName, #{endpoint => URL, topic => Topic}) of
                          {ok, Pid} ->
                              case router_mqtt_worker:send(Pid, encode_data(Device, DataMap)) of
                                  {ok, PacketID} ->
@@ -157,10 +161,10 @@ channel_to_fun(Device, Endpoint, JWT, #{<<"type">> := <<"mqtt">>}=Channel) ->
                              maps:merge(Result0, #{status => failure, description => <<"invalid channel configuration">>})
                      end,
             lager:info("Result ~p", [Result]),
-            hackney:post(<<Endpoint/binary, "/api/router/devices/", (Device#device.id)/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
+            hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary, "/event">>, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}], jsx:encode(Result), [with_body])
     end.
 
--spec encode_data(#device{}, map()) -> binary().
+-spec encode_data(router_device:device(), map()) -> binary().
 encode_data(Device, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name := MinerName, sequence := Seq, spreading := Spreading}) ->
     jsx:encode(#{timestamp => erlang:system_time(seconds),
                  sequence => Seq,
@@ -168,19 +172,20 @@ encode_data(Device, #{payload := Payload, rssi := RSSI, snr := SNR, miner_name :
                  payload => base64:encode(Payload),
                  gateway => MinerName,
                  rssi => RSSI,
-                 dev_eui => lorawan_utils:binary_to_hex(Device#device.dev_eui),
-                 app_eui => lorawan_utils:binary_to_hex(Device#device.app_eui),
-                 name => Device#device.name,
+                 dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+                 app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+                 name => router_device:name(Device),
                  snr => SNR}).
 
--spec get_device_channels(#device{}) -> {ok, map()} | {error, any()}.
+-spec get_device_channels(router_device:device()) -> {ok, map()} | {error, any()}.
 get_device_channels(Device) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
-    case hackney:get(<<Endpoint/binary, "/api/router/devices/", (Device#device.id)/binary>>,
+    DeviceId = router_device:id(Device),
+    case hackney:get(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
                      [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
-            lager:info("Body for ~p ~p", [<<Endpoint/binary, "/api/router/devices/", (Device#device.id)/binary>>, Body]),
+            lager:info("Body for ~p ~p", [<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>, Body]),
             {ok, jsx:decode(Body, [return_maps])};
         _Other ->
             {error, {get_device_failed, _Other}}

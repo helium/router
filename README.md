@@ -19,6 +19,11 @@ sudo docker-compose logs -f --tail=20
 
 # Get in container
 sudo docker exec -it helium_router bash
+
+# Run tests
+sudo docker run --name router_test --rm  helium/router:latest ./rebar3 ct --suite=test/router_SUITE.erl
+sudo docker run --name router_test --rm  helium/router:latest make test
+
 ```
 
 ### Data

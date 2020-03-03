@@ -10,7 +10,6 @@
          name/1, name/2,
          app_eui/1, app_eui/2,
          dev_eui/1, dev_eui/2,
-         app_key/1, app_key/2,
          nwk_s_key/1, nwk_s_key/2,
          app_s_key/1, app_s_key/2,
          join_nonce/1, join_nonce/2,
@@ -26,9 +25,8 @@
 -record(device, {
                  id :: binary() | undefined,
                  name :: binary() | undefined,
-                 app_eui :: binary() | undefined,
                  dev_eui :: binary() | undefined,
-                 app_key :: binary() | undefined,
+                 app_eui :: binary() | undefined,
                  nwk_s_key :: binary() | undefined,
                  app_s_key :: binary() | undefined,
                  join_nonce=0 :: non_neg_integer(),
@@ -74,14 +72,6 @@ dev_eui(Device) ->
 -spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
     Device#device{dev_eui=EUI}.
-
--spec app_key(device()) -> binary() | undefined.
-app_key(Device) ->
-    Device#device.app_key.
-
--spec app_key(binary(), device()) -> device().
-app_key(Key, Device) ->
-    Device#device{app_key=Key}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
 nwk_s_key(Device) ->
@@ -156,8 +146,6 @@ update([{app_eui, Value}|T], Device) ->
     update(T, ?MODULE:app_eui(Value, Device));
 update([{dev_eui, Value}|T], Device) ->
     update(T, ?MODULE:dev_eui(Value, Device));
-update([{app_key, Value}|T], Device) ->
-    update(T, ?MODULE:app_key(Value, Device));
 update([{nwk_s_key, Value}|T], Device) ->
     update(T, ?MODULE:nwk_s_key(Value, Device));
 update([{app_s_key, Value}|T], Device) ->
@@ -210,11 +198,6 @@ dev_eui_test() ->
     ?assertEqual(undefined, dev_eui(Device)),
     ?assertEqual(<<"dev_eui">>, dev_eui(dev_eui(<<"dev_eui">>, Device))).
 
-app_key_test() ->
-    Device = new(<<"id">>),
-    ?assertEqual(undefined, app_key(Device)),
-    ?assertEqual(<<"app_key">>, app_key(app_key(<<"app_key">>, Device))).
-
 nwk_s_key_test() ->
     Device = new(<<"id">>),
     ?assertEqual(undefined, nwk_s_key(Device)),
@@ -261,7 +244,6 @@ update_test() ->
                {name, <<"name">>},
                {app_eui, <<"app_eui">>},
                {dev_eui, <<"dev_eui">>},
-               {app_key, <<"app_key">>},
                {nwk_s_key, <<"nwk_s_key">>},
                {app_s_key, <<"app_s_key">>},
                {join_nonce, 1},
@@ -276,7 +258,6 @@ update_test() ->
                        name = <<"name">>,
                        app_eui = <<"app_eui">>,
                        dev_eui = <<"dev_eui">>,
-                       app_key = <<"app_key">>,
                        nwk_s_key = <<"nwk_s_key">>,
                        app_s_key = <<"app_s_key">>,
                        join_nonce = 1,

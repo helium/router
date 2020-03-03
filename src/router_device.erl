@@ -71,7 +71,7 @@ name(Name, Device) ->
 app_eui(Device) ->
     Device#device.app_eui.
 
--spec app_eui(binary(), device()) -> binary().
+-spec app_eui(binary(), device()) -> device().
 app_eui(EUI, Device) ->
     Device#device{app_eui=EUI}.
 
@@ -79,7 +79,7 @@ app_eui(EUI, Device) ->
 dev_eui(Device) ->
     Device#device.dev_eui.
 
--spec dev_eui(binary(), device()) -> binary().
+-spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
     Device#device{dev_eui=EUI}.
 
@@ -87,7 +87,7 @@ dev_eui(EUI, Device) ->
 app_key(Device) ->
     Device#device.app_key.
 
--spec app_key(binary(), device()) -> binary().
+-spec app_key(binary(), device()) -> device().
 app_key(Key, Device) ->
     Device#device{app_key=Key}.
 

@@ -85,7 +85,6 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     {ok, _} = save_device(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0, join_cache=Cache0}=State0) ->
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Device0]),
     case handle_join(Packet0, PubkeyBin, AppKey, Name, Device0) of
         {error, _Reason} ->
             {noreply, State0};
@@ -272,14 +271,16 @@ maybe_start_worker(DeviceId) ->
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
-                                  _DevEUI0:8/binary, _OldNonce:2/binary, _MIC:4/binary>>}=Packet,
+                                  _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
             PubkeyBin, AppKey, Name, Device) when MType == ?JOIN_REQ ->
-    handle_join(Packet, PubkeyBin, AppKey, Name, Device, router_device:join_nonce(Device)).
+    handle_join(Packet, PubkeyBin, AppKey, Name, Device, router_device:join_nonce(Device));
+handle_join(_Packet, _PubkeyBin, _AppKey, _Name, _Device) ->
+    {error, not_join_req}.
 
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
-handle_join(#packet_pb{oui=OUI, payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
-                                           DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
+handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
+                                  DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
             PubkeyBin, _AppKey, Name, _Device, OldNonce) when Nonce == OldNonce ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},

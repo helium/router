@@ -612,11 +612,16 @@ frame_to_packet_payload(Frame, Device) ->
 get_device_by_mic([], _, _) ->
     undefined;
 get_device_by_mic([Device|Tail], Bin, MIC) ->
-    NwkSKey = router_device:nwk_s_key(Device),
-    case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
-        MIC ->
-            Device;
-        _ ->
+    try
+        NwkSKey = router_device:nwk_s_key(Device),
+        case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
+            MIC ->
+                Device;
+            _ ->
+                get_device_by_mic(Tail, Bin, MIC)
+        end
+    catch _:_ ->
+            lager:warning("skipping invalid device ~p", [Device]),
             get_device_by_mic(Tail, Bin, MIC)
     end.
 

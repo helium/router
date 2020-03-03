@@ -630,7 +630,7 @@ int_to_bin(Int) ->
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DB, CF, DeviceId) ->
     case rocksdb:get(DB, CF, DeviceId, []) of
-        {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
+        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error
     end.
@@ -641,7 +641,7 @@ get_devices(DB, CF) ->
       DB,
       CF,
       fun({_Key, BinDevice}, Acc) ->
-              [erlang:binary_to_term(BinDevice)|Acc]
+              [router_device:deserialize(BinDevice)|Acc]
       end,
       [],
       []
@@ -650,7 +650,7 @@ get_devices(DB, CF) ->
 -spec save_device(rocksdb:db_handle(), rocksdb:cf_handle(), router_device:device()) -> {ok, router_device:device()} | {error, any()}.
 save_device(DB, CF, Device) ->
     DeviceId = router_device:id(Device),
-    case rocksdb:put(DB, CF, <<DeviceId/binary>>, erlang:term_to_binary(Device), []) of
+    case rocksdb:put(DB, CF, <<DeviceId/binary>>, router_device:serialize(Device), []) of
         {error, _}=Error -> Error;
         ok -> {ok, Device}
     end.

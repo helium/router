@@ -600,7 +600,7 @@ b0(Dir, DevAddr, FCnt, Len) ->
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DB, CF, ID) ->
     case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
+        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error
     end.

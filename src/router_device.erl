@@ -19,7 +19,8 @@
          offset/1, offset/2,
          channel_correction/1, channel_correction/2,
          queue/1, queue/2,
-         update/2
+         update/2,
+         serialize/1, deserialize/1
         ]).
 
 -record(device, {
@@ -182,6 +183,14 @@ update([{channel_correction, Value}|T], Device) ->
     update(T, ?MODULE:channel_correction(Value, Device));
 update([{queue, Value}|T], Device) ->
     update(T, ?MODULE:queue(Value, Device)).
+
+-spec serialize(device()) -> binary().
+serialize(Device) ->
+    erlang:term_to_binary(Device).
+
+-spec deserialize(binary()) -> device().
+deserialize(Binary) ->
+    erlang:binary_to_term(Binary).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

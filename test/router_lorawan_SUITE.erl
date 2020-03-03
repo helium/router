@@ -243,7 +243,7 @@ deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayl
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DB, CF, ID) ->
     case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};
+        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error
     end.

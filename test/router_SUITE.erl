@@ -118,7 +118,7 @@ http_test(Config) ->
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
 
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
@@ -132,17 +132,17 @@ http_test(Config) ->
 
     timer:sleep(200),
     {ok, Device1} = get_device(DB, CF, WorkerID),
-    ?assertEqual(Device1#device.queue, [Msg]),
+    ?assertEqual(router_device:queue(Device1), [Msg]),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     ok = wait_for_ack(250),
 
     {ok, Device2} = get_device(DB, CF, WorkerID),
-    ?assertEqual(Device2#device.queue, []),
+    ?assertEqual(router_device:queue(Device2), []),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -186,10 +186,10 @@ dupes(Config) ->
     router_device_worker:queue_message(WorkerPid, Msg1),
 
     %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, Device0#device.nwk_s_key, 0)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), 0)},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 0)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 0)},
     ok = wait_for_post_channel(PubKeyBin1),
     ok = wait_for_report_status(PubKeyBin1),
     ok = wait_for_post_channel(PubKeyBin2),
@@ -206,7 +206,7 @@ dupes(Config) ->
             ok
     end,
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 1)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 1)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     {ok, Reply2} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
@@ -216,7 +216,7 @@ dupes(Config) ->
 
     %% check we get the second downlink again because we didn't ACK it
     %% also ack the ADR adjustments
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     {ok, Reply3} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
@@ -225,7 +225,7 @@ dupes(Config) ->
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 2, #{should_ack => true})},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{should_ack => true})},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     timer:sleep(1000),
@@ -237,7 +237,7 @@ dupes(Config) ->
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, Device0#device.nwk_s_key, 3)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 3)},
     ok = wait_for_post_channel(PubKeyBin2),
     ok = wait_for_report_status(PubKeyBin2),
     {ok, Reply4} = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
@@ -298,9 +298,9 @@ join_test(Config) ->
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
-    NwkSKey = Device0#device.nwk_s_key,
-    AppSKey = Device0#device.app_s_key,
-    JoinNonce = Device0#device.join_nonce,
+    ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
+    ?assertEqual(router_device:app_s_key(Device0), AppSKey),
+    ?assertEqual(router_device:join_nonce(Device0), JoinNonce),
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
@@ -361,7 +361,7 @@ mqtt_test(Config) ->
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 0)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
 
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
@@ -374,7 +374,7 @@ mqtt_test(Config) ->
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, Device0#device.nwk_s_key, 1)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
     {ok, _} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
@@ -458,7 +458,7 @@ wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
                 #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                     #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
                     ct:pal("packet ~p", [Packet]),
-                    Frame = deframe_packet(Packet, Device#device.app_s_key),
+                    Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
                     ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
                     ?assertEqual(FrameData, Frame#frame.data),
                     %% we queued an unconfirmed packet
@@ -597,7 +597,7 @@ deframe_packet(Packet, SessionKey) ->
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, #device{}} | {error, any()}.
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DB, CF, ID) ->
     case rocksdb:get(DB, CF, ID, []) of
         {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};

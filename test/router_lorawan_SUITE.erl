@@ -119,9 +119,9 @@ join_test(Config) ->
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = get_device(DB, CF, WorkerID),
 
-    NwkSKey = Device0#device.nwk_s_key,
-    AppSKey = Device0#device.app_s_key,
-    JoinNonce = Device0#device.join_nonce,
+    NwkSKey = router_device:nwk_s_key(Device0),
+    AppSKey = router_device:app_s_key(Device0),
+    JoinNonce = router_device:join_nonce(Device0),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg1 = {true, 2, <<"someotherpayload">>},
@@ -240,7 +240,7 @@ deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayl
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
 
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, #device{}} | {error, any()}.
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DB, CF, ID) ->
     case rocksdb:get(DB, CF, ID, []) of
         {ok, BinDevice} -> {ok, erlang:binary_to_term(BinDevice)};

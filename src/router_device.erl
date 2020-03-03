@@ -5,7 +5,7 @@
 -endif.
 
 -export([
-         new/1, new/4,
+         new/1,
          id/1,
          name/1, name/2,
          app_eui/1, app_eui/2,
@@ -46,15 +46,6 @@
 -spec new(binary()) -> device().
 new(ID) ->
     #device{id=ID}.
-
--spec new(binary(), binary(), binary(), binary()) -> device().
-new(ID, AppEui, DevEui, AppKey) ->
-    #device{
-       id=ID,
-       app_eui=AppEui, 
-       dev_eui=DevEui, 
-       app_key=AppKey
-      }.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
@@ -200,4 +191,105 @@ deserialize(Binary) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
+
+new_test() ->
+    ?assertEqual(#device{id= <<"id">>}, new(<<"id">>)).
+
+name_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, name(Device)),
+    ?assertEqual(<<"name">>, name(name(<<"name">>, Device))).
+
+app_eui_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, app_eui(Device)),
+    ?assertEqual(<<"app_eui">>, app_eui(app_eui(<<"app_eui">>, Device))).
+
+dev_eui_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, dev_eui(Device)),
+    ?assertEqual(<<"dev_eui">>, dev_eui(dev_eui(<<"dev_eui">>, Device))).
+
+app_key_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, app_key(Device)),
+    ?assertEqual(<<"app_key">>, app_key(app_key(<<"app_key">>, Device))).
+
+nwk_s_key_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, nwk_s_key(Device)),
+    ?assertEqual(<<"nwk_s_key">>, nwk_s_key(nwk_s_key(<<"nwk_s_key">>, Device))).
+
+app_s_key_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, app_s_key(Device)),
+    ?assertEqual(<<"app_s_key">>, app_s_key(app_s_key(<<"app_s_key">>, Device))).
+
+join_nonce_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(0, join_nonce(Device)),
+    ?assertEqual(1, join_nonce(join_nonce(1, Device))).
+
+fcnt_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(0, fcnt(Device)),
+    ?assertEqual(1, fcnt(fcnt(1, Device))).
+
+fcntdown_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(0, fcntdown(Device)),
+    ?assertEqual(1, fcntdown(fcntdown(1, Device))).
+
+offset_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(0, offset(Device)),
+    ?assertEqual(1, offset(offset(1, Device))).
+
+channel_correction_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(false, channel_correction(Device)),
+    ?assertEqual(true, channel_correction(channel_correction(true, Device))).
+
+queue_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual([], queue(Device)),
+    ?assertEqual([a], queue(queue([a], Device))).
+
+update_test() ->
+    Device = new(<<"id">>),
+    Updates = [
+               {name, <<"name">>},
+               {app_eui, <<"app_eui">>},
+               {dev_eui, <<"dev_eui">>},
+               {app_key, <<"app_key">>},
+               {nwk_s_key, <<"nwk_s_key">>},
+               {app_s_key, <<"app_s_key">>},
+               {join_nonce, 1},
+               {fcnt, 1},
+               {fcntdown, 1},
+               {offset, 1},
+               {channel_correction, true},
+               {queue, [a]}
+              ],
+    UpdatedDevice = #device{
+                       id = <<"id">>,
+                       name = <<"name">>,
+                       app_eui = <<"app_eui">>,
+                       dev_eui = <<"dev_eui">>,
+                       app_key = <<"app_key">>,
+                       nwk_s_key = <<"nwk_s_key">>,
+                       app_s_key = <<"app_s_key">>,
+                       join_nonce = 1,
+                       fcnt = 1,
+                       fcntdown = 1,
+                       offset = 1,
+                       channel_correction = true,
+                       queue = [a]
+                      },
+    ?assertEqual(UpdatedDevice, update(Updates, Device)).
+
+serialize_deserialize_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(Device, deserialize(serialize(Device))).
+
 -endif.

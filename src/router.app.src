@@ -22,7 +22,8 @@
     jsx,
     emqtt,
     erl_angry_purple_tiger,
-    throttle
+    throttle,
+    httpc_aws
    ]},
   {env,[]},
   {modules, []},

@@ -55,8 +55,8 @@ init([DeviceID, ChannelName, #{endpoint := Endpoint, topic := Topic}]) ->
         {ok, Conn} ->
             erlang:send_after(25000, self(), {ping, Conn}),
             ets:insert(router_mqtt_workers, {{DeviceID, ChannelName}, self()}),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [Topic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [Topic, DeviceID])),
+            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [topic(Topic), DeviceID])),
+            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [topic(Topic), DeviceID])),
             %% TODO use a better QoS to add some back pressure
             emqtt:subscribe(Conn, {SubTopic, 0}),
             {ok, #state{device_id=DeviceID, connection=Conn, pubtopic=PubTopic}};
@@ -116,6 +116,21 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec topic(binary() | list()) -> binary().
+topic(<<>>) ->
+    <<>>;
+topic("") ->
+    <<>>;
+topic(Topic) when is_list(Topic) ->
+    topic(erlang:list_to_binary(Topic));
+topic(<<"/", Topic/binary>>) ->
+    topic(Topic);
+topic(Topic) ->
+    case binary:last(Topic) == $/ of
+        false -> <<Topic/binary, "/">>;
+        true -> Topic
+    end.
+
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | error.
 connect(ConnectionString, DeviceID, Name) when is_binary(ConnectionString) ->
     Opts = [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}],
@@ -131,7 +146,8 @@ connect(ConnectionString, DeviceID, Name) when is_binary(ConnectionString) ->
                          {password, Password},
                          {logger, {lager, debug}},
                          {clean_sess, false},
-                         {keepalive, 30}
+                         {keepalive, 30},
+                         {ssl, Scheme == mqtts}
                         ],
             {ok, C} = emqtt:start_link(EmqttOpts),
             {ok, Props} = emqtt:connect(C),

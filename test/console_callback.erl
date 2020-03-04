@@ -2,38 +2,74 @@
 
 -behaviour(elli_handler).
 
--export([handle/2, handle_event/3]).
+-export([
+         handle/2,
+         handle_event/3
+        ]).
 
 handle(Req, _Args) ->
     handle(elli_request:method(Req), elli_request:path(Req), Req, _Args).
 
 %% Get Device
-handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, _Args) ->
-    HTTPChannel = #{
-                    <<"type">> => <<"http">>,
-                    <<"credentials">> => #{
-                                           <<"headers">> => #{},
-                                           <<"endpoint">> => <<"http://localhost:3000/channel">>,
-                                           <<"method">> => <<"POST">>
-                                          }
-                   },
+handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
+    Tab = maps:get(ets, Args),
+    ShowDupes = case ets:lookup(Tab, show_dupes) of
+                    [] -> false;
+                    [{show_dupes, B}] -> B
+                end,
+    ChannelType = case ets:lookup(Tab, channel_type) of
+                      [] -> http;
+                      [{channel_type, Type}] -> Type
+                  end,
+    Channel = case ChannelType of
+                  http ->
+                      #{
+                        <<"type">> => <<"http">>,
+                        <<"credentials">> => #{
+                                               <<"headers">> => #{},
+                                               <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                               <<"method">> => <<"POST">>
+                                              },
+                        <<"show_dupes">> => ShowDupes,
+                        <<"id">> => <<"12345">>,
+                        <<"name">> => <<"fake_http">>
+                       };
+                  mqtt ->
+                      #{
+                        <<"type">> => <<"mqtt">>,
+                        <<"credentials">> => #{
+                                               <<"endpoint">> => <<"mqtt://user:pass@test.com:1883">>,
+                                               <<"topic">> => <<"test/">>
+                                              },
+                        <<"show_dupes">> => ShowDupes,
+                        <<"id">> => <<"56789">>,
+                        <<"name">> => <<"fake_mqtt">>
+                       }
+              end,
     Body = #{
-             <<"id">> => <<DID/binary, "_id">>,
-             <<"key">> => base64:encode(<<"appkey_00000000", DID/binary>>),
-             <<"channels">> => [HTTPChannel]
+             <<"id">> => <<"yolo_id">>,
+             <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
+             <<"channels">> => [Channel]
             },
-    {200, [], jsx:encode(Body)};
+    case DID == <<"yolo">> of
+        true ->
+            {200, [], jsx:encode([Body])};
+        false ->
+            {200, [], jsx:encode(Body)}
+    end;
 %% Get token
 handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
     Body = #{<<"jwt">> => <<"console_callback_token">>},
     {201, [], jsx:encode(Body)};
 %% Report status
 handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
-                _DID, <<"event">>], Req, [Pid]=_Args) ->
+                _DID, <<"event">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
     Pid ! {report_status, elli_request:body(Req)},
     {200, [], <<>>};
 %% POST to channel
-handle('POST', [<<"channel">>], Req, [Pid]=_Args) ->
+handle('POST', [<<"channel">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
     Pid ! {channel, elli_request:body(Req)},
     {200, [], <<"success">>};
 handle(_Method, _Path, _Req, _Args) ->

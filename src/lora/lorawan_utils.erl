@@ -14,8 +14,10 @@
 -export([precise_universal_time/0, time_to_gps/0, time_to_gps/1, time_to_unix/0, time_to_unix/1]).
 -export([ms_diff/2, datetime_to_timestamp/1, apply_offset/2]).
 -export([throw_info/2, throw_info/3, throw_warning/2, throw_warning/3, throw_error/2, throw_error/3]).
+-export([extract_frame_port_payload/1, cipher/5, mtype/1, padded/2]).
 
 -include("lorawan.hrl").
+-include("lorawan_vars.hrl").
 
 -define(MEGA, 1000000).
 
@@ -35,6 +37,52 @@ reverse(Bin) -> reverse(Bin, <<>>).
 reverse(<<>>, Acc) -> Acc;
 reverse(<<H:1/binary, Rest/binary>>, Acc) ->
     reverse(Rest, <<H/binary, Acc/binary>>).
+
+
+-spec extract_frame_port_payload(binary()) -> {undefined | integer(), binary()}.
+extract_frame_port_payload(PayloadAndMIC) ->
+    case binary:part(PayloadAndMIC, {0, erlang:byte_size(PayloadAndMIC) -4}) of
+        <<>> -> {undefined, <<>>};
+        <<Port:8, Payload/binary>> -> {Port, Payload}
+    end.
+
+-spec padded(integer(), binary()) -> binary().
+padded(Bytes, Msg) ->
+    case bit_size(Msg) rem (8*Bytes) of
+        0 -> Msg;
+        N -> <<Msg/bitstring, 0:(8*Bytes-N)>>
+    end.
+
+cipher(Bin, Key, Dir, DevAddr, FCnt) ->
+    cipher(Bin, Key, Dir, DevAddr, FCnt, 1, <<>>).
+
+cipher(<<Block:16/binary, Rest/binary>>, Key, Dir, DevAddr, FCnt, I, Acc) ->
+    Si = crypto:block_encrypt(aes_ecb, Key, ai(Dir, DevAddr, FCnt, I)),
+    cipher(Rest, Key, Dir, DevAddr, FCnt, I+1, <<(binxor(Block, Si, <<>>))/binary, Acc/binary>>);
+cipher(<<>>, _Key, _Dir, _DevAddr, _FCnt, _I, Acc) -> Acc;
+cipher(<<LastBlock/binary>>, Key, Dir, DevAddr, FCnt, I, Acc) ->
+    Si = crypto:block_encrypt(aes_ecb, Key, ai(Dir, DevAddr, FCnt, I)),
+    <<(binxor(LastBlock, binary:part(Si, 0, byte_size(LastBlock)), <<>>))/binary, Acc/binary>>.
+
+-spec ai(integer(), binary(), integer(), integer()) -> binary().
+ai(Dir, DevAddr, FCnt, I) ->
+    <<16#01, 0,0,0,0, Dir, (reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, I>>.
+
+-spec binxor(binary(), binary(), binary()) -> binary().
+binxor(<<>>, <<>>, Acc) -> Acc;
+binxor(<<A, RestA/binary>>, <<B, RestB/binary>>, Acc) ->
+    binxor(RestA, RestB, <<(A bxor B), Acc/binary>>).
+
+-spec mtype(integer()) -> string().
+mtype(?JOIN_REQ) -> "Join request";
+mtype(?JOIN_ACCEPT) -> "Join accept";
+mtype(?UNCONFIRMED_UP) -> "Unconfirmed data up";
+mtype(?UNCONFIRMED_DOWN) -> "Unconfirmed data down";
+mtype(?CONFIRMED_UP) -> "Confirmed data up";
+mtype(?CONFIRMED_DOWN) -> "Confirmed data down";
+mtype(?RFU) -> "RFU";
+mtype(?PRIORITY) -> "Proprietary".
+
 
 
 index_of(Item, List) -> index_of(Item, List, 1).
@@ -122,7 +170,7 @@ throw_event(Severity, {Entity, EID}, Text, Mark) ->
         Entity == server; Entity == connector ->
             lager:log(Severity, self(), "~s ~s ~p", [Entity, EID, Text]);
         true ->
-            lager:log(Severity, self(), "~s ~s ~p", [Entity, lorawan_utils:binary_to_hex(EID), Text])
+            lager:log(Severity, self(), "~s ~s ~p", [Entity, binary_to_hex(EID), Text])
     end,
     write_event(Severity, {Entity, EID}, Text, Mark).
 

@@ -16,7 +16,8 @@
          http_test/1,
          dupes/1,
          join_test/1,
-         mqtt_test/1
+         mqtt_test/1,
+         aws_test/1
         ]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
@@ -40,7 +41,8 @@ all() ->
      http_test,
      dupes,
      join_test,
-     mqtt_test
+     mqtt_test,
+     aws_test
     ].
 
 %%--------------------------------------------------------------------
@@ -383,6 +385,21 @@ mqtt_test(Config) ->
     libp2p_swarm:stop(Swarm),
     ?assert(meck:validate(emqtt)),
     meck:unload(emqtt),
+    ok.
+
+aws_test(_Config) ->
+    Args = #{
+             aws_access_key => os:getenv("aws_access_key"),
+             aws_secret_key => os:getenv("aws_secret_key"),
+             aws_region => "us-west-1",
+             device_id => <<"PeterTestThing">>
+            },
+    {ok, P} = router_aws_worker:start_link(Args),
+
+    timer:sleep(1000),
+
+    gen_server:stop(P),
+    %% ?assert(false),
     ok.
 
 

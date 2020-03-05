@@ -117,7 +117,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     NwkSKey = router_device:nwk_s_key(Device0),
     AppSKey = router_device:app_s_key(Device0),
@@ -239,14 +239,6 @@ deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayl
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
-get_device(DB, CF, ID) ->
-    case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
-        not_found -> {error, not_found};
-        Error -> Error
-    end.
 
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),

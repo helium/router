@@ -1,9 +1,5 @@
 -module(router_device).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 -export([
          new/1,
          id/1,
@@ -19,123 +15,115 @@
          channel_correction/1, channel_correction/2,
          queue/1, queue/2,
          update/2,
-         serialize/1, deserialize/1
+         serialize/1, deserialize/1,
+         get/2, get/3, save/3
         ]).
 
--record(device, {
-                 id :: binary() | undefined,
-                 name :: binary() | undefined,
-                 dev_eui :: binary() | undefined,
-                 app_eui :: binary() | undefined,
-                 nwk_s_key :: binary() | undefined,
-                 app_s_key :: binary() | undefined,
-                 join_nonce=0 :: non_neg_integer(),
-                 fcnt=0 :: non_neg_integer(),
-                 fcntdown=0 :: non_neg_integer(),
-                 offset=0 :: non_neg_integer(),
-                 channel_correction=false :: boolean(),
-                 queue=[] :: [any()]
-                }).
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
--type device() :: #device{}.
+-include("router_device.hrl").
+
+-type device() :: #device_v1{}.
 
 -export_type([device/0]).
 
 -spec new(binary()) -> device().
 new(ID) ->
-    #device{id=ID}.
+    #device_v1{id=ID}.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
-    Device#device.id.
+    Device#device_v1.id.
 
 -spec name(device()) -> binary() | undefined.
 name(Device) ->
-    Device#device.name.
+    Device#device_v1.name.
 
 -spec name(binary(), device()) -> device().
 name(Name, Device) ->
-    Device#device{name=Name}.
+    Device#device_v1{name=Name}.
 
 -spec app_eui(device()) -> binary() | undefined.
 app_eui(Device) ->
-    Device#device.app_eui.
+    Device#device_v1.app_eui.
 
 -spec app_eui(binary(), device()) -> device().
 app_eui(EUI, Device) ->
-    Device#device{app_eui=EUI}.
+    Device#device_v1{app_eui=EUI}.
 
 -spec dev_eui(device()) -> binary() | undefined.
 dev_eui(Device) ->
-    Device#device.dev_eui.
+    Device#device_v1.dev_eui.
 
 -spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
-    Device#device{dev_eui=EUI}.
+    Device#device_v1{dev_eui=EUI}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
 nwk_s_key(Device) ->
-    Device#device.nwk_s_key.
+    Device#device_v1.nwk_s_key.
 
 -spec nwk_s_key(binary(), device()) -> device().
 nwk_s_key(Key, Device) ->
-    Device#device{nwk_s_key=Key}.
+    Device#device_v1{nwk_s_key=Key}.
 
 -spec app_s_key(device()) -> binary() | undefined.
 app_s_key(Device) ->
-    Device#device.app_s_key.
+    Device#device_v1.app_s_key.
 
 -spec app_s_key(binary(), device()) -> device().
 app_s_key(Key, Device) ->
-    Device#device{app_s_key=Key}.
+    Device#device_v1{app_s_key=Key}.
 
 -spec join_nonce(device()) -> non_neg_integer().
 join_nonce(Device) ->
-    Device#device.join_nonce.
+    Device#device_v1.join_nonce.
 
 -spec join_nonce(non_neg_integer(), device()) -> device().
 join_nonce(Nonce, Device) ->
-    Device#device{join_nonce=Nonce}.
+    Device#device_v1{join_nonce=Nonce}.
 
 -spec fcnt(device()) -> non_neg_integer().
 fcnt(Device) ->
-    Device#device.fcnt.
+    Device#device_v1.fcnt.
 
 -spec fcnt(non_neg_integer(), device()) -> device().
 fcnt(Fcnt, Device) ->
-    Device#device{fcnt=Fcnt}.
+    Device#device_v1{fcnt=Fcnt}.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->
-    Device#device.fcntdown.
+    Device#device_v1.fcntdown.
 
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
-    Device#device{fcntdown=Fcnt}.
+    Device#device_v1{fcntdown=Fcnt}.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
-    Device#device.offset.
+    Device#device_v1.offset.
 
 -spec offset(non_neg_integer(), device()) -> device().
 offset(Offset, Device) ->
-    Device#device{offset=Offset}.
+    Device#device_v1{offset=Offset}.
 
 -spec channel_correction(device()) -> boolean().
 channel_correction(Device) ->
-    Device#device.channel_correction.
+    Device#device_v1.channel_correction.
 
 -spec channel_correction(boolean(), device()) -> device().
 channel_correction(Correct, Device) ->
-    Device#device{channel_correction=Correct}.
+    Device#device_v1{channel_correction=Correct}.
 
 -spec queue(device()) -> [any()].
 queue(Device) ->
-    Device#device.queue.
+    Device#device_v1.queue.
 
 -spec queue([any()], device()) -> device().
 queue(Q, Device) ->
-    Device#device{queue=Q}.
+    Device#device_v1{queue=Q}.
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
@@ -169,11 +157,69 @@ serialize(Device) ->
 
 -spec deserialize(binary()) -> device().
 deserialize(Binary) ->
-    erlang:binary_to_term(Binary).
+    case erlang:binary_to_term(Binary) of
+        #device_v1{}=Device ->
+            Device;
+        #device{}=Old ->
+            #device_v1{
+               id=Old#device.id,
+               name=Old#device.name,
+               dev_eui=Old#device.dev_eui,
+               app_eui=Old#device.app_eui,
+               nwk_s_key=Old#device.nwk_s_key,
+               app_s_key=Old#device.app_s_key,
+               join_nonce=Old#device.join_nonce,
+               fcnt=Old#device.fcnt,
+               fcntdown=Old#device.fcntdown,
+               offset=Old#device.offset,
+               channel_correction=Old#device.channel_correction,
+               queue=Old#device.queue,
+               key=undefined
+              }
+    end.
+
+-spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
+get(DB, CF) ->
+    [?MODULE:deserialize(Bin) || Bin <- rocks_fold(DB, CF)].
+
+-spec get(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, device()} | {error, any()}.
+get(DB, CF, DeviceID) ->
+    case rocksdb:get(DB, CF, DeviceID, []) of
+        {ok, BinDevice} -> {ok, ?MODULE:deserialize(BinDevice)};
+        not_found -> {error, not_found};
+        Error -> Error
+    end.
+
+-spec save(rocksdb:db_handle(), rocksdb:cf_handle(), device()) -> {ok, device()} | {error, any()}.
+save(DB, CF, Device) ->
+    DeviceID = ?MODULE:id(Device),
+    case rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(Device), []) of
+        {error, _}=Error -> Error;
+        ok -> {ok, Device}
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle()) -> [binary()].
+rocks_fold(DB, CF) ->
+    {ok, Itr} = rocksdb:iterator(DB, CF, []),
+    First = rocksdb:iterator_move(Itr, first),
+    Acc = rocks_fold(DB, CF, Itr, First, []),
+    rocksdb:iterator_close(Itr),
+    lists:reverse(Acc).
+
+-spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [device()].
+rocks_fold(DB, CF, Itr, {ok, _K, V}, Acc) ->
+    Next = rocksdb:iterator_move(Itr, next),
+    rocks_fold(DB, CF, Itr, Next, [V|Acc]);
+rocks_fold(DB, CF, Itr, {ok, _}, Acc) ->
+    Next = rocksdb:iterator_move(Itr, next),
+    rocks_fold(DB, CF, Itr, Next, Acc);
+rocks_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
+    Acc.
+
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -181,7 +227,7 @@ deserialize(Binary) ->
 -ifdef(TEST).
 
 new_test() ->
-    ?assertEqual(#device{id= <<"id">>}, new(<<"id">>)).
+    ?assertEqual(#device_v1{id= <<"id">>}, new(<<"id">>)).
 
 name_test() ->
     Device = new(<<"id">>),
@@ -253,7 +299,7 @@ update_test() ->
                {channel_correction, true},
                {queue, [a]}
               ],
-    UpdatedDevice = #device{
+    UpdatedDevice = #device_v1{
                        id = <<"id">>,
                        name = <<"name">>,
                        app_eui = <<"app_eui">>,
@@ -272,5 +318,31 @@ update_test() ->
 serialize_deserialize_test() ->
     Device = new(<<"id">>),
     ?assertEqual(Device, deserialize(serialize(Device))).
+
+get_save_test() ->
+    Dir = test_utils:tmp_dir("get_save_test"),
+    {ok, Pid} = router_db:start_link([Dir]),
+    {ok, DB, [_, CF]} = router_db:get(),
+    DeviceID = <<"id">>,
+    Device = new(DeviceID),
+    ?assertEqual({error, not_found}, get(DB, CF, DeviceID)),
+    ?assertEqual([], get(DB, CF)),
+    ?assertEqual({ok, Device}, save(DB, CF, Device)),
+    ?assertEqual({ok, Device}, get(DB, CF, DeviceID)),
+    ?assertEqual([Device], get(DB, CF)),
+    ?assertEqual({error, not_found}, get(DB, CF, <<"unknown">>)),
+    gen_server:stop(Pid).
+
+upgrade_test() ->
+    Dir = test_utils:tmp_dir("upgrade_test"),
+    {ok, Pid} = router_db:start_link([Dir]),
+    {ok, DB, [_, CF]} = router_db:get(),
+    DeviceID = <<"id">>,
+    V0Device = #device{id=DeviceID},
+    V1Device = #device_v1{id=DeviceID},
+    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
+    ?assertEqual({ok, V1Device}, get(DB, CF, DeviceID)),
+    ?assertEqual([V1Device], get(DB, CF)),
+    gen_server:stop(Pid).
 
 -endif.

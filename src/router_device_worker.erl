@@ -69,7 +69,7 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    Device = case get_device(DB, CF, ID) of
+    Device = case router_device:get_device(DB, CF, ID) of
                  {ok, D} -> D;
                  _ -> router_device:new(ID)
              end,
@@ -82,7 +82,7 @@ handle_call(_Msg, _From, State) ->
 handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0}=State) ->
     Q = router_device:queue(Device0),
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
-    {ok, _} = save_device(DB, CF, Device1),
+    {ok, _} = router_device:save(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0, join_cache=Cache0}=State0) ->
     case handle_join(Packet0, PubkeyBin, AppKey, Name, Device0) of
@@ -140,7 +140,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     {_, Packet, Device0, Pid, PubkeyBin} = maps:get(JoinNonce, Cache0, undefined),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
-    {ok, _} = save_device(DB, CF, Device1),
+    {ok, _} = router_device:save(DB, CF, Device1),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
@@ -154,12 +154,12 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cac
     Cache1 = maps:remove(FCnt, Cache0),
     case handle_frame(Packet0, AName, Device, Frame) of
         {ok, Device1} ->
-            {ok, _} = save_device(DB, CF, Device1),
+            {ok, _} = router_device:save(DB, CF, Device1),
             Pid ! {packet, undefined},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink ~p", [Packet1]),
-            {ok, _} = save_device(DB, CF, Device1),
+            {ok, _} = router_device:save(DB, CF, Device1),
             Pid ! {packet, Packet1},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
@@ -235,7 +235,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
     DevAddr = lorawan_utils:reverse(DevAddr0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(get_devices(DB, CF),
+    case get_device_by_mic(router_device:get_device(DB, CF),
                            <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
@@ -632,31 +632,3 @@ b0(Dir, DevAddr, FCnt, Len) ->
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->
     erlang:list_to_binary(erlang:integer_to_list(Int)).
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
-get_device(DB, CF, DeviceId) ->
-    case rocksdb:get(DB, CF, DeviceId, []) of
-        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
-        not_found -> {error, not_found};
-        Error -> Error
-    end.
-
--spec get_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> [router_device:device()].
-get_devices(DB, CF) ->
-    rocksdb:fold(
-      DB,
-      CF,
-      fun({_Key, BinDevice}, Acc) ->
-              [router_device:deserialize(BinDevice)|Acc]
-      end,
-      [],
-      []
-     ).
-
--spec save_device(rocksdb:db_handle(), rocksdb:cf_handle(), router_device:device()) -> {ok, router_device:device()} | {error, any()}.
-save_device(DB, CF, Device) ->
-    DeviceId = router_device:id(Device),
-    case rocksdb:put(DB, CF, <<DeviceId/binary>>, router_device:serialize(Device), []) of
-        {error, _}=Error -> Error;
-        ok -> {ok, Device}
-    end.

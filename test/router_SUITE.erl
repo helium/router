@@ -117,7 +117,7 @@ http_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
@@ -133,7 +133,7 @@ http_test(Config) ->
     router_device_worker:queue_message(WorkerPid, Msg),
 
     timer:sleep(200),
-    {ok, Device1} = get_device(DB, CF, WorkerID),
+    {ok, Device1} = router_device:get(DB, CF, WorkerID),
     ?assertEqual(router_device:queue(Device1), [Msg]),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
@@ -143,7 +143,7 @@ http_test(Config) ->
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     ok = wait_for_ack(250),
 
-    {ok, Device2} = get_device(DB, CF, WorkerID),
+    {ok, Device2} = router_device:get(DB, CF, WorkerID),
     ?assertEqual(router_device:queue(Device2), []),
 
     libp2p_swarm:stop(Swarm),
@@ -179,7 +179,7 @@ dupes(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},
@@ -298,7 +298,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
     ?assertEqual(router_device:app_s_key(Device0), AppSKey),
@@ -360,7 +360,7 @@ mqtt_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
@@ -613,14 +613,6 @@ deframe_packet(Packet, SessionKey) ->
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
-get_device(DB, CF, ID) ->
-    case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
-        not_found -> {error, not_found};
-        Error -> Error
-    end.
 
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),

@@ -14,6 +14,7 @@
          offset/1, offset/2,
          channel_correction/1, channel_correction/2,
          queue/1, queue/2,
+         key/1, key/2,
          update/2,
          serialize/1, deserialize/1,
          get/2, get/3, save/3
@@ -125,6 +126,14 @@ queue(Device) ->
 queue(Q, Device) ->
     Device#device_v1{queue=Q}.
 
+-spec key(device()) -> any().
+key(Device) ->
+    Device#device_v1.key.
+
+-spec key(any(), device()) -> device().
+key(Q, Device) ->
+    Device#device_v1{key=Q}.
+
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
     Device;
@@ -149,7 +158,9 @@ update([{offset, Value}|T], Device) ->
 update([{channel_correction, Value}|T], Device) ->
     update(T, ?MODULE:channel_correction(Value, Device));
 update([{queue, Value}|T], Device) ->
-    update(T, ?MODULE:queue(Value, Device)).
+    update(T, ?MODULE:queue(Value, Device));
+update([{key, Value}|T], Device) ->
+    update(T, ?MODULE:key(Value, Device)).
 
 -spec serialize(device()) -> binary().
 serialize(Device) ->
@@ -283,6 +294,11 @@ queue_test() ->
     Device = new(<<"id">>),
     ?assertEqual([], queue(Device)),
     ?assertEqual([a], queue(queue([a], Device))).
+
+key_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, key(Device)),
+    ?assertEqual({key, any}, key(key({key, any}, Device))).
 
 update_test() ->
     Device = new(<<"id">>),

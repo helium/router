@@ -145,24 +145,24 @@ ensure_thing(AWS, DeviceId) ->
             ok
     end.
 
-% ensure_certificate(AWS, Device, Mac, Pid) ->
-%     lager:info("Device ~p", [Device]),
-%     {ok, {_, [{"principals", Principals}]}} = httpc_aws:get(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac])),
-%     case Principals of
-%         [] ->
-%             CSR = get_csr(Mac, Pid),
-%             CSRPEM = public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)]),
-%             Res = httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", binary_to_list(jsx:encode([{<<"certificateSigningRequest">>, CSRPEM}])), [{"content-type", "application/json"}]),
-%             {ok, {_, Attrs}} = Res,
-%             Res2 = httpc_aws:put(AWS, "iot", "/principal-policies/Helium-Policy", "", [{"x-amzn-iot-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
-%             lager:info("Attach Response ~p", [Res2]),
-%             Res3 = httpc_aws:put(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac]), "", [{"x-amzn-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
-%             lager:info("Attach Response ~p", [Res3]),
-%             proplists:get_value("certificatePem", Attrs);
-%         [CertificateARN] ->
-%             %"arn:aws:iot:us-west-2:217417705465:cert/1494179d50be24e8ff70f5305fff5d152cefea184dc82998cf873c3c6b928878"
-%             ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateARN, ":"),
-%             ["cert", CertificateId] = string:tokens(Resource, "/"),
-%             {ok, {_, [{"certificateDescription", Attrs}]}} = httpc_aws:get(AWS, "iot", "/certificates/"++CertificateId),
-%             proplists:get_value("certificatePem", Attrs)
-%     end.
+                                                % ensure_certificate(AWS, Device, Mac, Pid) ->
+                                                %     lager:info("Device ~p", [Device]),
+                                                %     {ok, {_, [{"principals", Principals}]}} = httpc_aws:get(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac])),
+                                                %     case Principals of
+                                                %         [] ->
+                                                %             CSR = get_csr(Mac, Pid),
+                                                %             CSRPEM = public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)]),
+                                                %             Res = httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", binary_to_list(jsx:encode([{<<"certificateSigningRequest">>, CSRPEM}])), [{"content-type", "application/json"}]),
+                                                %             {ok, {_, Attrs}} = Res,
+                                                %             Res2 = httpc_aws:put(AWS, "iot", "/principal-policies/Helium-Policy", "", [{"x-amzn-iot-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
+                                                %             lager:info("Attach Response ~p", [Res2]),
+                                                %             Res3 = httpc_aws:put(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac]), "", [{"x-amzn-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
+                                                %             lager:info("Attach Response ~p", [Res3]),
+                                                %             proplists:get_value("certificatePem", Attrs);
+                                                %         [CertificateARN] ->
+                                                %             %"arn:aws:iot:us-west-2:217417705465:cert/1494179d50be24e8ff70f5305fff5d152cefea184dc82998cf873c3c6b928878"
+                                                %             ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateARN, ":"),
+                                                %             ["cert", CertificateId] = string:tokens(Resource, "/"),
+                                                %             {ok, {_, [{"certificateDescription", Attrs}]}} = httpc_aws:get(AWS, "iot", "/certificates/"++CertificateId),
+                                                %             proplists:get_value("certificatePem", Attrs)
+                                                %     end.

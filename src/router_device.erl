@@ -221,7 +221,7 @@ rocks_fold(DB, CF) ->
     rocksdb:iterator_close(Itr),
     lists:reverse(Acc).
 
--spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [device()].
+-spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [binary()].
 rocks_fold(DB, CF, Itr, {ok, _K, V}, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
     rocks_fold(DB, CF, Itr, Next, [V|Acc]);

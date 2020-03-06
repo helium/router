@@ -252,7 +252,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
     DevAddr = lorawan_utils:reverse(DevAddr0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(router_device:get_device(DB, CF),
+    case get_device_by_mic(router_device:get(DB, CF),
                            <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),

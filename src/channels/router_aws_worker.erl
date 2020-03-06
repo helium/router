@@ -184,7 +184,7 @@ create_csr(#{secret := {ecc_compact, PrivKey},
              {asn1_OPENTYPE,<<6, 8, 42, 134, 72, 206, 61, 3, 1, 7>>}},
             PubKey},
            []},
-           
+
     DER = public_key:der_encode('CertificationRequestInfo', CRI),
     Signature = public_key:sign(crypto:hash(sha256, DER), sha256, PrivKey),
     {'CertificationRequest', CRI, {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE}, Signature}.

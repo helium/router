@@ -163,7 +163,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                   (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
-    ok = report_status(success, AName, StatusMsg, activation, 0, 0),
+    ok = report_status(success, AName, StatusMsg, activation),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
@@ -183,12 +183,16 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cac
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info({report_status, Status, AName, Msg, Category, FCnt, FCntDown}, #state{device=Device}=State) ->
+handle_info({report_status, Status, AName, Msg, Category}, #state{device=Device}=State) ->
     case router_device:app_eui(Device) of
         undefined ->
             ok;
         _ ->
-            ok = router_console:report_status(router_device:id(Device), Status, AName, Msg, Category, FCnt, FCntDown)
+            StatusMap = #{status => Status,
+                          msg => Msg,
+                          category => Category,
+                          hotspot => AName},
+            ok = router_device_api:report_status(Device, StatusMap)
     end,
     {noreply, State};
 handle_info(_Msg, State) ->
@@ -216,23 +220,25 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
-    case router_console:get_app_key_by_eui(DevEUI, AppEUI, Msg, MIC) of
-        {Key, DeviceId, Name} ->
-            case maybe_start_worker(DeviceId) of
+    case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
+        {ok, Device, AppKey} ->
+            DeviceID = router_device:id(Device),
+            Name = router_device:id(Device),
+            case maybe_start_worker(DeviceID) of
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    gen_server:cast(WorkerPid, {join, Packet, PubkeyBin, Key, Name, Pid})
+                    gen_server:cast(WorkerPid, {join, Packet, PubkeyBin, AppKey, Name, Pid})
             end;
-        false ->
+        {error, api_not_found} ->
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
                                                             lorawan_utils:binary_to_hex(AppEUI),
                                                             AName]),
             StatusMsg = <<"No device for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
                           " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(failure, AName, StatusMsg, error, 0, 0),
+            ok = report_status(failure, AName, StatusMsg, error),
             {error, undefined_app_key};
-        undefined ->
+        {error, _Reason} ->
             case throttle:check(join_dedup, {AppEUI, DevEUI, DevNonce}) of
                 {ok, _, _} ->
                     lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
@@ -258,8 +264,8 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
             {error, {unknown_device, lorawan_utils:binary_to_hex(DevAddr)}};
         Device ->
-            DeviceId = router_device:id(Device),
-            case maybe_start_worker(DeviceId) of
+            DeviceID = router_device:id(Device),
+            case maybe_start_worker(DeviceID) of
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
@@ -275,8 +281,8 @@ handle_packet(#packet_pb{payload=Payload}, AName, _Pid) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec maybe_start_worker(binary()) -> {ok, pid()} | {error, any()}.
-maybe_start_worker(DeviceId) ->
-    WorkerID = router_devices_sup:id(DeviceId),
+maybe_start_worker(DeviceID) ->
+    WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
 %%%-------------------------------------------------------------------
@@ -307,7 +313,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
             lager:debug("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [Name, OUI, DID, Nonce, AName]),
             StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(Nonce))/binary, " for AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(failure, AName, StatusMsg, error, 0, 0);
+            ok = report_status(failure, AName, StatusMsg, error);
         _ ->
             ok
     end,
@@ -386,7 +392,7 @@ handle_frame_packet(Packet, AName, Device0) ->
             StatusMsg = <<"Packet with double fopts received from AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                           (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(failure, AName, StatusMsg, error, FCnt, router_device:fcntdown(Device0)),
+            ok = report_status(failure, AName, StatusMsg, error),
             {error, double_fopts};
         _N ->
             AppSKey = router_device:app_s_key(Device0),
@@ -546,38 +552,32 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 -spec report_frame_status(integer(), boolean(), any(), string(), router_device:device()) -> ok.
 report_frame_status(0, false, 0, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, down, FCnt, FCntDown);
+    ok = report_status(success, AName, StatusMsg, down);
 report_frame_status(1, _ConfirmedDown, undefined, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, ack, FCnt, FCntDown);
+    ok = report_status(success, AName, StatusMsg, ack);
 report_frame_status(1, true, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, ack, FCnt, FCntDown);
+    ok = report_status(success, AName, StatusMsg, ack);
 report_frame_status(1, false, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, ack, FCnt, FCntDown);
+    ok = report_status(success, AName, StatusMsg, ack);
 report_frame_status(_, true, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, down, FCnt, FCntDown);
+    ok = report_status(success, AName, StatusMsg, down);
 report_frame_status(_, false, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
-    FCntDown = router_device:fcntdown(Device),
     StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(success, AName, StatusMsg, down, FCnt, FCntDown).
+    ok = report_status(success, AName, StatusMsg, down).
 
--spec report_status(atom(), string(), binary(), atom(), non_neg_integer(), non_neg_integer()) -> ok.
-report_status(Type, AName, Msg, Category, FCnt, FCntDown) ->
-    self() ! {report_status, Type, AName, Msg, Category, FCnt, FCntDown},
+-spec report_status(atom(), string(), binary(), atom()) -> ok.
+report_status(Type, AName, Msg, Category) ->
+    self() ! {report_status, Type, AName, Msg, Category},
     ok.
 
 -spec send_to_channel(#packet_pb{}, router_device:device(), #frame{}, string()) -> ok.
@@ -595,9 +595,7 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
             timestamp => Time,
             id => router_device:id(Device)
            },
-    SendFun = router_console:send_data_fun(Device),
-    _ = SendFun(Map),
-    ok.
+    ok = router_device_api:handle_data(Device, Map).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

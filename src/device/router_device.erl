@@ -7,7 +7,7 @@
 -include("router_device.hrl").
 
 -export([
-         new/1,
+         new/1, new/4,
          id/1,
          name/1, name/2,
          app_eui/1, app_eui/2,
@@ -33,6 +33,14 @@
 -spec new(binary()) -> device().
 new(ID) ->
     #device_v1{id=ID}.
+
+-spec new(binary(), binary(), binary(), binary()) -> device().
+new(ID, Name, DevEui, AppEui) ->
+    #device_v1{id=ID,
+               name=Name,
+               dev_eui=DevEui,
+               app_eui=AppEui
+              }.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->

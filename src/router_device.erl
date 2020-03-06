@@ -1,5 +1,11 @@
 -module(router_device).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
+-include("router_device.hrl").
+
 -export([
          new/1,
          id/1,
@@ -19,12 +25,6 @@
          serialize/1, deserialize/1,
          get/2, get/3, save/3
         ]).
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
--include("router_device.hrl").
 
 -type device() :: #device_v1{}.
 

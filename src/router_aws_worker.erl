@@ -7,6 +7,7 @@
 
 -behavior(gen_server).
 
+-include_lib("public_key/include/public_key.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -48,13 +49,14 @@ init(Args) ->
     AccessKey = maps:get(aws_access_key, Args),
     SecretKey = maps:get(aws_secret_key, Args),
     Region = maps:get(aws_region, Args),
-    DeviceId = maps:get(device_id, Args),
+    DeviceID = maps:get(device_id, Args),
     {ok, AWS} = httpc_aws:start_link(),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
     httpc_aws:set_region(AWS, Region),
     ok = ensure_policy(AWS),
     ok = ensure_thing_type(AWS),
-    ok = ensure_thing(AWS, DeviceId),
+    ok = ensure_thing(AWS, DeviceID),
+    ok = ensure_certificate(AWS, DeviceID),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -130,12 +132,12 @@ ensure_thing_type(AWS) ->
     end.
 
 -spec ensure_thing(pid(), binary()) -> ok | {error, any()}.
-ensure_thing(AWS, DeviceId) ->
-    case httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceId/binary>>), []) of
+ensure_thing(AWS, DeviceID) ->
+    case httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary>>), []) of
         {error, "Not Found", _} ->
             Thing = #{<<"thingTypeName">> => ?THING_TYPE},
             Body = binary_to_list(jsx:encode(Thing)),
-            case httpc_aws:post(AWS, "iot", binary_to_list(<<"/things/", DeviceId/binary>>), Body, ?HEADERS) of
+            case httpc_aws:post(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary>>), Body, ?HEADERS) of
                 {error, _Reason, _} -> {error, _Reason};
                 {ok, _} -> ok
             end;
@@ -145,24 +147,51 @@ ensure_thing(AWS, DeviceId) ->
             ok
     end.
 
-%% ensure_certificate(AWS, Device, Mac, Pid) ->
-%%     lager:info("Device ~p", [Device]),
-%%     {ok, {_, [{"principals", Principals}]}} = httpc_aws:get(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac])),
-%%     case Principals of
-%%         [] ->
-%%             CSR = get_csr(Mac, Pid),
-%%             CSRPEM = public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)]),
-%%             Res = httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", binary_to_list(jsx:encode([{<<"certificateSigningRequest">>, CSRPEM}])), [{"content-type", "application/json"}]),
-%%             {ok, {_, Attrs}} = Res,
-%%             Res2 = httpc_aws:put(AWS, "iot", "/principal-policies/Helium-Policy", "", [{"x-amzn-iot-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
-%%             lager:info("Attach Response ~p", [Res2]),
-%%             Res3 = httpc_aws:put(AWS, "iot", io_lib:format("/things/~.16b/principals", [Mac]), "", [{"x-amzn-principal", proplists:get_value("certificateArn", Attrs)}, {"content-type", "text/plain"}]),
-%%             lager:info("Attach Response ~p", [Res3]),
-%%             proplists:get_value("certificatePem", Attrs);
-%%         [CertificateARN] ->
-%%             %"arn:aws:iot:us-west-2:217417705465:cert/1494179d50be24e8ff70f5305fff5d152cefea184dc82998cf873c3c6b928878"
-%%             ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateARN, ":"),
-%%             ["cert", CertificateId] = string:tokens(Resource, "/"),
-%%             {ok, {_, [{"certificateDescription", Attrs}]}} = httpc_aws:get(AWS, "iot", "/certificates/"++CertificateId),
-%%             proplists:get_value("certificatePem", Attrs)
-%%     end.
+ensure_certificate(AWS, DeviceID) ->
+    case router_devices_sup:lookup_device_worker(DeviceID) of
+        {error, _Reason}=Error ->
+            Error;
+        {ok, Pid} ->
+            Key = router_device_worker:key(Pid),
+            CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, CSR]),
+            CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
+            Body = binary_to_list(jsx:encode(CSRReq)),
+            case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
+                {error, _Reason, Stuff} ->
+                    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Stuff]),
+                    {error, _Reason};
+                {ok, _} -> ok
+            end
+    end.
+
+create_csr(#{secret := {ecc_compact, PrivKey},
+             public := {ecc_compact, {{'ECPoint', PubKey}, _}}}, Country, State, Location, Organization, CommonName) ->
+    CRI = {'CertificationRequestInfo',
+           v1,
+           {rdnSequence, [[{'AttributeTypeAndValue', {2, 5, 4, 6},
+                            pack_country(Country)}],
+                          [{'AttributeTypeAndValue', {2, 5, 4, 8},
+                            pack_string(State)}],
+                          [{'AttributeTypeAndValue', {2, 5, 4, 7},
+                            pack_string(Location)}],
+                          [{'AttributeTypeAndValue', {2, 5, 4, 10},
+                            pack_string(Organization)}],
+                          [{'AttributeTypeAndValue', {2, 5, 4, 3},
+                            pack_string(CommonName)}]]},
+           {'CertificationRequestInfo_subjectPKInfo',
+            {'CertificationRequestInfo_subjectPKInfo_algorithm',{1, 2, 840, 10045, 2 ,1},
+             {asn1_OPENTYPE,<<6, 8, 42, 134, 72, 206, 61, 3, 1, 7>>}},
+            PubKey},
+           []},
+           
+    DER = public_key:der_encode('CertificationRequestInfo', CRI),
+    Signature = public_key:sign(crypto:hash(sha256, DER), sha256, PrivKey),
+    {'CertificationRequest', CRI, {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE}, Signature}.
+
+pack_country(Bin) when size(Bin) == 2 ->
+    <<19, 2, Bin:2/binary>>.
+
+pack_string(Bin) ->
+    Size = byte_size(Bin),
+    <<12, Size:8/integer-unsigned, Bin/binary>>.

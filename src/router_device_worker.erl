@@ -8,6 +8,7 @@
 -behavior(gen_server).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+-include_lib("public_key/include/public_key.hrl").
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
 
@@ -17,7 +18,8 @@
 -export([
          start_link/1,
          handle_packet/2,
-         queue_message/2
+         queue_message/2,
+         key/1
         ]).
 
 %% ------------------------------------------------------------------
@@ -61,6 +63,10 @@ handle_packet(Packet, PubkeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
+-spec key(pid()) -> any().
+key(Pid) ->
+    gen_server:call(Pid, key).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -69,12 +75,23 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    Device = case router_device:get_device(DB, CF, ID) of
+    Device = case router_device:get(DB, CF, ID) of
                  {ok, D} -> D;
                  _ -> router_device:new(ID)
              end,
     {ok, #state{db=DB, cf=CF, device=Device}}.
 
+
+handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
+    case router_device:key(Device0) of
+        undefined ->
+            Key = libp2p_crypto:generate_keys(ecc_compact),
+            Device1 = router_device:key(Key, Device0),
+            {ok, _} = router_device:save(DB, CF, Device1),
+            {reply, Key, State#state{device=Device0}};
+        Key ->
+            {reply, Key, State}
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

@@ -388,17 +388,19 @@ mqtt_test(Config) ->
     ok.
 
 aws_test(_Config) ->
-    Args = #{
-             aws_access_key => os:getenv("aws_access_key"),
-             aws_secret_key => os:getenv("aws_secret_key"),
-             aws_region => "us-west-1",
-             device_id => <<"PeterTestThing">>
-            },
-    {ok, P} = router_aws_worker:start_link(Args),
+    DeviceID = <<"PeterTestThing">>,
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    timer:sleep(250),
+    AWSArgs = #{aws_access_key => os:getenv("aws_access_key"),
+                aws_secret_key => os:getenv("aws_secret_key"),
+                aws_region => "us-west-1",
+                device_id => DeviceID},
+    {ok, AWSWorkerPid} = router_aws_worker:start_link(AWSArgs),
 
     timer:sleep(1000),
 
-    gen_server:stop(P),
+    gen_server:stop(AWSWorkerPid),
+    gen_server:stop(DeviceWorkerPid),
     %% ?assert(false),
     ok.
 

@@ -3,7 +3,7 @@
 -export([
          init/1,
          get_device/4,
-         handle_data/2,
+         get_channels/2,
          report_status/2
         ]).
 
@@ -22,10 +22,10 @@ get_device(DevEui, AppEui, Msg, MIC) ->
         KeysAndDevices -> find_device(Msg, MIC, KeysAndDevices)
     end.
 
--spec handle_data(router_device:device(), map()) -> ok.
-handle_data(Device, Map) ->
+-spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
+get_channels(Device, DeviceWorkerPid) ->
     {ok, Mod} = application:get_env(router, ?API_MOD),
-    Mod:handle_data(Device, Map).
+    Mod:get_channels(Device, DeviceWorkerPid).
 
 -spec report_status(router_device:device(), map()) -> ok.
 report_status(Device, Map) ->

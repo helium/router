@@ -14,7 +14,7 @@
 
 -export([
          http_test/1,
-         dupes/1,
+         dupes_test/1,
          join_test/1,
          mqtt_test/1,
          aws_test/1
@@ -39,7 +39,7 @@
 all() ->
     [
      http_test,
-     dupes,
+     dupes_test,
      join_test,
      mqtt_test,
      aws_test
@@ -150,7 +150,7 @@ http_test(Config) ->
     libp2p_swarm:stop(Swarm),
     ok.
 
-dupes(Config) ->
+dupes_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     AppKey = proplists:get_value(app_key, Config),
     ets:insert(Tab, {show_dupes, true}),
@@ -290,7 +290,6 @@ join_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
-                                                %ok = wait_for_report_status(PubKeyBin0, <<"failure">>),
     ok = wait_for_report_status(PubKeyBin1, <<"success">>),
 
     %% Waiting for reply resp form router
@@ -414,43 +413,53 @@ wait_for_report_status(PubKeyBin) ->
     wait_for_report_status(PubKeyBin, <<"success">>).
 
 wait_for_report_status(PubKeyBin, Status) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    BinName = erlang:list_to_binary(AName),
-    receive
-        {report_status, Body} ->
-            Map = jsx:decode(Body, [return_maps]),
-            case Map of
-                #{<<"status">> := Status,
-                  <<"hotspot_name">> := BinName} ->
-                    ok;
-                _ ->
-                    wait_for_report_status(PubKeyBin),
-                    self()  ! {report_status, Body},
-                    ok
-            end
-    after 250 ->
-            ct:fail("report_status timeout")
+    try
+        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+        BinName = erlang:list_to_binary(AName),
+        receive
+            {report_status, Body} ->
+                Map = jsx:decode(Body, [return_maps]),
+                case Map of
+                    #{<<"status">> := Status,
+                      <<"hotspot_name">> := BinName} ->
+                        ok;
+                    _ ->
+                        wait_for_report_status(PubKeyBin),
+                        self()  ! {report_status, Body},
+                        ok
+                end
+        after 250 ->
+                ct:fail("report_status timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("report_status stacktrace ~p~n", [Stacktrace])
     end.
 
 wait_for_post_channel(PubKeyBin) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    BinName = erlang:list_to_binary(AName),
-    receive
-        {channel, Data} ->
-            Map = jsx:decode(Data, [return_maps]),
-            AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
-            DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
-            #{
-              <<"app_eui">> := AppEUI,
-              <<"dev_eui">> := DevEUI,
-              <<"payload">> := <<>>,
-              <<"spreading">> := <<"SF8BW125">>,
-              <<"gateway">> := BinName
-             } = Map,
-            ok
-    after 250 ->
-            ct:fail("wait_for_post_channel timeout")
+    try
+        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+        BinName = erlang:list_to_binary(AName),
+        receive
+            {channel, Data} ->
+                Map = jsx:decode(Data, [return_maps]),
+                AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
+                DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
+                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+                #{
+                  <<"app_eui">> := AppEUI,
+                  <<"dev_eui">> := DevEUI,
+                  <<"payload">> := <<>>,
+                  <<"spreading">> := <<"SF8BW125">>,
+                  <<"gateway">> := BinName
+                 } = Map,
+                ok
+        after 250 ->
+                ct:fail("wait_for_post_channel timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("wait_for_post_channel stacktrace ~p~n", [Stacktrace])
     end.
 
 wait_for_reply() ->

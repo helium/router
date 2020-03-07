@@ -41,7 +41,8 @@
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
                 join_cache = #{},
-                frame_cache = #{}
+                frame_cache = #{},
+                channel_handler :: pid()
                }).
 
 %% ------------------------------------------------------------------
@@ -79,8 +80,8 @@ init(Args) ->
                  {ok, D} -> D;
                  _ -> router_device:new(ID)
              end,
-    {ok, #state{db=DB, cf=CF, device=Device}}.
-
+    {ok, ChannelHandler} = router_channel:start_link(),
+    {ok, #state{db=DB, cf=CF, device=Device, channel_handler=ChannelHandler}}.
 
 handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
     case router_device:key(Device0) of
@@ -101,26 +102,34 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
     {ok, _} = router_device:save(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
-handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0, join_cache=Cache0}=State0) ->
+handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0,
+                                                                  join_cache=Cache0,
+                                                                  channel_handler=ChannelHandler}=State0) ->
     case handle_join(Packet0, PubkeyBin, AppKey, Name, Device0) of
         {error, _Reason} ->
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
+            lists:foreach(
+              fun(Channel) ->
+                      router_channel:add(ChannelHandler, Channel)
+              end,
+              router_device_api:get_channels(Device1, self())
+             ),
             RSSI0 = Packet0#packet_pb.signal_strength,
             Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Cache0),
-            State = State0#state{device=Device1},
+            State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
-                    {noreply, State#state{join_cache=Cache1}};
+                    {noreply, State1#state{join_cache=Cache1}};
                 {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
-                            {noreply, State};
+                            {noreply, State1};
                         true ->
                             catch Pid2 ! {packet, undefined},
-                            {noreply, State#state{join_cache=Cache1}}
+                            {noreply, State1#state{join_cache=Cache1}}
                     end
             end
     end;
@@ -130,7 +139,7 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0, frame_cache
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
-            ok = send_to_channel(Packet0, Device1, Frame, AName),
+            ok = send_to_channel(Packet0, Device1, Frame, AName, State),
             FCnt = router_device:fcnt(Device1),
             RSSI0 = Packet0#packet_pb.signal_strength,
             Cache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, Cache0),
@@ -580,22 +589,24 @@ report_status(Type, AName, Msg, Category) ->
     self() ! {report_status, Type, AName, Msg, Category},
     ok.
 
--spec send_to_channel(#packet_pb{}, router_device:device(), #frame{}, string()) -> ok.
+-spec send_to_channel(#packet_pb{}, router_device:device(), #frame{}, string(), #state{}) -> ok.
 send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RSSI, snr=SNR},
                 Device,
                 #frame{data=Data},
-                AName) ->
-    Map = #{
-            miner_name => erlang:list_to_binary(AName),
-            rssi => RSSI,
-            snr => SNR,
+                AName,
+                #state{channel_handler=ChannelHandler}) ->
+    Map = #{timestamp => Time,
             sequence => router_device:fcnt(Device),
             spreading => erlang:list_to_binary(DataRate),
-            payload => Data,
-            timestamp => Time,
-            id => router_device:id(Device)
-           },
-    ok = router_device_api:handle_data(Device, Map).
+            payload => base64:encode(Data),
+            gateway => erlang:list_to_binary(AName),
+            rssi => RSSI,
+            dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+            app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+            name => router_device:name(Device),
+            snr => SNR,
+            id => router_device:id(Device)},
+    ok = router_channel:handle_data(ChannelHandler, Map).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

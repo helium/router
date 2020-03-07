@@ -38,7 +38,6 @@ init(Channel) ->
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             erlang:send_after(?PING_TIMEOUT, self(), ping),
-            ets:insert(router_mqtt_workers, {{DeviceID, ChannelName}, self()}),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
             %% TODO use a better QoS to add some back pressure

@@ -320,6 +320,7 @@ mqtt_test(Config) ->
       subscribe,
       fun(_Pid, {_Topic, _QoS}) ->
               ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
+              Self ! {mqtt_worker, self()},
               ok
       end
      ),
@@ -352,6 +353,13 @@ mqtt_test(Config) ->
 
     timer:sleep(?JOIN_DELAY),
 
+    MQQTTWorkerPid = 
+        receive
+            {mqtt_worker, Pid} -> Pid
+        after 250 ->
+            ct:fail("mqtt_worker timeout")
+        end,
+
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin),
     %% Waiting for reply resp form router
@@ -369,16 +377,13 @@ mqtt_test(Config) ->
     ok = wait_for_report_status(PubKeyBin),
     ok = wait_for_ack(?REPLY_DELAY + 250),
 
-
-    ETSKey = {<<"yolo_id">>, <<"fake_mqtt">>},
-    Msg0 = {false, 1, <<"mqttpayload">>},
-    [{ETSKey, MQQTTWorkerPid}] = ets:lookup(router_mqtt_workers, ETSKey),
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
 
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
+    Msg0 = {false, 1, <<"mqttpayload">>},
     {ok, _} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
 
 

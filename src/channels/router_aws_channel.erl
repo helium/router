@@ -34,7 +34,8 @@
 -define(THING_TYPE, <<"Helium-Thing">>).
 
 -record(state, {channel :: router_channel:channel(),
-                aws :: pid()}).
+                aws :: pid(),
+                connection :: pid()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -55,8 +56,15 @@ init(Channel) ->
     ok = ensure_policy(AWS),
     ok = ensure_thing_type(AWS),
     ok = ensure_thing(AWS, DeviceID),
-    ok = ensure_certificate(AWS, DeviceID),
-    {ok, #state{channel=Channel, aws=AWS}}.
+    {ok, Key, Cert} = ensure_certificate(AWS, DeviceID),
+    {ok, Endpoint} = get_iot_endpoint(AWS),
+    {ok, Conn} = connect(DeviceID, Endpoint, Key, Cert),
+
+    emqttc:publish(Conn, <<"$aws/things/", DeviceID/binary, "/shadow/get">>, <<>>, [{qos, 1}]),
+
+    (catch emqttc:ping(Conn)),
+    erlang:send_after(25000, self(), ping),
+    {ok, #state{channel=Channel, connection=Conn}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -66,6 +74,14 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info({publish, Map}, State) ->
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+    {ok, State};
+handle_info(ping, State = #state{connection=Con}) ->
+    erlang:send_after(25000, self(), ping),
+    Res = (catch emqttc:ping(Con)),
+    lager:debug("pinging MQTT connection ~p", [Res]),
+    {ok, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -79,6 +95,27 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+connect(DeviceID, Hostname, Key, Cert) ->
+    #{secret := {ecc_compact, PrivKey}} = Key,
+    
+    Opts = [{host, Hostname},
+            {port, 8883},
+            {client_id, DeviceID},
+            {logger, {lager, debug}},
+            {keepalive, 30},
+            {connack_timeout, 5},
+            {clean_sess, true},
+            {ssl, true},
+            {ssl_opts, [{cert, der_encode_cert(Cert)},
+                        {key, {'ECPrivateKey', PrivKey#'ECPrivateKey'.privateKey}}]}],
+    {ok, C} = emqtt:start_link(Opts),
+    {ok, _Props} = emqtt:connect(C),
+    {ok, C}.
+
+der_encode_cert(PEMCert) ->
+    Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(list_to_binary(PEMCert)))),
+    public_key:der_encode('Certificate', Cert).
 
 -spec ensure_policy(pid()) -> ok | {error, any()}.
 ensure_policy(AWS) ->
@@ -146,22 +183,77 @@ ensure_thing(AWS, DeviceID) ->
             ok
     end.
 
+-spec ensure_certificate(pid(), binary()) -> {ok, any(), string()} | {error, any()}.
 ensure_certificate(AWS, DeviceID) ->
     case router_devices_sup:lookup_device_worker(DeviceID) of
-        {error, _Reason}=Error ->
-            Error;
+        {error, _Reason} ->
+            {error, {no_device_key, _Reason}};
         {ok, Pid} ->
             Key = router_device_worker:key(Pid),
-            CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, CSR]),
-            CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
-            Body = binary_to_list(jsx:encode(CSRReq)),
-            case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
-                {error, _Reason, Stuff} ->
-                    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Stuff]),
-                    {error, _Reason};
+            case get_principals(AWS, DeviceID) of
+                [] ->
+                    CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
+                    CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
+                    Body = binary_to_list(jsx:encode(CSRReq)),
+                    case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
+                        {error, _Reason, _} ->
+                            {error, {certificate_creation_failed, _Reason}};
+                        {ok, {_, Res}} ->
+                            CertificateArn = proplists:get_value("certificateArn", Res),
+                            case attach_certificate(AWS, DeviceID, CertificateArn) of
+                                {error, _}=Error ->
+                                    Error;
+                                ok ->
+                                    case get_certificate_from_arn(AWS, CertificateArn) of
+                                        {error, _}=Error -> Error;
+                                        {ok, Cert} -> {ok, Key, Cert}
+                                    end 
+                            end
+                    end;
+                [CertificateArn] ->
+                    case get_certificate_from_arn(AWS, CertificateArn) of
+                        {error, _}=Error -> Error;
+                        {ok, Cert} -> {ok, Key, Cert}
+                    end
+            end
+    end.
+
+get_iot_endpoint(AWS) ->
+    case httpc_aws:get(AWS, "iot", "/endpoint", []) of
+        {error, _Reason, _} -> {error, {get_endpoint_failed, _Reason}};
+        {ok, {_, [{"endpointAddress", Hostname}]}} -> {ok, Hostname}
+    end.
+
+get_certificate_from_arn(AWS, CertificateArn) ->
+    ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateArn, ":"),
+    ["cert", CertificateId] = string:tokens(Resource, "/"),
+    case httpc_aws:get(AWS, "iot", "/certificates/" ++ CertificateId) of
+        {error, _Reason, _} ->
+            {error, {get_certificate_failed, _Reason}};
+        {ok, {_, Data}} ->
+            CertificateDesc = proplists:get_value("certificateDescription", Data),
+            {ok, proplists:get_value("certificatePem", CertificateDesc)}
+    end.
+
+attach_certificate(AWS, DeviceID, CertificateArn) ->
+    Headers0 = [{"x-amzn-iot-principal", CertificateArn},
+                {"content-type", "text/plain"}],
+    case httpc_aws:put(AWS, "iot", "/principal-policies/Helium-Policy", "", Headers0) of
+        {error, _Reason, _} ->
+            {error, {attach_policy_failed, _Reason}};
+        {ok, _} ->
+            Headers1 = [{"x-amzn-principal", CertificateArn},
+                        {"content-type", "text/plain"}],
+            case httpc_aws:put(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>), "", Headers1) of
+                {error, _Reason, _} -> {error, {attach_principals_failed, _Reason}};
                 {ok, _} -> ok
             end
+    end.
+
+get_principals(AWS, DeviceID) ->
+    case httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>)) of
+        {error, _Reason, _} -> [];
+        {ok, {_, Data}} -> proplists:get_value("principals", Data, [])
     end.
 
 create_csr(#{secret := {ecc_compact, PrivKey},
@@ -185,7 +277,7 @@ create_csr(#{secret := {ecc_compact, PrivKey},
            []},
 
     DER = public_key:der_encode('CertificationRequestInfo', CRI),
-    Signature = public_key:sign(crypto:hash(sha256, DER), sha256, PrivKey),
+    Signature = public_key:sign(DER, sha256, PrivKey),
     {'CertificationRequest', CRI, {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE}, Signature}.
 
 pack_country(Bin) when size(Bin) == 2 ->

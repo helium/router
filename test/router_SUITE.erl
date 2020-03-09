@@ -402,7 +402,7 @@ aws_test(_Config) ->
     timer:sleep(250),
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Channel]),
     {ok, AWSWorkerPid} = router_aws_channel:start_link(Channel),
-    timer:sleep(1000),
+    timer:sleep(5000),
     gen_server:stop(AWSWorkerPid),
     gen_server:stop(DeviceWorkerPid),
     %% ?assert(false),

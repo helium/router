@@ -98,7 +98,7 @@ terminate(_Reason, _State) ->
 
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
-    
+    EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
     Opts = [{host, Hostname},
             {port, 8883},
             {client_id, DeviceID},
@@ -108,7 +108,7 @@ connect(DeviceID, Hostname, Key, Cert) ->
             {clean_sess, true},
             {ssl, true},
             {ssl_opts, [{cert, der_encode_cert(Cert)},
-                        {key, {'ECPrivateKey', PrivKey#'ECPrivateKey'.privateKey}}]}],
+                        {key, {'ECPrivateKey', EncodedPrivKey}}]}],
     {ok, C} = emqtt:start_link(Opts),
     {ok, _Props} = emqtt:connect(C),
     {ok, C}.

@@ -45,6 +45,7 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
+    ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
@@ -76,7 +77,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
-    catch exit(whereis(client_swarm), kill),
+    catch exit(whereis(libp2p_swarm_sup_join_test_swarm_0), kill),
     ok.
 
 %%--------------------------------------------------------------------
@@ -89,7 +90,8 @@ join_test(Config) ->
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     Swarm0 = start_swarm(BaseDir, join_test_swarm_0, 3620),
-    register(client_swarm, Swarm0),
+    ct:pal("registered ~p", [registered()]),
+    Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
                                                     Address,

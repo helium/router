@@ -4,7 +4,8 @@
          init/1,
          get_device/4,
          get_channels/2,
-         report_status/2
+         report_device_status/2,
+         report_channel_status/2
         ]).
 
 -define(API_MOD, router_device_api_module).
@@ -27,10 +28,15 @@ get_channels(Device, DeviceWorkerPid) ->
     {ok, Mod} = application:get_env(router, ?API_MOD),
     Mod:get_channels(Device, DeviceWorkerPid).
 
--spec report_status(router_device:device(), map()) -> ok.
-report_status(Device, Map) ->
+-spec report_device_status(router_device:device(), map()) -> ok.
+report_device_status(Device, Map) ->
     {ok, Mod} = application:get_env(router, ?API_MOD),
-    Mod:report_status(Device, Map).
+    Mod:report_device_status(Device, Map).
+
+-spec report_channel_status(router_device:device(), map()) -> ok.
+report_channel_status(Device, Map) ->
+    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod:report_channel_status(Device, Map).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

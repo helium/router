@@ -6,7 +6,8 @@
          init/1,
          get_devices/2,
          get_channels/2,
-         report_status/2
+         report_device_status/2,
+         report_channel_status/2
         ]).
 
 -define(TOKEN_CACHE_TIME, 600).
@@ -50,18 +51,35 @@ get_channels(Device, DeviceWorkerPid) ->
               Channels)
     end.
 
--spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
-report_status(Device, Map) ->
+-spec report_device_status(Device :: router_device:device(), Map :: #{}) -> ok.
+report_device_status(Device, Map) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
     DeviceID = router_device:id(Device),
     Body = #{status => maps:get(status, Map, failure),
              description => maps:get(msg, Map, <<"">>),
-             reported_at => erlang:system_time(second),
+             reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
              category => maps:get(category, Map, <<"">>),
              frame_up => router_device:fcnt(Device),
              frame_down => router_device:fcntdown(Device),
-             hotspot_name => list_to_binary(maps:get(hotspot, Map, ""))},
+             hotspot_name => list_to_binary(maps:get(hotspot_name, Map, ""))},
+    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
+                 [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
+                 jsx:encode(Body), [with_body]),
+    ok.
+
+-spec report_channel_status(Device :: router_device:device(), Map :: #{}) -> ok.
+report_channel_status(Device, Map) ->
+    Endpoint = get_endpoint(),
+    JWT = get_token(Endpoint),
+    DeviceID = router_device:id(Device),
+    Body = #{status => maps:get(status, Map, failure),
+             description => maps:get(msg, Map, <<"">>),
+             reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
+             category => maps:get(category, Map, <<"">>),
+             frame_up => router_device:fcnt(Device),
+             frame_down => router_device:fcntdown(Device),
+             hotspot_name => maps:get(hotspot_name, Map, "")},
     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                  [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
                  jsx:encode(Body), [with_body]),

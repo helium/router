@@ -200,7 +200,7 @@ wait_for_post_channel(PubKeyBin) ->
               <<"dev_eui">> := DevEUI,
               <<"payload">> := Payload,
                                                 %<<"spreading">> := <<"SF8BW125">>,
-              <<"gateway">> := BinName
+              <<"hotspot_name">> := BinName
              } = Map,
             ok
     after 2500 ->

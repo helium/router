@@ -357,7 +357,7 @@ mqtt_test(Config) ->
         receive
             {mqtt_worker, Pid} -> Pid
         after 250 ->
-            ct:fail("mqtt_worker timeout")
+                ct:fail("mqtt_worker timeout")
         end,
 
     %% Waiting for console repor status sent
@@ -456,7 +456,7 @@ wait_for_post_channel(PubKeyBin) ->
                   <<"dev_eui">> := DevEUI,
                   <<"payload">> := <<>>,
                   <<"spreading">> := <<"SF8BW125">>,
-                  <<"gateway">> := BinName
+                  <<"hotspot_name">> := BinName
                  } = Map,
                 ok
         after 250 ->

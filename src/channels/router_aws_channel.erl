@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Router AWS Worker ==
+%% == Router AWS Channel ==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_aws_worker).
+-module(router_aws_channel).
 
 -behavior(gen_server).
 
@@ -33,7 +33,8 @@
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).
 
--record(state, {}).
+-record(state, {channel :: router_channel:channel(),
+                aws :: pid()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -44,12 +45,10 @@ start_link(Args) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Args) ->
-    lager:info("~p init with ~p", [?SERVER, Args]),
-    AccessKey = maps:get(aws_access_key, Args),
-    SecretKey = maps:get(aws_secret_key, Args),
-    Region = maps:get(aws_region, Args),
-    DeviceID = maps:get(device_id, Args),
+init(Channel) ->
+    lager:info("~p init with ~p", [?SERVER, Channel]),
+    #{aws_access_key := AccessKey, aws_secret_key := SecretKey, aws_region := Region} = router_channel:args(Channel),
+    DeviceID = router_channel:device_id(Channel),
     {ok, AWS} = httpc_aws:start_link(),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
     httpc_aws:set_region(AWS, Region),
@@ -57,7 +56,7 @@ init(Args) ->
     ok = ensure_thing_type(AWS),
     ok = ensure_thing(AWS, DeviceID),
     ok = ensure_certificate(AWS, DeviceID),
-    {ok, #state{}}.
+    {ok, #state{channel=Channel, aws=AWS}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

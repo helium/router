@@ -394,16 +394,15 @@ mqtt_test(Config) ->
 
 aws_test(_Config) ->
     DeviceID = <<"PeterTestThing">>,
-    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
-    timer:sleep(250),
     AWSArgs = #{aws_access_key => os:getenv("aws_access_key"),
                 aws_secret_key => os:getenv("aws_secret_key"),
-                aws_region => "us-west-1",
-                device_id => DeviceID},
-    {ok, AWSWorkerPid} = router_aws_worker:start_link(AWSArgs),
-
+                aws_region => "us-west-1"},
+    Channel = router_channel:new(<<"channel_id">>, router_aws_channel, <<"aws">>, AWSArgs, DeviceID, self()),
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    timer:sleep(250),
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Channel]),
+    {ok, AWSWorkerPid} = router_aws_channel:start_link(Channel),
     timer:sleep(1000),
-
     gen_server:stop(AWSWorkerPid),
     gen_server:stop(DeviceWorkerPid),
     %% ?assert(false),

@@ -43,7 +43,7 @@
                 device :: router_device:device(),
                 join_cache = #{},
                 frame_cache = #{},
-                channel_handler :: pid()
+                event_mgr :: pid()
                }).
 
 %% ------------------------------------------------------------------
@@ -85,8 +85,8 @@ init(Args) ->
                  {ok, D} -> D;
                  _ -> router_device:new(ID)
              end,
-    {ok, ChannelHandler} = router_channel:start_link(),
-    {ok, #state{db=DB, cf=CF, device=Device, channel_handler=ChannelHandler}}.
+    {ok, EventMgrRef} = router_channel:start_link(),
+    {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
 handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
     case router_device:key(Device0) of
@@ -108,18 +108,12 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     {ok, _} = router_device:save(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubkeyBin, AppKey, Name, Pid}, #state{device=Device0,
-                                                                  join_cache=Cache0,
-                                                                  channel_handler=ChannelHandler}=State0) ->
+                                                                  join_cache=Cache0}=State0) ->
     case handle_join(Packet0, PubkeyBin, AppKey, Name, Device0) of
         {error, _Reason} ->
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
-            lists:foreach(
-              fun(Channel) ->
-                      router_channel:add(ChannelHandler, Channel)
-              end,
-              router_device_api:get_channels(Device1, self())
-             ),
+            self() ! refresh_channels,
             RSSI0 = Packet0#packet_pb.signal_strength,
             Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Cache0),
             State1 = State0#state{device=Device1},
@@ -211,6 +205,19 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
                           hotspot_name => AName},
             ok = router_device_api:report_device_status(Device, StatusMap)
     end,
+    {noreply, State};
+handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef}=State) ->
+    lists:foreach(
+      fun(Handler) ->
+              _ = gen_event:delete_handler(EventMgrRef, Handler, []) 
+      end,
+      gen_event:which_handlers(EventMgrRef)),
+    lists:foreach(
+      fun(Channel) ->
+              router_channel:add(EventMgrRef, Channel)
+      end,
+      router_device_api:get_channels(Device, self())),
+    erlang:send_after(timer:minutes(5), self(), refresh_channels),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -598,7 +605,7 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
                 Device,
                 #frame{data=Data},
                 AName,
-                #state{channel_handler=ChannelHandler}) ->
+                #state{event_mgr=EventMgrRef}) ->
     Map = #{timestamp => Time,
             sequence => router_device:fcnt(Device),
             spreading => erlang:list_to_binary(DataRate),
@@ -610,7 +617,7 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
             name => router_device:name(Device),
             snr => SNR,
             id => router_device:id(Device)},
-    ok = router_channel:handle_data(ChannelHandler, Map).
+    ok = router_channel:handle_data(EventMgrRef, Map).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

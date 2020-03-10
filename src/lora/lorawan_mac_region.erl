@@ -148,7 +148,7 @@ datars(Region)
                                                            {2,  {8, 125}, up},
                                                            {3,  {7, 125}, up},
                                                            {4,  {8, 500}, up}
-                                                           | us_down_datars()];
+                                                          | us_down_datars()];
 datars(Region)
   when Region == <<"AU915">> -> [
                                  {0,  {12, 125}, up},
@@ -158,7 +158,7 @@ datars(Region)
                                  {4,  {8, 125}, up},
                                  {5,  {7, 125}, up},
                                  {6,  {8, 500}, up}
-                                 | us_down_datars()];
+                                | us_down_datars()];
 datars(_Region) -> [
                     {0, {12, 125}, updown},
                     {1, {11, 125}, updown},
@@ -416,11 +416,13 @@ bits_test_()-> [
                 ?_assertEqual(true, some_bit({0, 15}, [{0,2}])),
                 ?_assertEqual(false, all_bit({0, 15}, [{0,2}])),
                 ?_assertEqual(false, none_bit({0, 15}, [{0,2}])),
-                ?_assertEqual([{link_adr_req,<<"SF12BW250">>,14,7,0,0}],
-                              set_channels(<<"EU868">>, {14, <<"SF12BW250">>, [{0, 2}]}, [])),
-                ?_assertEqual([{link_adr_req,<<"SF12BW500">>,20,0,7,0}, {link_adr_req,<<"SF12BW500">>,20,255,0,0}],
+                ?_assertEqual([{link_adr_req, datar_to_dr(<<"EU868">>, <<"SF12BW125">>),14,7,0,0}],
+                              set_channels(<<"EU868">>, {14, <<"SF12BW125">>, [{0, 2}]}, [])),
+                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,0,7,0},
+                               {link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,255,0,0}],
                               set_channels(<<"US902">>, {20, <<"SF12BW500">>, [{0, 7}]}, [])),
-                ?_assertEqual([{link_adr_req,<<"SF12BW500">>,20,2,7,0}, {link_adr_req,<<"SF12BW500">>,20,65280,0,0}],
+                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,2,7,0},
+                               {link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,65280,0,0}],
                               set_channels(<<"US902">>, {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, []))
                ].
 

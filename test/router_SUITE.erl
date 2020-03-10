@@ -41,8 +41,7 @@ all() ->
      http_test,
      dupes_test,
      join_test,
-     mqtt_test,
-     aws_test
+     mqtt_test
     ].
 
 %%--------------------------------------------------------------------
@@ -393,7 +392,10 @@ mqtt_test(Config) ->
     ok.
 
 aws_test(_Config) ->
-    DeviceID = <<"PeterTestThing">>,
+    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
+    UUID = list_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", 
+                                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E])),
+    DeviceID = <<"TEST_", UUID/binary>>,
     AWSArgs = #{aws_access_key => os:getenv("aws_access_key"),
                 aws_secret_key => os:getenv("aws_secret_key"),
                 aws_region => "us-west-1"},
@@ -405,7 +407,7 @@ aws_test(_Config) ->
     timer:sleep(5000),
     gen_server:stop(AWSWorkerPid),
     gen_server:stop(DeviceWorkerPid),
-    %% ?assert(false),
+    ?assert(false),
     ok.
 
 

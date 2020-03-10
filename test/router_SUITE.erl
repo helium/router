@@ -407,7 +407,6 @@ aws_test(_Config) ->
     timer:sleep(5000),
     gen_server:stop(AWSWorkerPid),
     gen_server:stop(DeviceWorkerPid),
-    ?assert(false),
     ok.
 
 

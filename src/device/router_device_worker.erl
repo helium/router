@@ -41,9 +41,10 @@
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
-                join_cache = #{},
-                frame_cache = #{},
-                event_mgr :: pid()
+                join_cache = #{} :: map(),
+                frame_cache = #{} :: map(),
+                event_mgr :: pid(),
+                channels = #{} :: map()
                }).
 
 %% ------------------------------------------------------------------
@@ -206,19 +207,29 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
             ok = router_device_api:report_device_status(Device, StatusMap)
     end,
     {noreply, State};
-handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef}=State) ->
-    lists:foreach(
-      fun(Handler) ->
-              _ = gen_event:delete_handler(EventMgrRef, Handler, []) 
-      end,
-      gen_event:which_handlers(EventMgrRef)),
-    lists:foreach(
-      fun(Channel) ->
-              router_channel:add(EventMgrRef, Channel)
-      end,
-      router_device_api:get_channels(Device, self())),
+handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
+    Channels1 = lists:foldl(
+                  fun(Channel, Acc) ->
+                          ID = router_channel:id(Channel),
+                          Hash = router_channel:hash(Channel),
+                          case maps:get(ID, Acc, undefined) of
+                              undefined ->
+                                  router_channel:add(EventMgrRef, Channel),
+                                  maps:put(ID, Hash, Acc);
+                              Hash ->
+                                  Acc;
+                              _OldHash ->
+                                  %% TODO: This can be improved (waiting on websockets)
+                                  Handler = router_channel:handler(Channel),
+                                  _ = gen_event:delete_handler(EventMgrRef, {Handler, ID}, []),
+                                  router_channel:add(EventMgrRef, Channel),
+                                  maps:put(ID, Hash, Acc)
+                          end
+                  end,
+                  Channels0,
+                  router_device_api:get_channels(Device, self())),
     erlang:send_after(timer:minutes(5), self(), refresh_channels),
-    {noreply, State};
+    {noreply, State#state{channels=Channels1}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

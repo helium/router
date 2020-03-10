@@ -7,7 +7,8 @@
          dupes/1,
          args/1,
          device_id/1,
-         device_worker/1]).
+         device_worker/1,
+         hash/1]).
 
 -export([start_link/0,
          add/2,
@@ -72,6 +73,11 @@ device_id(Channel) ->
 -spec device_worker(channel()) -> pid().
 device_worker(Channel) ->
     Channel#channel.device_worker.
+
+-spec hash(channel()) -> binary().
+hash(Channel0) ->
+    Channel1 = Channel0#channel{device_worker=undefined},
+    crypto:hash(sha256, erlang:term_to_binary(Channel1)).
 
 -spec start_link() -> {ok, pid()} | {error, any()}.
 start_link() ->

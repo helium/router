@@ -19,7 +19,6 @@
          code_change/3
         ]).
 
--define(SERVER, ?MODULE).
 -define(PING_TIMEOUT, 25000).
 
 -record(state, {channel :: router_channel:channel(),
@@ -30,7 +29,7 @@
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Channel) ->
-    lager:info("init with ~p", [Channel]),
+    lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
     #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),

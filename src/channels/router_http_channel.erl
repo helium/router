@@ -19,8 +19,6 @@
          code_change/3
         ]).
 
--define(SERVER, ?MODULE).
-
 -record(state, {channel :: router_channel:channel(),
                 url :: binary(),
                 headers :: list(),

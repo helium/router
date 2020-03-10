@@ -20,7 +20,7 @@
                   dupes=false :: boolean(),
                   args :: map(),
                   device_id  :: binary(),
-                  device_worker :: pid()}).
+                  device_worker :: pid() | undefined}).
 
 
 -type channel() :: #channel{}.

@@ -5,50 +5,39 @@
 %%%-------------------------------------------------------------------
 -module(router_aws_channel).
 
--behavior(gen_server).
+-behaviour(gen_event).
 
 -include_lib("public_key/include/public_key.hrl").
 
 %% ------------------------------------------------------------------
-%% API Function Exports
-%% ------------------------------------------------------------------
--export([
-         start_link/1
-        ]).
-
-%% ------------------------------------------------------------------
-%% gen_server Function Exports
+%% gen_event Function Exports
 %% ------------------------------------------------------------------
 -export([
          init/1,
-         handle_call/3,
-         handle_cast/2,
+         handle_event/2,
+         handle_call/2,
          handle_info/2,
          terminate/2,
          code_change/3
         ]).
 
-
--define(SERVER, ?MODULE).
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).
 
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
-                connection :: pid()}).
-
-%% ------------------------------------------------------------------
-%% API Function Definitions
-%% ------------------------------------------------------------------
-start_link(Args) ->
-    gen_server:start_link(?SERVER, Args, []).
+                connection :: pid(),
+                topic :: binary()}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Channel) ->
-    lager:info("~p init with ~p", [?SERVER, Channel]),
-    #{aws_access_key := AccessKey, aws_secret_key := SecretKey, aws_region := Region} = router_channel:args(Channel),
+    lager:info("~p init with ~p", [?MODULE, Channel]),
+    #{aws_access_key := AccessKey,
+      aws_secret_key := SecretKey,
+      aws_region := Region,
+      topic := Topic} = router_channel:args(Channel),
     DeviceID = router_channel:device_id(Channel),
     {ok, AWS} = httpc_aws:start_link(),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
@@ -62,27 +51,48 @@ init(Channel) ->
     {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
     (catch emqtt:ping(Conn)),
     erlang:send_after(25000, self(), ping),
-    {ok, #state{channel=Channel, connection=Conn}}.
+    {ok, #state{channel=Channel, connection=Conn, topic=Topic}}.
 
-handle_call(_Msg, _From, State) ->
-    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
-    {reply, ok, State}.
-
-handle_cast(_Msg, State) ->
+handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}=State) ->
+    DeviceID = router_channel:device_id(Channel),
+    ID = router_channel:id(Channel),
+    Fcnt = maps:get(sequence, Data),
+    Payload = jsx:encode(Data),
+    case router_channel:dupes(Channel) of
+        true ->
+            Res = emqtt:publish(Conn, Topic, Payload, 0),
+            ok = handle_publish_res(Res, Channel, Data),
+            lager:info("published: ~p result: ~p", [Data, Res]);
+        false ->
+            case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
+                {ok, _, _} ->
+                    Res = emqtt:publish(Conn, Topic, Payload, 0),
+                    ok = handle_publish_res(Res, Channel, Data),
+                    lager:info("published: ~p result: ~p", [Data, Res]);
+                _ ->
+                    lager:debug("ignornign duplicate ~p", [Data])
+            end
+    end,
+    {ok, State};
+handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
-    {noreply, State}.
+    {ok, State}.
+
+handle_call(_Msg, State) ->
+    lager:warning("rcvd unknown call msg: ~p", [_Msg]),
+    {ok, ok, State}.
 
 handle_info({publish, _Map}, State) ->
     %% TODO
-    {noreply, State};
+    {ok, State};
 handle_info(ping, State = #state{connection=Con}) ->
     erlang:send_after(25000, self(), ping),
     Res = (catch emqtt:ping(Con)),
     lager:debug("pinging MQTT connection ~p", [Res]),
-    {noreply, State};
+    {ok, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
-    {noreply, State}.
+    {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -94,6 +104,30 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
+handle_publish_res(Res, Channel, Data) ->
+    DeviceWorkerPid = router_channel:device_worker(Channel),
+    Payload = jsx:encode(Data),
+    Result0 = #{channel_name => router_channel:name(Channel),
+                payload => base64:encode(Payload),
+                payload_size => erlang:byte_size(Payload), 
+                reported_at => erlang:system_time(seconds),
+                rssi => maps:get(rssi, Data),
+                snr => maps:get(snr, Data),
+                hotspot_name => maps:get(hotspot_name, Data),
+                category => <<"up">>,
+                frame_up => maps:get(sequence, Data)},
+    Result1 = case Res of
+                  {ok, PacketID} ->
+                      maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});
+                  ok ->
+                      maps:merge(Result0, #{status => success, description => <<"ok">>});
+                  {error, Reason} ->
+                      maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
+              end,
+    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+
+-spec connect(binary(), binary(), any(), any()) -> {ok, pid()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),

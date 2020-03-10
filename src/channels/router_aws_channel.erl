@@ -59,10 +59,8 @@ init(Channel) ->
     {ok, Key, Cert} = ensure_certificate(AWS, DeviceID),
     {ok, Endpoint} = get_iot_endpoint(AWS),
     {ok, Conn} = connect(DeviceID, Endpoint, Key, Cert),
-
-    emqttc:publish(Conn, <<"$aws/things/", DeviceID/binary, "/shadow/get">>, <<>>, [{qos, 1}]),
-
-    (catch emqttc:ping(Conn)),
+    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
+    (catch emqtt:ping(Conn)),
     erlang:send_after(25000, self(), ping),
     {ok, #state{channel=Channel, connection=Conn}}.
 
@@ -74,14 +72,14 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({publish, Map}, State) ->
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
-    {ok, State};
+handle_info({publish, _Map}, State) ->
+    %% TODO
+    {noreply, State};
 handle_info(ping, State = #state{connection=Con}) ->
     erlang:send_after(25000, self(), ping),
-    Res = (catch emqttc:ping(Con)),
+    Res = (catch emqtt:ping(Con)),
     lager:debug("pinging MQTT connection ~p", [Res]),
-    {ok, State};
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

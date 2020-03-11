@@ -110,6 +110,18 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel
     Dupes = kvc:path([<<"show_dupes">>], JSONChannel, false),
     Channel = router_channel:new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid),
     {true, Channel};
+convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_aws_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    Args = #{aws_access_key => kvc:path([<<"credentials">>, <<"aws_access_key">>], JSONChannel),
+             aws_secret_key => kvc:path([<<"credentials">>, <<"aws_secret_key">>], JSONChannel),
+             aws_region => kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel),
+             topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
+    DeviceID = router_device:id(Device),
+    Dupes = kvc:path([<<"show_dupes">>], JSONChannel, false),
+    Channel = router_channel:new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid),
+    {true, Channel};
 convert_channel(_Device, _DeviceWorkerPid, _Channel) ->
     false.
 

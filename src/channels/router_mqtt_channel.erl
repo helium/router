@@ -65,7 +65,7 @@ handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Top
                     ok = handle_publish_res(Res, Channel, Data),
                     lager:info("published: ~p result: ~p", [Data, Res]);
                 _ ->
-                    lager:debug("ignornign duplicate ~p", [Data])
+                    lager:debug("ignoring duplicate ~p", [Data])
             end
     end,
     {ok, State};

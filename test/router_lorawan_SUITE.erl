@@ -45,6 +45,7 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
+    ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
@@ -76,7 +77,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
-    catch exit(whereis(client_swarm), kill),
+    catch exit(whereis(libp2p_swarm_sup_join_test_swarm_0), kill),
     ok.
 
 %%--------------------------------------------------------------------
@@ -89,7 +90,8 @@ join_test(Config) ->
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     Swarm0 = start_swarm(BaseDir, join_test_swarm_0, 3620),
-    register(client_swarm, Swarm0),
+    ct:pal("registered ~p", [registered()]),
+    Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
                                                     Address,
@@ -117,7 +119,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     NwkSKey = router_device:nwk_s_key(Device0),
     AppSKey = router_device:app_s_key(Device0),
@@ -200,7 +202,7 @@ wait_for_post_channel(PubKeyBin) ->
               <<"dev_eui">> := DevEUI,
               <<"payload">> := Payload,
                                                 %<<"spreading">> := <<"SF8BW125">>,
-              <<"gateway">> := BinName
+              <<"hotspot_name">> := BinName
              } = Map,
             ok
     after 2500 ->
@@ -239,14 +241,6 @@ deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayl
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
-get_device(DB, CF, ID) ->
-    case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
-        not_found -> {error, not_found};
-        Error -> Error
-    end.
 
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),

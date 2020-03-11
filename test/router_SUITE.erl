@@ -14,9 +14,10 @@
 
 -export([
          http_test/1,
-         dupes/1,
+         dupes_test/1,
          join_test/1,
-         mqtt_test/1
+         mqtt_test/1,
+         aws_test/1
         ]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
@@ -38,7 +39,7 @@
 all() ->
     [
      http_test,
-     dupes,
+     dupes_test,
      join_test,
      mqtt_test
     ].
@@ -51,6 +52,7 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
+    ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
@@ -115,7 +117,7 @@ http_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
@@ -131,7 +133,7 @@ http_test(Config) ->
     router_device_worker:queue_message(WorkerPid, Msg),
 
     timer:sleep(200),
-    {ok, Device1} = get_device(DB, CF, WorkerID),
+    {ok, Device1} = router_device:get(DB, CF, WorkerID),
     ?assertEqual(router_device:queue(Device1), [Msg]),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
@@ -141,13 +143,13 @@ http_test(Config) ->
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     ok = wait_for_ack(250),
 
-    {ok, Device2} = get_device(DB, CF, WorkerID),
+    {ok, Device2} = router_device:get(DB, CF, WorkerID),
     ?assertEqual(router_device:queue(Device2), []),
 
     libp2p_swarm:stop(Swarm),
     ok.
 
-dupes(Config) ->
+dupes_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     AppKey = proplists:get_value(app_key, Config),
     ets:insert(Tab, {show_dupes, true}),
@@ -177,7 +179,7 @@ dupes(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},
@@ -287,7 +289,6 @@ join_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
-                                                %ok = wait_for_report_status(PubKeyBin0, <<"failure">>),
     ok = wait_for_report_status(PubKeyBin1, <<"success">>),
 
     %% Waiting for reply resp form router
@@ -296,7 +297,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
     ?assertEqual(router_device:app_s_key(Device0), AppSKey),
@@ -318,6 +319,7 @@ mqtt_test(Config) ->
       subscribe,
       fun(_Pid, {_Topic, _QoS}) ->
               ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
+              Self ! {mqtt_worker, self()},
               ok
       end
      ),
@@ -350,6 +352,13 @@ mqtt_test(Config) ->
 
     timer:sleep(?JOIN_DELAY),
 
+    MQQTTWorkerPid = 
+        receive
+            {mqtt_worker, Pid} -> Pid
+        after 250 ->
+                ct:fail("mqtt_worker timeout")
+        end,
+
     %% Waiting for console repor status sent
     ok = wait_for_report_status(PubKeyBin),
     %% Waiting for reply resp form router
@@ -358,7 +367,7 @@ mqtt_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
-    {ok, Device0} = get_device(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
@@ -367,22 +376,39 @@ mqtt_test(Config) ->
     ok = wait_for_report_status(PubKeyBin),
     ok = wait_for_ack(?REPLY_DELAY + 250),
 
-
-    ETSKey = {<<"yolo_id">>, <<"fake_mqtt">>},
-    Msg0 = {false, 1, <<"mqttpayload">>},
-    [{ETSKey, MQQTTWorkerPid}] = ets:lookup(router_mqtt_workers, ETSKey),
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
 
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
     ok = wait_for_post_channel(PubKeyBin),
     ok = wait_for_report_status(PubKeyBin),
+    Msg0 = {false, 1, <<"mqttpayload">>},
     {ok, _} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
 
 
     libp2p_swarm:stop(Swarm),
     ?assert(meck:validate(emqtt)),
     meck:unload(emqtt),
+    ok.
+
+aws_test(_Config) ->
+    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
+    UUID = list_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", 
+                                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E])),
+    DeviceID = <<"TEST_", UUID/binary>>,
+    AWSArgs = #{aws_access_key => os:getenv("aws_access_key"),
+                aws_secret_key => os:getenv("aws_secret_key"),
+                aws_region => "us-west-1",
+                topic => <<"helium">>},
+    Channel = router_channel:new(<<"channel_id">>, router_aws_channel, <<"aws">>, AWSArgs, DeviceID, self()),
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    timer:sleep(250),
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Channel]),
+    {ok, EventMgrRef} = router_channel:start_link(),
+    _ = router_channel:add(EventMgrRef, Channel),
+    timer:sleep(5000),
+    gen_event:stop(EventMgrRef),
+    gen_server:stop(DeviceWorkerPid),
     ok.
 
 
@@ -394,43 +420,53 @@ wait_for_report_status(PubKeyBin) ->
     wait_for_report_status(PubKeyBin, <<"success">>).
 
 wait_for_report_status(PubKeyBin, Status) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    BinName = erlang:list_to_binary(AName),
-    receive
-        {report_status, Body} ->
-            Map = jsx:decode(Body, [return_maps]),
-            case Map of
-                #{<<"status">> := Status,
-                  <<"hotspot_name">> := BinName} ->
-                    ok;
-                _ ->
-                    wait_for_report_status(PubKeyBin),
-                    self()  ! {report_status, Body},
-                    ok
-            end
-    after 250 ->
-            ct:fail("report_status timeout")
+    try
+        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+        BinName = erlang:list_to_binary(AName),
+        receive
+            {report_status, Body} ->
+                Map = jsx:decode(Body, [return_maps]),
+                case Map of
+                    #{<<"status">> := Status,
+                      <<"hotspot_name">> := BinName} ->
+                        ok;
+                    _ ->
+                        wait_for_report_status(PubKeyBin),
+                        self()  ! {report_status, Body},
+                        ok
+                end
+        after 250 ->
+                ct:fail("report_status timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("report_status stacktrace ~p~n", [Stacktrace])
     end.
 
 wait_for_post_channel(PubKeyBin) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    BinName = erlang:list_to_binary(AName),
-    receive
-        {channel, Data} ->
-            Map = jsx:decode(Data, [return_maps]),
-            AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
-            DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
-            #{
-              <<"app_eui">> := AppEUI,
-              <<"dev_eui">> := DevEUI,
-              <<"payload">> := <<>>,
-              <<"spreading">> := <<"SF8BW125">>,
-              <<"gateway">> := BinName
-             } = Map,
-            ok
-    after 250 ->
-            ct:fail("wait_for_post_channel timeout")
+    try
+        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+        BinName = erlang:list_to_binary(AName),
+        receive
+            {channel, Data} ->
+                Map = jsx:decode(Data, [return_maps]),
+                AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
+                DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
+                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+                #{
+                  <<"app_eui">> := AppEUI,
+                  <<"dev_eui">> := DevEUI,
+                  <<"payload">> := <<>>,
+                  <<"spreading">> := <<"SF8BW125">>,
+                  <<"hotspot_name">> := BinName
+                 } = Map,
+                ok
+        after 250 ->
+                ct:fail("wait_for_post_channel timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("wait_for_post_channel stacktrace ~p~n", [Stacktrace])
     end.
 
 wait_for_reply() ->
@@ -596,14 +632,6 @@ deframe_packet(Packet, SessionKey) ->
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, router_device:device()} | {error, any()}.
-get_device(DB, CF, ID) ->
-    case rocksdb:get(DB, CF, ID, []) of
-        {ok, BinDevice} -> {ok, router_device:deserialize(BinDevice)};
-        not_found -> {error, not_found};
-        Error -> Error
-    end.
 
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),

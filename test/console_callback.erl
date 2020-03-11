@@ -51,7 +51,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
              <<"channels">> => [Channel]
             },
-    case DID == <<"yolo">> of
+    case DID == <<"unknown">> of
         true ->
             {200, [], jsx:encode([Body])};
         false ->

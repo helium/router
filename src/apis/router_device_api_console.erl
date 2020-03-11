@@ -21,7 +21,7 @@ init(_Args) ->
 get_devices(DevEui, AppEui) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
-    case hackney:get(<<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", AppEui/binary, "?oui=", DevEui/binary>>,
+    case hackney:get(<<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
                      [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
             lists:map(

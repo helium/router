@@ -619,7 +619,7 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
     Map = #{timestamp => Time,
             sequence => router_device:fcnt(Device),
             spreading => erlang:list_to_binary(DataRate),
-            payload => base64:encode(Data),
+            payload => Data,
             hotspot_name => erlang:list_to_binary(AName),
             rssi => RSSI,
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),

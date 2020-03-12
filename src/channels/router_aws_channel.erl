@@ -57,16 +57,15 @@ handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
     Fcnt = maps:get(sequence, Data),
-    Payload = jsx:encode(Data),
     case router_channel:dupes(Channel) of
         true ->
-            Res = emqtt:publish(Conn, Topic, Payload, 0),
+            Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
             ok = handle_publish_res(Res, Channel, Data),
             lager:info("published: ~p result: ~p", [Data, Res]);
         false ->
             case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
                 {ok, _, _} ->
-                    Res = emqtt:publish(Conn, Topic, Payload, 0),
+                    Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
                     ok = handle_publish_res(Res, Channel, Data),
                     lager:info("published: ~p result: ~p", [Data, Res]);
                 _ ->
@@ -104,10 +103,14 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec encode_data(map()) -> binary().
+encode_data(#{payload := Payload}=Map) ->
+    jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
+
 -spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
 handle_publish_res(Res, Channel, Data) ->
     DeviceWorkerPid = router_channel:device_worker(Channel),
-    Payload = jsx:encode(Data),
+    Payload = maps:get(payload, Data),
     Result0 = #{channel_name => router_channel:name(Channel),
                 payload => base64:encode(Payload),
                 payload_size => erlang:byte_size(Payload), 

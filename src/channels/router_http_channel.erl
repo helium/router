@@ -36,16 +36,15 @@ handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, met
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
     Fcnt = maps:get(sequence, Data),
-    Payload = jsx:encode(Data),
     case router_channel:dupes(Channel) of
         true ->
-            Res = make_http_req(Method, URL, Headers, Payload),
+            Res = make_http_req(Method, URL, Headers, encode_data(Data)),
             ok = handle_http_res(Res, Channel, Data),
             lager:info("published: ~p result: ~p", [Data, Res]);
         false ->
             case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
                 {ok, _, _} ->
-                    Res = make_http_req(Method, URL, Headers, Payload),
+                    Res = make_http_req(Method, URL, Headers, encode_data(Data)),
                     ok = handle_http_res(Res, Channel, Data),
                     lager:info("published: ~p result: ~p", [Data, Res]);
                 _ ->
@@ -75,6 +74,10 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec encode_data(map()) -> binary().
+encode_data(#{payload := Payload}=Map) ->
+    jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
+
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->
     try hackney:request(Method, URL, Headers, Payload, [with_body]) of
@@ -86,7 +89,7 @@ make_http_req(Method, URL, Headers, Payload) ->
 -spec handle_http_res(any(), router_channel:channel(), map()) -> ok.
 handle_http_res(Res, Channel, Data) ->
     DeviceWorkerPid = router_channel:device_worker(Channel),
-    Payload = jsx:encode(Data),
+    Payload = maps:get(payload, Data),
     Result0 = #{channel_name => router_channel:name(Channel),
                 payload => base64:encode(Payload),
                 payload_size => erlang:byte_size(Payload), 

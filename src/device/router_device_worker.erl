@@ -87,6 +87,7 @@ init(Args) ->
                  _ -> router_device:new(ID)
              end,
     {ok, EventMgrRef} = router_channel:start_link(),
+    self() ! refresh_channels,
     {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
 handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
@@ -114,7 +115,6 @@ handle_cast({join, Packet0, PubkeyBin, AppKey, DeviceID, Pid}, #state{device=Dev
         {error, _Reason} ->
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
-            self() ! refresh_channels,
             RSSI0 = Packet0#packet_pb.signal_strength,
             Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubkeyBin}, Cache0),
             State1 = State0#state{device=Device1},

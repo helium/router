@@ -51,7 +51,7 @@ init(Channel) ->
     {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
     (catch emqtt:ping(Conn)),
     erlang:send_after(25000, self(), ping),
-    {ok, #state{channel=Channel, connection=Conn, topic=Topic}}.
+    {ok, #state{channel=Channel, connection=Conn, topic=Topic, aws=AWS}}.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
@@ -136,11 +136,9 @@ connect(DeviceID, Hostname, Key, Cert) ->
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
     Opts = [{host, Hostname},
             {port, 8883},
-            {client_id, DeviceID},
-            {logger, {lager, debug}},
+            {clientid, DeviceID},
             {keepalive, 30},
-            {connack_timeout, 5},
-            {clean_sess, true},
+            {clean_start, true},
             {ssl, true},
             {ssl_opts, [{cert, der_encode_cert(Cert)},
                         {key, {'ECPrivateKey', EncodedPrivKey}}]}],

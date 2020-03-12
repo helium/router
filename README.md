@@ -1,3 +1,5 @@
+[![Build status](https://badge.buildkite.com/e55c0afff2b3ae9f7a358846c8832947586fb5db7d8b33293a.svg?branch=master)](https://buildkite.com/helium/routerv3)
+
 # Router
 
 ## Docker

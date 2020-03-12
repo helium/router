@@ -119,6 +119,7 @@ handle_publish_res(Res, Channel, Data) ->
     DeviceWorkerPid = router_channel:device_worker(Channel),
     Payload = maps:get(payload, Data),
     Result0 = #{channel_name => router_channel:name(Channel),
+                port => maps:get(port, Data),
                 payload => base64:encode(Payload),
                 payload_size => erlang:byte_size(Payload), 
                 reported_at => erlang:system_time(seconds),

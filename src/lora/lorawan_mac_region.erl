@@ -148,7 +148,7 @@ datars(Region)
                                                            {2,  {8, 125}, up},
                                                            {3,  {7, 125}, up},
                                                            {4,  {8, 500}, up}
-                                                           | us_down_datars()];
+                                                          | us_down_datars()];
 datars(Region)
   when Region == <<"AU915">> -> [
                                  {0,  {12, 125}, up},
@@ -158,7 +158,7 @@ datars(Region)
                                  {4,  {8, 125}, up},
                                  {5,  {7, 125}, up},
                                  {6,  {8, 500}, up}
-                                 | us_down_datars()];
+                                | us_down_datars()];
 datars(_Region) -> [
                     {0, {12, 125}, updown},
                     {1, {11, 125}, updown},

@@ -613,13 +613,14 @@ report_device_status(Type, AName, Msg, Category) ->
 -spec send_to_channel(#packet_pb{}, router_device:device(), #frame{}, string(), #state{}) -> ok.
 send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RSSI, snr=SNR},
                 Device,
-                #frame{data=Data},
+                #frame{data=Data, fport=Port},
                 AName,
                 #state{event_mgr=EventMgrRef}) ->
     Map = #{timestamp => Time,
             sequence => router_device:fcnt(Device),
             spreading => erlang:list_to_binary(DataRate),
             payload => Data,
+            port => Port,
             hotspot_name => erlang:list_to_binary(AName),
             rssi => RSSI,
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),

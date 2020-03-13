@@ -48,6 +48,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
               end,
     Body = #{
              <<"id">> => <<"yolo_id">>,
+             <<"name">> => <<"yolo_name">>,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
              <<"channels">> => [Channel]
             },

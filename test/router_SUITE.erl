@@ -1,11 +1,5 @@
 -module(router_SUITE).
 
--include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include_lib("common_test/include/ct.hrl").
--include_lib("eunit/include/eunit.hrl").
--include("device_worker.hrl").
--include("lorawan_vars.hrl").
-
 -export([
          all/0,
          init_per_testcase/2,
@@ -19,6 +13,12 @@
          mqtt_test/1,
          aws_test/1
         ]).
+
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("device_worker.hrl").
+-include("lorawan_vars.hrl").
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
@@ -318,7 +318,7 @@ mqtt_test(Config) ->
       emqtt,
       subscribe,
       fun(_Pid, {_Topic, _QoS}) ->
-              ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, _QoS}]),
+              ct:pal("emqtt:subscribe ~p~n", [{_Topic, _QoS}]),
               Self ! {mqtt_worker, self()},
               ok
       end
@@ -327,8 +327,8 @@ mqtt_test(Config) ->
       emqtt,
       publish,
       fun(_Pid, _Topic, Payload, _QoS) ->
-              Self ! {channel, Payload},
-              ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {_Topic, Payload}]),
+              Self ! {channel_data, Payload},
+              ct:pal("emqtt:publish ~p~n", [{_Topic, Payload, _QoS}]),
               ok
       end
      ),
@@ -345,6 +345,7 @@ mqtt_test(Config) ->
                                                    router_handler_test,
                                                    [self()]),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
@@ -359,10 +360,16 @@ mqtt_test(Config) ->
                 ct:fail("mqtt_worker timeout")
         end,
 
-    %% Waiting for console repor status sent
-    ok = wait_for_report_status(PubKeyBin),
+    %% Waiting for console report status sent
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
     %% Waiting for reply resp form router
-    ok = wait_for_reply(),
+    test_utils:wait_state_channel_message(250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
@@ -371,20 +378,69 @@ mqtt_test(Config) ->
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 0,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_mqtt">>}),
+    test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 
-    ok = wait_for_post_channel(PubKeyBin),
-    ok = wait_for_report_status(PubKeyBin),
-    ok = wait_for_ack(?REPLY_DELAY + 250),
-
+    %% Simulating the MQTT broker sending down a packet to transfer to device
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
-
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
-    ok = wait_for_post_channel(PubKeyBin),
-    ok = wait_for_report_status(PubKeyBin),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 1,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"ack">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 1,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_mqtt">>}),
     Msg0 = {false, 1, <<"mqttpayload">>},
-    {ok, _} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
-
+    {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
 
     libp2p_swarm:stop(Swarm),
     ?assert(meck:validate(emqtt)),

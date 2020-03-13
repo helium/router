@@ -208,7 +208,19 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
     end,
     {noreply, State};
 handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
-    Channels1 = lists:foldl(
+    APIChannels = router_device_api:get_channels(Device, self()),
+    Channels1 =
+        case APIChannels == [] of
+            true ->
+                lists:foreach(
+                  fun({router_no_channel, _}) -> ok;
+                     (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
+                  end,
+                  gen_event:which_handlers(EventMgrRef)),
+                NoChannel = maybe_start_no_channel(Device, EventMgrRef),
+                #{router_channel:id(NoChannel) => router_channel:hash(NoChannel)};
+            false ->
+                lists:foldl(
                   fun(Channel, Acc) ->
                           ID = router_channel:id(Channel),
                           Hash = router_channel:hash(Channel),
@@ -239,7 +251,8 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                           end
                   end,
                   Channels0,
-                  router_device_api:get_channels(Device, self())),
+                  APIChannels)
+        end,
     erlang:send_after(timer:minutes(5), self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
 handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Channels, device=Device}) ->
@@ -272,6 +285,21 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
+maybe_start_no_channel(Device, EventMgrRef) ->
+    Handlers = gen_event:which_handlers(EventMgrRef),
+    NoChannel = router_channel:new(<<"no_channel">>,
+                                   router_no_channel,
+                                   <<"no_channel">>,
+                                   #{},
+                                   router_device:id(Device),
+                                   self()),
+    case lists:keyfind(router_no_channel, 1, Handlers) of
+        {router_no_channel, _} -> noop;
+        _ -> router_channel:add(EventMgrRef, NoChannel)
+    end,
+    NoChannel.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -356,7 +384,7 @@ maybe_start_worker(DeviceID) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device()) ->
-                         {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
+          {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
             PubkeyBin, AppKey, DeviceName, Device) when MType == ?JOIN_REQ ->
@@ -365,7 +393,7 @@ handle_join(_Packet, _PubkeyBin, _AppKey, _DeviceName, _Device) ->
     {error, not_join_req}.
 
 -spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device(), non_neg_integer()) ->
-                         {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
+          {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
             PubkeyBin, _AppKey, DeviceName, _Device, OldNonce) when Nonce == OldNonce ->

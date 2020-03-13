@@ -2,10 +2,8 @@
 
 -behaviour(elli_handler).
 
--export([
-         handle/2,
-         handle_event/3
-        ]).
+-export([handle/2,
+         handle_event/3]).
 
 handle(Req, _Args) ->
     handle(elli_request:method(Req), elli_request:path(Req), Req, _Args).
@@ -21,37 +19,35 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                       [] -> http;
                       [{channel_type, Type}] -> Type
                   end,
+    NoChannel = case ets:lookup(Tab, no_channel) of
+                    [] -> false;
+                    [{no_channel, No}] -> No
+                end,
     Channel = case ChannelType of
                   http ->
-                      #{
-                        <<"type">> => <<"http">>,
-                        <<"credentials">> => #{
-                                               <<"headers">> => #{},
+                      #{<<"type">> => <<"http">>,
+                        <<"credentials">> => #{<<"headers">> => #{},
                                                <<"endpoint">> => <<"http://localhost:3000/channel">>,
-                                               <<"method">> => <<"POST">>
-                                              },
+                                               <<"method">> => <<"POST">>},
                         <<"show_dupes">> => ShowDupes,
                         <<"id">> => <<"12345">>,
-                        <<"name">> => <<"fake_http">>
-                       };
+                        <<"name">> => <<"fake_http">>};
                   mqtt ->
-                      #{
-                        <<"type">> => <<"mqtt">>,
-                        <<"credentials">> => #{
-                                               <<"endpoint">> => <<"mqtt://user:pass@test.com:1883">>,
-                                               <<"topic">> => <<"test/">>
-                                              },
+                      #{<<"type">> => <<"mqtt">>,
+                        <<"credentials">> => #{<<"endpoint">> => <<"mqtt://user:pass@test.com:1883">>,
+                                               <<"topic">> => <<"test/">>},
                         <<"show_dupes">> => ShowDupes,
                         <<"id">> => <<"56789">>,
-                        <<"name">> => <<"fake_mqtt">>
-                       }
+                        <<"name">> => <<"fake_mqtt">>}
               end,
-    Body = #{
-             <<"id">> => <<"yolo_id">>,
+    Channels = case NoChannel of
+                   true -> [];
+                   false -> [Channel]
+               end,
+    Body = #{<<"id">> => <<"yolo_id">>,
              <<"name">> => <<"yolo_name">>,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-             <<"channels">> => [Channel]
-            },
+             <<"channels">> => Channels},
     case DID == <<"unknown">> of
         true ->
             {200, [], jsx:encode([Body])};

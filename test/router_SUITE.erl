@@ -11,7 +11,8 @@
          dupes_test/1,
          join_test/1,
          mqtt_test/1,
-         aws_test/1
+         aws_test/1,
+         no_channel_test/1
         ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -41,7 +42,8 @@ all() ->
      http_test,
      dupes_test,
      join_test,
-     mqtt_test
+     mqtt_test,
+     no_channel_test
     ].
 
 %%--------------------------------------------------------------------
@@ -691,6 +693,59 @@ aws_test(_Config) ->
     gen_server:stop(DeviceWorkerPid),
     ok.
 
+no_channel_test(Config) ->
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {no_channel, true}),
+    BaseDir = proplists:get_value(base_dir, Config),
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = test_utils:start_swarm(BaseDir, no_channel_swarm, 3616),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for console repor status sent
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    %% Waiting for reply resp form router
+    test_utils:wait_state_channel_message(250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(<<"yolo_id">>),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    %% Send CONFIRMED_UP frame packet needing an ack back
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => <<"no channels configured">>,
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"no_channel">>}),
+
+    libp2p_swarm:stop(Swarm),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Helper functions

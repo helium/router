@@ -26,32 +26,17 @@
 
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
-                connection :: pid(),
-                topic :: binary()}).
+                connection :: pid() | undefined,
+                topic :: binary()  | undefined}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Channel) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
-    #{aws_access_key := AccessKey,
-      aws_secret_key := SecretKey,
-      aws_region := Region,
-      topic := Topic} = router_channel:args(Channel),
-    DeviceID = router_channel:device_id(Channel),
     {ok, AWS} = httpc_aws:start_link(),
-    httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
-    httpc_aws:set_region(AWS, Region),
-    ok = ensure_policy(AWS),
-    ok = ensure_thing_type(AWS),
-    ok = ensure_thing(AWS, DeviceID),
-    {ok, Key, Cert} = ensure_certificate(AWS, DeviceID),
-    {ok, Endpoint} = get_iot_endpoint(AWS),
-    {ok, Conn} = connect(DeviceID, Endpoint, Key, Cert),
-    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
-    (catch emqtt:ping(Conn)),
-    erlang:send_after(25000, self(), ping),
-    {ok, #state{channel=Channel, connection=Conn, topic=Topic, aws=AWS}}.
+    self() ! post_init,
+    {ok, #state{channel=Channel, aws=AWS}}.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
@@ -81,6 +66,25 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
+
+handle_info(post_init, #state{channel=Channel, aws=AWS}=State) ->
+    #{aws_access_key := AccessKey,
+      aws_secret_key := SecretKey,
+      aws_region := Region,
+      topic := Topic} = router_channel:args(Channel),
+    DeviceID = router_channel:device_id(Channel),
+    httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
+    httpc_aws:set_region(AWS, Region),
+    ok = ensure_policy(AWS),
+    ok = ensure_thing_type(AWS),
+    ok = ensure_thing(AWS, DeviceID),
+    {ok, Key, Cert} = ensure_certificate(AWS, DeviceID),
+    {ok, Endpoint} = get_iot_endpoint(AWS),
+    {ok, Conn} = connect(DeviceID, Endpoint, Key, Cert),
+    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
+    (catch emqtt:ping(Conn)),
+    erlang:send_after(25000, self(), ping),
+    {ok, State#state{connection=Conn, topic=Topic}};
 handle_info({publish, _Map}, State) ->
     %% TODO
     {ok, State};

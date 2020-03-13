@@ -72,7 +72,19 @@ handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
     Pid ! {channel_data, elli_request:body(Req)},
-    {200, [], <<"success">>};
+    Body = elli_request:body(Req),
+    try jsx:decode(Body, [return_maps]) of
+        JSON ->
+            Reply = base64:encode(<<"reply">>),
+            case maps:find(<<"payload">>, JSON) of
+                {ok, Reply} ->
+                    {200, [], jsx:encode(#{payload_raw => base64:encode(<<"ack">>), port => 1, confirmed => true})};
+                _ ->
+                    {200, [], <<"success">>}
+            end
+    catch _:_ ->
+            {200, [], <<"success">>}
+    end;
 handle(_Method, _Path, _Req, _Args) ->
     ct:pal("got unknown ~p req on ~p args=~p", [_Method, _Path, _Args]),
     {404, [], <<"Not Found">>}.

@@ -102,6 +102,7 @@ handle_http_res(Res, Channel, Data) ->
                 frame_up => maps:get(sequence, Data)},
     Result1 = case Res of
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
+                      router_device_worker:handle_downlink(ResponseBody, Channel),
                       maps:merge(Result0, #{status => success, description => ResponseBody});
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
                       maps:merge(Result0, #{status => failure, 

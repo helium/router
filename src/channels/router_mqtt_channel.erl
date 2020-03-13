@@ -159,15 +159,30 @@ connect(URI, DeviceID, Name) ->
     case http_uri:parse(URI, Opts) of
         {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when Scheme == mqtt orelse
                                                                  Scheme == mqtts ->
-            [Username, Password] = binary:split(UserInfo, <<":">>),
+            %% An optional userinfo subcomponent that may consist of a user name
+            %% and an optional password preceded by a colon (:), followed by an
+            %% at symbol (@). Use of the format username:password in the userinfo
+            %% subcomponent is deprecated for security reasons. Applications
+            %% should not render as clear text any data after the first colon
+            %% (:) found within a userinfo subcomponent unless the data after
+            %% the colon is the empty string (indicating no password).
+            {Username, Password} = case UserInfo of
+                                       <<>> -> [undefined, undefined];
+                                       _ ->
+                                           case binary:split(UserInfo, <<":">>) of
+                                               [Un, <<>>] -> {Un, undefined};
+                                               [Un, Pw] -> {Un, Pw};
+                                               [Un] -> {Un, undefined}
+                                           end
+                                   end,
             EmqttOpts = [{host, erlang:binary_to_list(Host)},
                          {port, Port},
-                         {clientid, DeviceID},
-                         {username, Username},
-                         {password, Password},
-                         {clean_start, false},
-                         {keepalive, 30},
-                         {ssl, Scheme == mqtts}],
+                         {clientid, DeviceID}] ++
+                [{username, Username} || Username /= undefined] ++
+                [{password, Password} || Password /= undefined] ++
+                [{clean_start, false},
+                 {keepalive, 30},
+                 {ssl, Scheme == mqtts}],
             {ok, C} = emqtt:start_link(EmqttOpts),
             {ok, _Props} = emqtt:connect(C),
             lager:info("connect returned ~p", [_Props]),

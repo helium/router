@@ -3,7 +3,7 @@
 -export([start_swarm/3, wait_for_join_resp/3,
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
-         wait_state_channel_message/1, wait_state_channel_message/8,
+         wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
          tmp_dir/0, tmp_dir/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -57,9 +57,9 @@ wait_report_device_status(Expected) ->
                 case match_map(Expected, Got) of
                     true ->
                         ok;
-                    false ->
+                    {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_report_device_status data failed")
+                        ct:fail("wait_report_device_status data failed ~p", [Reason])
                 end
         after 250 ->
                 ct:fail("wait_report_device_status timeout")
@@ -71,68 +71,53 @@ wait_report_device_status(Expected) ->
     end.
 
 wait_report_channel_status(Expected) ->
-    try
-        receive
-            {report_status, Body} ->
-                Got = jsx:decode(Body, [return_maps]), 
-                case match_map(Expected, Got) of
-                    true ->
-                        ok;
-                    false ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_report_channel_status data failed")
-                end
-        after 250 ->
-                ct:fail("wait_report_channel_status timeout")
-        end
-    catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_report_channel_status stacktrace ~p~n", [Stacktrace]),
-            ct:fail("wait_report_channel_status failed")
+    receive
+        {report_status, Body} ->
+            Got = jsx:decode(Body, [return_maps]), 
+            case match_map(Expected, Got) of
+                true ->
+                    ok;
+                {false, Reason} ->
+                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                    ct:fail("wait_report_channel_status data failed ~p", [Reason])
+            end
+    after 250 ->
+              ct:fail("wait_report_channel_status timeout")
     end.
 
 wait_channel_data(Expected) ->
-    try
-        receive
-            {channel_data, Body} ->
-                Got = jsx:decode(Body, [return_maps]), 
-                case match_map(Expected, Got) of
-                    true ->
-                        ok;
-                    false ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_channel_data failed")
-                end
-        after 250 ->
-                ct:fail("wait_channel_data timeout")
-        end
-    catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_channel_data stacktrace ~p~n", [Stacktrace]),
-            ct:fail("wait_channel_data failed")
+    receive
+        {channel_data, Body} ->
+            Got = jsx:decode(Body, [return_maps]), 
+            case match_map(Expected, Got) of
+                true ->
+                    ok;
+                {false, Reason} ->
+                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                    ct:fail("wait_channel_data failed ~p", [Reason])
+            end
+    after 250 ->
+              ct:fail("wait_channel_data timeout")
     end.
 
 wait_state_channel_message(Timeout) ->
-    try
-        receive
-            {client_data, undefined, Data} ->
-                try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                    #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                        #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                        ok;
-                    _Else ->
-                        ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
-                catch
-                    _E:_R ->
-                        ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
-                end
-        after Timeout ->
-                ct:fail("wait_state_channel_message timeout")
-        end
-    catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [Stacktrace]),
-            ct:fail("wait_state_channel_message failed")
+    wait_state_channel_message(Timeout, undefined).
+
+wait_state_channel_message(Timeout, PubkeyBin) ->
+    receive
+        {client_data, PubkeyBin, Data} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
+                    ok;
+                _Else ->
+                    ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
+            catch
+                _E:_R ->
+                    ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
+            end
+    after Timeout ->
+              ct:fail("wait_state_channel_message timeout")
     end.
 
 wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
@@ -184,23 +169,31 @@ tmp_dir(SubDir) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec match_map(map(), map()) -> boolean().
+-spec match_map(map(), map()) -> true | {false, term()}.
 match_map(Expected, Got) ->
     case maps:size(Expected) == maps:size(Got) of
         false ->
-            false;
+            {false, {size_mismatch, maps:size(Expected), maps:size(Got)}};
         true ->
             maps:fold(
-              fun(_K, _V, false) ->
-                      false;
+              fun(_K, _V, {false, _}=Acc) ->
+                      Acc;
                  (K, V, true) when is_function(V) ->
-                      V(maps:get(K, Got, undefined));
+                      case V(maps:get(K, Got, undefined)) of
+                          true ->
+                              true;
+                          false ->
+                              {false, {value_predicate_failed, K, maps:get(K, Got, undefined)}}
+                      end;
                  (K, '_', true) ->
-                      maps:is_key(K, Got);
+                      case maps:is_key(K, Got) of
+                          true -> true;
+                          false -> {false, {missing_key, K}}
+                      end;
                  (K, V, true) ->
                       case maps:get(K, Got, undefined) of
                           V -> true;
-                          _ -> false
+                          _ -> {false, {value_mismatch, K, V, maps:get(K, Got, undefined)}}
                       end
               end,
               true,

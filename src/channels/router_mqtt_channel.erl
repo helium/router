@@ -181,9 +181,15 @@ connect(URI, DeviceID, Name) ->
                  {keepalive, 30},
                  {ssl, Scheme == mqtts}],
             {ok, C} = emqtt:start_link(EmqttOpts),
-            {ok, _Props} = emqtt:connect(C),
-            lager:info("connect returned ~p", [_Props]),
-            {ok, C};
+            case emqtt:connect(C) of
+                {ok, _Props} ->
+                    lager:info("connect returned ~p", [_Props]),
+                    {ok, C};
+                {error, Reason} ->
+                    lager:info("Failed to connect to ~p ~p : ~p", [Host, Port,
+                                                                   Reason]),
+                    error
+            end;
         _ ->
             lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
             error

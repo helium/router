@@ -93,7 +93,7 @@ end_per_testcase(_TestCase, Config) ->
 http_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = start_swarm(BaseDir, http_test_swarm, 3616),
+    Swarm = test_utils:start_swarm(BaseDir, http_test_swarm, 3616),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -206,7 +206,7 @@ dupes_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     ets:insert(Tab, {show_dupes, true}),
     BaseDir = proplists:get_value(base_dir, Config),
-    Swarm = start_swarm(BaseDir, dupes_test_swarm, 3617),
+    Swarm = test_utils:start_swarm(BaseDir, dupes_test_swarm, 3617),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -473,8 +473,8 @@ join_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    Swarm0 = start_swarm(BaseDir, join_test_swarm_0, 3620),
-    Swarm1 = start_swarm(BaseDir, join_test_swarm_1, 3621),
+    Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
+    Swarm1 = test_utils:start_swarm(BaseDir, join_test_swarm_1, 3621),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm1),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
@@ -516,7 +516,7 @@ join_test(Config) ->
                                            <<"frame_down">> => 0,
                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
     %% Waiting for reply resp form router
-    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
+    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
@@ -560,7 +560,7 @@ mqtt_test(Config) ->
     ets:insert(Tab, {channel_type, mqtt}),
     BaseDir = proplists:get_value(base_dir, Config),
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = start_swarm(BaseDir, http_test_swarm, 3616),
+    Swarm = test_utils:start_swarm(BaseDir, http_test_swarm, 3616),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -696,23 +696,6 @@ aws_test(_Config) ->
 %% Helper functions
 %% ------------------------------------------------------------------
 
-wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
-    receive
-        {client_data, PubKeyBin, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                    ct:pal("packet ~p", [Packet]),
-                    Frame = deframe_join_packet(Packet, JoinNonce, AppKey),
-                    ct:pal("Join response ~p", [Frame]),
-                    Frame
-            catch _:_ ->
-                    ct:fail("invalid join response")
-            end
-    after 1000 ->
-            ct:fail("missing_join for")
-    end.
-
 join_packet(PubKeyBin, AppKey, DevNonce) ->
     join_packet(PubKeyBin, AppKey, DevNonce, 0).
 
@@ -771,36 +754,6 @@ frame_packet(MType, PubKeyBin, SessionKey, FCnt, Options) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
-deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>}, DevNonce, AppKey) when MType == ?JOIN_ACCEPT ->
-    ct:pal("Enc join ~w", [EncPayload]),
-    <<AppNonce:3/binary, NetID:3/binary, DevAddr:4/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, MIC:4/binary>> = Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
-    ct:pal("Dec join ~w", [Payload]),
-                                                %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
-    MIC = crypto:cmac(aes_cbc128, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
-    NetID = <<"He2">>,
-    NwkSKey = crypto:block_encrypt(aes_ecb,
-                                   AppKey,
-                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    AppSKey = crypto:block_encrypt(aes_ecb,
-                                   AppKey,
-                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
-
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
-start_swarm(BaseDir, Name, Port) ->
-    #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-    Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
-    SwarmOpts = [
-                 {base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
-                 {key, Key},
-                 {libp2p_group_gossip, [{seed_nodes, []}]},
-                 {libp2p_nat, [{enabled, false}]},
-                 {libp2p_proxy, [{limit, 1}]}
-                ],
-    {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
-    libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
-    ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
-    Swarm.

@@ -1,6 +1,7 @@
 -module(test_utils).
 
--export([wait_report_device_status/1, wait_report_channel_status/1,
+-export([start_swarm/3, wait_for_join_resp/3,
+         wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/8,
          tmp_dir/0, tmp_dir/1]).
@@ -13,6 +14,40 @@
 
 -define(BASE_TMP_DIR, "./_build/test/tmp").
 -define(BASE_TMP_DIR_TEMPLATE, "XXXXXXXXXX").
+
+
+start_swarm(BaseDir, Name, Port) ->
+    #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
+    SwarmOpts = [
+                 {base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
+                 {key, Key},
+                 {libp2p_group_gossip, [{seed_nodes, []}]},
+                 {libp2p_nat, [{enabled, false}]},
+                 {libp2p_proxy, [{limit, 1}]}
+                ],
+    {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
+    libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
+    ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
+    Swarm.
+
+wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
+    receive
+        {client_data, PubKeyBin, Data} ->
+            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
+                    ct:pal("packet ~p", [Packet]),
+                    Frame = deframe_join_packet(Packet, JoinNonce, AppKey),
+                    ct:pal("Join response ~p", [Frame]),
+                    Frame
+            catch _:_ ->
+                    ct:fail("invalid join response")
+            end
+    after 1000 ->
+            ct:fail("missing_join for")
+    end.
+
 
 wait_report_device_status(Expected) ->
     try
@@ -190,4 +225,19 @@ deframe_packet(Packet, SessionKey) ->
     #frame{mtype=MType, devaddr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fdownopts(FOpts), fport=FPort, data=Data}.
 
+deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>}, DevNonce, AppKey) when MType == ?JOIN_ACCEPT ->
+    ct:pal("Enc join ~w", [EncPayload]),
+    <<AppNonce:3/binary, NetID:3/binary, DevAddr:4/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, MIC:4/binary>> = Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
+    ct:pal("Dec join ~w", [Payload]),
+                                                %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
+    MIC = crypto:cmac(aes_cbc128, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
+    NetID = <<"He2">>,
+    NwkSKey = crypto:block_encrypt(aes_ecb,
+                                   AppKey,
+                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+    AppSKey = crypto:block_encrypt(aes_ecb,
+                                   AppKey,
+                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+    {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
 

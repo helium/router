@@ -83,11 +83,11 @@ hash(Channel0) ->
 start_link() ->
     gen_event:start_link().
 
--spec add(pid(), channel()) -> ok.
+-spec add(pid(), channel()) -> ok | {'EXIT', term()} | {error, term()}.
 add(Pid, Channel) ->
     Handler = ?MODULE:handler(Channel),
     ID = ?MODULE:id(Channel),
-    ok = gen_event:add_handler(Pid, {Handler, ID}, Channel).
+    gen_event:add_sup_handler(Pid, {Handler, ID}, Channel).
 
 -spec handle_data(pid(), map()) -> ok.
 handle_data(Pid, Data) ->

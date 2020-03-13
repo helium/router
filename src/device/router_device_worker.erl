@@ -214,22 +214,51 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                           Hash = router_channel:hash(Channel),
                           case maps:get(ID, Acc, undefined) of
                               undefined ->
-                                  router_channel:add(EventMgrRef, Channel),
-                                  maps:put(ID, Hash, Acc);
+                                  case router_channel:add(EventMgrRef, Channel) of
+                                      ok ->
+                                          maps:put(ID, Hash, Acc);
+                                      {E, Reason} when E == 'EXIT'; E == error ->
+                                          router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
+                                                                                            status => failure,
+                                                                                            description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))})
+                                  end;
                               Hash ->
                                   Acc;
                               _OldHash ->
                                   %% TODO: This can be improved (waiting on websockets)
                                   Handler = router_channel:handler(Channel),
                                   _ = gen_event:delete_handler(EventMgrRef, {Handler, ID}, []),
-                                  router_channel:add(EventMgrRef, Channel),
-                                  maps:put(ID, Hash, Acc)
+                                  case router_channel:add(EventMgrRef, Channel) of
+                                      ok ->
+                                          maps:put(ID, Hash, Acc);
+                                      {E, Reason} when E == 'EXIT'; E == error ->
+                                          router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
+                                                                                            status => failure,
+                                                                                            description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))})
+                                  end
                           end
                   end,
                   Channels0,
                   router_device_api:get_channels(Device, self())),
     erlang:send_after(timer:minutes(5), self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
+handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Channels, device=Device}) ->
+    case Reason of
+        normal ->
+            {noreply, State#state{channels=maps:remove(ID, Channels)}};
+        shutdown ->
+            {noreply, State#state{channels=maps:remove(ID, Channels)}};
+        {swapped, _NewHandler, _Pid} ->
+            %% unclear what this means for channels right now
+            {noreply, State};
+        Error ->
+            %% We don't have channel name here, report by ID
+            router_device_api:report_channel_status(Device, #{channel_id => ID, status => failure,
+                                                              description => list_to_binary(io_lib:format("~p", [Error]))}),
+            %% TODO use exponential backoff or throttle here?
+            erlang:send_after(timer:seconds(15), self(), refresh_channels),
+            {noreply, State#state{channels=maps:remove(ID, Channels)}}
+    end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

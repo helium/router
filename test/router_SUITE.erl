@@ -107,7 +107,6 @@ http_test(Config) ->
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
-
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
@@ -216,18 +215,23 @@ dupes_test(Config) ->
                                                    router_handler_test,
                                                    [self()]),
     PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce)},
-
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
-    ok = wait_for_report_status(PubKeyBin1),
-
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
     %% Waiting for reply resp form router
-    ok = wait_for_reply(),
+    test_utils:wait_state_channel_message(250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
@@ -244,14 +248,68 @@ dupes_test(Config) ->
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), 0)},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
+    {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 0)},
-    ok = wait_for_post_channel(PubKeyBin1),
-    ok = wait_for_report_status(PubKeyBin1),
-    ok = wait_for_post_channel(PubKeyBin2),
-    ok = wait_for_report_status(PubKeyBin2),
-    {ok, Reply1} = wait_for_reply(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName1),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 0,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName1),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 0,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    {ok, Reply1} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
     ct:pal("Reply ~p", [Reply1]),
     true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
+
+    %% We had message in the queue so we expect a device status down
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"down">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
 
     %% Make sure we did not get a duplicate
     receive
@@ -262,27 +320,105 @@ dupes_test(Config) ->
     end,
 
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 1)},
-    ok = wait_for_post_channel(PubKeyBin2),
-    ok = wait_for_report_status(PubKeyBin2),
-    {ok, Reply2} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
-
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 1,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 1,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"ack">>,
+                                           <<"frame_up">> => 1,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName2)}),
+    {ok, Reply2} = test_utils:wait_state_channel_message(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 1, 2, 1),
     %% check we're still getting ADR commands
     true = lists:keymember(link_adr_req, 1, Reply2#frame.fopts),
 
     %% check we get the second downlink again because we didn't ACK it
     %% also ack the ADR adjustments
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
-    ok = wait_for_post_channel(PubKeyBin2),
-    ok = wait_for_report_status(PubKeyBin2),
-    {ok, Reply3} = wait_for_reply(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
-
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 2,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 2,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"down">>,
+                                           <<"frame_up">> => 2,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName2)}),
+    {ok, Reply3} = test_utils:wait_state_channel_message(Msg1, Device0, erlang:element(3, Msg1), ?CONFIRMED_DOWN, 0, 0, 2, 1),
     %% check NOT we're still getting ADR commands
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{should_ack => true})},
-    ok = wait_for_post_channel(PubKeyBin2),
-    ok = wait_for_report_status(PubKeyBin2),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 2,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 2,
+                                            <<"frame_down">> => 2,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
     timer:sleep(1000),
     receive
         {client_data, _,  _Data3} ->
@@ -293,9 +429,38 @@ dupes_test(Config) ->
 
     %% send a confimed up to provoke a 'bare ack'
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 3)},
-    ok = wait_for_post_channel(PubKeyBin2),
-    ok = wait_for_report_status(PubKeyBin2),
-    {ok, Reply4} = wait_for_reply(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 3,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 3,
+                                            <<"frame_down">> => 2,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"ack">>,
+                                           <<"frame_up">> => 3,
+                                           <<"frame_down">> => 3,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName2)}),
+    {ok, Reply4} = test_utils:wait_state_channel_message(Msg1, Device0, <<>>, ?UNCONFIRMED_DOWN, 0, 1, undefined, 2),
 
     %% check NOT we're still getting ADR commands
     false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
@@ -333,7 +498,6 @@ join_test(Config) ->
             ok
     end,
 
-
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream0 ! {send, join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
@@ -341,9 +505,16 @@ join_test(Config) ->
     Stream1 ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for console repor status sent
-    ok = wait_for_report_status(PubKeyBin1, <<"success">>),
+    {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
+    %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
     %% Waiting for reply resp form router
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
 
@@ -525,101 +696,6 @@ aws_test(_Config) ->
 %% Helper functions
 %% ------------------------------------------------------------------
 
-wait_for_report_status(PubKeyBin) ->
-    wait_for_report_status(PubKeyBin, <<"success">>).
-
-wait_for_report_status(PubKeyBin, Status) ->
-    try
-        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-        BinName = erlang:list_to_binary(AName),
-        receive
-            {report_status, Body} ->
-                Map = jsx:decode(Body, [return_maps]),
-                case Map of
-                    #{<<"status">> := Status,
-                      <<"hotspot_name">> := BinName} ->
-                        ok;
-                    _ ->
-                        wait_for_report_status(PubKeyBin),
-                        self()  ! {report_status, Body},
-                        ok
-                end
-        after 250 ->
-                ct:fail("report_status timeout")
-        end
-    catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("report_status stacktrace ~p~n", [Stacktrace])
-    end.
-
-wait_for_post_channel(PubKeyBin) ->
-    try
-        {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-        BinName = erlang:list_to_binary(AName),
-        receive
-            {channel, Data} ->
-                Map = jsx:decode(Data, [return_maps]),
-                AppEUI = lorawan_utils:binary_to_hex(?APPEUI),
-                DevEUI = lorawan_utils:binary_to_hex(?DEVEUI),
-                ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
-                #{
-                  <<"app_eui">> := AppEUI,
-                  <<"dev_eui">> := DevEUI,
-                  <<"payload">> := <<>>,
-                  <<"spreading">> := <<"SF8BW125">>,
-                  <<"hotspot_name">> := BinName
-                 } = Map,
-                ok
-        after 250 ->
-                ct:fail("wait_for_post_channel timeout")
-        end
-    catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_for_post_channel stacktrace ~p~n", [Stacktrace])
-    end.
-
-wait_for_reply() ->
-    receive
-        {client_data, undefined, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                    ok;
-                _Else ->
-                    ct:fail("wrong reply message ~p ", [_Else])
-            catch
-                _E:_R ->
-                    ct:fail("failed to decode reply ~p ~p", [Data, {_E, _R}])
-            end
-    after 250 ->
-            ct:fail("reply timeout")
-    end.
-
-wait_for_reply(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {Msg, Device, Type, FPending, Ack, Fport, FCnt}]),
-    receive
-        {client_data, undefined, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                    ct:pal("packet ~p", [Packet]),
-                    Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
-                    ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
-                    ?assertEqual(FrameData, Frame#frame.data),
-                    %% we queued an unconfirmed packet
-                    ?assertEqual(Type, Frame#frame.mtype),
-                    ?assertEqual(FPending, Frame#frame.fpending),
-                    ?assertEqual(Ack, Frame#frame.ack),
-                    ?assertEqual(Fport, Frame#frame.fport),
-                    ?assertEqual(FCnt, Frame#frame.fcnt),
-                    {ok, Frame}
-            catch _:_ ->
-                    ct:fail("invalid client data for ~p", [Msg])
-            end
-    after 1000 ->
-            ct:fail("missing_reply for ~p", [Msg])
-    end.
-
 wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
     receive
         {client_data, PubKeyBin, Data} ->
@@ -710,16 +786,6 @@ deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayl
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
-
-deframe_packet(Packet, SessionKey) ->
-    <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, RFU:1, ACK:1, FPending:1,
-      FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
-    DevAddr = lorawan_utils:reverse(DevAddrReversed),
-    {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
-    Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)),
-    ct:pal("FOpts ~p", [FOpts]),
-    #frame{mtype=MType, devaddr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
-           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fdownopts(FOpts), fport=FPort, data=Data}.
 
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.

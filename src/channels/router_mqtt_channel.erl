@@ -44,8 +44,8 @@ init(Channel) ->
             {ok, #state{channel=Channel,
                         connection=Conn,
                         pubtopic=PubTopic}};
-        error ->
-            {error, mqtt_connection_failed}
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
@@ -153,7 +153,7 @@ topic(Topic) ->
         true -> Topic
     end.
 
--spec connect(binary(), binary(), any()) -> {ok, pid()} | error.
+-spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
     Opts = [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}],
     case http_uri:parse(URI, Opts) of
@@ -188,9 +188,9 @@ connect(URI, DeviceID, Name) ->
                 {error, Reason} ->
                     lager:info("Failed to connect to ~p ~p : ~p", [Host, Port,
                                                                    Reason]),
-                    error
+                    {error, Reason}
             end;
         _ ->
             lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
-            error
+            {error, invalid_mqtt_uri}
     end.

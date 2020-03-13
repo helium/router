@@ -102,6 +102,7 @@ http_test(Config) ->
                                                    router_handler_test,
                                                    [self()]),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
@@ -110,41 +111,93 @@ http_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
-    ok = wait_for_report_status(PubKeyBin),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
     %% Waiting for reply resp form router
-    ok = wait_for_reply(),
+    test_utils:wait_state_channel_message(250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
-
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
-
-    ok = wait_for_post_channel(PubKeyBin),
-    ok = wait_for_report_status(PubKeyBin),
-    ok = wait_for_ack(?REPLY_DELAY + 250),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 0,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 
     %% Adding a message to queue
-
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg = {false, 1, <<"somepayload">>},
     router_device_worker:queue_message(WorkerPid, Msg),
-
     timer:sleep(200),
     {ok, Device1} = router_device:get(DB, CF, WorkerID),
-    ?assertEqual(router_device:queue(Device1), [Msg]),
+    ?assertEqual([Msg], router_device:queue(Device1)),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
     Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
-    ok = wait_for_post_channel(PubKeyBin),
-    ok = wait_for_report_status(PubKeyBin),
-    %% Message shoud come in fast as it is already in the queue no neeed to wait
-    ok = wait_for_ack(250),
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 1,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"ack">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 1,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_name">> => <<"fake_http">>}),
+    {ok, _} = test_utils:wait_state_channel_message(Msg, Device0, erlang:element(3, Msg), ?UNCONFIRMED_DOWN, 0, 0, 1, 1),
 
     {ok, Device2} = router_device:get(DB, CF, WorkerID),
-    ?assertEqual(router_device:queue(Device2), []),
+    ?assertEqual([], router_device:queue(Device2)),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -582,24 +635,6 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
             end
     after 1000 ->
             ct:fail("missing_join for")
-    end.
-
-wait_for_ack(Timeout) ->
-    receive
-        {client_data, undefined, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Resp]),
-                    ok;
-                _Else ->
-                    ct:fail("wrong ack message ~p ", [_Else])
-            catch
-                _E:_R ->
-                    ct:fail("failed to decode ack ~p ~p", [Data, {_E, _R}])
-            end
-    after Timeout ->
-            ct:fail("ack timeout")
     end.
 
 join_packet(PubKeyBin, AppKey, DevNonce) ->

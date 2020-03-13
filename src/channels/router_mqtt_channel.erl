@@ -166,14 +166,11 @@ connect(URI, DeviceID, Name) ->
             %% should not render as clear text any data after the first colon
             %% (:) found within a userinfo subcomponent unless the data after
             %% the colon is the empty string (indicating no password).
-            {Username, Password} = case UserInfo of
-                                       <<>> -> [undefined, undefined];
-                                       _ ->
-                                           case binary:split(UserInfo, <<":">>) of
-                                               [Un, <<>>] -> {Un, undefined};
-                                               [Un, Pw] -> {Un, Pw};
-                                               [Un] -> {Un, undefined}
-                                           end
+            {Username, Password} = case binary:split(UserInfo, <<":">>) of
+                                       [Un, <<>>] -> {Un, undefined};
+                                       [Un, Pw] -> {Un, Pw};
+                                       [<<>>] -> {undefined, undefined};
+                                       [Un] -> {Un, undefined}
                                    end,
             EmqttOpts = [{host, erlang:binary_to_list(Host)},
                          {port, Port},

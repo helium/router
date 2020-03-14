@@ -20,7 +20,8 @@
          handle_packet/2,
          queue_message/2,
          key/1,
-         report_channel_status/2
+         report_channel_status/2,
+         handle_downlink/2
         ]).
 
 %% ------------------------------------------------------------------
@@ -73,6 +74,36 @@ key(Pid) ->
 -spec report_channel_status(pid(), map()) -> ok.
 report_channel_status(Pid, Map) ->
     gen_server:cast(Pid, {report_channel_status, Map}).
+
+-spec handle_downlink(binary(), router_channel:channel()) -> ok.
+handle_downlink(Pay, Channel) ->
+    try jsx:decode(Pay, [return_maps]) of
+        JSON ->
+            case maps:find(<<"payload_raw">>, JSON) of
+                {ok, Payload} ->
+                    Port = case maps:find(<<"port">>, JSON) of
+                               {ok, X} when is_integer(X), X > 0, X < 224 ->
+                                   X;
+                               _ ->
+                                   1
+                           end,
+                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
+                                    {ok, true} ->
+                                        true;
+                                    _ ->
+                                        false
+                                end,
+
+                    Msg = {Confirmed, Port, base64:decode(Payload)},
+                    router_device_worker:queue_message(router_channel:device_worker(Channel), Msg);
+                error ->
+                    lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
+            end
+    catch
+        _:_ ->
+            lager:info("could not parse json downlink message ~p", [Pay])
+    end,
+    ok.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

@@ -74,21 +74,8 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{payload := Payload0}=Map}, #state{channel=Channel}=State) ->
-    try jsx:decode(Payload0, [return_maps]) of
-        JSON ->
-            case maps:find(<<"payload_raw">>, JSON) of
-                {ok, Payload1} ->
-                    DeviceWorkerPid = router_channel:device_worker(Channel),
-                    Msg = {false, 1, base64:decode(Payload1)},
-                    router_device_worker:queue_message(DeviceWorkerPid, Msg);
-                error ->
-                    lager:warning("JSON downlink did not contain raw_payload field: ~p", [JSON])
-            end
-    catch
-        _:_ ->
-            lager:warning("could not parse json downlink message ~p", [Map])
-    end,
+handle_info({publish, #{payload := Payload0}}, #state{channel=Channel}=State) ->
+    router_device_worker:handle_downlink(Payload0, Channel),
     {ok, State};
 handle_info(ping, #state{connection=Connection}=State) ->
     (catch emqtt:ping(Connection)),

@@ -127,7 +127,7 @@ http_test(Config) ->
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
@@ -163,7 +163,7 @@ http_test(Config) ->
     ?assertEqual([Msg], router_device:queue(Device1)),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
@@ -199,6 +199,44 @@ http_test(Config) ->
 
     {ok, Device2} = router_device:get(DB, CF, WorkerID),
     ?assertEqual([], router_device:queue(Device2)),
+
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{body => <<1:8/integer, "reply">>})},
+    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => <<"yolo_id">>,
+                                   <<"name">> => <<"yolo_name">>,
+                                   <<"payload">> => base64:encode(<<"reply">>),
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 2,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"down">>,
+                                           <<"frame_up">> => 1,
+                                           <<"frame_down">> => 2,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 2,
+                                            <<"frame_down">> => 2,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 5,
+                                            <<"payload">> => base64:encode(<<"reply">>),
+                                            <<"channel_name">> => <<"fake_http">>}),
+
+    %ok = wait_for_post_channel(PubKeyBin, base64:encode(<<"reply">>)),
+    %ok = wait_for_report_status(PubKeyBin),
+    %% Message shoud come in fast as it is already in the queue no neeed to wait
+    {ok, _Reply1} = test_utils:wait_state_channel_message({true, 1, <<"ack">>}, Device0, <<"ack">>, ?CONFIRMED_DOWN, 0, 0, 1, 2),
 
     libp2p_swarm:stop(Swarm),
     ok.
@@ -247,11 +285,11 @@ dupes_test(Config) ->
     router_device_worker:queue_message(WorkerPid, Msg1),
 
     %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), 0)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
     {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 0)},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName1),
@@ -321,7 +359,7 @@ dupes_test(Config) ->
             ok
     end,
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 1)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
@@ -359,7 +397,7 @@ dupes_test(Config) ->
 
     %% check we get the second downlink again because we didn't ACK it
     %% also ack the ADR adjustments
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
@@ -396,7 +434,7 @@ dupes_test(Config) ->
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 2, #{should_ack => true})},
+    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{should_ack => true})},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
@@ -430,7 +468,7 @@ dupes_test(Config) ->
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), 3)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 3)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName2),
@@ -603,7 +641,7 @@ mqtt_test(Config) ->
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
@@ -633,7 +671,7 @@ mqtt_test(Config) ->
     %% Simulating the MQTT broker sending down a packet to transfer to device
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
@@ -826,10 +864,10 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
-frame_packet(MType, PubKeyBin, SessionKey, FCnt) ->
-    frame_packet(MType, PubKeyBin, SessionKey, FCnt, #{}).
+frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
+    frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
-frame_packet(MType, PubKeyBin, SessionKey, FCnt, Options) ->
+frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     MHDRRFU = 0,
     Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
@@ -843,11 +881,12 @@ frame_packet(MType, PubKeyBin, SessionKey, FCnt, Options) ->
     RFU = 0,
     FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),
-    Body = maps:get(body, Options, <<1:8>>),
+    <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
+    Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, lorawan_utils:reverse(DevAddr), FCnt)),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Body/binary>>,
+                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
     B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
-    MIC = crypto:cmac(aes_cbc128, SessionKey, <<B0/binary, Payload0/binary>>, 4),
+    MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
     Payload1 = <<Payload0/binary, MIC:4/binary>>,
     HeliumPacket = #packet_pb{
                       type=lorawan,

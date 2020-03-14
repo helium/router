@@ -218,7 +218,7 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
     Channels1 =
         case maps:size(APIChannels) == 0 of
             true ->
-                %% API returned no channels removing all fo them and adding the "no channel"
+                %% API returned no channels removing all of them and adding the "no channel"
                 lists:foreach(
                   fun({router_no_channel, <<"no_channel">>}) -> ok;
                      (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])

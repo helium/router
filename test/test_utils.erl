@@ -82,7 +82,7 @@ wait_report_channel_status(Expected) ->
                     ct:fail("wait_report_channel_status data failed ~p", [Reason])
             end
     after 250 ->
-              ct:fail("wait_report_channel_status timeout")
+            ct:fail("wait_report_channel_status timeout")
     end.
 
 wait_channel_data(Expected) ->
@@ -97,7 +97,7 @@ wait_channel_data(Expected) ->
                     ct:fail("wait_channel_data failed ~p", [Reason])
             end
     after 250 ->
-              ct:fail("wait_channel_data timeout")
+            ct:fail("wait_channel_data timeout")
     end.
 
 wait_state_channel_message(Timeout) ->
@@ -117,7 +117,7 @@ wait_state_channel_message(Timeout, PubkeyBin) ->
                     ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
             end
     after Timeout ->
-              ct:fail("wait_state_channel_message timeout")
+            ct:fail("wait_state_channel_message timeout")
     end.
 
 wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->

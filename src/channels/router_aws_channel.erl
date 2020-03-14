@@ -12,14 +12,12 @@
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
--export([
-         init/1,
+-export([init/1,
          handle_event/2,
          handle_call/2,
          handle_info/2,
          terminate/2,
-         code_change/3
-        ]).
+         code_change/3]).
 
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).

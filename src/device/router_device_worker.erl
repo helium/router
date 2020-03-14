@@ -216,7 +216,7 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                     #{},
                     router_device_api:get_channels(Device, self())),
     Channels1 =
-        case APIChannels == #{} of
+        case maps:size(APIChannels) == 0 of
             true ->
                 %% API returned no channels removing all fo them and adding the "no channel"
                 lists:foreach(

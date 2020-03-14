@@ -228,7 +228,7 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                 #{router_channel:id(NoChannel) => NoChannel};
             false ->
                 %% Adding / updating channels based on channel hash
-                AddedChannels = add_channels(EventMgrRef, APIChannels, Channels0),
+                AddedChannels = add_channels(EventMgrRef, APIChannels, Channels0, Device),
                 %% Removing old channels left in cache but (if not in API call)
                 remove_channels(EventMgrRef, APIChannels, AddedChannels)
 
@@ -266,13 +266,18 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-add_channels(EventMgrRef, APIChannels, Channels) ->
+-spec add_channels(pid(), map(), map(), router_device:device()) -> map().
+add_channels(EventMgrRef, APIChannels, Channels, Device) ->
     maps:fold(
       fun(ChannelID, Channel, Acc) ->
               case maps:get(ChannelID, Acc, undefined) of
                   undefined ->
-                      router_channel:add(EventMgrRef, Channel),
-                      maps:put(ChannelID, Channel, Acc);
+                      case add_channel(EventMgrRef, Channel, Device) of
+                          ok ->
+                              maps:put(ChannelID, Channel, Acc);
+                          {error, _} ->
+                              Acc
+                      end;
                   CachedChannel ->
                       ChannelHash = router_channel:hash(Channel),
                       case router_channel:hash(CachedChannel) of
@@ -282,14 +287,31 @@ add_channels(EventMgrRef, APIChannels, Channels) ->
                               %% TODO: This can be improved (waiting on websockets)
                               Handler = router_channel:handler(Channel),
                               _ = gen_event:delete_handler(EventMgrRef, {Handler, ChannelID}, []),
-                              router_channel:add(EventMgrRef, Channel),
-                              maps:put(ChannelID, Channel, Acc)
+                              case add_channel(EventMgrRef, Channel, Device) of
+                                  ok ->
+                                      maps:put(ChannelID, Channel, Acc);
+                                  {error, _} ->
+                                      Acc
+                              end
                       end
               end
       end,
       Channels,
       APIChannels).
 
+-spec add_channel(pid(), router_channel:channel(), router_device:device()) -> ok | {error, any()}.
+add_channel(EventMgrRef, Channel, Device) ->
+    case router_channel:add(EventMgrRef, Channel) of
+        ok ->
+            ok;
+        {E, Reason} when E == 'EXIT'; E == error ->
+            router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
+                                                              status => failure,
+                                                              description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
+            {error, Reason}
+    end.
+
+-spec remove_channels(pid(), map(), map()) -> map().
 remove_channels(EventMgrRef, APIChannels, Channels) ->
     maps:filter(fun(ChannelID, Channel) ->
                         case maps:get(ChannelID, APIChannels, undefined) of

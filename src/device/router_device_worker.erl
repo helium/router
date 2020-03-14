@@ -208,50 +208,30 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
     end,
     {noreply, State};
 handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
-    APIChannels = router_device_api:get_channels(Device, self()),
+    APIChannels = lists:foldl(
+                    fun(Channel, Acc) ->
+                            ID = router_channel:id(Channel),
+                            maps:put(ID, Channel, Acc)
+                    end,
+                    #{},
+                    router_device_api:get_channels(Device, self())),
     Channels1 =
-        case APIChannels == [] of
+        case APIChannels == #{} of
             true ->
+                %% API returned no channels removing all fo them and adding the "no channel"
                 lists:foreach(
-                  fun({router_no_channel, _}) -> ok;
+                  fun({router_no_channel, <<"no_channel">>}) -> ok;
                      (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
                   end,
                   gen_event:which_handlers(EventMgrRef)),
                 NoChannel = maybe_start_no_channel(Device, EventMgrRef),
-                #{router_channel:id(NoChannel) => router_channel:hash(NoChannel)};
+                #{router_channel:id(NoChannel) => NoChannel};
             false ->
-                lists:foldl(
-                  fun(Channel, Acc) ->
-                          ID = router_channel:id(Channel),
-                          Hash = router_channel:hash(Channel),
-                          case maps:get(ID, Acc, undefined) of
-                              undefined ->
-                                  case router_channel:add(EventMgrRef, Channel) of
-                                      ok ->
-                                          maps:put(ID, Hash, Acc);
-                                      {E, Reason} when E == 'EXIT'; E == error ->
-                                          router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
-                                                                                            status => failure,
-                                                                                            description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))})
-                                  end;
-                              Hash ->
-                                  Acc;
-                              _OldHash ->
-                                  %% TODO: This can be improved (waiting on websockets)
-                                  Handler = router_channel:handler(Channel),
-                                  _ = gen_event:delete_handler(EventMgrRef, {Handler, ID}, []),
-                                  case router_channel:add(EventMgrRef, Channel) of
-                                      ok ->
-                                          maps:put(ID, Hash, Acc);
-                                      {E, Reason} when E == 'EXIT'; E == error ->
-                                          router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
-                                                                                            status => failure,
-                                                                                            description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))})
-                                  end
-                          end
-                  end,
-                  Channels0,
-                  APIChannels)
+                %% Adding / updating channels based on channel hash
+                AddedChannels = add_channels(EventMgrRef, APIChannels, Channels0),
+                %% Removing old channels left in cache but (if not in API call)
+                remove_channels(EventMgrRef, APIChannels, AddedChannels)
+
         end,
     erlang:send_after(timer:minutes(5), self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
@@ -285,6 +265,43 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+add_channels(EventMgrRef, APIChannels, Channels) ->
+    maps:fold(
+      fun(ChannelID, Channel, Acc) ->
+              case maps:get(ChannelID, Acc, undefined) of
+                  undefined ->
+                      router_channel:add(EventMgrRef, Channel),
+                      maps:put(ChannelID, Channel, Acc);
+                  CachedChannel ->
+                      ChannelHash = router_channel:hash(Channel),
+                      case router_channel:hash(CachedChannel) of
+                          ChannelHash ->
+                              Acc;
+                          _OldHash ->
+                              %% TODO: This can be improved (waiting on websockets)
+                              Handler = router_channel:handler(Channel),
+                              _ = gen_event:delete_handler(EventMgrRef, {Handler, ChannelID}, []),
+                              router_channel:add(EventMgrRef, Channel),
+                              maps:put(ChannelID, Channel, Acc)
+                      end
+              end
+      end,
+      Channels,
+      APIChannels).
+
+remove_channels(EventMgrRef, APIChannels, Channels) ->
+    maps:filter(fun(ChannelID, Channel) ->
+                        case maps:get(ChannelID, APIChannels, undefined) of
+                            undefined ->
+                                Handler = router_channel:handler(Channel),
+                                _ = gen_event:delete_handler(EventMgrRef, {Handler, ChannelID}, []),
+                                false;
+                            _ ->
+                                true
+                        end
+                end,
+                Channels).
 
 -spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
 maybe_start_no_channel(Device, EventMgrRef) ->

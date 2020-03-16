@@ -81,8 +81,7 @@ report_channel_status(Device, Map) ->
              channel_name => maps:get(channel_name, Map),
              frame_up => router_device:fcnt(Device),
              frame_down => router_device:fcntdown(Device)},
-    Optional = merge_if_exist([hotspot_name, payload, payload_size, rssi, snr], Map),
-    Body = maps:merge(Core, Optional),
+    Body = maps:merge(Core, maps:with([hotspot_name, payload, payload_size, rssi, snr], Map)),
     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                  [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
                  jsx:encode(Body), [with_body]),
@@ -91,18 +90,6 @@ report_channel_status(Device, Map) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec merge_if_exist(list(), map()) -> map().
-merge_if_exist(Keys, Map) ->
-    merge_if_exist(Keys, Map, #{}).
-
--spec merge_if_exist(list(), map(), map()) -> map().
-merge_if_exist([], _Map, Acc) -> Acc;
-merge_if_exist([Key|Keys], Map, Acc) ->
-    case maps:get(Key, Map, undefined) of
-        undefined -> merge_if_exist(Keys, Map, Acc);
-        Value -> merge_if_exist(Keys, Map, maps:put(Key, Value, Acc))
-    end.
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.
 convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel) ->

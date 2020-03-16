@@ -31,6 +31,7 @@ handle_event({data, Data}, #state{channel=Channel}=State) ->
     Payload = maps:get(payload, Data),
     Report = #{status => success,
                msg => <<"no channels configured">>,
+               channel_id => router_channel:id(Channel),
                channel_name => router_channel:name(Channel),
                port => maps:get(port, Data),
                payload => base64:encode(Payload),

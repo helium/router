@@ -337,7 +337,8 @@ add_channel(EventMgrRef, Channel, Device) ->
         ok ->
             ok;
         {E, Reason} when E == 'EXIT'; E == error ->
-            router_device_api:report_channel_status(Device, #{channel_name => router_channel:name(Channel),
+            router_device_api:report_channel_status(Device, #{channel_id => router_channel:id(Channel),
+                                                              channel_name => router_channel:name(Channel),
                                                               status => failure,
                                                               description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {error, Reason}

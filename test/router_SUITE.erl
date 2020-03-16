@@ -151,6 +151,7 @@ http_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 
@@ -194,6 +195,7 @@ http_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     {ok, _} = test_utils:wait_state_channel_message(Msg, Device0, erlang:element(3, Msg), ?UNCONFIRMED_DOWN, 0, 0, 1, 1),
 
@@ -231,10 +233,11 @@ http_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 5,
                                             <<"payload">> => base64:encode(<<"reply">>),
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
 
-    %ok = wait_for_post_channel(PubKeyBin, base64:encode(<<"reply">>)),
-    %ok = wait_for_report_status(PubKeyBin),
+    %%ok = wait_for_post_channel(PubKeyBin, base64:encode(<<"reply">>)),
+    %%ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     {ok, _Reply1} = test_utils:wait_state_channel_message({true, 1, <<"ack">>}, Device0, <<"ack">>, ?CONFIRMED_DOWN, 0, 0, 1, 2),
 
@@ -313,6 +316,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -337,6 +341,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     {ok, Reply1} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 1, 0, 1, 0),
     ct:pal("Reply ~p", [Reply1]),
@@ -383,6 +388,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
@@ -421,6 +427,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
@@ -458,6 +465,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     timer:sleep(1000),
     receive
@@ -492,6 +500,7 @@ dupes_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
@@ -665,6 +674,7 @@ mqtt_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_mqtt">>}),
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 
@@ -702,6 +712,7 @@ mqtt_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_mqtt">>}),
     Msg0 = {false, 1, <<"mqttpayload">>},
     {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
@@ -768,7 +779,7 @@ no_channel_test(Config) ->
     WorkerID = router_devices_sup:id(<<"yolo_id">>),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 0)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => <<"no channels configured">>,
                                             <<"reported_at">> => fun erlang:is_integer/1,
@@ -780,6 +791,7 @@ no_channel_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"no_channel">>}),
 
     {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
@@ -799,7 +811,7 @@ no_channel_test(Config) ->
     ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}}, State0),
     ?assertEqual(1, maps:size(erlang:element(8, State0))),
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), 1)},
+    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
@@ -823,6 +835,7 @@ no_channel_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"channel_id">> => '_',
                                             <<"channel_name">> => <<"fake_http">>}),
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 

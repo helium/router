@@ -57,7 +57,7 @@ report_device_status(Device, Map) ->
     JWT = get_token(Endpoint),
     DeviceID = router_device:id(Device),
     Body = #{status => maps:get(status, Map, failure),
-             description => maps:get(msg, Map, <<"">>),
+             description => maps:get(description, Map, <<"">>),
              reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
              category => maps:get(category, Map, <<"">>),
              frame_up => router_device:fcnt(Device),
@@ -73,18 +73,15 @@ report_channel_status(Device, Map) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
     DeviceID = router_device:id(Device),
-    Body = #{status => maps:get(status, Map, failure),
-             description => maps:get(msg, Map, <<"">>),
-             reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
-             category => maps:get(category, Map, <<"">>),
-             frame_up => router_device:fcnt(Device),
-             frame_down => router_device:fcntdown(Device),
-             hotspot_name => maps:get(hotspot_name, Map, ""),
+    Core = #{status => maps:get(status, Map),
+             description => maps:get(description, Map),
+             reported_at => maps:get(reported_at, Map),
+             category => maps:get(category, Map),
+             channel_id => maps:get(channel_id, Map),
              channel_name => maps:get(channel_name, Map),
-             payload => maps:get(payload, Map),
-             payload_size => maps:get(payload_size, Map),
-             rssi => maps:get(rssi, Map),
-             snr => maps:get(snr, Map)},
+             frame_up => router_device:fcnt(Device),
+             frame_down => router_device:fcntdown(Device)},
+    Body = maps:merge(Core, maps:with([hotspot_name, payload, payload_size, rssi, snr], Map)),
     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                  [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
                  jsx:encode(Body), [with_body]),
@@ -93,6 +90,7 @@ report_channel_status(Device, Map) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.
 convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),

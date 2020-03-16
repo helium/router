@@ -99,7 +99,7 @@ merge_if_exist(Keys, Map) ->
 merge_if_exist([], _Map, Acc) -> Acc;
 merge_if_exist([Key|Keys], Map, Acc) ->
     case maps:get(Key, Map, undefined) of
-        undefined -> Acc;
+        undefined -> merge_if_exist(Keys, Map, Acc);
         Value -> merge_if_exist(Keys, Map, maps:put(Key, Value, Acc))
     end.
 

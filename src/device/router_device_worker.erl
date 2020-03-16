@@ -276,8 +276,9 @@ handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Ch
             %% unclear what this means for channels right now
             {noreply, State};
         Error ->
-            %% We don't have channel name here, report by ID
-            router_device_api:report_channel_status(Device, #{channel_id => ID, status => failure,
+            Channel = maps:get(ID, Channels),
+            Name = router_channel:name(Channel),
+            router_device_api:report_channel_status(Device, #{channel_id => ID, channel_name => Name, status => failure,
                                                               description => list_to_binary(io_lib:format("~p", [Error]))}),
             %% TODO use exponential backoff or throttle here?
             erlang:send_after(timer:seconds(15), self(), refresh_channels),

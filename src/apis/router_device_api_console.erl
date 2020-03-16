@@ -75,7 +75,7 @@ report_channel_status(Device, Map) ->
     DeviceID = router_device:id(Device),
     Core = #{status => maps:get(status, Map),
              description => maps:get(description, Map),
-             reported_at => maps:get(reported_at, Map),
+             reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
              category => maps:get(category, Map),
              channel_id => maps:get(channel_id, Map),
              channel_name => maps:get(channel_name, Map),

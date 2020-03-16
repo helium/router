@@ -232,7 +232,7 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
             ok;
         _ ->
             StatusMap = #{status => Status,
-                          msg => Msg,
+                          description => Msg,
                           category => Category,
                           hotspot_name => AName},
             ok = router_device_api:report_device_status(Device, StatusMap)

@@ -279,7 +279,8 @@ handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Ch
             Channel = maps:get(ID, Channels),
             Name = router_channel:name(Channel),
             router_device_api:report_channel_status(Device, #{channel_id => ID, channel_name => Name, status => failure,
-                                                              description => list_to_binary(io_lib:format("~p", [Error]))}),
+                                                              description => list_to_binary(io_lib:format("~p", [Error])),
+                                                              category => <<"channel_failure">>}),
             %% TODO use exponential backoff or throttle here?
             erlang:send_after(timer:seconds(15), self(), refresh_channels),
             {noreply, State#state{channels=maps:remove(ID, Channels)}}
@@ -339,7 +340,7 @@ add_channel(EventMgrRef, Channel, Device) ->
         {E, Reason} when E == 'EXIT'; E == error ->
             router_device_api:report_channel_status(Device, #{channel_id => router_channel:id(Channel),
                                                               channel_name => router_channel:name(Channel),
-                                                              status => failure,
+                                                              status => failure, category => <<"add_channel_failure">>,
                                                               description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {error, Reason}
     end.

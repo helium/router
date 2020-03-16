@@ -127,7 +127,7 @@ handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
             Key = libp2p_crypto:generate_keys(ecc_compact),
             Device1 = router_device:key(Key, Device0),
             {ok, _} = router_device:save(DB, CF, Device1),
-            {reply, Key, State#state{device=Device0}};
+            {reply, Key, State#state{device=Device1}};
         Key ->
             {reply, Key, State}
     end;

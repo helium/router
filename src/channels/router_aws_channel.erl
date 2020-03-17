@@ -82,6 +82,7 @@ handle_info(post_init, #state{channel=Channel, aws=AWS}=State) ->
     {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
     (catch emqtt:ping(Conn)),
     erlang:send_after(25000, self(), ping),
+    router_channel:device_worker(Channel) ! {started, router_channel:id(Channel)},
     {ok, State#state{connection=Conn, topic=Topic}};
 handle_info({publish, _Map}, State) ->
     %% TODO

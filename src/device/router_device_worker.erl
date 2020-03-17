@@ -49,7 +49,6 @@
                 frame_cache = #{} :: map(),
                 event_mgr :: pid(),
                 channels = #{} :: map(),
-                channels_timer_ref :: reference(),
                 channels_backoffs = #{} :: map()}).
 
 %% ------------------------------------------------------------------
@@ -123,8 +122,7 @@ init(Args) ->
              end,
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef,
-                channels_timer_ref=erlang:make_ref()}}.
+    {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
 handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
     case router_device:key(Device0) of
@@ -243,8 +241,7 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
             ok = router_device_api:report_device_status(Device, StatusMap)
     end,
     {noreply, State};
-handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef,
-                                     channels=Channels0, channels_timer_ref=TimerRef0}=State) ->
+handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->
                             ID = router_channel:id(Channel),
@@ -270,9 +267,8 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef,
                 remove_channels(EventMgrRef, APIChannels, AddedChannels)
 
         end,
-    _ = erlang:cancel_timer(TimerRef0),
-    TimerRef1 = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
-    {noreply, State#state{channels=Channels1, channels_timer_ref=TimerRef1}};
+    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
+    {noreply, State#state{channels=Channels1}};
 handle_info({restart_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
                                                channels=Channels, channels_backoffs=Backoffs}=State) ->
     ChannelID = router_channel:id(Channel),

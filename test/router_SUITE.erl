@@ -810,13 +810,13 @@ no_channel_test(Config) ->
                                    <<"yolo_id">>,
                                    DeviceWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}}, sys:get_state(DeviceWorkerPid)),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, sys:get_state(DeviceWorkerPid)),
 
     ets:insert(Tab, {no_channel, false}),
     DeviceWorkerPid ! refresh_channels,
 
     State0 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}}, State0),
+    ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(8, State0))),
 
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -851,7 +851,7 @@ no_channel_test(Config) ->
     DeviceWorkerPid ! refresh_channels,
 
     State1 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}}, State1),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(8, State1))),
 
     libp2p_swarm:stop(Swarm),

@@ -38,6 +38,8 @@
 
 
 -define(SERVER, ?MODULE).
+-define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MAX, timer:minutes(5)).
 -record(state, {
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
@@ -45,7 +47,9 @@
                 join_cache = #{} :: map(),
                 frame_cache = #{} :: map(),
                 event_mgr :: pid(),
-                channels = #{} :: map()
+                channels = #{} :: map(),
+                channels_backoff :: reference() | undefined,
+                channels_timer_ref :: reference() | undefined
                }).
 
 %% ------------------------------------------------------------------
@@ -118,8 +122,10 @@ init(Args) ->
                  _ -> router_device:new(ID)
              end,
     {ok, EventMgrRef} = router_channel:start_link(),
+    Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! refresh_channels,
-    {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
+    {ok, #state{db=DB, cf=CF, device=Device,
+                event_mgr=EventMgrRef, channels_backoff=Backoff}}.
 
 handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
     case router_device:key(Device0) of
@@ -238,7 +244,8 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
             ok = router_device_api:report_device_status(Device, StatusMap)
     end,
     {noreply, State};
-handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
+handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef,
+                                     channels=Channels0, channels_timer_ref=TimerRef0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->
                             ID = router_channel:id(Channel),
@@ -264,9 +271,13 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                 remove_channels(EventMgrRef, APIChannels, AddedChannels)
 
         end,
-    erlang:send_after(timer:minutes(5), self(), refresh_channels),
-    {noreply, State#state{channels=Channels1}};
-handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Channels, device=Device}) ->
+    _ = erlang:cancel_timer(TimerRef0),
+    TimerRef1 = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
+    {noreply, State#state{channels=Channels1, channels_timer_ref=TimerRef1}};
+handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, #state{device=Device,
+                                                             channels=Channels,
+                                                             channels_timer_ref=TimerRef0,
+                                                             channels_backoff=Backoff0}=State) ->
     case Reason of
         normal ->
             {noreply, State#state{channels=maps:remove(ID, Channels)}};
@@ -281,9 +292,12 @@ handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Ch
             router_device_api:report_channel_status(Device, #{channel_id => ID, channel_name => Name, status => failure,
                                                               description => list_to_binary(io_lib:format("~p", [Error])),
                                                               category => <<"channel_failure">>}),
-            %% TODO use exponential backoff or throttle here?
-            erlang:send_after(timer:seconds(15), self(), refresh_channels),
-            {noreply, State#state{channels=maps:remove(ID, Channels)}}
+            _ = erlang:cancel_timer(TimerRef0),
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            TimerRef1 = erlang:send_after(Delay, self(), refresh_channels),
+            {noreply, State#state{channels=maps:remove(ID, Channels),
+                                  channels_timer_ref=TimerRef1,
+                                  channels_backoff=Backoff1}}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),

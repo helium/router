@@ -20,31 +20,16 @@
 -define(PING_TIMEOUT, 25000).
 
 -record(state, {channel :: router_channel:channel(),
-                connection :: pid(),
-                pubtopic :: binary()}).
+                connection :: pid() | undefined,
+                pubtopic :: binary() | undefined}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Channel) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
-    DeviceID = router_channel:device_id(Channel),
-    ChannelName = router_channel:name(Channel),
-    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
-    FixedTopic = topic(Topic),
-    case connect(Endpoint, DeviceID, ChannelName) of
-        {ok, Conn} ->
-            erlang:send_after(?PING_TIMEOUT, self(), ping),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
-            %% TODO use a better QoS to add some back pressure
-            emqtt:subscribe(Conn, {SubTopic, 0}),
-            {ok, #state{channel=Channel,
-                        connection=Conn,
-                        pubtopic=PubTopic}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
+    self() ! post_init,
+    {ok, #state{channel=Channel}}.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
@@ -74,6 +59,19 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
+handle_info(post_init, #state{channel=Channel}=State) ->
+    DeviceID = router_channel:device_id(Channel),
+    ChannelName = router_channel:name(Channel),
+    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
+    {ok, Conn} = connect(Endpoint, DeviceID, ChannelName),
+    FixedTopic = topic(Topic),
+    PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
+    SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
+    %% TODO use a better QoS to add some back pressure
+    emqtt:subscribe(Conn, {SubTopic, 0}),
+    erlang:send_after(?PING_TIMEOUT, self(), ping),
+    router_channel:device_worker(Channel) ! {started, router_channel:id(Channel)},
+    {ok, State#state{connection=Conn, pubtopic=PubTopic}};
 handle_info({publish, #{payload := Payload0}}, #state{channel=Channel}=State) ->
     router_device_worker:handle_downlink(Payload0, Channel),
     {ok, State};

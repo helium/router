@@ -240,15 +240,6 @@ http_test(Config) ->
     %%ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     {ok, _Reply1} = test_utils:wait_state_channel_message({true, 1, <<"ack">>}, Device0, <<"ack">>, ?CONFIRMED_DOWN, 0, 0, 1, 2),
-
-
-    %% Lets do some key checking
-    ?assertEqual(undefined, router_device:key(Device2)),
-    Key = router_device_worker:key(WorkerPid),
-    ?assertEqual(Key, router_device_worker:key(WorkerPid)),
-    {ok, Device3} = router_device:get(DB, CF, WorkerID),
-    ?assertEqual(Key, router_device:key(Device3)),
-
     libp2p_swarm:stop(Swarm),
     ok.
 

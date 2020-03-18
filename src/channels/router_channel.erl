@@ -86,7 +86,7 @@ start_link() ->
 -spec add(pid(), channel()) -> ok | {'EXIT', term()} | {error, term()}.
 add(Pid, Channel) ->
     Handler = ?MODULE:handler(Channel),
-    ChannelID = ?MODULE:hash(Channel),
+    ChannelID = ?MODULE:id(Channel),
     gen_event:add_sup_handler(Pid, {Handler, ChannelID}, Channel).
 
 -spec delete(pid(), channel()) -> ok.

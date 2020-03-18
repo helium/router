@@ -27,7 +27,9 @@
 %% ------------------------------------------------------------------
 init([Channel, _Device]) ->
     lager:info("init with ~p", [Channel]),
-    #{url := URL, headers := Headers, method := Method} = router_channel:args(Channel),
+    #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    Headers = lists:ukeymerge(1, lists:ukeysort(1, Headers0),
+                              [{<<"Content-Type">>, <<"application/json">>}]),
     {ok, #state{channel=Channel, url=URL, headers=Headers, method=Method}}.
 
 handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->

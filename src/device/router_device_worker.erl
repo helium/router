@@ -272,7 +272,8 @@ handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRe
             ChannelHash = router_channel:hash(Channel),
             case router_channel:hash(CachedChannel) of
                 ChannelHash ->
-                    lager:info("channel ~p already started", [ChannelID]);
+                    lager:info("channel ~p already started", [ChannelID]),
+                    {noreply, State};
                 _OldHash ->
                     ok = router_channel:delete(EventMgrRef, CachedChannel),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  

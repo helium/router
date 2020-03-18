@@ -7,7 +7,7 @@
 -include("router_device.hrl").
 
 -export([
-         new/1, new/4,
+         new/1,
          id/1,
          name/1, name/2,
          app_eui/1, app_eui/2,
@@ -20,128 +20,129 @@
          offset/1, offset/2,
          channel_correction/1, channel_correction/2,
          queue/1, queue/2,
-         key/1, key/2,
+         keys/1, keys/2,
+         metadata/1, metadata/2,
          update/2,
          serialize/1, deserialize/1,
          get/2, get/3, save/3
         ]).
 
--type device() :: #device_v1{}.
+-type device() :: #device_v2{}.
 
 -export_type([device/0]).
 
 -spec new(binary()) -> device().
 new(ID) ->
-    #device_v1{id=ID,
-               key=libp2p_crypto:generate_keys(ecc_compact)}.
-
--spec new(binary(), binary(), binary(), binary()) -> device().
-new(ID, Name, DevEui, AppEui) ->
-    #device_v1{id=ID,
-               name=Name,
-               dev_eui=DevEui,
-               app_eui=AppEui,
-               key=libp2p_crypto:generate_keys(ecc_compact)}.
+    #device_v2{id=ID,
+               keys=libp2p_crypto:generate_keys(ecc_compact)}.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
-    Device#device_v1.id.
+    Device#device_v2.id.
 
 -spec name(device()) -> binary() | undefined.
 name(Device) ->
-    Device#device_v1.name.
+    Device#device_v2.name.
 
 -spec name(binary(), device()) -> device().
 name(Name, Device) ->
-    Device#device_v1{name=Name}.
+    Device#device_v2{name=Name}.
 
 -spec app_eui(device()) -> binary() | undefined.
 app_eui(Device) ->
-    Device#device_v1.app_eui.
+    Device#device_v2.app_eui.
 
 -spec app_eui(binary(), device()) -> device().
 app_eui(EUI, Device) ->
-    Device#device_v1{app_eui=EUI}.
+    Device#device_v2{app_eui=EUI}.
 
 -spec dev_eui(device()) -> binary() | undefined.
 dev_eui(Device) ->
-    Device#device_v1.dev_eui.
+    Device#device_v2.dev_eui.
 
 -spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
-    Device#device_v1{dev_eui=EUI}.
+    Device#device_v2{dev_eui=EUI}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
 nwk_s_key(Device) ->
-    Device#device_v1.nwk_s_key.
+    Device#device_v2.nwk_s_key.
 
 -spec nwk_s_key(binary(), device()) -> device().
 nwk_s_key(Key, Device) ->
-    Device#device_v1{nwk_s_key=Key}.
+    Device#device_v2{nwk_s_key=Key}.
 
 -spec app_s_key(device()) -> binary() | undefined.
 app_s_key(Device) ->
-    Device#device_v1.app_s_key.
+    Device#device_v2.app_s_key.
 
 -spec app_s_key(binary(), device()) -> device().
 app_s_key(Key, Device) ->
-    Device#device_v1{app_s_key=Key}.
+    Device#device_v2{app_s_key=Key}.
 
 -spec join_nonce(device()) -> non_neg_integer().
 join_nonce(Device) ->
-    Device#device_v1.join_nonce.
+    Device#device_v2.join_nonce.
 
 -spec join_nonce(non_neg_integer(), device()) -> device().
 join_nonce(Nonce, Device) ->
-    Device#device_v1{join_nonce=Nonce}.
+    Device#device_v2{join_nonce=Nonce}.
 
 -spec fcnt(device()) -> non_neg_integer().
 fcnt(Device) ->
-    Device#device_v1.fcnt.
+    Device#device_v2.fcnt.
 
 -spec fcnt(non_neg_integer(), device()) -> device().
 fcnt(Fcnt, Device) ->
-    Device#device_v1{fcnt=Fcnt}.
+    Device#device_v2{fcnt=Fcnt}.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->
-    Device#device_v1.fcntdown.
+    Device#device_v2.fcntdown.
 
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
-    Device#device_v1{fcntdown=Fcnt}.
+    Device#device_v2{fcntdown=Fcnt}.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
-    Device#device_v1.offset.
+    Device#device_v2.offset.
 
 -spec offset(non_neg_integer(), device()) -> device().
 offset(Offset, Device) ->
-    Device#device_v1{offset=Offset}.
+    Device#device_v2{offset=Offset}.
 
 -spec channel_correction(device()) -> boolean().
 channel_correction(Device) ->
-    Device#device_v1.channel_correction.
+    Device#device_v2.channel_correction.
 
 -spec channel_correction(boolean(), device()) -> device().
 channel_correction(Correct, Device) ->
-    Device#device_v1{channel_correction=Correct}.
+    Device#device_v2{channel_correction=Correct}.
 
 -spec queue(device()) -> [any()].
 queue(Device) ->
-    Device#device_v1.queue.
+    Device#device_v2.queue.
 
 -spec queue([any()], device()) -> device().
 queue(Q, Device) ->
-    Device#device_v1{queue=Q}.
+    Device#device_v2{queue=Q}.
 
--spec key(device()) -> any().
-key(Device) ->
-    Device#device_v1.key.
+-spec keys(device()) -> map().
+keys(Device) ->
+    Device#device_v2.keys.
 
--spec key(any(), device()) -> device().
-key(Key, Device) ->
-    Device#device_v1{key=Key}.
+-spec keys(map(), device()) -> device().
+keys(Keys, Device) ->
+    Device#device_v2{keys=Keys}.
+
+-spec metadata(device()) -> map().
+metadata(Device) ->
+    Device#device_v2.metadata.
+
+-spec metadata(map(), device()) -> device().
+metadata(Meta, Device) ->
+    Device#device_v2{metadata=Meta}.
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
@@ -168,8 +169,10 @@ update([{channel_correction, Value}|T], Device) ->
     update(T, ?MODULE:channel_correction(Value, Device));
 update([{queue, Value}|T], Device) ->
     update(T, ?MODULE:queue(Value, Device));
-update([{key, Value}|T], Device) ->
-    update(T, ?MODULE:key(Value, Device)).
+update([{keys, Value}|T], Device) ->
+    update(T, ?MODULE:keys(Value, Device));
+update([{metadata, Value}|T], Device) ->
+    update(T, ?MODULE:metadata(Value, Device)).
 
 -spec serialize(device()) -> binary().
 serialize(Device) ->
@@ -178,24 +181,42 @@ serialize(Device) ->
 -spec deserialize(binary()) -> device().
 deserialize(Binary) ->
     case erlang:binary_to_term(Binary) of
-        #device_v1{key=undefined}=Device ->
-            ?MODULE:key(libp2p_crypto:generate_keys(ecc_compact), Device);
-        #device_v1{}=Device ->
-            Device;
-        #device{}=Old ->
-            #device_v1{id=Old#device.id,
-                       name=Old#device.name,
-                       dev_eui=Old#device.dev_eui,
-                       app_eui=Old#device.app_eui,
-                       nwk_s_key=Old#device.nwk_s_key,
-                       app_s_key=Old#device.app_s_key,
-                       join_nonce=Old#device.join_nonce,
-                       fcnt=Old#device.fcnt,
-                       fcntdown=Old#device.fcntdown,
-                       offset=Old#device.offset,
-                       channel_correction=Old#device.channel_correction,
-                       queue=Old#device.queue,
-                       key=libp2p_crypto:generate_keys(ecc_compact)}
+        #device_v2{}=V2 ->
+            V2;
+        #device_v1{}=V1 ->
+            Keys = case V1#device_v1.key of
+                       undefined -> libp2p_crypto:generate_keys(ecc_compact);
+                       Key -> Key
+                   end,
+            #device_v2{id=V1#device_v1.id,
+                       name=V1#device_v1.name,
+                       dev_eui=V1#device_v1.dev_eui,
+                       app_eui=V1#device_v1.app_eui,
+                       nwk_s_key=V1#device_v1.nwk_s_key,
+                       app_s_key=V1#device_v1.app_s_key,
+                       join_nonce=V1#device_v1.join_nonce,
+                       fcnt=V1#device_v1.fcnt,
+                       fcntdown=V1#device_v1.fcntdown,
+                       offset=V1#device_v1.offset,
+                       channel_correction=V1#device_v1.channel_correction,
+                       queue=V1#device_v1.queue,
+                       keys=Keys,
+                       metadata=#{}};
+        #device{}=V0 ->
+            #device_v2{id=V0#device.id,
+                       name=V0#device.name,
+                       dev_eui=V0#device.dev_eui,
+                       app_eui=V0#device.app_eui,
+                       nwk_s_key=V0#device.nwk_s_key,
+                       app_s_key=V0#device.app_s_key,
+                       join_nonce=V0#device.join_nonce,
+                       fcnt=V0#device.fcnt,
+                       fcntdown=V0#device.fcntdown,
+                       offset=V0#device.offset,
+                       channel_correction=V0#device.channel_correction,
+                       queue=V0#device.queue,
+                       keys=libp2p_crypto:generate_keys(ecc_compact),
+                       metadata=#{}}
     end.
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
@@ -247,10 +268,11 @@ rocks_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
 -ifdef(TEST).
 
 new_test() ->
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
     meck:new(libp2p_crypto, [passthrough]),
-    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> #{} end),
+    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> Keys end),
 
-    ?assertEqual(#device_v1{id= <<"id">>, key= #{}}, new(<<"id">>)),
+    ?assertEqual(#device_v2{id= <<"id">>, keys=Keys}, new(<<"id">>)),
 
     ?assert(meck:validate(libp2p_crypto)),
     meck:unload(libp2p_crypto).
@@ -310,10 +332,10 @@ queue_test() ->
     ?assertEqual([], queue(Device)),
     ?assertEqual([a], queue(queue([a], Device))).
 
-key_test() ->
+keys_test() ->
     Device = new(<<"id">>),
-    ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, key(Device)),
-    ?assertEqual({key, any}, key(key({key, any}, Device))).
+    ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, keys(Device)),
+    ?assertEqual({keys, any}, keys(keys({keys, any}, Device))).
 
 update_test() ->
     Device = new(<<"id">>),
@@ -328,8 +350,9 @@ update_test() ->
                {offset, 1},
                {channel_correction, true},
                {queue, [a]},
-               {key, #{}}],
-    UpdatedDevice = #device_v1{id = <<"id">>,
+               {keys, #{}},
+               {metadata, #{a => b}}],
+    UpdatedDevice = #device_v2{id = <<"id">>,
                                name = <<"name">>,
                                app_eui = <<"app_eui">>,
                                dev_eui = <<"dev_eui">>,
@@ -341,7 +364,8 @@ update_test() ->
                                offset = 1,
                                channel_correction = true,
                                queue = [a],
-                               key = #{}},
+                               keys = #{},
+                               metadata = #{a => b}},
     ?assertEqual(UpdatedDevice, update(Updates, Device)).
 
 serialize_deserialize_test() ->
@@ -353,8 +377,8 @@ get_save_test() ->
     {ok, Pid} = router_db:start_link([Dir]),
     {ok, DB, [_, CF]} = router_db:get(),
     DeviceID = <<"id">>,
-    Key = libp2p_crypto:generate_keys(ecc_compact),
-    Device = key(Key, new(DeviceID, <<"device_name">>, <<"dev_eui">>, <<"app_eui">>)),
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
+    Device = keys(Keys, new(DeviceID)),
     ?assertEqual({error, not_found}, get(DB, CF, DeviceID)),
     ?assertEqual([], get(DB, CF)),
     ?assertEqual({ok, Device}, save(DB, CF, Device)),
@@ -364,18 +388,24 @@ get_save_test() ->
     gen_server:stop(Pid).
 
 upgrade_test() ->
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
     meck:new(libp2p_crypto, [passthrough]),
-    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> #{} end),
-
+    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> Keys end),
     Dir = test_utils:tmp_dir("upgrade_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     {ok, DB, [_, CF]} = router_db:get(),
+
     DeviceID = <<"id">>,
+    V2Device = #device_v2{id=DeviceID, keys=Keys},
     V0Device = #device{id=DeviceID},
-    V1Device = #device_v1{id=DeviceID, key=#{}},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
-    ?assertEqual({ok, V1Device}, get(DB, CF, DeviceID)),
-    ?assertEqual([V1Device], get(DB, CF)),
+    ?assertEqual({ok, V2Device}, get(DB, CF, DeviceID)),
+    ?assertEqual([V2Device], get(DB, CF)),
+
+    V1Device = #device_v1{id=DeviceID, key=Keys},
+    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V1Device), []),
+    ?assertEqual({ok, V2Device}, get(DB, CF, DeviceID)),
+    ?assertEqual([V2Device], get(DB, CF)),
 
     gen_server:stop(Pid),
     ?assert(meck:validate(libp2p_crypto)),

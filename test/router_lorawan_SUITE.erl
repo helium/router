@@ -5,6 +5,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
+-include("console_test.hrl").
 
 -export([
          all/0,
@@ -126,7 +127,7 @@ join_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(<<"yolo_id">>),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     NwkSKey = router_device:nwk_s_key(Device0),
@@ -142,11 +143,12 @@ join_test(Config) ->
     receive rx -> ok
     after 1000 -> ct:fail("nothing received from device")
     end,
-    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName1),
-                                   <<"id">> => <<"yolo_id">>,
-                                   <<"name">> => <<"yolo_name">>,
+                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
                                    <<"rssi">> => -35.0,
@@ -165,8 +167,8 @@ join_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 1,
                                             <<"payload">> => base64:encode(<<0>>),
-                                            <<"channel_id">> => '_',
-                                            <<"channel_name">> => <<"fake_http">>}),
+                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
@@ -181,11 +183,12 @@ join_test(Config) ->
     after 1000 -> ct:fail("nothing received from device")
     end,
     timer:sleep(2000),
-    test_utils:wait_channel_data(#{<<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"hotspot_name">> => erlang:list_to_binary(HotspotName1),
-                                   <<"id">> => <<"yolo_id">>,
-                                   <<"name">> => <<"yolo_name">>,
+                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
                                    <<"rssi">> => -35.0,
@@ -204,8 +207,8 @@ join_test(Config) ->
                                             <<"snr">> => 0.0,
                                             <<"payload_size">> => 1,
                                             <<"payload">> => base64:encode(<<0>>),
-                                            <<"channel_id">> => '_',
-                                            <<"channel_name">> => <<"fake_http">>}),
+                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,

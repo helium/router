@@ -19,22 +19,34 @@
          terminate/2,
          code_change/3]).
 
+-define(PING_TIMEOUT, timer:seconds(25)).
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).
 
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
-                connection :: pid() | undefined,
-                topic :: binary()  | undefined}).
-
+                connection :: pid(),
+                topic :: binary()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Channel) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
-    {ok, AWS} = httpc_aws:start_link(),
-    self() ! post_init,
-    {ok, #state{channel=Channel, aws=AWS}}.
+    case setup_aws(Channel) of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, AWS, Endpoint, Key, Cert} ->
+            DeviceID = router_channel:device_id(Channel),
+            case connect(DeviceID, Endpoint, Key, Cert) of
+                {error, Reason} ->
+                    {error, Reason};
+                {ok, Conn} ->
+                    erlang:send_after(?PING_TIMEOUT, self(), ping),
+                    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
+                    #{topic := Topic} = router_channel:args(Channel),
+                    {ok, #state{channel=Channel, aws=AWS, connection=Conn, topic=Topic}}
+            end
+    end.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
@@ -64,31 +76,11 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-
-handle_info(post_init, #state{channel=Channel, aws=AWS}=State) ->
-    #{aws_access_key := AccessKey,
-      aws_secret_key := SecretKey,
-      aws_region := Region,
-      topic := Topic} = router_channel:args(Channel),
-    DeviceID = router_channel:device_id(Channel),
-    httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
-    httpc_aws:set_region(AWS, Region),
-    ok = ensure_policy(AWS),
-    ok = ensure_thing_type(AWS),
-    ok = ensure_thing(AWS, DeviceID),
-    {ok, Key, Cert} = ensure_certificate(AWS, DeviceID),
-    {ok, Endpoint} = get_iot_endpoint(AWS),
-    {ok, Conn} = connect(DeviceID, Endpoint, Key, Cert),
-    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
-    (catch emqtt:ping(Conn)),
-    erlang:send_after(25000, self(), ping),
-    router_channel:device_worker(Channel) ! {started, router_channel:id(Channel)},
-    {ok, State#state{connection=Conn, topic=Topic}};
 handle_info({publish, _Map}, State) ->
     %% TODO
     {ok, State};
-handle_info(ping, State = #state{connection=Con}) ->
-    erlang:send_after(25000, self(), ping),
+handle_info(ping, #state{connection=Con}=State) ->
+    erlang:send_after(?PING_TIMEOUT, self(), ping),
     Res = (catch emqtt:ping(Con)),
     lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
@@ -135,7 +127,7 @@ handle_publish_res(Res, Channel, Data) ->
               end,
     router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
 
--spec connect(binary(), binary(), any(), any()) -> {ok, pid()}.
+-spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
@@ -148,12 +140,55 @@ connect(DeviceID, Hostname, Key, Cert) ->
             {ssl_opts, [{cert, der_encode_cert(Cert)},
                         {key, {'ECPrivateKey', EncodedPrivKey}}]}],
     {ok, C} = emqtt:start_link(Opts),
-    {ok, _Props} = emqtt:connect(C),
-    {ok, C}.
+    case emqtt:connect(C) of
+        {ok, _Props} -> {ok, C};
+        {error, Reason} -> {error, Reason}
+    end.
 
 der_encode_cert(PEMCert) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(list_to_binary(PEMCert)))),
     public_key:der_encode('Certificate', Cert).
+
+-spec setup_aws(router_channel:channel()) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
+setup_aws(Channel) ->
+    {ok, AWS} = httpc_aws:start_link(),
+    #{aws_access_key := AccessKey,
+      aws_secret_key := SecretKey,
+      aws_region := Region} = router_channel:args(Channel),
+    DeviceID = router_channel:device_id(Channel),
+    httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
+    httpc_aws:set_region(AWS, Region),
+    Funs = [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2],
+    case ensure(Funs, AWS, DeviceID) of
+        {error, _}=Error ->
+            Error;
+        ok ->
+            case get_iot_endpoint(AWS) of
+                {error, _}=Error ->
+                    Error;
+                {ok, Endpoint} ->
+                    case ensure_certificate(AWS, DeviceID) of
+                        {error, _}=Error ->
+                            Error;
+                        {ok, Key, Cert} ->
+                            {ok, AWS, Endpoint, Key, Cert}
+                    end
+            end
+    end.
+
+-spec ensure([function()], pid(), binary()) -> ok | {error, any()}.
+ensure(Funs, AWS, DeviceID) ->
+    ensure(Funs, AWS, DeviceID, ok).
+
+-spec ensure([function()], pid(), binary(), ok | {error, any()}) -> ok | {error, any()}.
+ensure([], _AWS, _DeviceID, Acc) ->
+    Acc;
+ensure(_Funs, _AWS, _DeviceID, {error, _}=Error) ->
+    Error;
+ensure([Fun|Funs], AWS, DeviceID, _Acc) when is_function(Fun, 1) ->
+    ensure(Funs, AWS, DeviceID, Fun(AWS));
+ensure([Fun|Funs], AWS, DeviceID, _Acc) when is_function(Fun, 2) ->
+    ensure(Funs, AWS, DeviceID, Fun(AWS, DeviceID)).
 
 -spec ensure_policy(pid()) -> ok | {error, any()}.
 ensure_policy(AWS) ->

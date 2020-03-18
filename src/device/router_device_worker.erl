@@ -19,7 +19,6 @@
          start_link/1,
          handle_packet/2,
          queue_message/2,
-         key/1,
          report_channel_status/2,
          handle_downlink/2
         ]).
@@ -73,10 +72,6 @@ handle_packet(Packet, PubkeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
--spec key(pid()) -> any().
-key(Pid) ->
-    gen_server:call(Pid, key).
-
 -spec report_channel_status(pid(), map()) -> ok.
 report_channel_status(Pid, Map) ->
     gen_server:cast(Pid, {report_channel_status, Map}).
@@ -119,24 +114,11 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    Device = case router_device:get(DB, CF, ID) of
-                 {ok, D} -> D;
-                 _ -> router_device:new(ID)
-             end,
+    Device = get_device(DB, CF, ID),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
     {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
-handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
-    case router_device:key(Device0) of
-        undefined ->
-            Key = libp2p_crypto:generate_keys(ecc_compact),
-            Device1 = router_device:key(Key, Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
-            {reply, Key, State#state{device=Device1}};
-        Key ->
-            {reply, Key, State}
-    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -340,10 +322,26 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
+get_device(DB, CF, ID) ->
+    Device0 = case router_device:get(DB, CF, ID) of
+                  {ok, D} -> D;
+                  _ -> router_device:new(ID)
+              end,
+    case router_device:key(Device0) of
+        undefined ->
+            Key = libp2p_crypto:generate_keys(ecc_compact),
+            Device1 = router_device:key(Key, Device0),
+            {ok, _} = router_device:save(DB, CF, Device1),
+            Device1;
+        _Key ->
+            Device0
+    end.
+
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs) ->
     ChannelID = router_channel:id(Channel),
-    case router_channel:add(EventMgrRef, Channel) of
+    case router_channel:add(EventMgrRef, Channel, Device) of
         ok ->
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
@@ -387,7 +385,7 @@ maybe_start_no_channel(Device, EventMgrRef) ->
                                    self()),
     case lists:keyfind(router_no_channel, 1, Handlers) of
         {router_no_channel, _} -> noop;
-        _ -> router_channel:add(EventMgrRef, NoChannel)
+        _ -> router_channel:add(EventMgrRef, NoChannel, Device)
     end,
     NoChannel.
 

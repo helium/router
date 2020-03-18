@@ -30,9 +30,9 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Channel) ->
+init([Channel, Device]) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
-    case setup_aws(Channel) of
+    case setup_aws(Channel, Device) of
         {error, Reason} ->
             {error, Reason};
         {ok, AWS, Endpoint, Key, Cert} ->
@@ -149,8 +149,10 @@ der_encode_cert(PEMCert) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(list_to_binary(PEMCert)))),
     public_key:der_encode('Certificate', Cert).
 
--spec setup_aws(router_channel:channel()) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
-setup_aws(Channel) ->
+-spec setup_aws(router_channel:channel(),
+                router_device:device()) -> {ok, pid(), binary(), any(), any()}
+              | {error, any()}.
+setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
     #{aws_access_key := AccessKey,
       aws_secret_key := SecretKey,
@@ -167,7 +169,7 @@ setup_aws(Channel) ->
                 {error, _}=Error ->
                     Error;
                 {ok, Endpoint} ->
-                    case ensure_certificate(AWS, DeviceID) of
+                    case ensure_certificate(AWS, Device) of
                         {error, _}=Error ->
                             Error;
                         {ok, Key, Cert} ->
@@ -256,38 +258,34 @@ ensure_thing(AWS, DeviceID) ->
             ok
     end.
 
--spec ensure_certificate(pid(), binary()) -> {ok, any(), string()} | {error, any()}.
-ensure_certificate(AWS, DeviceID) ->
-    case router_devices_sup:lookup_device_worker(DeviceID) of
-        {error, _Reason} ->
-            {error, {no_device_key, _Reason}};
-        {ok, Pid} ->
-            Key = router_device_worker:key(Pid),
-            case get_principals(AWS, DeviceID) of
-                [] ->
-                    CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
-                    CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
-                    Body = binary_to_list(jsx:encode(CSRReq)),
-                    case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
-                        {error, _Reason, _} ->
-                            {error, {certificate_creation_failed, _Reason}};
-                        {ok, {_, Res}} ->
-                            CertificateArn = proplists:get_value("certificateArn", Res),
-                            case attach_certificate(AWS, DeviceID, CertificateArn) of
-                                {error, _}=Error ->
-                                    Error;
-                                ok ->
-                                    case get_certificate_from_arn(AWS, CertificateArn) of
-                                        {error, _}=Error -> Error;
-                                        {ok, Cert} -> {ok, Key, Cert}
-                                    end 
-                            end
-                    end;
-                [CertificateArn] ->
-                    case get_certificate_from_arn(AWS, CertificateArn) of
-                        {error, _}=Error -> Error;
-                        {ok, Cert} -> {ok, Key, Cert}
+-spec ensure_certificate(pid(), router_device:device()) -> {ok, any(), string()} | {error, any()}.
+ensure_certificate(AWS, Device) ->
+    DeviceID = router_device:id(Device),
+    Key = router_device:key(Device),
+    case get_principals(AWS, DeviceID) of
+        [] ->
+            CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
+            CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
+            Body = binary_to_list(jsx:encode(CSRReq)),
+            case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
+                {error, _Reason, _} ->
+                    {error, {certificate_creation_failed, _Reason}};
+                {ok, {_, Res}} ->
+                    CertificateArn = proplists:get_value("certificateArn", Res),
+                    case attach_certificate(AWS, DeviceID, CertificateArn) of
+                        {error, _}=Error ->
+                            Error;
+                        ok ->
+                            case get_certificate_from_arn(AWS, CertificateArn) of
+                                {error, _}=Error -> Error;
+                                {ok, Cert} -> {ok, Key, Cert}
+                            end 
                     end
+            end;
+        [CertificateArn] ->
+            case get_certificate_from_arn(AWS, CertificateArn) of
+                {error, _}=Error -> Error;
+                {ok, Cert} -> {ok, Key, Cert}
             end
     end.
 

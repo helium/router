@@ -139,8 +139,8 @@ key(Device) ->
     Device#device_v1.key.
 
 -spec key(any(), device()) -> device().
-key(Q, Device) ->
-    Device#device_v1{key=Q}.
+key(Key, Device) ->
+    Device#device_v1{key=Key}.
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->

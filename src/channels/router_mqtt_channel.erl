@@ -26,7 +26,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Channel) ->
+init([Channel, _Device]) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),

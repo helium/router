@@ -297,7 +297,9 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
                                   channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
         Error ->
             Channel = maps:get(ChannelID, Channels),
-            router_device_api:report_channel_status(Device, #{channel_id => ChannelID, channel_name => router_channel:name(Channel),
+            ChannelName = router_channel:name(Channel),
+            lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
+            router_device_api:report_channel_status(Device, #{channel_id => ChannelID, channel_name => ChannelName,
                                                               status => failure, category => <<"channel_crash">>,
                                                               description => list_to_binary(io_lib:format("~p", [Error]))}),
             case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
@@ -332,16 +334,19 @@ get_device(DB, CF, ID) ->
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs) ->
     ChannelID = router_channel:id(Channel),
+    ChannelName = router_channel:name(Channel),
     case router_channel:add(EventMgrRef, Channel, Device) of
         ok ->
+            lager:info("channel ~p started", [{ChannelID, ChannelName}]),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
+            lager:error("failed ot start channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
             router_device_api:report_channel_status(Device,
-                                                    #{channel_id => router_channel:id(Channel),
-                                                      channel_name => router_channel:name(Channel),
+                                                    #{channel_id => ChannelID,
+                                                      channel_name => ChannelName,
                                                       status => failure, category => <<"start_channel_failure">>,
                                                       description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),

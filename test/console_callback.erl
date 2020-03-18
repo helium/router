@@ -2,6 +2,8 @@
 
 -behaviour(elli_handler).
 
+-include("console_test.hrl").
+
 -export([handle/2,
          handle_event/3]).
 
@@ -24,30 +26,18 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     [{no_channel, No}] -> No
                 end,
     Channel = case ChannelType of
-                  http ->
-                      #{<<"type">> => <<"http">>,
-                        <<"credentials">> => #{<<"headers">> => #{},
-                                               <<"endpoint">> => <<"http://localhost:3000/channel">>,
-                                               <<"method">> => <<"POST">>},
-                        <<"show_dupes">> => ShowDupes,
-                        <<"id">> => <<"12345">>,
-                        <<"name">> => <<"fake_http">>};
-                  mqtt ->
-                      #{<<"type">> => <<"mqtt">>,
-                        <<"credentials">> => #{<<"endpoint">> => <<"mqtt://user:pass@test.com:1883">>,
-                                               <<"topic">> => <<"test/">>},
-                        <<"show_dupes">> => ShowDupes,
-                        <<"id">> => <<"56789">>,
-                        <<"name">> => <<"fake_mqtt">>}
+                  http -> ?CONSOLE_HTTP_CHANNEL(ShowDupes);
+                  mqtt -> ?CONSOLE_MQTT_CHANNEL(ShowDupes)
               end,
     Channels = case NoChannel of
                    true -> [];
                    false -> [Channel]
                end,
-    Body = #{<<"id">> => <<"yolo_id">>,
-             <<"name">> => <<"yolo_name">>,
+    Body = #{<<"id">> => ?CONSOLE_DEVICE_ID,
+             <<"name">> => ?CONSOLE_DEVICE_NAME,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-             <<"channels">> => Channels},
+             <<"channels">> => Channels,
+             <<"labels">> => ?CONSOLE_LABELS},
     case DID == <<"unknown">> of
         true ->
             {200, [], jsx:encode([Body])};

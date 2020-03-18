@@ -128,9 +128,9 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
     {ok, _} = router_device:save(DB, CF, Device1),
     {noreply, State#state{device=Device1}};
-handle_cast({join, Packet0, PubkeyBin, AppKey, DeviceName, Pid}, #state{device=Device0,
-                                                                        join_cache=Cache0}=State0) ->
-    case handle_join(Packet0, PubkeyBin, AppKey, DeviceName, Device0) of
+handle_cast({join, Packet0, PubkeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
+                                                                       join_cache=Cache0}=State0) ->
+    case handle_join(Packet0, PubkeyBin, APIDevice, AppKey, Device0) of
         {error, _Reason} ->
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
@@ -272,7 +272,8 @@ handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRe
             ChannelHash = router_channel:hash(Channel),
             case router_channel:hash(CachedChannel) of
                 ChannelHash ->
-                    lager:info("channel ~p already started", [ChannelID]);
+                    lager:info("channel ~p already started", [ChannelID]),
+                    {noreply, State};
                 _OldHash ->
                     ok = router_channel:delete(EventMgrRef, CachedChannel),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
@@ -397,14 +398,13 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
     case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
-        {ok, Device, AppKey} ->
-            DeviceID = router_device:id(Device),
+        {ok, APIDevice, AppKey} ->
+            DeviceID = router_device:id(APIDevice),
             case maybe_start_worker(DeviceID) of
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    DeviceName = router_device:name(Device),
-                    gen_server:cast(WorkerPid, {join, Packet, PubkeyBin, AppKey, DeviceName, Pid})
+                    gen_server:cast(WorkerPid, {join, Packet, PubkeyBin, APIDevice, AppKey, Pid})
             end;
         {error, api_not_found} ->
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
@@ -467,25 +467,26 @@ maybe_start_worker(DeviceID) ->
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device()) ->
+-spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), router_device:device(), binary(), router_device:device()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
-            PubkeyBin, AppKey, DeviceName, Device) when MType == ?JOIN_REQ ->
-    handle_join(Packet, PubkeyBin, AppKey, DeviceName, Device, router_device:join_nonce(Device));
-handle_join(_Packet, _PubkeyBin, _AppKey, _DeviceName, _Device) ->
+            PubkeyBin, APIDevice, AppKey, Device) when MType == ?JOIN_REQ ->
+    handle_join(Packet, PubkeyBin, APIDevice, AppKey, Device, router_device:join_nonce(Device));
+handle_join(_Packet, _PubkeyBin, _APIDevice, _AppKey, _Device) ->
     {error, not_join_req}.
 
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), binary(), binary(), router_device:device(), non_neg_integer()) ->
+-spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
-            PubkeyBin, _AppKey, DeviceName, _Device, OldNonce) when Nonce == OldNonce ->
+            PubkeyBin, APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
     case throttle:check(join_dedup, {AppEUI, DevEUI, Nonce}) of
         {ok, _, _} ->
+            DeviceName = router_device:name(APIDevice),
             lager:debug("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]),
             StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(Nonce))/binary, " for AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
@@ -497,7 +498,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
 handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
                        payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
-            PubkeyBin, AppKey, DeviceName, Device0, _OldNonce) ->
+            PubkeyBin, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     NetID = <<"He2">>,
@@ -523,6 +524,7 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                                                               <<"freq">> => Freq,
                                                               <<"datr">> => erlang:list_to_binary(DataRate),
                                                               <<"codr">> => <<"lol">>}),
+    DeviceName = router_device:name(APIDevice),
     lager:info("Device ~s DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                [DeviceName, lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
     Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
@@ -533,7 +535,8 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                      {app_s_key, AppSKey},
                      {nwk_s_key, NwkSKey},
                      {fcntdown, 0},
-                     {channel_correction, false}],
+                     {channel_correction, false},
+                     {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
     {ok, Packet, Device1, DevNonce}.
 
@@ -769,7 +772,8 @@ send_to_channel(#packet_pb{timestamp=Time, datarate=DataRate, signal_strength=RS
             app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
             name => router_device:name(Device),
             snr => SNR,
-            id => router_device:id(Device)},
+            id => router_device:id(Device),
+            metadata => router_device:metadata(Device)},
     ok = router_channel:handle_data(EventMgrRef, Map).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().

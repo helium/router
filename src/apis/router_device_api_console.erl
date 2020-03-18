@@ -2,13 +2,11 @@
 
 -behavior(router_device_api_behavior).
 
--export([
-         init/1,
+-export([init/1,
          get_devices/2,
          get_channels/2,
          report_device_status/2,
-         report_channel_status/2
-        ]).
+         report_channel_status/2]).
 
 -define(TOKEN_CACHE_TIME, 600).
 -define(HANDLE_DATA_CACHE_TIME, 60).
@@ -33,7 +31,12 @@ get_devices(DevEui, AppEui) ->
                       ID = kvc:path([<<"id">>], JSONDevice),
                       Name = kvc:path([<<"name">>], JSONDevice),
                       AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
-                      {AppKey, router_device:new(ID, Name, DevEui, AppEui)}
+                      Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+                      DeviceUpdates = [{name, Name},
+                                       {dev_eui, DevEui},
+                                       {app_eui, AppEui},
+                                       {metadata, Metadata}],
+                      {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
               end,
               jsx:decode(Body, [return_maps])
              );

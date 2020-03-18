@@ -32,15 +32,16 @@
 
 -spec new(binary()) -> device().
 new(ID) ->
-    #device_v1{id=ID}.
+    #device_v1{id=ID,
+               key=libp2p_crypto:generate_keys(ecc_compact)}.
 
 -spec new(binary(), binary(), binary(), binary()) -> device().
 new(ID, Name, DevEui, AppEui) ->
     #device_v1{id=ID,
                name=Name,
                dev_eui=DevEui,
-               app_eui=AppEui
-              }.
+               app_eui=AppEui,
+               key=libp2p_crypto:generate_keys(ecc_compact)}.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
@@ -177,24 +178,24 @@ serialize(Device) ->
 -spec deserialize(binary()) -> device().
 deserialize(Binary) ->
     case erlang:binary_to_term(Binary) of
+        #device_v1{key=undefined}=Device ->
+            ?MODULE:key(libp2p_crypto:generate_keys(ecc_compact), Device);
         #device_v1{}=Device ->
             Device;
         #device{}=Old ->
-            #device_v1{
-               id=Old#device.id,
-               name=Old#device.name,
-               dev_eui=Old#device.dev_eui,
-               app_eui=Old#device.app_eui,
-               nwk_s_key=Old#device.nwk_s_key,
-               app_s_key=Old#device.app_s_key,
-               join_nonce=Old#device.join_nonce,
-               fcnt=Old#device.fcnt,
-               fcntdown=Old#device.fcntdown,
-               offset=Old#device.offset,
-               channel_correction=Old#device.channel_correction,
-               queue=Old#device.queue,
-               key=undefined
-              }
+            #device_v1{id=Old#device.id,
+                       name=Old#device.name,
+                       dev_eui=Old#device.dev_eui,
+                       app_eui=Old#device.app_eui,
+                       nwk_s_key=Old#device.nwk_s_key,
+                       app_s_key=Old#device.app_s_key,
+                       join_nonce=Old#device.join_nonce,
+                       fcnt=Old#device.fcnt,
+                       fcntdown=Old#device.fcntdown,
+                       offset=Old#device.offset,
+                       channel_correction=Old#device.channel_correction,
+                       queue=Old#device.queue,
+                       key=libp2p_crypto:generate_keys(ecc_compact)}
     end.
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
@@ -246,7 +247,13 @@ rocks_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
 -ifdef(TEST).
 
 new_test() ->
-    ?assertEqual(#device_v1{id= <<"id">>}, new(<<"id">>)).
+    meck:new(libp2p_crypto, [passthrough]),
+    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> #{} end),
+
+    ?assertEqual(#device_v1{id= <<"id">>, key= #{}}, new(<<"id">>)),
+
+    ?assert(meck:validate(libp2p_crypto)),
+    meck:unload(libp2p_crypto).
 
 name_test() ->
     Device = new(<<"id">>),
@@ -305,13 +312,12 @@ queue_test() ->
 
 key_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(undefined, key(Device)),
+    ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, key(Device)),
     ?assertEqual({key, any}, key(key({key, any}, Device))).
 
 update_test() ->
     Device = new(<<"id">>),
-    Updates = [
-               {name, <<"name">>},
+    Updates = [{name, <<"name">>},
                {app_eui, <<"app_eui">>},
                {dev_eui, <<"dev_eui">>},
                {nwk_s_key, <<"nwk_s_key">>},
@@ -321,22 +327,21 @@ update_test() ->
                {fcntdown, 1},
                {offset, 1},
                {channel_correction, true},
-               {queue, [a]}
-              ],
-    UpdatedDevice = #device_v1{
-                       id = <<"id">>,
-                       name = <<"name">>,
-                       app_eui = <<"app_eui">>,
-                       dev_eui = <<"dev_eui">>,
-                       nwk_s_key = <<"nwk_s_key">>,
-                       app_s_key = <<"app_s_key">>,
-                       join_nonce = 1,
-                       fcnt = 1,
-                       fcntdown = 1,
-                       offset = 1,
-                       channel_correction = true,
-                       queue = [a]
-                      },
+               {queue, [a]},
+               {key, #{}}],
+    UpdatedDevice = #device_v1{id = <<"id">>,
+                               name = <<"name">>,
+                               app_eui = <<"app_eui">>,
+                               dev_eui = <<"dev_eui">>,
+                               nwk_s_key = <<"nwk_s_key">>,
+                               app_s_key = <<"app_s_key">>,
+                               join_nonce = 1,
+                               fcnt = 1,
+                               fcntdown = 1,
+                               offset = 1,
+                               channel_correction = true,
+                               queue = [a],
+                               key = #{}},
     ?assertEqual(UpdatedDevice, update(Updates, Device)).
 
 serialize_deserialize_test() ->
@@ -359,15 +364,21 @@ get_save_test() ->
     gen_server:stop(Pid).
 
 upgrade_test() ->
+    meck:new(libp2p_crypto, [passthrough]),
+    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> #{} end),
+
     Dir = test_utils:tmp_dir("upgrade_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     {ok, DB, [_, CF]} = router_db:get(),
     DeviceID = <<"id">>,
     V0Device = #device{id=DeviceID},
-    V1Device = #device_v1{id=DeviceID},
+    V1Device = #device_v1{id=DeviceID, key=#{}},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
     ?assertEqual({ok, V1Device}, get(DB, CF, DeviceID)),
     ?assertEqual([V1Device], get(DB, CF)),
-    gen_server:stop(Pid).
+
+    gen_server:stop(Pid),
+    ?assert(meck:validate(libp2p_crypto)),
+    meck:unload(libp2p_crypto).
 
 -endif.

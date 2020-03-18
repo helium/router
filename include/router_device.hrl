@@ -26,5 +26,5 @@
                     offset=0 :: non_neg_integer(),
                     channel_correction=false :: boolean(),
                     queue=[] :: [any()],
-                    key :: any() | undefined
+                    key :: map() | undefined
                    }).

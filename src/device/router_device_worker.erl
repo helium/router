@@ -324,18 +324,9 @@ terminate(_Reason, _State) ->
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, ID) ->
-    Device0 = case router_device:get(DB, CF, ID) of
-                  {ok, D} -> D;
-                  _ -> router_device:new(ID)
-              end,
-    case router_device:key(Device0) of
-        undefined ->
-            Key = libp2p_crypto:generate_keys(ecc_compact),
-            Device1 = router_device:key(Key, Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
-            Device1;
-        _Key ->
-            Device0
+    case router_device:get(DB, CF, ID) of
+        {ok, D} -> D;
+        _ -> router_device:new(ID)
     end.
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.

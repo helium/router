@@ -19,7 +19,6 @@
          start_link/1,
          handle_packet/2,
          queue_message/2,
-         key/1,
          report_channel_status/2,
          handle_downlink/2
         ]).
@@ -38,6 +37,12 @@
 
 
 -define(SERVER, ?MODULE).
+-define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MAX, timer:minutes(5)).
+-define(BACKOFF_INIT,
+        {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
+         erlang:make_ref()}).
+
 -record(state, {
                 db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
@@ -45,8 +50,8 @@
                 join_cache = #{} :: map(),
                 frame_cache = #{} :: map(),
                 event_mgr :: pid(),
-                channels = #{} :: map()
-               }).
+                channels = #{} :: map(),
+                channels_backoffs = #{} :: map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -66,10 +71,6 @@ handle_packet(Packet, PubkeyBin) ->
 -spec queue_message(pid(), {boolean(), integer(), binary()}) -> ok.
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
-
--spec key(pid()) -> any().
-key(Pid) ->
-    gen_server:call(Pid, key).
 
 -spec report_channel_status(pid(), map()) -> ok.
 report_channel_status(Pid, Map) ->
@@ -113,24 +114,11 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    Device = case router_device:get(DB, CF, ID) of
-                 {ok, D} -> D;
-                 _ -> router_device:new(ID)
-             end,
+    Device = get_device(DB, CF, ID),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
     {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
-handle_call(key, _From, #state{db=DB, cf=CF, device=Device0}=State) ->
-    case router_device:key(Device0) of
-        undefined ->
-            Key = libp2p_crypto:generate_keys(ecc_compact),
-            Device1 = router_device:key(Key, Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
-            {reply, Key, State#state{device=Device1}};
-        Key ->
-            {reply, Key, State}
-    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -258,32 +246,67 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
                 NoChannel = maybe_start_no_channel(Device, EventMgrRef),
                 #{router_channel:id(NoChannel) => NoChannel};
             false ->
-                %% Adding / updating channels based on channel hash
-                AddedChannels = add_channels(EventMgrRef, APIChannels, Channels0, Device),
-                %% Removing old channels left in cache but (if not in API call)
-                remove_channels(EventMgrRef, APIChannels, AddedChannels)
+                %% Start channels asynchronously 
+                lists:foreach(
+                  fun(Channel) -> self() ! {start_channel, Channel} end,
+                  maps:values(APIChannels)),
+                %% Removing old channels left in cache but not in API call
+                remove_old_channels(EventMgrRef, APIChannels, Channels0)
 
         end,
-    erlang:send_after(timer:minutes(5), self(), refresh_channels),
+    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
-handle_info({gen_event_EXIT, {_Handler, ID}, Reason}, State = #state{channels=Channels, device=Device}) ->
-    case Reason of
-        normal ->
-            {noreply, State#state{channels=maps:remove(ID, Channels)}};
-        shutdown ->
-            {noreply, State#state{channels=maps:remove(ID, Channels)}};
+handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
+                                             channels=Channels, channels_backoffs=Backoffs0}=State) ->
+    ChannelID = router_channel:id(Channel),
+    case maps:get(ChannelID, Channels, undefined) of
+        undefined ->
+            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
+                {ok, Backoffs1} ->
+                    {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
+                                          channels_backoffs=Backoffs1}};
+                {error, _Reason, Backoffs1} ->
+                    {noreply, State#state{channels_backoffs=Backoffs1}}
+            end;
+        CachedChannel ->
+            ChannelHash = router_channel:hash(Channel),
+            case router_channel:hash(CachedChannel) of
+                ChannelHash ->
+                    lager:info("channel ~p already started", [ChannelID]);
+                _OldHash ->
+                    ok = router_channel:delete(EventMgrRef, CachedChannel),
+                    case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                        {ok, Backoffs1} ->
+                            {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
+                                                  channels_backoffs=Backoffs1}};
+                        {error, _Reason, Backoffs1} ->
+                            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
+                                                  channels_backoffs=Backoffs1}}
+                    end
+            end
+    end;
+handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=Device, channels=Channels,
+                                                                        event_mgr=EventMgrRef,
+                                                                        channels_backoffs=Backoffs0}=State) ->
+    case ExitReason of
         {swapped, _NewHandler, _Pid} ->
             %% unclear what this means for channels right now
             {noreply, State};
+        R when R == normal orelse R == shutdown ->
+            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
+                                  channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
         Error ->
-            Channel = maps:get(ID, Channels),
-            Name = router_channel:name(Channel),
-            router_device_api:report_channel_status(Device, #{channel_id => ID, channel_name => Name, status => failure,
-                                                              description => list_to_binary(io_lib:format("~p", [Error])),
-                                                              category => <<"channel_failure">>}),
-            %% TODO use exponential backoff or throttle here?
-            erlang:send_after(timer:seconds(15), self(), refresh_channels),
-            {noreply, State#state{channels=maps:remove(ID, Channels)}}
+            Channel = maps:get(ChannelID, Channels),
+            router_device_api:report_channel_status(Device, #{channel_id => ChannelID, channel_name => router_channel:name(Channel),
+                                                              status => failure, category => <<"channel_crash">>,
+                                                              description => list_to_binary(io_lib:format("~p", [Error]))}),
+            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                {ok, Backoffs1} ->
+                    {noreply, State#state{channels_backoffs=Backoffs1}};
+                {error, _Reason, Backoffs1} ->
+                    {noreply, State#state{channels=maps:remove(ChannelID, Channels),
+                                          channels_backoffs=Backoffs1}}
+            end
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -299,65 +322,48 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec add_channels(pid(), map(), map(), router_device:device()) -> map().
-add_channels(EventMgrRef, APIChannels, Channels, Device) ->
-    maps:fold(
-      fun(ChannelID, Channel, Acc) ->
-              case maps:get(ChannelID, Acc, undefined) of
-                  undefined ->
-                      case add_channel(EventMgrRef, Channel, Device) of
-                          ok ->
-                              maps:put(ChannelID, Channel, Acc);
-                          {error, _} ->
-                              Acc
-                      end;
-                  CachedChannel ->
-                      ChannelHash = router_channel:hash(Channel),
-                      case router_channel:hash(CachedChannel) of
-                          ChannelHash ->
-                              Acc;
-                          _OldHash ->
-                              %% TODO: This can be improved (waiting on websockets)
-                              Handler = router_channel:handler(Channel),
-                              _ = gen_event:delete_handler(EventMgrRef, {Handler, ChannelID}, []),
-                              case add_channel(EventMgrRef, Channel, Device) of
-                                  ok ->
-                                      maps:put(ChannelID, Channel, Acc);
-                                  {error, _} ->
-                                      Acc
-                              end
-                      end
-              end
-      end,
-      Channels,
-      APIChannels).
-
--spec add_channel(pid(), router_channel:channel(), router_device:device()) -> ok | {error, any()}.
-add_channel(EventMgrRef, Channel, Device) ->
-    case router_channel:add(EventMgrRef, Channel) of
-        ok ->
-            ok;
-        {E, Reason} when E == 'EXIT'; E == error ->
-            router_device_api:report_channel_status(Device, #{channel_id => router_channel:id(Channel),
-                                                              channel_name => router_channel:name(Channel),
-                                                              status => failure, category => <<"add_channel_failure">>,
-                                                              description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
-            {error, Reason}
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
+get_device(DB, CF, ID) ->
+    case router_device:get(DB, CF, ID) of
+        {ok, D} -> D;
+        _ -> router_device:new(ID)
     end.
 
--spec remove_channels(pid(), map(), map()) -> map().
-remove_channels(EventMgrRef, APIChannels, Channels) ->
-    maps:filter(fun(ChannelID, Channel) ->
-                        case maps:get(ChannelID, APIChannels, undefined) of
-                            undefined ->
-                                Handler = router_channel:handler(Channel),
-                                _ = gen_event:delete_handler(EventMgrRef, {Handler, ChannelID}, []),
-                                false;
-                            _ ->
-                                true
-                        end
-                end,
-                Channels).
+-spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
+start_channel(EventMgrRef, Channel, Device, Backoffs) ->
+    ChannelID = router_channel:id(Channel),
+    case router_channel:add(EventMgrRef, Channel, Device) of
+        ok ->
+            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
+            _ = erlang:cancel_timer(TimerRef0),
+            {_Delay, Backoff1} = backoff:succeed(Backoff0),
+            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
+        {E, Reason} when E == 'EXIT'; E == error ->
+            router_device_api:report_channel_status(Device,
+                                                    #{channel_id => router_channel:id(Channel),
+                                                      channel_name => router_channel:name(Channel),
+                                                      status => failure, category => <<"start_channel_failure">>,
+                                                      description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
+            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
+            _ = erlang:cancel_timer(TimerRef0),
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
+            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
+    end.
+
+-spec remove_old_channels(pid(), map(), map()) -> map().
+remove_old_channels(EventMgrRef, APIChannels, Channels) ->
+    maps:filter(
+      fun(ChannelID, Channel) ->
+              case maps:get(ChannelID, APIChannels, undefined) of
+                  undefined ->
+                      ok = router_channel:delete(EventMgrRef, Channel),
+                      false;
+                  _ ->
+                      true
+              end
+      end,
+      Channels).
 
 -spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
 maybe_start_no_channel(Device, EventMgrRef) ->
@@ -370,7 +376,7 @@ maybe_start_no_channel(Device, EventMgrRef) ->
                                    self()),
     case lists:keyfind(router_no_channel, 1, Handlers) of
         {router_no_channel, _} -> noop;
-        _ -> router_channel:add(EventMgrRef, NoChannel)
+        _ -> router_channel:add(EventMgrRef, NoChannel, Device)
     end,
     NoChannel.
 

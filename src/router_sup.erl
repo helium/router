@@ -7,8 +7,6 @@
 
 -behaviour(supervisor).
 
--include("router.hrl").
-
 %% API
 -export([start_link/0]).
 

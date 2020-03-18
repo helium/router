@@ -15,14 +15,18 @@
 
 -spec init(Args :: any()) -> ok.
 init(_Args) ->
+    PoolName = ?MODULE,
+    Options = [{timeout, timer:seconds(15)}, {max_connections, 100}],
+    ok = hackney_pool:start_pool(PoolName, Options),
     ok.
 
 -spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 get_devices(DevEui, AppEui) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
-    case hackney:get(<<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
-                     [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
+    URL = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
+            "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
+    case hackney:get(URL, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
             lists:map(
               fun(JSONDevice) ->
@@ -65,7 +69,7 @@ report_device_status(Device, Map) ->
              hotspot_name => list_to_binary(maps:get(hotspot_name, Map, ""))},
     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                  [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
-                 jsx:encode(Body), [with_body]),
+                 jsx:encode(Body), [with_body, {pool, ?MODULE}]),
     ok.
 
 -spec report_channel_status(Device :: router_device:device(), Map :: #{}) -> ok.
@@ -84,7 +88,7 @@ report_channel_status(Device, Map) ->
     Body = maps:merge(Core, maps:with([hotspot_name, payload, payload_size, rssi, snr], Map)),
     hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
                  [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
-                 jsx:encode(Body), [with_body]),
+                 jsx:encode(Body), [with_body, {pool, ?MODULE}]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -133,7 +137,7 @@ get_token(Endpoint) ->
     Secret = get_secret(),
     CacheFun = fun() ->
                        case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [{<<"Content-Type">>, <<"application/json">>}],
-                                         jsx:encode(#{secret => Secret}) , [with_body]) of
+                                         jsx:encode(#{secret => Secret}) , [with_body, {pool, ?MODULE}]) of
                            {ok, 201, _Headers, Body} ->
                                #{<<"jwt">> := JWT} = jsx:decode(Body, [return_maps]),
                                JWT
@@ -147,7 +151,7 @@ get_device(Device) ->
     JWT = get_token(Endpoint),
     DeviceId = router_device:id(Device),
     case hackney:get(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
-                     [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body]) of
+                     [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
             lager:info("Body for ~p ~p", [<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>, Body]),
             {ok, jsx:decode(Body, [return_maps])};

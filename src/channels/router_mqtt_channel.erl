@@ -17,7 +17,7 @@
          terminate/2,
          code_change/3]).
 
--define(PING_TIMEOUT, 25000).
+-define(PING_TIMEOUT, timer:seconds(25)).
 
 -record(state, {channel :: router_channel:channel(),
                 connection :: pid(),
@@ -26,7 +26,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Channel) ->
+init([Channel, _Device]) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -77,9 +77,10 @@ handle_call(_Msg, State) ->
 handle_info({publish, #{payload := Payload0}}, #state{channel=Channel}=State) ->
     router_device_worker:handle_downlink(Payload0, Channel),
     {ok, State};
-handle_info(ping, #state{connection=Connection}=State) ->
-    (catch emqtt:ping(Connection)),
-    erlang:send_after(25000, self(), ping),
+handle_info(ping, #state{connection=Con}=State) ->
+    erlang:send_after(?PING_TIMEOUT, self(), ping),
+    Res = (catch emqtt:ping(Con)),
+    lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),

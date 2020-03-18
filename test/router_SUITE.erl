@@ -240,15 +240,6 @@ http_test(Config) ->
     %%ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     {ok, _Reply1} = test_utils:wait_state_channel_message({true, 1, <<"ack">>}, Device0, <<"ack">>, ?CONFIRMED_DOWN, 0, 0, 1, 2),
-
-
-    %% Lets do some key checking
-    ?assertEqual(undefined, router_device:key(Device2)),
-    Key = router_device_worker:key(WorkerPid),
-    ?assertEqual(Key, router_device_worker:key(WorkerPid)),
-    {ok, Device3} = router_device:get(DB, CF, WorkerID),
-    ?assertEqual(Key, router_device:key(Device3)),
-
     libp2p_swarm:stop(Swarm),
     ok.
 
@@ -744,7 +735,8 @@ aws_test(_Config) ->
     timer:sleep(250),
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Channel]),
     {ok, EventMgrRef} = router_channel:start_link(),
-    _ = router_channel:add(EventMgrRef, Channel),
+    Device = router_device:new(DeviceID),
+    ok = router_channel:add(EventMgrRef, Channel, Device),
     timer:sleep(5000),
     gen_event:stop(EventMgrRef),
     gen_server:stop(DeviceWorkerPid),
@@ -810,13 +802,14 @@ no_channel_test(Config) ->
                                    <<"yolo_id">>,
                                    DeviceWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}}, sys:get_state(DeviceWorkerPid)),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, sys:get_state(DeviceWorkerPid)),
 
     ets:insert(Tab, {no_channel, false}),
     DeviceWorkerPid ! refresh_channels,
+    timer:sleep(250),
 
     State0 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}}, State0),
+    ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(8, State0))),
 
     Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -832,12 +825,19 @@ no_channel_test(Config) ->
                                    <<"snr">> => 0.0,
                                    <<"spreading">> => <<"SF8BW125">>,
                                    <<"timestamp">> => 0}),
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"ack">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 1,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
                                             <<"frame_up">> => 1,
-                                            <<"frame_down">> => 0,
+                                            <<"frame_down">> => 1,
                                             <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
                                             <<"rssi">> => 0.0,
                                             <<"snr">> => 0.0,
@@ -849,9 +849,10 @@ no_channel_test(Config) ->
 
     ets:insert(Tab, {no_channel, true}),
     DeviceWorkerPid ! refresh_channels,
+    timer:sleep(250),
 
     State1 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}}, State1),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(8, State1))),
 
     libp2p_swarm:stop(Swarm),

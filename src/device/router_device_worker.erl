@@ -410,9 +410,6 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
                                                             lorawan_utils:binary_to_hex(AppEUI),
                                                             AName]),
-            StatusMsg = <<"No device for AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
-                          " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_device_status(failure, AName, StatusMsg, error),
             {error, undefined_app_key};
         {error, _Reason} ->
             case throttle:check(join_dedup, {AppEUI, DevEUI, DevNonce}) of

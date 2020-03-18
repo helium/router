@@ -467,7 +467,7 @@ maybe_start_worker(DeviceID) ->
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), outer_device:device(), binary(), router_device:device()) ->
+-spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), router_device:device(), binary(), router_device:device()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,

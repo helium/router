@@ -600,8 +600,8 @@ mqtt_test(Config) ->
     meck:expect(
       emqtt,
       subscribe,
-      fun(_Pid, {_Topic, _QoS}) ->
-              ct:pal("emqtt:subscribe ~p~n", [{_Topic, _QoS}]),
+      fun(_Pid, _Props, _Topic, _QoS) ->
+              ct:pal("emqtt:subscribe ~p~n", [{_Pid, _Props, _Topic, _QoS}]),
               Self ! {mqtt_worker, self()},
               ok
       end

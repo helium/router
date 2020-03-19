@@ -44,8 +44,8 @@ init([Channel, Device]) ->
                 {ok, Conn} ->
                     ID = router_channel:id(Channel),
                     _ = ping(ID),
-                    erlang:send_after(?PING_TIMEOUT, self(), ping),
-                    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
+                    Topic = <<"$aws/things/", DeviceID/binary, "/shadow/#">>,  
+                    {ok, _, _} = emqtt:subscribe(Conn, #{channel_id => ID}, Topic, 0),
                     #{topic := Topic} = router_channel:args(Channel),
                     {ok, #state{channel=Channel, id=ID, aws=AWS,
                                 connection=Conn, topic=Topic}}
@@ -80,7 +80,7 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, _Map}, State) ->
+handle_info({publish, #{properties := #{channel_id := ID}}}, #state{id=ID}=State) ->
     %% TODO: Handle downlink
     {ok, State};
 handle_info({ID, ping}, #state{id=ID, connection=Con}=State) ->

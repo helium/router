@@ -36,6 +36,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Body = #{<<"id">> => ?CONSOLE_DEVICE_ID,
              <<"name">> => ?CONSOLE_DEVICE_NAME,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
+             <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
+             <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
              <<"channels">> => Channels,
              <<"labels">> => ?CONSOLE_LABELS},
     case DID == <<"unknown">> of

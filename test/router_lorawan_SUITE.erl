@@ -55,7 +55,8 @@ init_per_testcase(TestCase, Config) ->
     AppKey = <<16#2B, 16#7E, 16#15, 16#16, 16#28, 16#AE, 16#D2, 16#A6, 16#AB, 16#F7, 16#15, 16#88, 16#09, 16#CF, 16#4F, 16#3C>>,
     ElliOpts = [
                 {callback, console_callback},
-                {callback_args, #{forward => self(), ets => Tab, app_key => AppKey}},
+                {callback_args, #{forward => self(), ets => Tab,
+                                  app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
                 {port, 3000}
                ],
     {ok, Pid} = elli:start_link(ElliOpts),

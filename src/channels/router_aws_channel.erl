@@ -24,6 +24,7 @@
 -define(THING_TYPE, <<"Helium-Thing">>).
 
 -record(state, {channel :: router_channel:channel(),
+                id :: binary(),
                 aws :: pid(),
                 connection :: pid(),
                 topic :: binary()}).
@@ -41,10 +42,13 @@ init([Channel, Device]) ->
                 {error, Reason} ->
                     {error, Reason};
                 {ok, Conn} ->
+                    ID = router_channel:id(Channel),
+                    _ = ping(ID),
                     erlang:send_after(?PING_TIMEOUT, self(), ping),
                     {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
                     #{topic := Topic} = router_channel:args(Channel),
-                    {ok, #state{channel=Channel, aws=AWS, connection=Conn, topic=Topic}}
+                    {ok, #state{channel=Channel, id=ID, aws=AWS,
+                                connection=Conn, topic=Topic}}
             end
     end.
 
@@ -77,15 +81,15 @@ handle_call(_Msg, State) ->
     {ok, ok, State}.
 
 handle_info({publish, _Map}, State) ->
-    %% TODO
+    %% TODO: Handle downlink
     {ok, State};
-handle_info(ping, #state{connection=Con}=State) ->
-    erlang:send_after(?PING_TIMEOUT, self(), ping),
+handle_info({ID, ping}, #state{id=ID, connection=Con}=State) ->
+    _ = ping(ID),
     Res = (catch emqtt:ping(Con)),
     lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
 handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -97,6 +101,10 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec ping(binary()) -> reference().
+ping(ID) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {ID, ping}).
 
 -spec encode_data(map()) -> binary().
 encode_data(#{payload := Payload}=Map) ->

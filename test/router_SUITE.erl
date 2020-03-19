@@ -110,7 +110,7 @@ http_test(Config) ->
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
@@ -129,7 +129,7 @@ http_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -167,7 +167,7 @@ http_test(Config) ->
     ?assertEqual([Msg], router_device:queue(Device1)),
 
     %% Sending UNCONFIRMED_UP frame packet and then we should get back message that was in queue
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -206,7 +206,7 @@ http_test(Config) ->
     {ok, Device2} = router_device:get(DB, CF, WorkerID),
     ?assertEqual([], router_device:queue(Device2)),
 
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{body => <<1:8/integer, "reply">>})},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{body => <<1:8/integer, "reply">>})},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -266,7 +266,7 @@ dupes_test(Config) ->
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
@@ -292,11 +292,11 @@ dupes_test(Config) ->
     router_device_worker:queue_message(WorkerPid, Msg1),
 
     %% Send 2 similar packet to make it look like it's coming from 2 diff hotspot
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
     {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -370,7 +370,7 @@ dupes_test(Config) ->
             ok
     end,
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -410,7 +410,7 @@ dupes_test(Config) ->
 
     %% check we get the second downlink again because we didn't ACK it
     %% also ack the ADR adjustments
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{fopts => [{link_adr_ans, 1, 1, 1}]})},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -449,7 +449,7 @@ dupes_test(Config) ->
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{should_ack => true})},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{should_ack => true})},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -485,7 +485,7 @@ dupes_test(Config) ->
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 3)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin2, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 3)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -548,7 +548,7 @@ join_test(Config) ->
                                                     [self(), PubKeyBin1]),
 
 
-    Stream0 ! {send, join_packet(PubKeyBin0, crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(2), -100)},
+    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(2), -100)},
 
     receive
         {client_data, _,  _Data3} ->
@@ -559,9 +559,9 @@ join_test(Config) ->
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Stream0 ! {send, join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
+    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
     timer:sleep(500),
-    Stream1 ! {send, join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
+    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
     timer:sleep(?JOIN_DELAY),
 
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
@@ -632,7 +632,7 @@ mqtt_test(Config) ->
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
 
     timer:sleep(?JOIN_DELAY),
 
@@ -660,7 +660,7 @@ mqtt_test(Config) ->
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -692,7 +692,7 @@ mqtt_test(Config) ->
     %% Simulating the MQTT broker sending down a packet to transfer to device
     Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
     MQQTTWorkerPid ! {publish, #{payload => Payload}},
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -773,7 +773,7 @@ no_channel_test(Config) ->
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, join_packet(PubKeyBin, AppKey, JoinNonce)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent
@@ -792,7 +792,7 @@ no_channel_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
     %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => <<"no channels configured">>,
                                             <<"reported_at">> => fun erlang:is_integer/1,
@@ -825,7 +825,7 @@ no_channel_test(Config) ->
     ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(8, State0))),
 
-    Stream ! {send, frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -875,66 +875,4 @@ no_channel_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-join_packet(PubKeyBin, AppKey, DevNonce) ->
-    join_packet(PubKeyBin, AppKey, DevNonce, 0).
-
-join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
-    MType = ?JOIN_REQ,
-    MHDRRFU = 0,
-    Major = 0,
-    AppEUI = lorawan_utils:reverse(?APPEUI),
-    DevEUI = lorawan_utils:reverse(?DEVEUI),
-    Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
-    MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      oui=2,
-                      payload=Payload1,
-                      signal_strength=RSSI,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
-
-frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
-    frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
-
-frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    MHDRRFU = 0,
-    Major = 0,
-    <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
-    DevAddr = <<OUI:32/integer-unsigned-big>>,
-    ADR = 0,
-    ADRACKReq = 0,
-    ACK = case maps:get(should_ack, Options, false) of
-              true -> 1;
-              false -> 0
-          end,
-    RFU = 0,
-    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
-    FOptsLen = byte_size(FOptsBin),
-    <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
-    Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, lorawan_utils:reverse(DevAddr), FCnt)),
-    Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
-    B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
-    MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      oui=2,
-                      payload=Payload1,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
-
-b0(Dir, DevAddr, FCnt, Len) ->
-    <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 

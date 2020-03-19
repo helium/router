@@ -64,7 +64,8 @@ init_per_testcase(TestCase, Config) ->
     AppKey = crypto:strong_rand_bytes(16),
     ElliOpts = [
                 {callback, console_callback},
-                {callback_args, #{forward => self(), ets => Tab, app_key => AppKey}},
+                {callback_args, #{forward => self(), ets => Tab,
+                                  app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
                 {port, 3000}
                ],
     {ok, Pid} = elli:start_link(ElliOpts),

@@ -2,6 +2,7 @@
 
 -export([
          init/1,
+         get_device/1,
          get_device/4,
          get_channels/2,
          report_device_status/2,
@@ -14,6 +15,11 @@
 init(Args) ->
     {ok, Mod} = application:get_env(router, ?API_MOD),
     Mod:init(Args).
+
+-spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
+get_device(DeviceID) ->
+    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod:get_device(DeviceID).
 
 -spec get_device(binary(), binary(), binary(), binary()) -> {ok, router_device:device(), binary()} | {error, any()}.
 get_device(DevEui, AppEui, Msg, MIC) ->

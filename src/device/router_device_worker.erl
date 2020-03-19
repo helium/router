@@ -117,6 +117,7 @@ init(Args) ->
     Device = get_device(DB, CF, ID),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
+    self() ! refresh_device_metadata,
     {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
 
 handle_call(_Msg, _From, State) ->
@@ -256,6 +257,18 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
         end,
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
+handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
+    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
+    DeviceID = router_device:id(Device0),
+    case router_device_api:get_device(DeviceID) of
+        {error, _Reason} ->
+            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
+            {noreply, State};
+        {ok, APIDevice} ->
+            Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
+            {ok, _} = router_device:save(DB, CF, Device1),
+            {noreply, State#state{device=Device1}}
+    end;
 handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
                                              channels=Channels, channels_backoffs=Backoffs0}=State) ->
     ChannelID = router_channel:id(Channel),

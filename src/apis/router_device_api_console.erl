@@ -3,7 +3,7 @@
 -behavior(router_device_api_behavior).
 
 -export([init/1,
-         get_devices/2,
+         get_device/1, get_devices/2,
          get_channels/2,
          report_device_status/2,
          report_channel_status/2]).
@@ -17,6 +17,24 @@ init(_Args) ->
     Options = [{timeout, timer:seconds(15)}, {max_connections, 100}],
     ok = hackney_pool:start_pool(PoolName, Options),
     ok.
+
+-spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
+get_device(DeviceID) ->
+    Device = router_device:new(DeviceID),
+    case get_device_(Device) of
+        {error, _Reason}=Error ->
+            Error;
+        {ok, JSONDevice} ->
+            Name = kvc:path([<<"name">>], JSONDevice),
+            DevEui = kvc:path([<<"dev_eui">>], JSONDevice),
+            AppEui = kvc:path([<<"app_eui">>], JSONDevice),
+            Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+            DeviceUpdates = [{name, Name},
+                             {dev_eui, lorawan_utils:hex_to_binary(DevEui)},
+                             {app_eui, lorawan_utils:hex_to_binary(AppEui)},
+                             {metadata, Metadata}],
+            {ok, router_device:update(DeviceUpdates, Device)}
+    end.
 
 -spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 get_devices(DevEui, AppEui) ->
@@ -46,7 +64,7 @@ get_devices(DevEui, AppEui) ->
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
 get_channels(Device, DeviceWorkerPid) ->
-    case get_device(Device) of
+    case get_device_(Device) of
         {error, _Reason} ->
             [];
         {ok, JSON} ->
@@ -148,8 +166,8 @@ get_token(Endpoint) ->
                end,
     e2qc:cache(console_cache, jwt, 600, CacheFun).
 
--spec get_device(router_device:device()) -> {ok, map()} | {error, any()}.
-get_device(Device) ->
+-spec get_device_(router_device:device()) -> {ok, map()} | {error, any()}.
+get_device_(Device) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
     DeviceId = router_device:id(Device),

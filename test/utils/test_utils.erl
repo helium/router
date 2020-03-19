@@ -4,7 +4,7 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
-         join_packet/3, 
+         join_packet/3, join_packet/4, 
          frame_packet/5, frame_packet/6,
          tmp_dir/0, tmp_dir/1]).
 

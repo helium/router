@@ -4,6 +4,8 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
+         join_packet/3, join_packet/4, 
+         frame_packet/5, frame_packet/6,
          tmp_dir/0, tmp_dir/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -11,9 +13,12 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
+-include("console_test.hrl").
 
 -define(BASE_TMP_DIR, "./_build/test/tmp").
 -define(BASE_TMP_DIR_TEMPLATE, "XXXXXXXXXX").
+-define(APPEUI, <<0,0,0,2,0,0,0,1>>).
+-define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
 
 
 start_swarm(BaseDir, Name, Port) ->
@@ -127,7 +132,7 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                 try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                     #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                         #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                        ct:pal("packet ~p", [Packet]),
+                        ct:pal("wait_state_channel_message packet ~p", [Packet]),
                         Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
                         ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
                         ?assertEqual(FrameData, Frame#frame.data),
@@ -152,6 +157,65 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
             ct:fail("wait_state_channel_message failed")
     end.
 
+join_packet(PubKeyBin, AppKey, DevNonce) ->
+    join_packet(PubKeyBin, AppKey, DevNonce, 0).
+
+join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
+    MType = ?JOIN_REQ,
+    MHDRRFU = 0,
+    Major = 0,
+    AppEUI = lorawan_utils:reverse(?APPEUI),
+    DevEUI = lorawan_utils:reverse(?DEVEUI),
+    Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
+    MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
+    Payload1 = <<Payload0/binary, MIC:4/binary>>,
+    HeliumPacket = #packet_pb{
+                      type=lorawan,
+                      oui=2,
+                      payload=Payload1,
+                      signal_strength=RSSI,
+                      frequency=923.3,
+                      datarate= <<"SF8BW125">>
+                     },
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
+    frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
+
+frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
+    MHDRRFU = 0,
+    Major = 0,
+    <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
+    DevAddr = <<OUI:32/integer-unsigned-big>>,
+    ADR = 0,
+    ADRACKReq = 0,
+    ACK = case maps:get(should_ack, Options, false) of
+              true -> 1;
+              false -> 0
+          end,
+    RFU = 0,
+    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
+    FOptsLen = byte_size(FOptsBin),
+    <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
+    Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, lorawan_utils:reverse(DevAddr), FCnt)),
+    Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
+                 FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
+    B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
+    MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
+    Payload1 = <<Payload0/binary, MIC:4/binary>>,
+    HeliumPacket = #packet_pb{
+                      type=lorawan,
+                      oui=2,
+                      payload=Payload1,
+                      frequency=923.3,
+                      datarate= <<"SF8BW125">>
+                     },
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
 %%--------------------------------------------------------------------
 %% @doc
 %% generate a tmp directory to be used as a scratch by eunit tests
@@ -168,6 +232,9 @@ tmp_dir(SubDir) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+b0(Dir, DevAddr, FCnt, Len) ->
+    <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 -spec match_map(map(), map()) -> true | {false, term()}.
 match_map(Expected, Got) ->

@@ -34,11 +34,11 @@ init([Channel, _Device]) ->
     FixedTopic = topic(Topic),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            erlang:send_after(?PING_TIMEOUT, self(), ping),
+            _ = ping(Conn),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
             %% TODO use a better QoS to add some back pressure
-            emqtt:subscribe(Conn, {SubTopic, 0}),
+            {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
                         pubtopic=PubTopic}};
@@ -74,16 +74,16 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{payload := Payload0}}, #state{channel=Channel}=State) ->
+handle_info({publish, #{client_pid := Pid, payload := Payload0}}, #state{connection=Pid, channel=Channel}=State) ->
     router_device_worker:handle_downlink(Payload0, Channel),
     {ok, State};
-handle_info(ping, #state{connection=Con}=State) ->
-    erlang:send_after(?PING_TIMEOUT, self(), ping),
-    Res = (catch emqtt:ping(Con)),
+handle_info({Conn, ping}, #state{connection=Conn}=State) ->
+    _ = ping(Conn),
+    Res = (catch emqtt:ping(Conn)),
     lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
 handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -95,6 +95,10 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec ping(pid()) -> reference().
+ping(Conn) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
 
 -spec encode_data(map()) -> binary().
 encode_data(#{payload := Payload}=Map) ->

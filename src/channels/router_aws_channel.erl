@@ -26,7 +26,7 @@
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
                 connection :: pid(),
-                topic :: binary()}).
+                pubtopic :: binary()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -41,14 +41,16 @@ init([Channel, Device]) ->
                 {error, Reason} ->
                     {error, Reason};
                 {ok, Conn} ->
-                    erlang:send_after(?PING_TIMEOUT, self(), ping),
-                    {ok, _, _} = emqtt:subscribe(Conn, {<<"$aws/things/", DeviceID/binary, "/shadow/#">>, 0}),    
-                    #{topic := Topic} = router_channel:args(Channel),
-                    {ok, #state{channel=Channel, aws=AWS, connection=Conn, topic=Topic}}
+                    _ = ping(Conn),
+                    Topic = <<"$aws/things/", DeviceID/binary, "/shadow/#">>,  
+                    {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
+                    #{topic := PubTopic} = router_channel:args(Channel),
+                    {ok, #state{channel=Channel, aws=AWS,
+                                connection=Conn, pubtopic=PubTopic}}
             end
     end.
 
-handle_event({data, Data}, #state{channel=Channel, connection=Conn, topic=Topic}=State) ->
+handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
     Fcnt = maps:get(sequence, Data),
@@ -76,16 +78,16 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, _Map}, State) ->
-    %% TODO
+handle_info({publish, #{client_pid := Conn}}, #state{connection=Conn}=State) ->
+    %% TODO: Handle downlink
     {ok, State};
-handle_info(ping, #state{connection=Con}=State) ->
-    erlang:send_after(?PING_TIMEOUT, self(), ping),
-    Res = (catch emqtt:ping(Con)),
+handle_info({Conn, ping}, #state{connection=Conn}=State) ->
+    _ = ping(Conn),
+    Res = (catch emqtt:ping(Conn)),
     lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
 handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -97,6 +99,10 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec ping(pid()) -> reference().
+ping(Conn) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
 
 -spec encode_data(map()) -> binary().
 encode_data(#{payload := Payload}=Map) ->

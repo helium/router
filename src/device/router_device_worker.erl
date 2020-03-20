@@ -63,7 +63,7 @@ start_link(Args) ->
 handle_packet(Packet, PubkeyBin) ->
     case handle_packet(Packet, PubkeyBin, self()) of
         {error, _Reason} ->
-            lager:warning("failed to handle packet ~p : ~p", [Packet, _Reason]);
+            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]);
         ok ->
             ok
     end.

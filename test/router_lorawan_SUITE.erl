@@ -5,7 +5,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
--include("console_test.hrl").
+-include("utils/console_test.hrl").
 
 -export([
          all/0,

@@ -20,7 +20,6 @@
 -define(PING_TIMEOUT, timer:seconds(25)).
 
 -record(state, {channel :: router_channel:channel(),
-                id :: binary(),
                 connection :: pid(),
                 pubtopic :: binary()}).
 
@@ -35,14 +34,12 @@ init([Channel, _Device]) ->
     FixedTopic = topic(Topic),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            ID = router_channel:id(Channel),
-            _ = ping(ID),
+            _ = ping(Conn),
             PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
             SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
             %% TODO use a better QoS to add some back pressure
-            {ok, _, _} = emqtt:subscribe(Conn, #{channel_id => ID}, SubTopic, 0),
+            {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
             {ok, #state{channel=Channel,
-                        id=ID,
                         connection=Conn,
                         pubtopic=PubTopic}};
         {error, Reason} ->
@@ -77,12 +74,12 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{properties := #{channel_id := ID}, payload := Payload0}}, #state{id=ID, channel=Channel}=State) ->
+handle_info({publish, #{client_pid := Pid, payload := Payload0}}, #state{connection=Pid, channel=Channel}=State) ->
     router_device_worker:handle_downlink(Payload0, Channel),
     {ok, State};
-handle_info({ID, ping}, #state{id=ID, connection=Con}=State) ->
-    _ = ping(ID),
-    Res = (catch emqtt:ping(Con)),
+handle_info({Conn, ping}, #state{connection=Conn}=State) ->
+    _ = ping(Conn),
+    Res = (catch emqtt:ping(Conn)),
     lager:debug("pinging MQTT connection ~p", [Res]),
     {ok, State};
 handle_info(_Msg, State) ->
@@ -99,9 +96,9 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec ping(binary()) -> reference().
-ping(ID) ->
-    erlang:send_after(?PING_TIMEOUT, self(), {ID, ping}).
+-spec ping(pid()) -> reference().
+ping(Conn) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
 
 -spec encode_data(map()) -> binary().
 encode_data(#{payload := Payload}=Map) ->

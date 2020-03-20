@@ -132,7 +132,7 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                 try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                     #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                         #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                        ct:pal("packet ~p", [Packet]),
+                        ct:pal("wait_state_channel_message packet ~p", [Packet]),
                         Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
                         ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
                         ?assertEqual(FrameData, Frame#frame.data),

@@ -80,30 +80,12 @@ end_per_testcase(_TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 mqtt_test(Config) ->
-    Self = self(),
-    meck:new(emqtt, [passthrough]),
-    meck:expect(emqtt, start_link, fun(_Opts) -> {ok, self()} end),
-    meck:expect(emqtt, connect, fun(_Pid) -> {ok, []} end),
-    meck:expect(emqtt, ping, fun(_Pid) -> ok end),
-    meck:expect(emqtt, disconnect, fun(_Pid) -> ok end),
-    meck:expect(
-      emqtt,
-      subscribe,
-      fun(_Pid, _Props, _Topic, _QoS) ->
-              ct:pal("emqtt:subscribe ~p~n", [{_Pid, _Props, _Topic, _QoS}]),
-              Self ! {mqtt_worker, self()},
-              {ok, _Props, undefined}
-      end
-     ),
-    meck:expect(
-      emqtt,
-      publish,
-      fun(_Pid, _Topic, Payload, _QoS) ->
-              Self ! {channel_data, Payload},
-              ct:pal("emqtt:publish ~p~n", [{_Topic, Payload, _QoS}]),
-              ok
-      end
-     ),
+    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
+    application:set_env(emqx, acl_file, "acl.conf"),
+    application:set_env(emqx, allow_anonymous, true),
+    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
+    {ok, _} = application:ensure_all_started(emqx),
+
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
     BaseDir = proplists:get_value(base_dir, Config),
@@ -119,18 +101,16 @@ mqtt_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
+    MQTTChannel = ?CONSOLE_MQTT_CHANNEL(false),
+    {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
+    SubTopic = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
+    {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
+
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
 
     timer:sleep(?JOIN_DELAY),
-
-    MQQTTWorkerPid = 
-        receive
-            {mqtt_worker, Pid} -> Pid
-        after 250 ->
-                ct:fail("mqtt_worker timeout")
-        end,
 
     %% Waiting for console report status sent
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
@@ -150,6 +130,11 @@ mqtt_test(Config) ->
 
     %% Send CONFIRMED_UP frame packet needing an ack back
     Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    receive
+        {publish, #{payload := Payload0}=Data0} ->
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data0]),
+            self() ! {channel_data, Payload0}
+    end,
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -178,10 +163,17 @@ mqtt_test(Config) ->
                                             <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
 
-    %% Simulating the MQTT broker sending down a packet to transfer to device
-    Payload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"mqttpayload">>)}),
-    MQQTTWorkerPid ! {publish, #{payload => Payload, properties => #{channel_id => ?CONSOLE_MQTT_CHANNEL_ID}}},
+    DownlinkPayload = <<"mqttpayload">>,
+    emqtt:publish(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/tx/channel">>,
+                  jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}), 0),
+
+
     Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    receive
+        {publish, #{payload := Payload1}=Data1} ->
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data1]),
+            self() ! {channel_data, Payload1}
+    end,
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -215,10 +207,50 @@ mqtt_test(Config) ->
                                             <<"payload">> => <<>>,
                                             <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                             <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
-    Msg0 = {false, 1, <<"mqttpayload">>},
+    Msg0 = {false, 1, DownlinkPayload},
     {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
 
     libp2p_swarm:stop(Swarm),
-    ?assert(meck:validate(emqtt)),
-    meck:unload(emqtt),
+    ok = emqtt:disconnect(MQTTConn),
+    application:stop(emqx),
     ok.
+
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
+
+-spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
+connect(URI, DeviceID, Name) ->
+    Opts = [{scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]}, {fragment, false}],
+    case http_uri:parse(URI, Opts) of
+        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when Scheme == mqtt orelse
+                                                                 Scheme == mqtts ->
+            {Username, Password} = case binary:split(UserInfo, <<":">>) of
+                                       [Un, <<>>] -> {Un, undefined};
+                                       [Un, Pw] -> {Un, Pw};
+                                       [<<>>] -> {undefined, undefined};
+                                       [Un] -> {Un, undefined}
+                                   end,
+            EmqttOpts = [{host, erlang:binary_to_list(Host)},
+                         {port, Port},
+                         {clientid, DeviceID}] ++
+                [{username, Username} || Username /= undefined] ++
+                [{password, Password} || Password /= undefined] ++
+                [{clean_start, false},
+                 {keepalive, 30},
+                 {ssl, Scheme == mqtts}],
+            {ok, C} = emqtt:start_link(EmqttOpts),
+            case emqtt:connect(C) of
+                {ok, _Props} ->
+                    lager:info("connect returned ~p", [_Props]),
+                    {ok, C};
+                {error, Reason} ->
+                    lager:info("Failed to connect to ~p ~p : ~p", [Host, Port,
+                                                                   Reason]),
+                    {error, Reason}
+            end;
+        _ ->
+            lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
+            {error, invalid_mqtt_uri}
+    end.

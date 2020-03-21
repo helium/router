@@ -390,7 +390,7 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
             router_device_api:report_channel_status(Device,
                                                     #{channel_id => ChannelID,
                                                       channel_name => ChannelName,
-                                                      status => failure, category => <<"start_channel_failure">>,
+                                                      status => failure, category => <<"update_channel_failure">>,
                                                       description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),

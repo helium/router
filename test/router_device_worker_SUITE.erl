@@ -4,7 +4,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([refresh_test/1]).
+-export([refresh_channels_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -39,7 +39,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [refresh_test].
+    [refresh_channels_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -53,9 +53,9 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
-    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    %% ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     %% FormatStr = ["[", date, " ", time, "] ", pid, " [", severity,"]",  {nodeid, [" [", nodeid, "]"], ""}, " [",
-    %%              {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
+                 {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
     %% ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, debug}, {formatter_config, FormatStr}]}]),
     Tab = ets:new(?ETS, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),
@@ -91,7 +91,7 @@ end_per_testcase(_TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-refresh_test(Config) ->
+refresh_channels_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {no_channel, true}),
 
@@ -104,7 +104,6 @@ refresh_test(Config) ->
 
     %% Checking worker's channels, should only be "no_channel"
     State0 = sys:get_state(WorkerPid),
-    ?assertEqual(1, maps:size(State0#state.channels)),
     ?assertEqual(#{<<"no_channel">> => router_channel:new(<<"no_channel">>,
                                                           router_no_channel,
                                                           <<"no_channel">>,
@@ -133,7 +132,6 @@ refresh_test(Config) ->
     WorkerPid ! refresh_channels,
     timer:sleep(500),
     State1 = sys:get_state(WorkerPid),
-    ?assertEqual(2, maps:size(State1#state.channels)),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel1),
                    <<"HTTP_2">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel2)},
                  State1#state.channels),
@@ -150,11 +148,18 @@ refresh_test(Config) ->
     WorkerPid ! refresh_channels,
     timer:sleep(500),
     State2 = sys:get_state(WorkerPid),
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, State2]),
     ?assertEqual(2, maps:size(State2#state.channels)),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State2#state.device, WorkerPid, HTTPChannel1),
                    <<"HTTP_2">> => convert_channel(State2#state.device, WorkerPid, HTTPChannel2_1)},
                  State2#state.channels),
+
+    %% Remove HTTP Channel 1 and update 2 back to normal
+    ets:insert(Tab, {channels, [HTTPChannel2]}),
+    WorkerPid ! refresh_channels,
+    timer:sleep(500),
+    State3 = sys:get_state(WorkerPid),
+    ?assertEqual(#{<<"HTTP_2">> => convert_channel(State3#state.device, WorkerPid, HTTPChannel2)},
+                 State3#state.channels),
 
     gen_server:stop(WorkerPid),
     ok.

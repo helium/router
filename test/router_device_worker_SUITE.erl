@@ -55,7 +55,7 @@ init_per_testcase(TestCase, Config) ->
     filelib:ensure_dir(BaseDir ++ "/log"),
     %% ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     %% FormatStr = ["[", date, " ", time, "] ", pid, " [", severity,"]",  {nodeid, [" [", nodeid, "]"], ""}, " [",
-                 {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
+    %%             {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
     %% ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, debug}, {formatter_config, FormatStr}]}]),
     Tab = ets:new(?ETS, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),

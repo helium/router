@@ -359,7 +359,6 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
-            lager:error("failed to start channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
             router_device_api:report_channel_status(Device,
                                                     #{channel_id => ChannelID,
                                                       channel_name => ChannelName,
@@ -369,6 +368,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
+            lager:error("failed to start channel ~p: ~p, retrying in ~pms", [{ChannelID, ChannelName}, {E, Reason}, Delay]),
             {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
     end.
 

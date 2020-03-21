@@ -30,7 +30,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Channel, Device]) ->
+init({[Channel, Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     case setup_aws(Channel, Device) of
         {error, Reason} ->

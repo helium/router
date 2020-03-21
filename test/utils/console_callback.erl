@@ -31,7 +31,11 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
               end,
     Channels = case NoChannel of
                    true -> [];
-                   false -> [Channel]
+                   false ->
+                       case ets:lookup(Tab, channels) of
+                           [] -> [Channel];
+                           [{channels, C}] -> C
+                       end
                end,
     Body = #{<<"id">> => ?CONSOLE_DEVICE_ID,
              <<"name">> => ?CONSOLE_DEVICE_NAME,

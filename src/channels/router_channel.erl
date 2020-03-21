@@ -11,7 +11,7 @@
          hash/1]).
 
 -export([start_link/0,
-         add/3, delete/2,
+         add/3, delete/2, update/3,
          handle_data/2]).
 
 -record(channel, {id :: binary(),
@@ -87,7 +87,7 @@ start_link() ->
 add(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
     ChannelID = ?MODULE:id(Channel),
-    gen_event:add_sup_handler(Pid, {Handler, ChannelID}, [Channel, Device]).
+    gen_event:add_sup_handler(Pid, {Handler, ChannelID}, {[Channel, Device], ok}).
 
 -spec delete(pid(), channel()) -> ok.
 delete(Pid, Channel) ->
@@ -95,6 +95,13 @@ delete(Pid, Channel) ->
     ChannelID = ?MODULE:id(Channel),
     _ = gen_event:delete_handler(Pid, {Handler, ChannelID}, []),
     ok.
+
+-spec update(pid(), channel(), router_device:device()) -> ok | {error, term()}.
+update(Pid, Channel, Device) ->
+    Handler = ?MODULE:handler(Channel),
+    ChannelID = ?MODULE:id(Channel),
+    EventHandler = {Handler, ChannelID},
+    gen_event:swap_sup_handler(Pid, {EventHandler, swapped}, {EventHandler, [Channel, Device]}).
 
 -spec handle_data(pid(), map()) -> ok.
 handle_data(Pid, Data) ->

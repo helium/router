@@ -22,7 +22,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Channel, _Device]) ->
+init({[Channel, _Device], _}) ->
     lager:info("init with ~p", [Channel]),
     {ok, #state{channel=Channel}}.
 

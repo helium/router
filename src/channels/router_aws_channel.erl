@@ -74,6 +74,8 @@ handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {ok, State}.
 
+handle_call({update, Channel, Device}, State) ->
+    {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.

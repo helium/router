@@ -4,7 +4,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([http_test/1 ]).
+-export([http_test/1, update_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -30,7 +30,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [http_test].
+    [http_test, update_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -225,11 +225,110 @@ http_test(Config) ->
                                             <<"payload">> => base64:encode(<<"reply">>),
                                             <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                             <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
-
-    %%ok = wait_for_post_channel(PubKeyBin, base64:encode(<<"reply">>)),
-    %%ok = wait_for_report_status(PubKeyBin),
     %% Message shoud come in fast as it is already in the queue no neeed to wait
     {ok, _Reply1} = test_utils:wait_state_channel_message({true, 1, <<"ack">>}, Device0, <<"ack">>, ?CONFIRMED_DOWN, 0, 0, 1, 2),
+    libp2p_swarm:stop(Swarm),
+    ok.
+
+update_test(Config) ->
+    BaseDir = proplists:get_value(base_dir, Config),
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = test_utils:start_swarm(BaseDir, update_test_swarm, 3617),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for console repor status sent
+    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"category">> => <<"activation">>,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    %% Waiting for reply resp form router
+    test_utils:wait_state_channel_message(250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"rssi">> => 0.0,
+                                   <<"sequence">> => 0,
+                                   <<"snr">> => 0.0,
+                                   <<"spreading">> => <<"SF8BW125">>,
+                                   <<"timestamp">> => 0}),
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 0,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
+
+    Tab = proplists:get_value(ets, Config),
+    HTTPChannel = #{<<"type">> => <<"http">>,
+                     <<"credentials">> => #{<<"headers">> => #{},
+                                            <<"endpoint">> => <<"http://localhost:3000/BAD">>,
+                                            <<"method">> => <<"PUT">>},
+                     <<"show_dupes">> => false,
+                     <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                     <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME},
+    ets:insert(Tab, {channels, [HTTPChannel]}),
+    {ok, WorkerPid} = router_devices_sup:maybe_start_worker(WorkerID, #{}),
+    WorkerPid ! refresh_channels,
+    timer:sleep(250),
+
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
+                                            <<"description">> => <<"Correcting channel mask in response to 0">>,
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"down">>,
+                                            <<"frame_up">> => 0,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    test_utils:wait_report_channel_status(#{<<"status">> => <<"failure">>,
+                                            <<"description">> => <<"ResponseCode: 404 Body Not Found">>,
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"category">> => <<"up">>,
+                                            <<"frame_up">> => 1,
+                                            <<"frame_down">> => 1,
+                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
+                                            <<"rssi">> => 0.0,
+                                            <<"snr">> => 0.0,
+                                            <<"payload_size">> => 0,
+                                            <<"payload">> => <<>>,
+                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
     libp2p_swarm:stop(Swarm),
     ok.
 

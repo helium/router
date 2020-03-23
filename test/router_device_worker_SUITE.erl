@@ -185,7 +185,7 @@ crashing_channel_test(Config) ->
     meck:new(router_http_channel, [passthrough]),
     meck:expect(router_http_channel, handle_info, fun(Msg, _State) -> erlang:throw(Msg) end),
 
-    %% Starting worker with no channels
+    %% Starting worker with 1 HTTP channel
     DeviceID = ?CONSOLE_DEVICE_ID,
     {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
 
@@ -205,7 +205,7 @@ crashing_channel_test(Config) ->
     EvtMgr ! crash_http_channel,
     timer:sleep(250),
 
-    %% Check that HTTP 1 is still in there after crash
+    %% Check that HTTP 1 go restarted after crash
     State1 = sys:get_state(WorkerPid),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel1)},
                  State1#state.channels),

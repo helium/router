@@ -21,12 +21,14 @@
 
 -record(state, {channel :: router_channel:channel(),
                 connection :: pid(),
-                pubtopic :: binary()}).
+                endpoint :: binary(),
+                pub_topic :: binary(),
+                sub_topic :: binary()}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Channel, _Device]) ->
+init({[Channel, _Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -41,12 +43,14 @@ init([Channel, _Device]) ->
             {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
-                        pubtopic=PubTopic}};
+                        endpoint=Endpoint,
+                        pub_topic=PubTopic,
+                        sub_topic=SubTopic}};
         {error, Reason} ->
             {error, Reason}
     end.
 
-handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
+handle_event({data, Data}, #state{channel=Channel, connection=Conn, pub_topic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
     Fcnt = maps:get(sequence, Data),
@@ -70,6 +74,28 @@ handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {ok, State}.
 
+handle_call({update, Channel, Device}, #state{connection=Conn,
+                                              endpoint=StateEndpoint,
+                                              pub_topic=StatePubTopic,
+                                              sub_topic=StateSubTopic}=State) ->
+    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
+    case Endpoint == StateEndpoint of
+        false ->
+            {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
+        true ->
+            DeviceID = router_channel:device_id(Channel),
+            FixedTopic = topic(Topic),
+            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
+            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
+            case SubTopic == StateSubTopic andalso PubTopic == StatePubTopic of
+                true ->
+                    {ok, ok, State};
+                false ->
+                    {ok, _, _} = emqtt:unsubscribe(Conn, StateSubTopic),
+                    {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
+                    {ok, ok, State#state{pub_topic=PubTopic, sub_topic=SubTopic}}
+            end
+    end;
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.

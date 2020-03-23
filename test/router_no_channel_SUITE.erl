@@ -35,55 +35,22 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-
 init_per_testcase(TestCase, Config) ->
-    BaseDir = erlang:atom_to_list(TestCase),
-    ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, port, 3615),
-    ok = application:set_env(router, router_device_api_module, router_device_api_console),
-    ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
-    ok = application:set_env(router, console_secret, <<"secret">>),
-    filelib:ensure_dir(BaseDir ++ "/log"),
-    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
-    Tab = ets:new(?ETS, [public, set]),
-    AppKey = crypto:strong_rand_bytes(16),
-    ElliOpts = [
-                {callback, console_callback},
-                {callback_args, #{forward => self(), ets => Tab,
-                                  app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
-                {port, 3000}
-               ],
-    {ok, Pid} = elli:start_link(ElliOpts),
-    {ok, _} = application:ensure_all_started(router),
-    [{app_key, AppKey}, {ets, Tab}, {elli, Pid}, {base_dir, BaseDir}|Config].
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
-end_per_testcase(_TestCase, Config) ->
-    Pid = proplists:get_value(elli, Config),
-    {ok, Acceptors} = elli:get_acceptors(Pid),
-    ok = elli:stop(Pid),
-    timer:sleep(500),
-    [catch erlang:exit(A, kill) || A <- Acceptors],
-    ok = application:stop(router),
-    ok = application:stop(lager),
-    e2qc:teardown(console_cache),
-    ok = application:stop(e2qc),
-    ok = application:stop(throttle),
-    Tab = proplists:get_value(ets, Config),
-    ets:delete(Tab),
-    ok.
-
+end_per_testcase(TestCase, Config) ->
+    test_utils:end_per_testcase(TestCase, Config).
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
 no_channel_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {no_channel, true}),
-    BaseDir = proplists:get_value(base_dir, Config),
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = test_utils:start_swarm(BaseDir, no_channel_swarm, 3616),
+    Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -192,5 +159,4 @@ no_channel_test(Config) ->
     ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(8, State1))),
 
-    libp2p_swarm:stop(Swarm),
     ok.

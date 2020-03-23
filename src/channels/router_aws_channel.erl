@@ -30,7 +30,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Channel, Device]) ->
+init({[Channel, Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     case setup_aws(Channel, Device) of
         {error, Reason} ->
@@ -74,6 +74,8 @@ handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {ok, State}.
 
+handle_call({update, Channel, Device}, State) ->
+    {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.

@@ -25,12 +25,12 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Channel, _Device]) ->
+init({[Channel, _Device], _}) ->
     lager:info("init with ~p", [Channel]),
     #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
-    Headers = lists:ukeymerge(1, lists:ukeysort(1, Headers0),
-                              [{<<"Content-Type">>, <<"application/json">>}]),
-    {ok, #state{channel=Channel, url=URL, headers=Headers, method=Method}}.
+    Headers1 = lists:ukeymerge(1, lists:ukeysort(1, Headers0),
+                               [{<<"Content-Type">>, <<"application/json">>}]),
+    {ok, #state{channel=Channel, url=URL, headers=Headers1, method=Method}}.
 
 handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
     DeviceID = router_channel:device_id(Channel),
@@ -56,6 +56,11 @@ handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {ok, State}.
 
+handle_call({update, Channel, _Device}, State) ->
+    #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    Headers1 = lists:ukeymerge(1, lists:ukeysort(1, Headers0),
+                               [{<<"Content-Type">>, <<"application/json">>}]),
+    {ok, ok, State#state{channel=Channel, url=URL, headers=Headers1, method=Method}};
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.

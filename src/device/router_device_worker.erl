@@ -227,6 +227,18 @@ handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=
             ok = router_device_api:report_device_status(Device, StatusMap)
     end,
     {noreply, State};
+handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
+    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
+    DeviceID = router_device:id(Device0),
+    case router_device_api:get_device(DeviceID) of
+        {error, _Reason} ->
+            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
+            {noreply, State};
+        {ok, APIDevice} ->
+            Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
+            {ok, _} = router_device:save(DB, CF, Device1),
+            {noreply, State#state{device=Device1}}
+    end;
 handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->
@@ -257,18 +269,6 @@ handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, chann
         end,
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
-handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
-    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
-    DeviceID = router_device:id(Device0),
-    case router_device_api:get_device(DeviceID) of
-        {error, _Reason} ->
-            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
-            {noreply, State};
-        {ok, APIDevice} ->
-            Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
-            {noreply, State#state{device=Device1}}
-    end;
 handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
                                              channels=Channels, channels_backoffs=Backoffs0}=State) ->
     ChannelID = router_channel:id(Channel),
@@ -288,9 +288,10 @@ handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRe
                     lager:info("channel ~p already started", [ChannelID]),
                     {noreply, State};
                 _OldHash ->
-                    ok = router_channel:delete(EventMgrRef, CachedChannel),
-                    case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                    lager:info("updating channel ~p", [ChannelID]),
+                    case update_channel(EventMgrRef, Channel, Device, Backoffs0) of  
                         {ok, Backoffs1} ->
+                            lager:info("channel ~p updated", [ChannelID]),
                             {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
                                                   channels_backoffs=Backoffs1}};
                         {error, _Reason, Backoffs1} ->
@@ -304,9 +305,10 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
                                                                         channels_backoffs=Backoffs0}=State) ->
     case ExitReason of
         {swapped, _NewHandler, _Pid} ->
-            %% unclear what this means for channels right now
+            lager:info("channel ~p got swapped ~p", [ChannelID, {_NewHandler, _Pid}]),
             {noreply, State};
         R when R == normal orelse R == shutdown ->
+            lager:info("channel ~p went down normally", [ChannelID]),
             {noreply, State#state{channels=maps:remove(ChannelID, Channels),
                                   channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
         Error ->
@@ -357,11 +359,36 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
-            lager:error("failed ot start channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
             router_device_api:report_channel_status(Device,
                                                     #{channel_id => ChannelID,
                                                       channel_name => ChannelName,
                                                       status => failure, category => <<"start_channel_failure">>,
+                                                      description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
+            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
+            _ = erlang:cancel_timer(TimerRef0),
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
+            lager:error("failed to start channel ~p: ~p, retrying in ~pms", [{ChannelID, ChannelName}, {E, Reason}, Delay]),
+            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
+    end.
+
+-spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
+update_channel(EventMgrRef, Channel, Device, Backoffs) ->
+    ChannelID = router_channel:id(Channel),
+    ChannelName = router_channel:name(Channel),
+    case router_channel:update(EventMgrRef, Channel, Device) of
+        ok ->
+            lager:info("channel ~p updated", [{ChannelID, ChannelName}]),
+            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
+            _ = erlang:cancel_timer(TimerRef0),
+            {_Delay, Backoff1} = backoff:succeed(Backoff0),
+            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
+        {E, Reason} when E == 'EXIT'; E == error ->
+            lager:error("failed to update channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
+            router_device_api:report_channel_status(Device,
+                                                    #{channel_id => ChannelID,
+                                                      channel_name => ChannelName,
+                                                      status => failure, category => <<"update_channel_failure">>,
                                                       description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),

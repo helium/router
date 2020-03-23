@@ -226,7 +226,7 @@ update_test(Config) ->
     ets:insert(Tab, {channel_type, mqtt}),
     BaseDir = proplists:get_value(base_dir, Config),
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = test_utils:start_swarm(BaseDir, http_test_swarm, 3616),
+    Swarm = test_utils:start_swarm(BaseDir, update_test_swarm, 3617),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,

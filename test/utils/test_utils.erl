@@ -40,7 +40,7 @@ init_per_testcase(TestCase, Config) ->
                ],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-     Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},
@@ -92,7 +92,7 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
             catch _:_ ->
                     ct:fail("invalid join response")
             end
-    after 1000 ->
+    after 1250 ->
             ct:fail("missing_join for")
     end.
 
@@ -100,8 +100,7 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
 wait_report_device_status(Expected) ->
     try
         receive
-            {report_status, Body} ->
-                Got = jsx:decode(Body, [return_maps]), 
+            {report_device_status, Got} ->
                 case match_map(Expected, Got) of
                     true ->
                         ok;
@@ -109,7 +108,7 @@ wait_report_device_status(Expected) ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_report_device_status data failed ~p", [Reason])
                 end
-        after 250 ->
+        after 1250 ->
                 ct:fail("wait_report_device_status timeout")
         end
     catch
@@ -119,53 +118,69 @@ wait_report_device_status(Expected) ->
     end.
 
 wait_report_channel_status(Expected) ->
-    receive
-        {report_status, Body} ->
-            Got = jsx:decode(Body, [return_maps]), 
-            case match_map(Expected, Got) of
-                true ->
-                    ok;
-                {false, Reason} ->
-                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                    ct:fail("wait_report_channel_status data failed ~p", [Reason])
-            end
-    after 250 ->
-            ct:fail("wait_report_channel_status timeout")
+    try
+        receive
+            {report_channel_status, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_report_channel_status data failed ~p", [Reason])
+                end
+        after 1250 ->
+                ct:fail("wait_report_channel_status timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("wait_report_channel_status stacktrace ~p~n", [Stacktrace]),
+            ct:fail("wait_report_channel_status failed")
     end.
 
 wait_channel_data(Expected) ->
-    receive
-        {channel_data, Body} ->
-            Got = jsx:decode(Body, [return_maps]), 
-            case match_map(Expected, Got) of
-                true ->
-                    ok;
-                {false, Reason} ->
-                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                    ct:fail("wait_channel_data failed ~p", [Reason])
-            end
-    after 250 ->
-            ct:fail("wait_channel_data timeout")
+    try
+        receive
+            {channel_data, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_channel_data failed ~p", [Reason])
+                end
+        after 1250 ->
+                ct:fail("wait_channel_data timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("wait_channel_data stacktrace ~p~n", [Stacktrace]),
+            ct:fail("wait_channel_data failed")
     end.
 
 wait_state_channel_message(Timeout) ->
     wait_state_channel_message(Timeout, undefined).
 
 wait_state_channel_message(Timeout, PubkeyBin) ->
-    receive
-        {client_data, PubkeyBin, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                    ok;
-                _Else ->
-                    ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
-            catch
-                _E:_R ->
-                    ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
-            end
-    after Timeout ->
-            ct:fail("wait_state_channel_message timeout")
+    try
+        receive
+            {client_data, PubkeyBin, Data} ->
+                try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                    #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                        #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
+                        ok;
+                    _Else ->
+                        ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
+                catch
+                    _E:_R ->
+                        ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
+                end
+        after Timeout ->
+                ct:fail("wait_state_channel_message timeout")
+        end
+    catch
+        _Class:_Reason:Stacktrace ->
+            ct:pal("wait_state_channel_message stacktrace ~p~n", [Stacktrace]),
+            ct:fail("wait_state_channel_message failed")
     end.
 
 wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
@@ -191,7 +206,7 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                 catch _E:_R ->
                         ct:fail("wait_state_channel_message failed to decode ~p ~p for ~p", [Data, {_E, _R} , Msg])
                 end
-        after 1000 ->
+        after 1250 ->
                 ct:fail("wait_state_channel_message timeout for ~p", [Msg])
         end
     catch

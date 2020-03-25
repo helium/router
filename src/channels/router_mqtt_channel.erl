@@ -136,15 +136,12 @@ handle_publish_res(Res, Channel, Data) ->
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds),
+                category => <<"up">>,
                 port => maps:get(port, Data),
                 payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload), 
-                reported_at => erlang:system_time(seconds),
-                rssi => maps:get(rssi, Data),
-                snr => maps:get(snr, Data),
-                hotspot_name => maps:get(hotspot_name, Data),
-                category => <<"up">>,
-                frame_up => maps:get(sequence, Data)},
+                payload_size => erlang:byte_size(Payload),
+                hotspots => maps:get(hotspots, Data)},
     Result1 = case Res of
                   {ok, PacketID} ->
                       maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});

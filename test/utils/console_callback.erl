@@ -58,15 +58,20 @@ handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
 handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
                 _DID, <<"event">>], Req, Args) ->
     Pid = maps:get(forward, Args),
-    Pid ! {report_status, elli_request:body(Req)},
+    Body = elli_request:body(Req),
+    Data = jsx:decode(Body, [return_maps]),
+    case maps:is_key(<<"channel_id">>, Data) of
+        false -> Pid ! {report_device_status, Data};
+        true -> Pid ! {report_channel_status, Data}
+    end,
     {200, [], <<>>};
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
-    Pid ! {channel_data, elli_request:body(Req)},
     Body = elli_request:body(Req),
     try jsx:decode(Body, [return_maps]) of
         JSON ->
+            Pid ! {channel_data, JSON},
             Reply = base64:encode(<<"reply">>),
             case maps:find(<<"payload">>, JSON) of
                 {ok, Reply} ->

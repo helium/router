@@ -235,7 +235,7 @@ mqtt_update_test(Config) ->
             ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data0]),
             self() ! {channel_data, Payload0}
     after 1000 ->
-        ct:fail("timeout Payload0")
+            ct:fail("timeout Payload0")
     end,
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
@@ -296,7 +296,7 @@ mqtt_update_test(Config) ->
             ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data1]),
             self() ! {channel_data, Payload1}
     after 1000 ->
-        ct:fail("timeout Payload1")
+            ct:fail("timeout Payload1")
     end,
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
@@ -354,7 +354,7 @@ mqtt_update_test(Config) ->
             ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data2]),
             self() ! {channel_data, Payload2}
     after 1000 ->
-        ct:fail("timeout Payload2")
+            ct:fail("timeout Payload2")
     end,
     test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),

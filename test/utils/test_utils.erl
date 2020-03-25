@@ -1,7 +1,10 @@
 -module(test_utils).
 
 -export([init_per_testcase/2, end_per_testcase/2,
-         start_swarm/3, wait_for_join_resp/3,
+         start_swarm/3,
+         ignore_messages/0,
+         wait_for_join_resp/3,
+         wait_for_channel_correction/2,
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
@@ -79,6 +82,15 @@ start_swarm(BaseDir, Name, Port) ->
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.
 
+ignore_messages() ->
+    receive 
+        Msg ->
+            ct:pal("ignored message: ~p~n", [Msg]),
+            ?MODULE:ignore_messages()
+    after 2000 ->
+            ok
+    end.
+
 wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
     receive
         {client_data, PubKeyBin, Data} ->
@@ -96,6 +108,18 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
             ct:fail("missing_join for")
     end.
 
+wait_for_channel_correction(Device, HotspotName) ->
+    Correction = {false, undefined, <<>>},
+    {ok, _} = ?MODULE:wait_state_channel_message(Correction, Device, erlang:element(3, Correction),
+                                                 ?UNCONFIRMED_DOWN, 0, 0, undefined, 0),
+    ?MODULE:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                        <<"description">> => '_',
+                                        <<"reported_at">> => fun erlang:is_integer/1,
+                                        <<"category">> => <<"down">>,
+                                        <<"frame_up">> => 0,
+                                        <<"frame_down">> => 1,
+                                        <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    ok.
 
 wait_report_device_status(Expected) ->
     try
@@ -112,8 +136,8 @@ wait_report_device_status(Expected) ->
                 ct:fail("wait_report_device_status timeout")
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_report_device_status stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_report_device_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_report_device_status failed")
     end.
 
@@ -132,8 +156,8 @@ wait_report_channel_status(Expected) ->
                 ct:fail("wait_report_channel_status timeout")
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_report_channel_status stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_report_channel_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_report_channel_status failed")
     end.
 
@@ -152,8 +176,8 @@ wait_channel_data(Expected) ->
                 ct:fail("wait_channel_data timeout")
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_channel_data stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_channel_data stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_channel_data failed")
     end.
 
@@ -178,8 +202,8 @@ wait_state_channel_message(Timeout, PubkeyBin) ->
                 ct:fail("wait_state_channel_message timeout")
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -210,8 +234,8 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                 ct:fail("wait_state_channel_message timeout for ~p", [Msg])
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 

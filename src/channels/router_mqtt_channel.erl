@@ -58,13 +58,13 @@ handle_event({data, Data}, #state{channel=Channel, connection=Conn, pub_topic=To
         true ->
             Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
             ok = handle_publish_res(Res, Channel, Data),
-            lager:info("published: ~p result: ~p", [Data, Res]);
+            lager:debug("published: ~p result: ~p", [Data, Res]);
         false ->
             case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
                 {ok, _, _} ->
                     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
                     ok = handle_publish_res(Res, Channel, Data),
-                    lager:info("published: ~p result: ~p", [Data, Res]);
+                    lager:debug("published: ~p result: ~p", [Data, Res]);
                 _ ->
                     lager:debug("ignoring duplicate ~p", [Data])
             end
@@ -100,8 +100,8 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{client_pid := Pid, payload := Payload0}}, #state{connection=Pid, channel=Channel}=State) ->
-    router_device_worker:handle_downlink(Payload0, Channel),
+handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connection=Pid, channel=Channel}=State) ->
+    router_device_worker:handle_downlink(Payload, Channel),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),

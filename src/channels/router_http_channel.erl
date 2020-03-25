@@ -40,13 +40,13 @@ handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, met
         true ->
             Res = make_http_req(Method, URL, Headers, encode_data(Data)),
             ok = handle_http_res(Res, Channel, Data),
-            lager:info("published: ~p result: ~p", [Data, Res]);
+            lager:debug("published: ~p result: ~p", [Data, Res]);
         false ->
             case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
                 {ok, _, _} ->
                     Res = make_http_req(Method, URL, Headers, encode_data(Data)),
                     ok = handle_http_res(Res, Channel, Data),
-                    lager:info("published: ~p result: ~p", [Data, Res]);
+                    lager:debug("published: ~p result: ~p", [Data, Res]);
                 _ ->
                     lager:debug("ignoring duplicate ~p", [Data])
             end

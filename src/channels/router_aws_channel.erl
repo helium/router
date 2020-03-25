@@ -58,13 +58,13 @@ handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Top
         true ->
             Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
             ok = handle_publish_res(Res, Channel, Data),
-            lager:info("published: ~p result: ~p", [Data, Res]);
+            lager:debug("published: ~p result: ~p", [Data, Res]);
         false ->
             case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
                 {ok, _, _} ->
                     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
                     ok = handle_publish_res(Res, Channel, Data),
-                    lager:info("published: ~p result: ~p", [Data, Res]);
+                    lager:debug("published: ~p result: ~p", [Data, Res]);
                 _ ->
                     lager:debug("ignoring duplicate ~p", [Data])
             end

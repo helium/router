@@ -69,6 +69,11 @@ handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),
+    Tab = maps:get(ets, Args),
+    Resp = case ets:lookup(Tab, http_resp) of
+               [] -> <<"success">>;
+               [{http_resp, R}] -> R
+           end,
     try jsx:decode(Body, [return_maps]) of
         JSON ->
             Pid ! {channel_data, JSON},
@@ -77,7 +82,7 @@ handle('POST', [<<"channel">>], Req, Args) ->
                 {ok, Reply} ->
                     {200, [], jsx:encode(#{payload_raw => base64:encode(<<"ack">>), port => 1, confirmed => true})};
                 _ ->
-                    {200, [], <<"success">>}
+                    {200, [], Resp}
             end
     catch _:_ ->
             {200, [], <<"success">>}

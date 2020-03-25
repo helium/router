@@ -16,6 +16,7 @@
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
+-define(MQTT_TIMEOUT, timer:seconds(2)).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -34,12 +35,18 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
+    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
+    application:set_env(emqx, acl_file, "acl.conf"),
+    application:set_env(emqx, allow_anonymous, true),
+    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
+    {ok, _} = application:ensure_all_started(emqx),
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
+    application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -47,14 +54,10 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 mqtt_test(Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
-    {ok, _} = application:ensure_all_started(emqx),
-
+    %% Set console to MQTT channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
@@ -67,6 +70,7 @@ mqtt_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
+    %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL(false),
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
     SubTopic = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
@@ -75,10 +79,9 @@ mqtt_test(Config) ->
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
-
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for console report status sent
+    %% Waiting for report device status on that join request
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
@@ -86,109 +89,126 @@ mqtt_test(Config) ->
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
-    %% Waiting for reply resp form router
-    test_utils:wait_state_channel_message(250),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
-    %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+
+    %% We should receive the channel data via the MQTT server here
     receive
-        {publish, #{payload := Payload0}=Data0} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data0]),
-            self() ! {channel_data, Payload0}
+        {publish, #{payload := Payload0}} ->
+            self() ! {channel_data, jsx:decode(Payload0, [return_maps])}
+    after ?MQTT_TIMEOUT ->
+            ct:fail("Payload0 timeout")
     end,
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+
+    %% Waiting for data from MQTT channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 0,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 0,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
+                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
-    test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
 
+    %% We ignore the channel correction messages
+    ok = test_utils:ignore_messages(),
+
+    %% Publish a downlink packet via MQTT server
     DownlinkPayload = <<"mqttpayload">>,
     emqtt:publish(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/tx/channel">>,
                   jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}), 0),
 
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
 
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+    %% We should receive the channel data via the MQTT server here
     receive
-        {publish, #{payload := Payload1}=Data1} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data1]),
-            self() ! {channel_data, Payload1}
+        {publish, #{payload := Payload1}} ->
+            self() ! {channel_data, jsx:decode(Payload1, [return_maps])}
+    after ?MQTT_TIMEOUT ->
+            ct:fail("Payload1 timeout")
     end,
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+
+    %% Waiting for data from MQTT channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 1,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 1,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
-    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
-                                           <<"description">> => '_',
-                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"category">> => <<"ack">>,
-                                           <<"frame_up">> => 0,
-                                           <<"frame_down">> => 1,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
+                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 1,
-                                            <<"frame_down">> => 1,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for donwlink message on the hotspot
     Msg0 = {false, 1, DownlinkPayload},
-    {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 1, 1, 1),
+    {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 0, 1, 1),
+
+    %% We ignore the report status down
+    ok = test_utils:ignore_messages(),
 
     ok = emqtt:disconnect(MQTTConn),
-    application:stop(emqx),
     ok.
 
 mqtt_update_test(Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
-    {ok, _} = application:ensure_all_started(emqx),
-
+    %% Set console to MQTT channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
@@ -201,6 +221,7 @@ mqtt_update_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
+    %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL(false),
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
     SubTopic0 = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
@@ -209,10 +230,9 @@ mqtt_update_test(Config) ->
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
-
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for console report status sent
+    %% Waiting for report device status on that join request
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
@@ -220,50 +240,61 @@ mqtt_update_test(Config) ->
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
-    %% Waiting for reply resp form router
-    test_utils:wait_state_channel_message(250),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
-    %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+
+    %% We should receive the channel data via the MQTT server here
     receive
-        {publish, #{payload := Payload0, topic := <<SubTopic0:5/binary, _/binary>>}=Data0} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data0]),
-            self() ! {channel_data, Payload0}
-    after 1000 ->
+        {publish, #{payload := Payload0, topic := <<SubTopic0:5/binary, _/binary>>}} ->
+            self() ! {channel_data, jsx:decode(Payload0, [return_maps])}
+    after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload0")
     end,
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+
+    %% Waiting for data from MQTT channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 0,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 0,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
+                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
-    test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% We ignore the channel correction messages
+    ok = test_utils:ignore_messages(),
 
     %% Switching topic channel should update but no restart
     Tab = proplists:get_value(ets, Config),
@@ -279,53 +310,58 @@ mqtt_update_test(Config) ->
     {ok, _, _} = emqtt:unsubscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>),
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic1/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
 
+    %% Force device_worker refresh channels
     WorkerPid ! refresh_channels,
     timer:sleep(250),
 
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
-                                            <<"description">> => <<"Sending ACK and unconfirmed data in response to fcnt 0">>,
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"ack">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 1,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
-
+    %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+
+    %% We should receive the channel data via the MQTT server here with NEW SUB TOPIC (SubTopic1)
     receive
-        {publish, #{payload := Payload1, topic := <<SubTopic1:8/binary, _/binary>>}=Data1} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data1]),
-            self() ! {channel_data, Payload1}
-    after 1000 ->
+        {publish, #{payload := Payload1, topic := <<SubTopic1:8/binary, _/binary>>}} ->
+            self() ! {channel_data, jsx:decode(Payload1, [return_maps])}
+    after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload1")
     end,
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+
+    %% Waiting for data from MQTT channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 1,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 1,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
+                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 1,
-                                            <<"frame_down">> => 1,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
 
-    %% Switching endpoint channel should restart
+    %% Ignore down messages updates
+    ok = test_utils:ignore_messages(),
+
+    %% Switching endpoint channel should restart (back to sub topic 0)
     MQTTChannel1 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://localhost:1883">>,
                                             <<"topic">> => SubTopic0},
@@ -337,53 +373,58 @@ mqtt_update_test(Config) ->
     {ok, _, _} = emqtt:unsubscribe(MQTTConn, <<SubTopic1/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>),
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
 
+    %% Force device_worker refresh channels
     WorkerPid ! refresh_channels,
     timer:sleep(250),
 
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
-                                            <<"description">> => <<"Correcting channel mask in response to 1">>,
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"down">>,
-                                            <<"frame_up">> => 1,
-                                            <<"frame_down">> => 2,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
-
+    %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2)},
+
+    %% We should receive the channel data via the MQTT server here with OLD SUB TOPIC (SubTopic0)
     receive
-        {publish, #{payload := Payload2, topic := <<SubTopic0:5/binary, _/binary>>}=Data2} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Data2]),
-            self() ! {channel_data, Payload2}
-    after 1000 ->
+        {publish, #{payload := Payload2, topic := <<SubTopic0:5/binary, _/binary>>}} ->
+            self() ! {channel_data, jsx:decode(Payload2, [return_maps])}
+    after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload2")
     end,
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+
+    %% Waiting for data from MQTT channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 2,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 2,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => '_',
+                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 2,
-                                            <<"frame_down">> => 2,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_MQTT_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_MQTT_CHANNEL_NAME}),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Ignore down messages updates
+    ok = test_utils:ignore_messages(),
+
     ok = emqtt:disconnect(MQTTConn),
-    application:stop(emqx),
     ok.
 
 

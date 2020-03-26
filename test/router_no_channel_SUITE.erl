@@ -47,8 +47,10 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 no_channel_test(Config) ->
+    %% Set console to NO channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {no_channel, true}),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
@@ -66,7 +68,7 @@ no_channel_test(Config) ->
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for console repor status sent
+    %% Waiting for report device status on that join request
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
@@ -74,29 +76,38 @@ no_channel_test(Config) ->
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
-    %% Waiting for reply resp form router
-    test_utils:wait_state_channel_message(250),
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
-    %% Send CONFIRMED_UP frame packet needing an ack back
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+
+    %% Waiting for report channel status from No channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
                                             <<"description">> => <<"no channels configured">>,
+                                            <<"channel_id">> => <<"no_channel">>,
+                                            <<"channel_name">> => <<"no_channel">>,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => <<"no_channel">>,
-                                            <<"channel_name">> => <<"no_channel">>}),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+    
+    %% We ignore the channel correction and down messages
+    ok = test_utils:ignore_messages(),
 
+    %% Checking that device worker has only no_channel 
     {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     NoChannel = router_channel:new(<<"no_channel">>,
                                    router_no_channel,
@@ -105,58 +116,69 @@ no_channel_test(Config) ->
                                    ?CONSOLE_DEVICE_ID,
                                    DeviceWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, sys:get_state(DeviceWorkerPid)),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, sys:get_state(DeviceWorkerPid)),
 
+    %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
+
+    %% Force to refresh channels list
     DeviceWorkerPid ! refresh_channels,
     timer:sleep(250),
 
+    %% Checking that device worker has only HTTP channel now
     State0 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{<<"12345">> := _}, _}, State0),
+    ?assertMatch({state, _, _, _, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(8, State0))),
 
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
-    test_utils:wait_channel_data(#{<<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                   <<"id">> => ?CONSOLE_DEVICE_ID,
+    %% Send UNCONFIRMED_UP frame packet to check http channel is working
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+
+    %% Waiting for data from HTTP channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"sequence">> => 1,
+                                   <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"rssi">> => 0.0,
-                                   <<"sequence">> => 1,
-                                   <<"snr">> => 0.0,
-                                   <<"spreading">> => <<"SF8BW125">>,
-                                   <<"timestamp">> => 0}),
-    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
-                                           <<"description">> => '_',
-                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"category">> => <<"ack">>,
-                                           <<"frame_up">> => 0,
-                                           <<"frame_down">> => 1,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"timestamp">> => 0,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+
+    %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
-                                            <<"description">> => '_',
+                                            <<"description">> => <<"success">>,
+                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"category">> => <<"up">>,
-                                            <<"frame_up">> => 1,
-                                            <<"frame_down">> => 1,
-                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName),
-                                            <<"rssi">> => 0.0,
-                                            <<"snr">> => 0.0,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
-                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME}),
-    test_utils:wait_state_channel_message(?REPLY_DELAY + 250),
+                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"timestamp">> => 0,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
 
+    %% Ignore down messages updates
+    ok = test_utils:ignore_messages(),
+
+    %% Console back to no_channel mode
     ets:insert(Tab, {no_channel, true}),
+
+    %% Force to refresh channels list
     DeviceWorkerPid ! refresh_channels,
     timer:sleep(250),
 
+    %% Checking that device worker has only no_channel 
     State1 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _}, State1),
+    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(8, State1))),
 
     ok.

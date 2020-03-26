@@ -345,10 +345,10 @@ join_test(Config) ->
                                                     router_handler_test:version(),
                                                     router_handler_test,
                                                     [self(), PubKeyBin1]),
+    {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
-
+    %% Send bad join message we should not get any data back
     Stream0 ! {send, test_utils:join_packet(PubKeyBin0, crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(2), -100)},
-
     receive
         {client_data, _,  _Data3} ->
             ct:fail("join didn't fail")
@@ -356,14 +356,12 @@ join_test(Config) ->
             ok
     end,
 
-    %% Send join packet
+    %% Send join packets where PubKeyBin1 has better rssi
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
     timer:sleep(500),
     Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
     timer:sleep(?JOIN_DELAY),
-
-    {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
@@ -373,6 +371,7 @@ join_test(Config) ->
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
+
     %% Waiting for reply resp form router
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(PubKeyBin1, AppKey, JoinNonce),
 

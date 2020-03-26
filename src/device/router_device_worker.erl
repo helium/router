@@ -162,11 +162,11 @@ handle_cast({frame, Packet0, PubkeyBin, Pid}, #state{device=Device0,
             {noreply, State};
         {ok, Frame, Device1} ->
             FCnt = router_device:fcnt(Device1),
-            Data = {AName, Packet0, Frame},
+            Data = {AName, Packet0, Frame, erlang:system_time(second)},
             DataCache1 =
                 case maps:get(FCnt, DataCache0, undefined) of
                     undefined ->
-                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt, erlang:system_time(second)}),
+                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
                         maps:put(FCnt, [Data], DataCache0);
                     CachedData ->
                         maps:put(FCnt, [Data|CachedData], DataCache0)
@@ -225,9 +225,9 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cac
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info({data_timeout, FCnt, Time}, #state{device=Device, data_cache=Cache0, event_mgr=EventMgrRef}=State) ->
+handle_info({data_timeout, FCnt}, #state{device=Device, data_cache=Cache0, event_mgr=EventMgrRef}=State) ->
     CachedData = maps:get(FCnt, Cache0),
-    ok = send_to_channel(lists:reverse(CachedData), Time, Device, EventMgrRef),
+    ok = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
     {noreply, State#state{data_cache=maps:remove(FCnt, Cache0)}};
 handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=Device}=State) ->
     case router_device:app_eui(Device) of
@@ -806,17 +806,17 @@ report_device_status(Type, AName, Msg, Category) ->
     self() ! {report_device_status, Type, AName, Msg, Category},
     ok.
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], integer(), router_device:device(), pid()) -> ok.
-send_to_channel(CachedData, Time, Device, EventMgrRef) ->
+-spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> ok.
+send_to_channel(CachedData, Device, EventMgrRef) ->
     FoldFun =
-        fun({HotspotName, Packet, _}, Acc) ->
+        fun({HotspotName, Packet, _, Time}, Acc) ->
                 [#{name => erlang:list_to_binary(HotspotName),
-                   timestamp => Packet#packet_pb.timestamp,
+                   timestamp => Time,
                    rssi => Packet#packet_pb.signal_strength,
                    snr => Packet#packet_pb.snr,
                    spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}|Acc]
         end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt}}|_] = CachedData,
+    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt}, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),
             name => router_device:name(Device),
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),

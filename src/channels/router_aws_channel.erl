@@ -53,7 +53,7 @@ init({[Channel, Device], _}) ->
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
-    Fcnt = maps:get(sequence, Data),
+    Fcnt = maps:get(fcount, Data),
     case router_channel:dupes(Channel) of
         true ->
             Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),

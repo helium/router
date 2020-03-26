@@ -35,7 +35,7 @@ init({[Channel, _Device], _}) ->
 handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
     DeviceID = router_channel:device_id(Channel),
     ID = router_channel:id(Channel),
-    Fcnt = maps:get(sequence, Data),
+    Fcnt = maps:get(fcount, Data),
     case router_channel:dupes(Channel) of
         true ->
             Res = make_http_req(Method, URL, Headers, encode_data(Data)),

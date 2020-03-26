@@ -139,7 +139,7 @@ no_channel_test(Config) ->
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"sequence">> => 1,
+                                   <<"fcount">> => 1,
                                    <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,

@@ -7,15 +7,11 @@
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 
--export([
-         all/0,
+-export([all/0,
          init_per_testcase/2,
-         end_per_testcase/2
-        ]).
+         end_per_testcase/2]).
 
--export([
-         join_test/1
-        ]).
+-export([join_test/1]).
 
 -define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
@@ -33,10 +29,7 @@
 %%   Running tests for this suite
 %% @end
 %%--------------------------------------------------------------------
-all() ->
-    [
-     join_test
-    ].
+all() -> [join_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -91,7 +84,7 @@ join_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+    Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
     ct:pal("registered ~p", [registered()]),
     Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),

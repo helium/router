@@ -32,7 +32,8 @@
                 frame_cache = #{} :: map(),
                 event_mgr :: pid(),
                 channels = #{} :: map(),
-                channels_backoffs = #{} :: map()}).
+                channels_backoffs = #{} :: map(),
+                data_cache = #{} :: map()}).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS

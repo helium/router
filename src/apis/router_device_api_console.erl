@@ -125,8 +125,7 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Dupes = kvc:path([<<"show_dupes">>], JSONChannel, false),
-    Channel = router_channel:new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
     {true, Channel};
 convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -135,8 +134,7 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Dupes = kvc:path([<<"show_dupes">>], JSONChannel, false),
-    Channel = router_channel:new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
     {true, Channel};
 convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -147,8 +145,7 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel)
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Dupes = kvc:path([<<"show_dupes">>], JSONChannel, false),
-    Channel = router_channel:new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
     {true, Channel};
 convert_channel(_Device, _DeviceWorkerPid, _Channel) ->
     false.

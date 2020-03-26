@@ -51,24 +51,9 @@ init({[Channel, _Device], _}) ->
     end.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, pub_topic=Topic}=State) ->
-    DeviceID = router_channel:device_id(Channel),
-    ID = router_channel:id(Channel),
-    Fcnt = maps:get(fcount, Data),
-    case router_channel:dupes(Channel) of
-        true ->
-            Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-            ok = handle_publish_res(Res, Channel, Data),
-            lager:debug("published: ~p result: ~p", [Data, Res]);
-        false ->
-            case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
-                {ok, _, _} ->
-                    Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-                    ok = handle_publish_res(Res, Channel, Data),
-                    lager:debug("published: ~p result: ~p", [Data, Res]);
-                _ ->
-                    lager:debug("ignoring duplicate ~p", [Data])
-            end
-    end,
+    Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
+    ok = handle_publish_res(Res, Channel, Data),
+    lager:debug("published: ~p result: ~p", [Data, Res]),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

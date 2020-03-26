@@ -71,7 +71,7 @@ mqtt_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Connect and subscribe to MQTT Server
-    MQTTChannel = ?CONSOLE_MQTT_CHANNEL(false),
+    MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
     SubTopic = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
@@ -222,7 +222,7 @@ mqtt_update_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Connect and subscribe to MQTT Server
-    MQTTChannel = ?CONSOLE_MQTT_CHANNEL(false),
+    MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
     SubTopic0 = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
@@ -302,7 +302,6 @@ mqtt_update_test(Config) ->
     MQTTChannel0 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
                                             <<"topic">> => SubTopic1},
-                     <<"show_dupes">> => false,
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel0]}),
@@ -365,7 +364,6 @@ mqtt_update_test(Config) ->
     MQTTChannel1 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://localhost:1883">>,
                                             <<"topic">> => SubTopic0},
-                     <<"show_dupes">> => false,
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel1]}),

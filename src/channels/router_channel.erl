@@ -1,10 +1,9 @@
 -module(router_channel).
 
--export([new/6, new/7,
+-export([new/6,
          id/1,
          handler/1,
          name/1,
-         dupes/1,
          args/1,
          device_id/1,
          device_worker/1,
@@ -14,10 +13,13 @@
          add/3, delete/2, update/3,
          handle_data/2]).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -record(channel, {id :: binary(),
                   handler :: atom(),
                   name :: binary(),
-                  dupes=false :: boolean(),
                   args :: map(),
                   device_id  :: binary(),
                   device_worker :: pid() | undefined}).
@@ -36,16 +38,6 @@ new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid) ->
              device_id=DeviceID,
              device_worker=DeviceWorkerPid}.
 
--spec new(binary(), atom(), binary(), boolean(), map(), binary(), pid()) -> channel().
-new(ID, Handler, Name, Dupes, Args, DeviceID, DeviceWorkerPid) ->
-    #channel{id=ID,
-             handler=Handler,
-             name=Name,
-             dupes=Dupes,
-             args=Args,
-             device_id=DeviceID,
-             device_worker=DeviceWorkerPid}.
-
 -spec id(channel()) -> binary().
 id(Channel) ->
     Channel#channel.id.
@@ -57,10 +49,6 @@ handler(Channel) ->
 -spec name(channel()) -> binary().
 name(Channel) ->
     Channel#channel.name.
-
--spec dupes(channel()) -> boolean().
-dupes(Channel) ->
-    Channel#channel.dupes.
 
 -spec args(channel()) -> map().
 args(Channel) ->
@@ -102,3 +90,59 @@ update(Pid, Channel, Device) ->
 -spec handle_data(pid(), map()) -> ok.
 handle_data(Pid, Data) ->
     gen_event:notify(Pid, {data, Data}).
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+
+new_test() ->
+    Channel = #channel{
+                 id= <<"channel_id">>,
+                 handler=router_http_channel,
+                 name= <<"channel_name">>,
+                 args=[],
+                 device_id= <<"device_id">>,
+                 device_worker=self()
+                },
+    ?assertEqual(Channel, new(<<"channel_id">>, router_http_channel, <<"channel_name">>,
+                              [], <<"device_id">>, self())).
+
+id_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual(<<"channel_id">>, id(Channel)).
+
+handler_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual({router_http_channel, <<"channel_id">>}, handler(Channel)).
+
+name_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual(<<"channel_name">>, name(Channel)).
+
+args_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual([], args(Channel)).
+
+device_id_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual(<<"device_id">>, device_id(Channel)).
+
+device_worker_test() ->
+    Channel = new(<<"channel_id">>, router_http_channel,
+                  <<"channel_name">>, [], <<"device_id">>, self()),
+    ?assertEqual(self(), device_worker(Channel)).
+
+hash_test() ->
+    Channel0 = new(<<"channel_id">>, router_http_channel,
+                   <<"channel_name">>, [], <<"device_id">>, self()),
+    Channel1 = Channel0#channel{device_worker=undefined},
+    Hash = crypto:hash(sha256, erlang:term_to_binary(Channel1)),
+    ?assertEqual(Hash, hash(Channel0)).
+
+-endif.

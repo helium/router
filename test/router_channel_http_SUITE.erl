@@ -169,7 +169,7 @@ http_test(Config) ->
 
     %% Ignore down messages updates
     ok = test_utils:ignore_messages(),
-    
+
     ok.
 
 http_update_test(Config) ->
@@ -251,7 +251,6 @@ http_update_test(Config) ->
                     <<"credentials">> => #{<<"headers">> => #{},
                                            <<"endpoint">> => <<"http://localhost:3000/BAD">>,
                                            <<"method">> => <<"PUT">>},
-                    <<"show_dupes">> => false,
                     <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                     <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME},
     ets:insert(Tab, {channels, [HTTPChannel]}),

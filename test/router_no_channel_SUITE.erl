@@ -103,7 +103,7 @@ no_channel_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>}]}),
-    
+
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 

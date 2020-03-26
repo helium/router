@@ -13,10 +13,6 @@ handle(Req, _Args) ->
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
-    ShowDupes = case ets:lookup(Tab, show_dupes) of
-                    [] -> false;
-                    [{show_dupes, B}] -> B
-                end,
     ChannelType = case ets:lookup(Tab, channel_type) of
                       [] -> http;
                       [{channel_type, Type}] -> Type
@@ -26,8 +22,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     [{no_channel, No}] -> No
                 end,
     Channel = case ChannelType of
-                  http -> ?CONSOLE_HTTP_CHANNEL(ShowDupes);
-                  mqtt -> ?CONSOLE_MQTT_CHANNEL(ShowDupes)
+                  http -> ?CONSOLE_HTTP_CHANNEL;
+                  mqtt -> ?CONSOLE_MQTT_CHANNEL
               end,
     Channels = case NoChannel of
                    true -> [];

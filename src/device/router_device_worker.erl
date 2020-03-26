@@ -205,7 +205,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                   (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
-    ok = report_device_status(success, AName, StatusMsg, activation),
+    ok = report_device_status(Device1, success, AName, StatusMsg, activation),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
@@ -229,18 +229,6 @@ handle_info({data_timeout, FCnt}, #state{device=Device, data_cache=Cache0, event
     CachedData = maps:get(FCnt, Cache0),
     ok = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
     {noreply, State#state{data_cache=maps:remove(FCnt, Cache0)}};
-handle_info({report_device_status, Status, AName, Msg, Category}, #state{device=Device}=State) ->
-    case router_device:app_eui(Device) of
-        undefined ->
-            ok;
-        _ ->
-            StatusMap = #{status => Status,
-                          description => Msg,
-                          category => Category,
-                          hotspot_name => AName},
-            ok = router_device_api:report_device_status(Device, StatusMap)
-    end,
-    {noreply, State};
 handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
     DeviceID = router_device:id(Device0),
@@ -538,10 +526,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     case throttle:check(join_dedup, {AppEUI, DevEUI, Nonce}) of
         {ok, _, _} ->
             DeviceName = router_device:name(APIDevice),
-            lager:debug("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]),
-            StatusMsg = <<"Stale join nonce ", (lorawan_utils:binary_to_hex(Nonce))/binary, " for AppEUI: ",
-                          (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_device_status(failure, AName, StatusMsg, error);
+            lager:warning("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]);
         _ ->
             ok
     end,
@@ -620,7 +605,7 @@ handle_frame_packet(Packet, AName, Device0) ->
             StatusMsg = <<"Packet with double fopts received from AppEUI: ",
                           (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                           (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_device_status(failure, AName, StatusMsg, error),
+            ok = report_device_status(Device0, failure, AName, StatusMsg, error),
             {error, double_fopts};
         _N ->
             AppSKey = router_device:app_s_key(Device0),
@@ -668,15 +653,14 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
     lager:info("downlink with no queue, ACK ~p and channels corrected ~p", [ACK, ChannelCorrection orelse WereChannelsCorrected]),
     case ACK of
         X when X == 1 orelse (ChannelCorrection == false andalso not WereChannelsCorrected) ->
-            ConfirmedDown = false,
-            Port = 0, %% Not sure about that?
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
             {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
             case ChannelsCorrected andalso (ChannelCorrection == false) andalso (ACK == 0) of
                 true ->
                     %% we corrected the channels but don't have anything else to send so just update the device
                     {ok, router_device:channel_correction(true, Device0)};
                 false ->
+                    ConfirmedDown = false,
+                    Port = 0, %% Not sure about that?
                     FCntDown = router_device:fcntdown(Device0),
                     MType = ack_to_mtype(ConfirmedDown),
                     Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
@@ -694,6 +678,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
                                      {fcntdown, (FCntDown + 1)}
                                     ],
                     Device1 = router_device:update(DeviceUpdates, Device0),
+                    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
                     {send, Device1, Packet1}
             end;
         _ when ACK == 0 andalso ChannelCorrection == false andalso WereChannelsCorrected == true ->
@@ -705,7 +690,6 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
 handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
-    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device0),
     WereChannelsCorrected = were_channels_corrected(Frame),
     lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
                [ReplyPayload, ConfirmedDown, Port, ACK, router_device:channel_correction(Device0) orelse WereChannelsCorrected]),
@@ -731,14 +715,14 @@ handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
             {send, Device1, Packet1};
         false ->
-            DeviceUpdates = [
-                             {queue, T},
+            DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
-                             {fcntdown, (FCntDown + 1)}
-                            ],
+                             {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
             {send, Device1, Packet1}
     end.
 
@@ -779,32 +763,35 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 report_frame_status(0, false, 0, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, down);
+    ok = report_device_status(Device, success, AName, StatusMsg, down);
 report_frame_status(1, _ConfirmedDown, undefined, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, ack);
+    ok = report_device_status(Device, success, AName, StatusMsg, ack);
 report_frame_status(1, true, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, ack);
+    ok = report_device_status(Device, success, AName, StatusMsg, ack);
 report_frame_status(1, false, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, ack);
+    ok = report_device_status(Device, success, AName, StatusMsg, ack);
 report_frame_status(_, true, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, down);
+    ok = report_device_status(Device, success, AName, StatusMsg, down);
 report_frame_status(_, false, _Port, AName, Device) ->
     FCnt = router_device:fcnt(Device),
     StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(success, AName, StatusMsg, down).
+    ok = report_device_status(Device, success, AName, StatusMsg, down).
 
--spec report_device_status(atom(), string(), binary(), atom()) -> ok.
-report_device_status(Type, AName, Msg, Category) ->
-    self() ! {report_device_status, Type, AName, Msg, Category},
-    ok.
+-spec report_device_status(router_device:device(), atom(), string(), binary(), atom()) -> ok.
+report_device_status(Device, Status, AName, Msg, Category) ->
+    StatusMap = #{status => Status,
+                  description => Msg,
+                  category => Category,
+                  hotspot_name => AName},
+    ok = router_device_api:report_device_status(Device, StatusMap).
 
 -spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> ok.
 send_to_channel(CachedData, Device, EventMgrRef) ->

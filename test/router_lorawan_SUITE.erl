@@ -168,7 +168,7 @@ join_test(Config) ->
                                                                  <<"timestamp">> => fun erlang:is_integer/1,
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+                                                                 <<"spreading">> => <<"SF7BW125">>}]}),
 
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
@@ -216,7 +216,7 @@ join_test(Config) ->
                                                                  <<"timestamp">> => fun erlang:is_integer/1,
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+                                                                 <<"spreading">> => <<"SF7BW125">>}]}),
 
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',

@@ -812,7 +812,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
             app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
             metadata => router_device:metadata(Device),
-            fcount => FCnt,
+            fcnt => FCnt,
             timestamp => Time,
             payload => Data,
             port => Port,

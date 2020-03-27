@@ -660,7 +660,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
                     {ok, router_device:channel_correction(true, Device0)};
                 false ->
                     ConfirmedDown = false,
-                    Port = 0, %% Not sure about that?
+                    Port = 0,
                     FCntDown = router_device:fcntdown(Device0),
                     MType = ack_to_mtype(ConfirmedDown),
                     Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},

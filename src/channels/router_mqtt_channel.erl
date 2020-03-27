@@ -51,24 +51,9 @@ init({[Channel, _Device], _}) ->
     end.
 
 handle_event({data, Data}, #state{channel=Channel, connection=Conn, pub_topic=Topic}=State) ->
-    DeviceID = router_channel:device_id(Channel),
-    ID = router_channel:id(Channel),
-    Fcnt = maps:get(sequence, Data),
-    case router_channel:dupes(Channel) of
-        true ->
-            Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-            ok = handle_publish_res(Res, Channel, Data),
-            lager:info("published: ~p result: ~p", [Data, Res]);
-        false ->
-            case throttle:check(packet_dedup, {DeviceID, ID, Fcnt}) of
-                {ok, _, _} ->
-                    Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-                    ok = handle_publish_res(Res, Channel, Data),
-                    lager:info("published: ~p result: ~p", [Data, Res]);
-                _ ->
-                    lager:debug("ignoring duplicate ~p", [Data])
-            end
-    end,
+    Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
+    ok = handle_publish_res(Res, Channel, Data),
+    lager:debug("published: ~p result: ~p", [Data, Res]),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -100,8 +85,8 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{client_pid := Pid, payload := Payload0}}, #state{connection=Pid, channel=Channel}=State) ->
-    router_device_worker:handle_downlink(Payload0, Channel),
+handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connection=Pid, channel=Channel}=State) ->
+    router_device_worker:handle_downlink(Payload, Channel),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),
@@ -136,15 +121,12 @@ handle_publish_res(Res, Channel, Data) ->
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds),
+                category => <<"up">>,
                 port => maps:get(port, Data),
                 payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload), 
-                reported_at => erlang:system_time(seconds),
-                rssi => maps:get(rssi, Data),
-                snr => maps:get(snr, Data),
-                hotspot_name => maps:get(hotspot_name, Data),
-                category => <<"up">>,
-                frame_up => maps:get(sequence, Data)},
+                payload_size => erlang:byte_size(Payload),
+                hotspots => maps:get(hotspots, Data)},
     Result1 = case Res of
                   {ok, PacketID} ->
                       maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});

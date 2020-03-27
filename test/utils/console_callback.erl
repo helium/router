@@ -13,10 +13,6 @@ handle(Req, _Args) ->
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
-    ShowDupes = case ets:lookup(Tab, show_dupes) of
-                    [] -> false;
-                    [{show_dupes, B}] -> B
-                end,
     ChannelType = case ets:lookup(Tab, channel_type) of
                       [] -> http;
                       [{channel_type, Type}] -> Type
@@ -26,8 +22,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     [{no_channel, No}] -> No
                 end,
     Channel = case ChannelType of
-                  http -> ?CONSOLE_HTTP_CHANNEL(ShowDupes);
-                  mqtt -> ?CONSOLE_MQTT_CHANNEL(ShowDupes)
+                  http -> ?CONSOLE_HTTP_CHANNEL;
+                  mqtt -> ?CONSOLE_MQTT_CHANNEL
               end,
     Channels = case NoChannel of
                    true -> [];
@@ -58,21 +54,31 @@ handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
 handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
                 _DID, <<"event">>], Req, Args) ->
     Pid = maps:get(forward, Args),
-    Pid ! {report_status, elli_request:body(Req)},
+    Body = elli_request:body(Req),
+    Data = jsx:decode(Body, [return_maps]),
+    case maps:is_key(<<"channel_id">>, Data) of
+        false -> Pid ! {report_device_status, Data};
+        true -> Pid ! {report_channel_status, Data}
+    end,
     {200, [], <<>>};
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
-    Pid ! {channel_data, elli_request:body(Req)},
     Body = elli_request:body(Req),
+    Tab = maps:get(ets, Args),
+    Resp = case ets:lookup(Tab, http_resp) of
+               [] -> <<"success">>;
+               [{http_resp, R}] -> R
+           end,
     try jsx:decode(Body, [return_maps]) of
         JSON ->
+            Pid ! {channel_data, JSON},
             Reply = base64:encode(<<"reply">>),
             case maps:find(<<"payload">>, JSON) of
                 {ok, Reply} ->
                     {200, [], jsx:encode(#{payload_raw => base64:encode(<<"ack">>), port => 1, confirmed => true})};
                 _ ->
-                    {200, [], <<"success">>}
+                    {200, [], Resp}
             end
     catch _:_ ->
             {200, [], <<"success">>}

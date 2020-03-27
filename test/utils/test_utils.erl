@@ -1,7 +1,10 @@
 -module(test_utils).
 
 -export([init_per_testcase/2, end_per_testcase/2,
-         start_swarm/3, wait_for_join_resp/3,
+         start_swarm/3,
+         ignore_messages/0,
+         wait_for_join_resp/3,
+         wait_for_channel_correction/2,
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
@@ -40,7 +43,7 @@ init_per_testcase(TestCase, Config) ->
                ],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-     Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},
@@ -79,6 +82,15 @@ start_swarm(BaseDir, Name, Port) ->
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.
 
+ignore_messages() ->
+    receive 
+        Msg ->
+            ct:pal("ignored message: ~p~n", [Msg]),
+            ?MODULE:ignore_messages()
+    after 2000 ->
+            ok
+    end.
+
 wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
     receive
         {client_data, PubKeyBin, Data} ->
@@ -92,16 +104,27 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
             catch _:_ ->
                     ct:fail("invalid join response")
             end
-    after 1000 ->
+    after 1250 ->
             ct:fail("missing_join for")
     end.
 
+wait_for_channel_correction(Device, HotspotName) ->
+    Correction = {false, undefined, <<>>},
+    {ok, _} = ?MODULE:wait_state_channel_message(Correction, Device, erlang:element(3, Correction),
+                                                 ?UNCONFIRMED_DOWN, 0, 0, undefined, 0),
+    ?MODULE:wait_report_device_status(#{<<"status">> => <<"success">>,
+                                        <<"description">> => '_',
+                                        <<"reported_at">> => fun erlang:is_integer/1,
+                                        <<"category">> => <<"down">>,
+                                        <<"frame_up">> => 0,
+                                        <<"frame_down">> => 1,
+                                        <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+    ok.
 
 wait_report_device_status(Expected) ->
     try
         receive
-            {report_status, Body} ->
-                Got = jsx:decode(Body, [return_maps]), 
+            {report_device_status, Got} ->
                 case match_map(Expected, Got) of
                     true ->
                         ok;
@@ -109,63 +132,79 @@ wait_report_device_status(Expected) ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_report_device_status data failed ~p", [Reason])
                 end
-        after 250 ->
+        after 1250 ->
                 ct:fail("wait_report_device_status timeout")
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_report_device_status stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_report_device_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_report_device_status failed")
     end.
 
 wait_report_channel_status(Expected) ->
-    receive
-        {report_status, Body} ->
-            Got = jsx:decode(Body, [return_maps]), 
-            case match_map(Expected, Got) of
-                true ->
-                    ok;
-                {false, Reason} ->
-                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                    ct:fail("wait_report_channel_status data failed ~p", [Reason])
-            end
-    after 250 ->
-            ct:fail("wait_report_channel_status timeout")
+    try
+        receive
+            {report_channel_status, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_report_channel_status data failed ~p", [Reason])
+                end
+        after 1250 ->
+                ct:fail("wait_report_channel_status timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_report_channel_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_report_channel_status failed")
     end.
 
 wait_channel_data(Expected) ->
-    receive
-        {channel_data, Body} ->
-            Got = jsx:decode(Body, [return_maps]), 
-            case match_map(Expected, Got) of
-                true ->
-                    ok;
-                {false, Reason} ->
-                    ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                    ct:fail("wait_channel_data failed ~p", [Reason])
-            end
-    after 250 ->
-            ct:fail("wait_channel_data timeout")
+    try
+        receive
+            {channel_data, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_channel_data failed ~p", [Reason])
+                end
+        after 1250 ->
+                ct:fail("wait_channel_data timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_channel_data stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_channel_data failed")
     end.
 
 wait_state_channel_message(Timeout) ->
     wait_state_channel_message(Timeout, undefined).
 
-wait_state_channel_message(Timeout, PubkeyBin) ->
-    receive
-        {client_data, PubkeyBin, Data} ->
-            try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
-                #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                    #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
-                    ok;
-                _Else ->
-                    ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
-            catch
-                _E:_R ->
-                    ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
-            end
-    after Timeout ->
-            ct:fail("wait_state_channel_message timeout")
+wait_state_channel_message(Timeout, PubKeyBin) ->
+    try
+        receive
+            {client_data, PubKeyBin, Data} ->
+                try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
+                    #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
+                        #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,
+                        ok;
+                    _Else ->
+                        ct:fail("wait_state_channel_message wrong message ~p ", [_Else])
+                catch
+                    _E:_R ->
+                        ct:fail("wait_state_channel_message failed to decode ~p ~p", [Data, {_E, _R}])
+                end
+        after Timeout ->
+                ct:fail("wait_state_channel_message timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_state_channel_message failed")
     end.
 
 wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->
@@ -191,12 +230,12 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                 catch _E:_R ->
                         ct:fail("wait_state_channel_message failed to decode ~p ~p for ~p", [Data, {_E, _R} , Msg])
                 end
-        after 1000 ->
+        after 1250 ->
                 ct:fail("wait_state_channel_message timeout for ~p", [Msg])
         end
     catch
-        _Class:_Reason:Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [Stacktrace]),
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -300,6 +339,13 @@ match_map(Expected, Got) ->
                           true -> true;
                           false -> {false, {missing_key, K}}
                       end;
+                 (K, V, true) when is_map(V) ->
+                      match_map(V, maps:get(K, Got, #{}));
+                 (K, V0, true) when is_list(V0) ->
+                      V1 = lists:zip(lists:seq(1, erlang:length(V0)), V0),
+                      G0 = maps:get(K, Got, []),
+                      G1 = lists:zip(lists:seq(1, erlang:length(G0)), G0),
+                      match_map(maps:from_list(V1),  maps:from_list(G1));
                  (K, V, true) ->
                       case maps:get(K, Got, undefined) of
                           V -> true;

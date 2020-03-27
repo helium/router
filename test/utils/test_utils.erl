@@ -184,10 +184,10 @@ wait_channel_data(Expected) ->
 wait_state_channel_message(Timeout) ->
     wait_state_channel_message(Timeout, undefined).
 
-wait_state_channel_message(Timeout, PubkeyBin) ->
+wait_state_channel_message(Timeout, PubKeyBin) ->
     try
         receive
-            {client_data, PubkeyBin, Data} ->
+            {client_data, PubKeyBin, Data} ->
                 try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                     #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
                         #blockchain_state_channel_response_v1_pb{accepted=true} = Resp,

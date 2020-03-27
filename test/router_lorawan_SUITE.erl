@@ -105,14 +105,14 @@ join_test(Config) ->
     receive joining -> ok end,
     receive joined -> ok end,
 
-    {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+    {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
     test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
                                            <<"category">> => <<"activation">>,
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName0)}),
 
     %% Waiting for reply resp form router
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(PubKeyBin0, AppKey, JoinNonce),
@@ -147,7 +147,8 @@ join_test(Config) ->
                                    <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
-                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName1),
+                                   <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                                                        <<"name">> => erlang:list_to_binary(HotspotName0),
                                                         <<"timestamp">> => fun erlang:is_integer/1,
                                                         <<"rssi">> => -35.0,
                                                         <<"snr">> => 0.0,
@@ -164,7 +165,8 @@ join_test(Config) ->
                                             <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 1,
                                             <<"payload">> => base64:encode(<<0>>),
-                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName1),
+                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                                                                 <<"name">> => erlang:list_to_binary(HotspotName0),
                                                                  <<"timestamp">> => fun erlang:is_integer/1,
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
@@ -176,7 +178,7 @@ join_test(Config) ->
                                            <<"category">> => <<"down">>,
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName0)}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),
 
@@ -195,7 +197,8 @@ join_test(Config) ->
                                    <<"timestamp">> => fun erlang:is_integer/1,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
-                                   <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName1),
+                                   <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                                                        <<"name">> => erlang:list_to_binary(HotspotName0),
                                                         <<"timestamp">> => fun erlang:is_integer/1,
                                                         <<"rssi">> => -35.0,
                                                         <<"snr">> => 0.0,
@@ -212,7 +215,8 @@ join_test(Config) ->
                                             <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 1,
                                             <<"payload">> => base64:encode(<<0>>),
-                                            <<"hotspots">> => [#{<<"name">> => erlang:list_to_binary(HotspotName1),
+                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                                                                 <<"name">> => erlang:list_to_binary(HotspotName0),
                                                                  <<"timestamp">> => fun erlang:is_integer/1,
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
@@ -224,7 +228,7 @@ join_test(Config) ->
                                            <<"category">> => <<"ack">>, %% aren't we sending downlink here?
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName1)}),
+                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName0)}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),
 

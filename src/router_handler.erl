@@ -69,10 +69,10 @@ handle_data(server, Data, State) ->
     case decode_data(Data) of
         {error, _Reason} ->
             lager:debug("failed to transmit data ~p", [_Reason]);
-        {ok, #packet_pb{type=lorawan}=Packet0, PubkeyBin} ->
-            ok = router_device_worker:handle_packet(Packet0, PubkeyBin);
-        {ok, #packet_pb{type=_Type}=_Packet, PubkeyBin} ->
-            {ok, _AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubkeyBin)),
+        {ok, #packet_pb{type=lorawan}=Packet0, PubKeyBin} ->
+            ok = router_device_worker:handle_packet(Packet0, PubKeyBin);
+        {ok, #packet_pb{type=_Type}=_Packet, PubKeyBin} ->
+            {ok, _AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
             lager:error("unknown packet type ~p coming from ~p: ~p", [_Type, _AName, _Packet])
     end,
     {noreply, State};
@@ -103,8 +103,8 @@ decode_data(Data) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
         #blockchain_state_channel_message_v1_pb{msg={packet, Packet}} ->
             #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket,
-                                                   hotspot = PubkeyBin} = Packet,
-            {ok, HeliumPacket, PubkeyBin};
+                                                   hotspot = PubKeyBin} = Packet,
+            {ok, HeliumPacket, PubKeyBin};
         _ ->
             {error, unhandled_message}
     catch

@@ -435,7 +435,7 @@ maybe_start_no_channel(Device, EventMgrRef) ->
 %%%-------------------------------------------------------------------
 -spec handle_packet(#packet_pb{}, string(), pid()) -> ok | {error, any()}.
 handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
-                                    DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PubKeyBin, Pid) when MType == ?JOIN_REQ ->
+                                    _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PubKeyBin, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
@@ -454,14 +454,8 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                                                             AName]),
             {error, undefined_app_key};
         {error, _Reason} ->
-            case throttle:check(join_dedup, {AppEUI, DevEUI, DevNonce}) of
-                {ok, _, _} ->
-                    lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
-                                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-                    ok;
-                _ ->
-                    ok
-            end,
+            lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
+                        [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, bad_mic}
     end;
 
@@ -521,15 +515,10 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
             PubKeyBin, APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    {AppEUI, _DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-    case throttle:check(join_dedup, {AppEUI, DevEUI, Nonce}) of
-        {ok, _, _} ->
-            DeviceName = router_device:name(APIDevice),
-            lager:warning("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]);
-        _ ->
-            ok
-    end,
+    DeviceName = router_device:name(APIDevice),
+    lager:warning("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]),
     {error, bad_nonce};
 handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
                        payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,

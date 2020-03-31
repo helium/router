@@ -1,4 +1,4 @@
--module(router_no_channel_SUITE).
+-module(router_channel_no_channel_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
@@ -123,8 +123,7 @@ no_channel_test(Config) ->
     ets:insert(Tab, {no_channel, false}),
 
     %% Force to refresh channels list
-    DeviceWorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only HTTP channel now
     State0 = sys:get_state(DeviceWorkerPid),
@@ -176,8 +175,7 @@ no_channel_test(Config) ->
     ets:insert(Tab, {no_channel, true}),
 
     %% Force to refresh channels list
-    DeviceWorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only no_channel 
     State1 = sys:get_state(DeviceWorkerPid),

@@ -117,7 +117,7 @@ report_channel_status(Device, Map) ->
 %% ------------------------------------------------------------------
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_http_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -125,18 +125,18 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_mqtt_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -145,9 +145,9 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel)
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(_Device, _DeviceWorkerPid, _Channel) ->
+convert_channel(_Device, _Pid, _Channel) ->
     false.
 
 -spec get_token(binary()) -> binary().

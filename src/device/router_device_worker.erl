@@ -17,9 +17,7 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          handle_packet/2,
-         queue_message/2,
-         report_channel_status/2,
-         handle_downlink/2]).
+         queue_message/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -38,9 +36,9 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
+                channels_worker :: pid(),
                 join_cache = #{} :: map(),
-                frame_cache = #{} :: map(),
-                data_cache = #{} :: map()}).
+                frame_cache = #{} :: map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -61,40 +59,6 @@ handle_packet(Packet, PubKeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
--spec report_channel_status(pid(), map()) -> ok.
-report_channel_status(Pid, Map) ->
-    gen_server:cast(Pid, {report_channel_status, Map}).
-
--spec handle_downlink(binary(), router_channel:channel()) -> ok.
-handle_downlink(Pay, Channel) ->
-    try jsx:decode(Pay, [return_maps]) of
-        JSON ->
-            case maps:find(<<"payload_raw">>, JSON) of
-                {ok, Payload} ->
-                    Port = case maps:find(<<"port">>, JSON) of
-                               {ok, X} when is_integer(X), X > 0, X < 224 ->
-                                   X;
-                               _ ->
-                                   1
-                           end,
-                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
-                                    {ok, true} ->
-                                        true;
-                                    _ ->
-                                        false
-                                end,
-
-                    Msg = {Confirmed, Port, base64:decode(Payload)},
-                    router_device_worker:queue_message(router_channel:device_worker(Channel), Msg);
-                error ->
-                    lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
-            end
-    catch
-        _:_ ->
-            lager:info("could not parse json downlink message ~p", [Pay])
-    end,
-    ok.
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -104,8 +68,11 @@ init(Args) ->
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
     Device = get_device(DB, CF, ID),
+    {ok, Pid} =
+        router_device_channels_worker:start_link(#{device_worker => self(),
+                                                   device => Device}),
     self() ! refresh_device_metadata,
-    {ok, #state{db=DB, cf=CF, device=Device}}.
+    {ok, #state{db=DB, cf=CF, device=Device, channels_worker=Pid}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -142,42 +109,32 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
     end;
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                                      frame_cache=FrameCache0,
-                                                     data_cache=DataCache0}=State) ->
+                                                     channels_worker=ChannelsWorker}=State) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     case handle_frame_packet(Packet0, AName, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
-            FCnt = router_device:fcnt(Device1),
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
-            DataCache1 =
-                case maps:get(FCnt, DataCache0, undefined) of
-                    undefined ->
-                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
-                        maps:put(FCnt, [Data], DataCache0);
-                    CachedData ->
-                        maps:put(FCnt, [Data|CachedData], DataCache0)
-                end,
+            ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
             RSSI0 = Packet0#packet_pb.signal_strength,
+            FCnt = router_device:fcnt(Device1),
             FrameCache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, FrameCache0),
             case maps:get(FCnt, FrameCache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
-                    {noreply, State#state{device=Device1, frame_cache=FrameCache1, data_cache=DataCache1}};
+                    {noreply, State#state{device=Device1, frame_cache=FrameCache1}};
                 {RSSI1, _, _, _, Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
-                            {noreply, State#state{device=Device1, data_cache=DataCache1}};
+                            {noreply, State#state{device=Device1}};
                         true ->
                             catch Pid2 ! {packet, undefined},
-                            {noreply, State#state{device=Device1, frame_cache=FrameCache1, data_cache=DataCache1}}
+                            {noreply, State#state{device=Device1, frame_cache=FrameCache1}}
                     end
             end
     end;
-handle_cast({report_channel_status, Map}, #state{device=Device}=State) ->
-    ok = router_device_api:report_channel_status(Device, Map),
-    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -212,10 +169,6 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cac
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info({data_timeout, FCnt}, #state{device=Device, data_cache=Cache0, event_mgr=EventMgrRef}=State) ->
-    CachedData = maps:get(FCnt, Cache0),
-    ok = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
-    {noreply, State#state{data_cache=maps:remove(FCnt, Cache0)}};
 handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
     DeviceID = router_device:id(Device0),
@@ -602,32 +555,6 @@ report_device_status(Device, Status, AName, Msg, Category) ->
                   category => Category,
                   hotspot_name => AName},
     ok = router_device_api:report_device_status(Device, StatusMap).
-
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> ok.
-send_to_channel(CachedData, Device, EventMgrRef) ->
-    FoldFun =
-        fun({PubKeyBin, Packet, _, Time}, Acc) ->
-                B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-                {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
-                [#{id => erlang:list_to_binary(B58),
-                   name => erlang:list_to_binary(HotspotName),
-                   timestamp => Time,
-                   rssi => Packet#packet_pb.signal_strength,
-                   snr => Packet#packet_pb.snr,
-                   spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}|Acc]
-        end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt}, Time}|_] = CachedData,
-    Map = #{id => router_device:id(Device),
-            name => router_device:name(Device),
-            dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-            app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-            metadata => router_device:metadata(Device),
-            fcnt => FCnt,
-            timestamp => Time,
-            payload => Data,
-            port => Port,
-            hotspots => lists:foldr(FoldFun, [], CachedData)},
-    ok = router_channel:handle_data(EventMgrRef, Map).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

@@ -6,7 +6,7 @@
          name/1,
          args/1,
          device_id/1,
-         device_worker/1,
+         controller/1,
          hash/1]).
 
 -export([start_link/0,
@@ -22,21 +22,20 @@
                   name :: binary(),
                   args :: map(),
                   device_id  :: binary(),
-                  device_worker :: pid() | undefined}).
-
+                  controller :: pid() | undefined}).
 
 -type channel() :: #channel{}.
 
 -export_type([channel/0]).
 
 -spec new(binary(), atom(), binary(), map(), binary(), pid()) -> channel().
-new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid) ->
+new(ID, Handler, Name, Args, DeviceID, Pid) ->
     #channel{id=ID,
              handler=Handler,
              name=Name,
              args=Args,
              device_id=DeviceID,
-             device_worker=DeviceWorkerPid}.
+             controller=Pid}.
 
 -spec id(channel()) -> binary().
 id(Channel) ->
@@ -58,13 +57,13 @@ args(Channel) ->
 device_id(Channel) ->
     Channel#channel.device_id.
 
--spec device_worker(channel()) -> pid().
-device_worker(Channel) ->
-    Channel#channel.device_worker.
+-spec controller(channel()) -> pid().
+controller(Channel) ->
+    Channel#channel.controller.
 
 -spec hash(channel()) -> binary().
 hash(Channel0) ->
-    Channel1 = Channel0#channel{device_worker=undefined},
+    Channel1 = Channel0#channel{controller=undefined},
     crypto:hash(sha256, erlang:term_to_binary(Channel1)).
 
 -spec start_link() -> {ok, pid()} | {error, any()}.
@@ -103,7 +102,7 @@ new_test() ->
                  name= <<"channel_name">>,
                  args=[],
                  device_id= <<"device_id">>,
-                 device_worker=self()
+                 controller=self()
                 },
     ?assertEqual(Channel, new(<<"channel_id">>, router_http_channel, <<"channel_name">>,
                               [], <<"device_id">>, self())).
@@ -133,15 +132,15 @@ device_id_test() ->
                   <<"channel_name">>, [], <<"device_id">>, self()),
     ?assertEqual(<<"device_id">>, device_id(Channel)).
 
-device_worker_test() ->
+controller_test() ->
     Channel = new(<<"channel_id">>, router_http_channel,
                   <<"channel_name">>, [], <<"device_id">>, self()),
-    ?assertEqual(self(), device_worker(Channel)).
+    ?assertEqual(self(), controller(Channel)).
 
 hash_test() ->
     Channel0 = new(<<"channel_id">>, router_http_channel,
                    <<"channel_name">>, [], <<"device_id">>, self()),
-    Channel1 = Channel0#channel{device_worker=undefined},
+    Channel1 = Channel0#channel{controller=undefined},
     Hash = crypto:hash(sha256, erlang:term_to_binary(Channel1)),
     ?assertEqual(Hash, hash(Channel0)).
 

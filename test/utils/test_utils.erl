@@ -2,6 +2,7 @@
 
 -export([init_per_testcase/2, end_per_testcase/2,
          start_swarm/3,
+         force_refresh_channels/1,
          ignore_messages/0,
          wait_for_join_resp/3,
          wait_for_channel_correction/2,
@@ -33,7 +34,15 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),
-    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    case os:getenv("CT_LAGER", "NONE") of
+        "DEBUG" ->
+            FormatStr = ["[", date, " ", time, "] ", pid, " [", severity,"]",  {nodeid, [" [", nodeid, "]"], ""}, " [",
+                         {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
+            ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, debug},
+                                                                                {formatter_config, FormatStr}]}]);
+        _ ->
+            ok = application:set_env(lager, log_root, BaseDir ++ "/log")
+    end,
     Tab = ets:new(TestCase, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),
     ElliOpts = [{callback, console_callback},
@@ -66,7 +75,6 @@ end_per_testcase(_TestCase, Config) ->
     ets:delete(Tab),
     ok.
 
-
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
@@ -81,6 +89,13 @@ start_swarm(BaseDir, Name, Port) ->
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.
+
+force_refresh_channels(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    Pid ! refresh_channels,
+    timer:sleep(250),
+    ok.
 
 ignore_messages() ->
     receive 

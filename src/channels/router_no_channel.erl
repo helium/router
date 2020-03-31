@@ -27,7 +27,7 @@ init({[Channel, _Device], _}) ->
     {ok, #state{channel=Channel}}.
 
 handle_event({data, Data}, #state{channel=Channel}=State) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
+    Pid = router_channel:controller(Channel),
     Payload = maps:get(payload, Data),
     Report = #{status => success,
                description => <<"no channels configured">>,
@@ -39,7 +39,7 @@ handle_event({data, Data}, #state{channel=Channel}=State) ->
                payload => base64:encode(Payload),
                payload_size => erlang:byte_size(Payload),
                hotspots => maps:get(hotspots, Data)},
-    router_device_worker:report_channel_status(DeviceWorkerPid, Report),
+    router_device_channels_worker:report_channel_status(Pid, Report),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

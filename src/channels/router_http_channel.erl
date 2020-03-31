@@ -78,7 +78,7 @@ make_http_req(Method, URL, Headers, Payload) ->
 
 -spec handle_http_res(any(), router_channel:channel(), map()) -> ok.
 handle_http_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
+    Pid = router_channel:controller(Channel),
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
@@ -90,7 +90,7 @@ handle_http_res(Res, Channel, Data) ->
                 hotspots => maps:get(hotspots, Data)},
     Result1 = case Res of
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
-                      router_device_worker:handle_downlink(ResponseBody, Channel),
+                      router_device_channels_worker:handle_downlink(Pid, ResponseBody),
                       maps:merge(Result0, #{status => success, description => ResponseBody});
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
                       maps:merge(Result0, #{status => failure, 
@@ -99,4 +99,4 @@ handle_http_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_channel_status(Pid, Result1).

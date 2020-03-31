@@ -316,8 +316,7 @@ mqtt_update_test(Config) ->
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic1/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
 
     %% Force device_worker refresh channels
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -380,8 +379,7 @@ mqtt_update_test(Config) ->
     {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
 
     %% Force device_worker refresh channels
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2)},

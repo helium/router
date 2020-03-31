@@ -97,7 +97,7 @@ encode_data(#{payload := Payload}=Map) ->
 
 -spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
 handle_publish_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
+    Pid = router_channel:controller(Channel),
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
@@ -115,7 +115,7 @@ handle_publish_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_channel_status(Pid, Result1).
 
 -spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->

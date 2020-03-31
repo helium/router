@@ -38,6 +38,7 @@ all() ->
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).
 
+
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
@@ -262,9 +263,7 @@ http_update_test(Config) ->
     ets:insert(Tab, {channels, [HTTPChannel]}),
 
     %% Force to refresh channels list
-    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},

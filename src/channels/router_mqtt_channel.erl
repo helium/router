@@ -86,7 +86,8 @@ handle_call(_Msg, State) ->
     {ok, ok, State}.
 
 handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connection=Pid, channel=Channel}=State) ->
-    router_device_worker:handle_downlink(Payload, Channel),
+    Controller = router_channel:controller(Channel),
+    router_device_channels_worker:handle_downlink(Controller, Payload),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),
@@ -117,7 +118,7 @@ encode_data(#{payload := Payload}=Map) ->
 
 -spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
 handle_publish_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
+    Pid = router_channel:controller(Channel),
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
@@ -135,7 +136,7 @@ handle_publish_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_channel_status(Pid, Result1).
 
 -spec topic(binary() | list()) -> binary().
 topic(<<>>) ->

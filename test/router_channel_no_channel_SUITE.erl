@@ -108,16 +108,16 @@ no_channel_test(Config) ->
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Checking that device worker has only no_channel 
-    {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    %% Checking that device channels worker has only no_channel 
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
     NoChannel = router_channel:new(<<"no_channel">>,
                                    router_no_channel,
                                    <<"no_channel">>,
                                    #{},
                                    ?CONSOLE_DEVICE_ID,
-                                   DeviceWorkerPid),
+                                   DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, sys:get_state(DeviceWorkerPid)),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
@@ -126,9 +126,9 @@ no_channel_test(Config) ->
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only HTTP channel now
-    State0 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _}, State0),
-    ?assertEqual(1, maps:size(erlang:element(8, State0))),
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _}, State0),
+    ?assertEqual(1, maps:size(erlang:element(5, State0))),
 
     %% Send UNCONFIRMED_UP frame packet to check http channel is working
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -178,8 +178,8 @@ no_channel_test(Config) ->
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only no_channel 
-    State1 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, State1),
-    ?assertEqual(1, maps:size(erlang:element(8, State1))),
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _}, State1),
+    ?assertEqual(1, maps:size(erlang:element(5, State1))),
 
     ok.

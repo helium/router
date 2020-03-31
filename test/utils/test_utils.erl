@@ -2,6 +2,7 @@
 
 -export([init_per_testcase/2, end_per_testcase/2,
          start_swarm/3,
+         get_device_channels_worker/1,
          force_refresh_channels/1,
          ignore_messages/0,
          wait_for_join_resp/3,
@@ -89,6 +90,11 @@ start_swarm(BaseDir, Name, Port) ->
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     Swarm.
+
+get_device_channels_worker(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    Pid.
 
 force_refresh_channels(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),

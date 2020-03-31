@@ -14,6 +14,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
+         handle_device_update/2,
          handle_data/3,
          report_channel_status/2,
          handle_downlink/2]).
@@ -48,6 +49,10 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
+
+-spec handle_device_update(pid(), router_device:device()) -> ok.
+handle_device_update(Pid, Device) ->
+    gen_server:cast(Pid, {handle_device_update, Device}).
 
 -spec handle_data(pid(), router_device:device(), {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}) -> ok.
 handle_data(Pid, Device, Data) ->
@@ -102,6 +107,8 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({handle_device_update, Device}, State) ->
+    {noreply, State#state{device=Device}};
 handle_cast({handle_data, Device, Data}, #state{data_cache=DataCache0}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1 =

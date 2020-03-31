@@ -78,10 +78,11 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
+                                                                  channels_worker=ChannelsWorker}=State) ->
     Q = router_device:queue(Device0),
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
-    {ok, _} = router_device:save(DB, CF, Device1),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
                                                                        join_cache=Cache0}=State0) ->
@@ -139,11 +140,11 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=State) ->
+handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
     {_, Packet, Device0, Pid, PubKeyBin} = maps:get(JoinNonce, Cache0, undefined),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
-    {ok, _} = router_device:save(DB, CF, Device1),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
     StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
@@ -152,24 +153,25 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=S
     ok = report_device_status(Device1, success, AName, StatusMsg, activation),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
+                                          channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
     {_, Packet0, AName, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     Cache1 = maps:remove(FCnt, Cache0),
     case handle_frame(Packet0, AName, Device, Frame) of
         {ok, Device1} ->
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, undefined},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink ~p", [Packet1]),
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, Packet1},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0, channels_worker=ChannelsWorker}=State) ->
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
     DeviceID = router_device:id(Device0),
     case router_device_api:get_device(DeviceID) of
@@ -178,7 +180,7 @@ handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State)
             {noreply, State};
         {ok, APIDevice} ->
             Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device=Device1}}
     end;
 handle_info(_Msg, State) ->
@@ -194,6 +196,11 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) -> ok.
+save_and_update(DB, CF, Pid, Device) ->
+    {ok, _} = router_device:save(DB, CF, Device),
+    ok = router_device_channels_worker:handle_device_update(Pid, Device).
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, ID) ->

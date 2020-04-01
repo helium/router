@@ -120,7 +120,7 @@ join_test(Config) ->
                                                                 <<"status">> => <<"success">>,
                                                                 <<"rssi">> => '_',
                                                                 <<"snr">> => '_',
-                                                                <<"spreading">> => <<"SF8BW125">>}],
+                                                                <<"spreading">> => <<"SF7BW125">>}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply resp form router

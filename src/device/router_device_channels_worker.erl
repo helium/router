@@ -16,7 +16,7 @@
 -export([start_link/1,
          handle_device_update/2,
          handle_data/3,
-         report_channel_status/2,
+         report_channel_status/3,
          handle_downlink/2]).
 
 %% ------------------------------------------------------------------
@@ -36,13 +36,15 @@
         {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
          erlang:make_ref()}).
 -define(DATA_TIMEOUT, timer:seconds(1)).
+-define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
 -record(state, {event_mgr :: pid(),
                 device_worker :: pid(),
                 device :: router_device:device(),
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
-                data_cache = #{} :: map()}).
+                data_cache = #{} :: map(),
+                channels_resp_cache = #{} :: map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -58,9 +60,9 @@ handle_device_update(Pid, Device) ->
 handle_data(Pid, Device, Data) ->
     gen_server:cast(Pid, {handle_data, Device, Data}).
 
--spec report_channel_status(pid(), map()) -> ok.
-report_channel_status(Pid, Map) ->
-    gen_server:cast(Pid, {report_channel_status, Map}).
+-spec report_channel_status(pid(), reference(), map()) -> ok.
+report_channel_status(Pid, Ref, Map) ->
+    gen_server:cast(Pid, {report_channel_status, Ref, Map}).
 
 -spec handle_downlink(pid(), binary()) -> ok.
 handle_downlink(Pid, BinaryPayload) ->
@@ -123,9 +125,17 @@ handle_cast({handle_data, Device, Data}, #state{data_cache=DataCache0}=State) ->
 handle_cast({handle_downlink, Msg}, #state{device_worker=DeviceWorker}=State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_channel_status, Map}, #state{device=Device}=State) ->
-    ok = router_device_api:report_channel_status(Device, Map),
-    {noreply, State};
+handle_cast({report_channel_status, Ref, Report}, #state{channels_resp_cache=Cache0}=State) ->
+    lager:debug("received report_channel_status ~p ~p", [Ref, Report]),
+    Cache1 =
+        case maps:get(Ref, Cache0, undefined) of
+            undefined ->
+                lager:warning("received report_channel_status ~p too late ignoring ~p", [Ref, Report]),
+                Cache0;
+            {Data, CachedReports} ->
+                maps:put(Ref, {Data, [Report|CachedReports]}, Cache0)
+        end,
+    {noreply, State#state{channels_resp_cache=Cache1}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -133,13 +143,29 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 %% Data Handling
 %% ------------------------------------------------------------------
-handle_info({data_timeout, FCnt}, #state{device=Device, data_cache=Cache0, event_mgr=EventMgrRef}=State) ->
-    CachedData = maps:get(FCnt, Cache0),
-    ok = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
-    {noreply, State#state{data_cache=maps:remove(FCnt, Cache0)}};
+handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
+                                         data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
+    CachedData = maps:get(FCnt, DataCache0),
+    {ok, Ref, Map} = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
+    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_channel_status_timeout, Ref}),
+    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
+                          channels_resp_cache=maps:put(Ref, {Map, []}, RespCache0)}};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------
+handle_info({report_channel_status_timeout, Ref}, #state{device=Device, channels_resp_cache=Cache0}=State) ->
+    lager:debug("report_channel_status_timeout ~p", [Ref]),
+    {Data, CachedReports} = maps:get(Ref, Cache0),
+    Payload = maps:get(payload, Data),
+    ReportsMap = #{category => <<"up">>,
+                   description => <<"channels report">>,
+                   reported_at => erlang:system_time(seconds),
+                   payload => base64:encode(Payload),
+                   payload_size => erlang:byte_size(Payload),
+                   hotspots => maps:get(hotspots, Data),
+                   channels => CachedReports},
+    ok = router_device_api:report_channel_status(Device, ReportsMap),
+    {noreply, State#state{data_cache=maps:remove(Ref, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->
@@ -241,7 +267,7 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> ok.
+-spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> {ok, reference(), map()}.
 send_to_channel(CachedData, Device, EventMgrRef) ->
     FoldFun =
         fun({PubKeyBin, Packet, _, Time}, Acc) ->
@@ -249,7 +275,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
                 {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
                 [#{id => erlang:list_to_binary(B58),
                    name => erlang:list_to_binary(HotspotName),
-                   timestamp => Time,
+                   reported_at => Time,
                    rssi => Packet#packet_pb.signal_strength,
                    snr => Packet#packet_pb.snr,
                    spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}|Acc]
@@ -261,11 +287,12 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
             metadata => router_device:metadata(Device),
             fcnt => FCnt,
-            timestamp => Time,
+            reported_at => Time,
             payload => Data,
             port => Port,
             hotspots => lists:foldr(FoldFun, [], CachedData)},
-    ok = router_channel:handle_data(EventMgrRef, Map).
+    {ok, Ref} = router_channel:handle_data(EventMgrRef, Map),
+    {ok, Ref, Map}.
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs) ->
@@ -282,7 +309,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             router_device_api:report_channel_status(Device,
                                                     #{channel_id => ChannelID,
                                                       channel_name => ChannelName,
-                                                      status => failure, category => <<"start_channel_failure">>,
+                                                      status => failure, category => <<"channel_start_failure">>,
                                                       description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),

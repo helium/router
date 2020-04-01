@@ -86,9 +86,11 @@ update(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
     gen_event:call(Pid, Handler, {update, Channel, Device}).
 
--spec handle_data(pid(), map()) -> ok.
+-spec handle_data(pid(), map()) -> {ok, reference()}.
 handle_data(Pid, Data) ->
-    gen_event:notify(Pid, {data, Data}).
+    Ref = erlang:make_ref(),
+    ok = gen_event:notify(Pid, {data, Ref, Data}),
+    {ok, Ref}.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

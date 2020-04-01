@@ -173,7 +173,7 @@ wait_report_channel_status(Expected) ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_report_channel_status data failed ~p", [Reason])
                 end
-        after 1250 ->
+        after 4250 ->
                 ct:fail("wait_report_channel_status timeout")
         end
     catch

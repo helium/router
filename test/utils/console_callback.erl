@@ -56,9 +56,9 @@ handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),
     Data = jsx:decode(Body, [return_maps]),
-    case maps:is_key(<<"channel_id">>, Data) of
-        false -> Pid ! {report_device_status, Data};
-        true -> Pid ! {report_channel_status, Data}
+    case maps:get(<<"channels">>, Data, []) of
+        [] -> Pid ! {report_device_status, Data};
+        _ -> Pid ! {report_channel_status, Data}
     end,
     {200, [], <<>>};
 %% POST to channel

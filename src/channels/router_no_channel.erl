@@ -33,7 +33,7 @@ handle_event({data, Ref, _Data}, #state{channel=Channel}=State) ->
                id => router_channel:id(Channel),
                name => router_channel:name(Channel),
                reported_at => erlang:system_time(seconds)},
-    router_device_channels_worker:report_channel_status(Pid, Ref, Report),
+    router_device_channels_worker:report_status(Pid, Ref, Report),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

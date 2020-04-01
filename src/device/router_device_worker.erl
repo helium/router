@@ -91,13 +91,13 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubKeyBin}, Cache0),
+            Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubKeyBin, Packet0}, Cache0),
             State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1}};
-                {RSSI1, _, _, _, Pid2} ->
+                {RSSI1, _, _, Pid2, _, _} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
@@ -111,8 +111,7 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                                      frame_cache=FrameCache0,
                                                      channels_worker=ChannelsWorker}=State) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    case handle_frame_packet(Packet0, AName, Device0) of
+    case handle_frame_packet(Packet0, PubKeyBin, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
@@ -120,7 +119,7 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
             ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
             RSSI0 = Packet0#packet_pb.signal_strength,
             FCnt = router_device:fcnt(Device1),
-            FrameCache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, FrameCache0),
+            FrameCache1 = maps:put(FCnt, {RSSI0, Packet0, PubKeyBin, Frame, Pid}, FrameCache0),
             case maps:get(FCnt, FrameCache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
@@ -141,23 +140,22 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
-    {_, Packet, Device0, Pid, PubKeyBin} = maps:get(JoinNonce, Cache0, undefined),
+    {_, Packet, Device0, Pid, PubKeyBin, Packet0} = maps:get(JoinNonce, Cache0, undefined),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
-    StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                  (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    ok = report_device_status(Device1, success, AName, StatusMsg, activation),
+    Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+    ok = report_status(activation, Desc, Device1, success, PubKeyBin, Packet0),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
-    {_, Packet0, AName, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+    {_, Packet0, PubKeyBin, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, AName, Device, Frame) of
+    case handle_frame(Packet0, PubKeyBin, Device, Frame) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, undefined},
@@ -353,14 +351,15 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
 %% previous packet sent 
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame_packet(#packet_pb{}, string(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
-handle_frame_packet(Packet, AName, Device0) ->
+-spec handle_frame_packet(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
+handle_frame_packet(Packet, PubKeyBin, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),
@@ -372,10 +371,10 @@ handle_frame_packet(Packet, AName, Device0) ->
         0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                         [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-            StatusMsg = <<"Packet with double fopts received from AppEUI: ",
-                          (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                          (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_device_status(Device0, failure, AName, StatusMsg, error),
+            Desc = <<"Packet with double fopts received from AppEUI: ",
+                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+            ok = report_status(up, Desc, Device0, error, PubKeyBin, Packet),
             {error, double_fopts};
         _N ->
             AppSKey = router_device:app_s_key(Device0),
@@ -411,12 +410,12 @@ handle_frame_packet(Packet, AName, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame(#packet_pb{}, string(), router_device:device(), #frame{}) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet, AName, Device, Frame) ->
-    handle_frame(Packet, AName, Device, Frame, router_device:queue(Device)).
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet, PubKeyBin, Device, Frame) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, router_device:queue(Device)).
 
--spec handle_frame(#packet_pb{}, string(), router_device:device(), #frame{}, list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet0, AName, Device0, Frame, []) ->
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}, list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -448,7 +447,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
                                      {fcntdown, (FCntDown + 1)}
                                     ],
                     Device1 = router_device:update(DeviceUpdates, Device0),
-                    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+                    ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0),
                     {send, Device1, Packet1}
             end;
         _ when ACK == 0 andalso ChannelCorrection == false andalso WereChannelsCorrected == true ->
@@ -457,7 +456,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
         _ ->
             noop
     end;
-handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
+handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame),
@@ -485,14 +484,14 @@ handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0),
             {send, Device1, Packet1};
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0),
             {send, Device1, Packet1}
     end.
 
@@ -515,7 +514,7 @@ were_channels_corrected(Frame) ->
             true;
         {link_adr_ans, 1, 1, 0} ->
             lager:info("device rejected channel adjustment"),
-            %% XXX we should get this to report_device_status somehow, but it's a bit tricky right now
+            %% XXX we should get this to report_status somehow, but it's a bit tricky right now
             true;
         _ ->
             false
@@ -529,39 +528,52 @@ mtype_to_ack(_) -> 0.
 ack_to_mtype(true) -> ?CONFIRMED_DOWN;
 ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
--spec report_frame_status(integer(), boolean(), any(), string(), router_device:device()) -> ok.
-report_frame_status(0, false, 0, AName, Device) ->
+-spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(),
+                          router_device:device(), #packet_pb{}) -> ok.
+report_frame_status(0, false, 0, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down);
-report_frame_status(1, _ConfirmedDown, undefined, AName, Device) ->
+    Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet);
+report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(1, true, _Port, AName, Device) ->
+    Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet);
+report_frame_status(1, true, _Port, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(1, false, _Port, AName, Device) ->
+    Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet);
+report_frame_status(1, false, _Port, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(_, true, _Port, AName, Device) ->
+    Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet);
+report_frame_status(_, true, _Port, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down);
-report_frame_status(_, false, _Port, AName, Device) ->
+    Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet);
+report_frame_status(_, false, _Port, PubKeyBin, Device, Packet) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down).
+    Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet).
 
--spec report_device_status(router_device:device(), atom(), string(), binary(), atom()) -> ok.
-report_device_status(Device, Status, AName, Msg, Category) ->
-    StatusMap = #{status => Status,
-                  description => Msg,
-                  category => Category,
-                  hotspot_name => AName},
-    ok = router_device_api:report_device_status(Device, StatusMap).
+-spec report_status(atom(), binary(), router_device:device(), success | error,
+                    libp2p_crypto:pubkey_bin(), #packet_pb{}) -> ok.
+report_status(Category, Desc, Device, Status, PubKeyBin, Packet) ->
+    HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+    Report = #{category => Category,
+               description => Desc,
+               reported_at => erlang:system_time(seconds),
+               payload => <<>>,
+               payload_size => 0,
+               hotspots => [#{id => erlang:list_to_binary(HotspotID),
+                              name => erlang:list_to_binary(HotspotName),
+                              reported_at => erlang:system_time(seconds),
+                              status => Status,
+                              rssi => Packet#packet_pb.signal_strength,
+                              snr => Packet#packet_pb.snr,
+                              spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

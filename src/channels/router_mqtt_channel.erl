@@ -130,7 +130,7 @@ handle_publish_res(Res, Channel, Ref) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_channels_worker:report_channel_status(Pid, Ref, Result1).
+    router_device_channels_worker:report_status(Pid, Ref, Result1).
 
 -spec topic(binary() | list()) -> binary().
 topic(<<>>) ->

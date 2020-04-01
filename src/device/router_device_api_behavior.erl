@@ -4,6 +4,5 @@
 -callback get_device(DeviceID :: binary()) -> {ok, router_device:device()} | {error, any()}.
 -callback get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 -callback get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
--callback report_device_status(Device :: router_device:device(), Map :: #{}) -> ok.
--callback report_channel_status(Device :: router_device:device(), Map :: #{}) -> ok.
+-callback report_status(Device :: router_device:device(), Map :: #{}) -> ok.
 

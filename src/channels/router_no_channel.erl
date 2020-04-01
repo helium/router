@@ -26,19 +26,13 @@ init({[Channel, _Device], _}) ->
     lager:info("init with ~p", [Channel]),
     {ok, #state{channel=Channel}}.
 
-handle_event({data, Ref, Data}, #state{channel=Channel}=State) ->
+handle_event({data, Ref, _Data}, #state{channel=Channel}=State) ->
     Pid = router_channel:controller(Channel),
-    Payload = maps:get(payload, Data),
     Report = #{status => success,
                description => <<"no channels configured">>,
-               channel_id => router_channel:id(Channel),
-               channel_name => router_channel:name(Channel),
-               reported_at => erlang:system_time(seconds),
-               category => <<"up">>,
-               port => maps:get(port, Data),
-               payload => base64:encode(Payload),
-               payload_size => erlang:byte_size(Payload),
-               hotspots => maps:get(hotspots, Data)},
+               id => router_channel:id(Channel),
+               name => router_channel:name(Channel),
+               reported_at => erlang:system_time(seconds)},
     router_device_channels_worker:report_channel_status(Pid, Ref, Report),
     {ok, State};
 handle_event(_Msg, State) ->

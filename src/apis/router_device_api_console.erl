@@ -91,6 +91,8 @@ report_status(Device, Map) ->
              frame_down => router_device:fcntdown(Device),
              payload => maps:get(payload, Map),
              payload_size => maps:get(payload_size, Map),
+             port => maps:get(port, Map),
+             devaddr => maps:get(devaddr, Map),
              hotspots => maps:get(hotspots, Map),
              channels => maps:get(channels, Map)},
     lager:debug("post ~p to ~p", [Body, Url]),

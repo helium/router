@@ -162,6 +162,8 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
                    reported_at => erlang:system_time(seconds),
                    payload => base64:encode(Payload),
                    payload_size => erlang:byte_size(Payload),
+                   port => maps:get(port, Data),
+                   devaddr => maps:get(devaddr, Data),
                    hotspots => maps:get(hotspots, Data),
                    channels => CachedReports},
     ok = router_device_api:report_status(Device, ReportsMap),
@@ -289,9 +291,10 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
                    status => <<"success">>,
                    rssi => Packet#packet_pb.signal_strength,
                    snr => Packet#packet_pb.snr,
-                   spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}|Acc]
+                   spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
+                   frequency => Packet#packet_pb.frequency}|Acc]
         end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt}, Time}|_] = CachedData,
+    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),
             name => router_device:name(Device),
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
@@ -301,6 +304,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             reported_at => Time,
             payload => Data,
             port => Port,
+            devaddr => DevAddr,
             hotspots => lists:foldr(FoldFun, [], CachedData)},
     {ok, Ref} = router_channel:handle_data(EventMgrRef, Map),
     {ok, Ref, Map}.

@@ -2,7 +2,76 @@
 
 # Router
 
-## Docker
+## Data
+
+### Sent to channels
+
+```
+{
+    "id": "device_uuid",
+    "name": "device_name",
+    "dev_eui": "dev_eui",
+    "app_eui": "app_eui",
+    "metadata": {},
+    "fcnt": 2,
+    "reported_at": 123,
+    "payload": "base64 encoded payload",
+    "port": 1,
+    "devaddr": "devaddr",
+    "hotspots": [
+        {
+            "id": "hotspot_id",
+            "name": "hotspot name",
+            "reported_at": 123,
+            "status": "success | error",
+            "rssi": -30,
+            "snr": 0.2,
+            "spreading": "SF9BW125",
+            "frequency": 923.3
+        }
+    ]
+}
+```
+
+### Console
+
+```
+{
+    "category": "up | down | activation | ack | channel_crash | channel_start_error",
+    "description": "any specific description ie.correcting channel mask, otherwise null",
+    "reported_at": 123,
+    "device_id": "device_uuid",
+    "frame_up": 2,
+    "frame_down": 2,
+    "payload": "base64 payload",
+    "payload_size": 12,
+    "port": 1,
+    "devaddr": "devaddr",
+    "hotspots": [
+        {
+            "id": "hotspot_id",
+            "name": "hotspot name",
+            "reported_at": 123,
+            "status": "success | error",
+            "rssi": -30,
+            "snr": 0.2,
+            "spreading": "SF9BW125",
+            "frequency": 923.3
+        }
+    ],
+    "channels": [
+        {
+            "id": "uuid",
+            "name": "channel name",
+            "reported_at": 123,
+            "status": "success | error",
+            "description": "what happened"
+        }
+    ]
+}
+```
+
+## Docker Install
 
 ### Commands
 

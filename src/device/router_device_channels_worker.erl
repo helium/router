@@ -165,7 +165,7 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
                    hotspots => maps:get(hotspots, Data),
                    channels => CachedReports},
     ok = router_device_api:report_status(Device, ReportsMap),
-    {noreply, State#state{data_cache=maps:remove(Ref, Cache0)}};
+    {noreply, State#state{channels_resp_cache=maps:remove(Ref, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->

@@ -33,12 +33,25 @@
 -define(SERVER, ?MODULE).
 -define(BACKOFF_MAX, timer:minutes(5)).
 
+-record(join_cache, {rssi :: float(),
+                     packet :: #packet_pb{},
+                     packet_rcvd :: #packet_pb{},
+                     device :: router_device:device(),
+                     pid :: pid(),
+                     pubkey_bin :: libp2p_crypto:pubkey_bin()}).
+
+-record(frame_cache, {rssi :: float(),
+                      packet :: #packet_pb{},
+                      pubkey_bin :: libp2p_crypto:pubkey_bin(),
+                      frame :: #frame{},
+                      pid :: pid()}).
+
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
                 channels_worker :: pid(),
-                join_cache = #{} :: map(),
-                frame_cache = #{} :: map()}).
+                join_cache = #{} :: #{integer() => #join_cache{}},
+                frame_cache = #{} :: #{integer() => #frame_cache{}}}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -91,13 +104,19 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubKeyBin, Packet0}, Cache0),
+            JoinCache = #join_cache{rssi=RSSI0,
+                                    packet=Packet1,
+                                    packet_rcvd=Packet0,
+                                    device=Device1,
+                                    pid=Pid,
+                                    pubkey_bin=PubKeyBin},
+            Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
             State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1}};
-                {RSSI1, _, _, Pid2, _, _} ->
+                #join_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
@@ -109,7 +128,7 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             end
     end;
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
-                                                     frame_cache=FrameCache0,
+                                                     frame_cache=Cache0,
                                                      channels_worker=ChannelsWorker}=State) ->
     case handle_frame_packet(Packet0, PubKeyBin, Device0) of
         {error, _Reason} ->
@@ -119,19 +138,24 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
             ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
             RSSI0 = Packet0#packet_pb.signal_strength,
             FCnt = router_device:fcnt(Device1),
-            FrameCache1 = maps:put(FCnt, {RSSI0, Packet0, PubKeyBin, Frame, Pid}, FrameCache0),
-            case maps:get(FCnt, FrameCache0, undefined) of
+            FrameCache = #frame_cache{rssi=RSSI0,
+                                      packet=Packet0,
+                                      pubkey_bin=PubKeyBin,
+                                      frame=Frame,
+                                      pid=Pid},
+            Cache1 = maps:put(FCnt, FrameCache, Cache0),
+            case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
-                    {noreply, State#state{device=Device1, frame_cache=FrameCache1}};
-                {RSSI1, _, _, _, Pid2} ->
+                    {noreply, State#state{device=Device1, frame_cache=Cache1}};
+                #frame_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
                             {noreply, State#state{device=Device1}};
                         true ->
                             catch Pid2 ! {packet, undefined},
-                            {noreply, State#state{device=Device1, frame_cache=FrameCache1}}
+                            {noreply, State#state{device=Device1, frame_cache=Cache1}}
                     end
             end
     end;
@@ -140,7 +164,11 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
-    {_, Packet, Device0, Pid, PubKeyBin, Packet0} = maps:get(JoinNonce, Cache0, undefined),
+    #join_cache{packet=Packet,
+                packet_rcvd=PacketRcvd,
+                device=Device0,
+                pid=Pid,
+                pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
@@ -148,12 +176,15 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
     AppEUI = router_device:app_eui(Device0),
     Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    ok = report_status(activation, Desc, Device1, success, PubKeyBin, Packet0),
+    ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
-    {_, Packet0, PubKeyBin, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+    #frame_cache{packet=Packet0,
+                 pubkey_bin=PubKeyBin,
+                 frame=Frame,
+                 pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
     case handle_frame(Packet0, PubKeyBin, Device, Frame) of
         {ok, Device1} ->

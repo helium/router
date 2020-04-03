@@ -15,43 +15,43 @@
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([
-         start_link/1,
+-export([start_link/1,
          handle_packet/2,
-         queue_message/2,
-         report_channel_status/2,
-         handle_downlink/2
-        ]).
+         queue_message/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([
-         init/1,
+-export([init/1,
          handle_call/3,
          handle_cast/2,
          handle_info/2,
          terminate/2,
-         code_change/3
-        ]).
+         code_change/3]).
 
 
 -define(SERVER, ?MODULE).
--define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
--define(BACKOFF_INIT,
-        {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-         erlang:make_ref()}).
+
+-record(join_cache, {rssi :: float(),
+                     packet :: #packet_pb{},
+                     packet_rcvd :: #packet_pb{},
+                     device :: router_device:device(),
+                     pid :: pid(),
+                     pubkey_bin :: libp2p_crypto:pubkey_bin()}).
+
+-record(frame_cache, {rssi :: float(),
+                      packet :: #packet_pb{},
+                      pubkey_bin :: libp2p_crypto:pubkey_bin(),
+                      frame :: #frame{},
+                      pid :: pid()}).
 
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
-                join_cache = #{} :: map(),
-                frame_cache = #{} :: map(),
-                event_mgr :: pid(),
-                channels = #{} :: map(),
-                channels_backoffs = #{} :: map(),
-                data_cache = #{} :: map()}).
+                channels_worker :: pid(),
+                join_cache = #{} :: #{integer() => #join_cache{}},
+                frame_cache = #{} :: #{integer() => #frame_cache{}}}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -72,40 +72,6 @@ handle_packet(Packet, PubKeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
--spec report_channel_status(pid(), map()) -> ok.
-report_channel_status(Pid, Map) ->
-    gen_server:cast(Pid, {report_channel_status, Map}).
-
--spec handle_downlink(binary(), router_channel:channel()) -> ok.
-handle_downlink(Pay, Channel) ->
-    try jsx:decode(Pay, [return_maps]) of
-        JSON ->
-            case maps:find(<<"payload_raw">>, JSON) of
-                {ok, Payload} ->
-                    Port = case maps:find(<<"port">>, JSON) of
-                               {ok, X} when is_integer(X), X > 0, X < 224 ->
-                                   X;
-                               _ ->
-                                   1
-                           end,
-                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
-                                    {ok, true} ->
-                                        true;
-                                    _ ->
-                                        false
-                                end,
-
-                    Msg = {Confirmed, Port, base64:decode(Payload)},
-                    router_device_worker:queue_message(router_channel:device_worker(Channel), Msg);
-                error ->
-                    lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
-            end
-    catch
-        _:_ ->
-            lager:info("could not parse json downlink message ~p", [Pay])
-    end,
-    ok.
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -115,19 +81,21 @@ init(Args) ->
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
     Device = get_device(DB, CF, ID),
-    {ok, EventMgrRef} = router_channel:start_link(),
-    self() ! refresh_channels,
+    {ok, Pid} =
+        router_device_channels_worker:start_link(#{device_worker => self(),
+                                                   device => Device}),
     self() ! refresh_device_metadata,
-    {ok, #state{db=DB, cf=CF, device=Device, event_mgr=EventMgrRef}}.
+    {ok, #state{db=DB, cf=CF, device=Device, channels_worker=Pid}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
+                                                                  channels_worker=ChannelsWorker}=State) ->
     Q = router_device:queue(Device0),
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
-    {ok, _} = router_device:save(DB, CF, Device1),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
                                                                        join_cache=Cache0}=State0) ->
@@ -136,13 +104,19 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
             RSSI0 = Packet0#packet_pb.signal_strength,
-            Cache1 = maps:put(JoinNonce, {RSSI0, Packet1, Device1, Pid, PubKeyBin}, Cache0),
+            JoinCache = #join_cache{rssi=RSSI0,
+                                    packet=Packet1,
+                                    packet_rcvd=Packet0,
+                                    device=Device1,
+                                    pid=Pid,
+                                    pubkey_bin=PubKeyBin},
+            Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
             State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1}};
-                {RSSI1, _, _, _, Pid2} ->
+                #join_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
@@ -154,82 +128,79 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             end
     end;
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
-                                                     frame_cache=FrameCache0,
-                                                     data_cache=DataCache0}=State) ->
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    case handle_frame_packet(Packet0, AName, Device0) of
+                                                     frame_cache=Cache0,
+                                                     channels_worker=ChannelsWorker}=State) ->
+    case handle_frame_packet(Packet0, PubKeyBin, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
-            FCnt = router_device:fcnt(Device1),
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
-            DataCache1 =
-                case maps:get(FCnt, DataCache0, undefined) of
-                    undefined ->
-                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
-                        maps:put(FCnt, [Data], DataCache0);
-                    CachedData ->
-                        maps:put(FCnt, [Data|CachedData], DataCache0)
-                end,
+            ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
             RSSI0 = Packet0#packet_pb.signal_strength,
-            FrameCache1 = maps:put(FCnt, {RSSI0, Packet0, AName, Frame, Pid}, FrameCache0),
-            case maps:get(FCnt, FrameCache0, undefined) of
+            FCnt = router_device:fcnt(Device1),
+            FrameCache = #frame_cache{rssi=RSSI0,
+                                      packet=Packet0,
+                                      pubkey_bin=PubKeyBin,
+                                      frame=Frame,
+                                      pid=Pid},
+            Cache1 = maps:put(FCnt, FrameCache, Cache0),
+            case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
-                    {noreply, State#state{device=Device1, frame_cache=FrameCache1, data_cache=DataCache1}};
-                {RSSI1, _, _, _, Pid2} ->
+                    {noreply, State#state{device=Device1, frame_cache=Cache1}};
+                #frame_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
-                            {noreply, State#state{device=Device1, data_cache=DataCache1}};
+                            {noreply, State#state{device=Device1}};
                         true ->
                             catch Pid2 ! {packet, undefined},
-                            {noreply, State#state{device=Device1, frame_cache=FrameCache1, data_cache=DataCache1}}
+                            {noreply, State#state{device=Device1, frame_cache=Cache1}}
                     end
             end
     end;
-handle_cast({report_channel_status, Map}, #state{device=Device}=State) ->
-    ok = router_device_api:report_channel_status(Device, Map),
-    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, join_cache=Cache0}=State) ->
-    {_, Packet, Device0, Pid, PubKeyBin} = maps:get(JoinNonce, Cache0, undefined),
+handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
+    #join_cache{packet=Packet,
+                packet_rcvd=PacketRcvd,
+                device=Device0,
+                pid=Pid,
+                pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
-    {ok, _} = router_device:save(DB, CF, Device1),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
-    StatusMsg = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                  (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    ok = report_device_status(Device1, success, AName, StatusMsg, activation),
+    Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+    ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, frame_cache=Cache0}=State) ->
-    {_, Packet0, AName, Frame, Pid} = maps:get(FCnt, Cache0, undefined),
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
+                                          channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
+    #frame_cache{packet=Packet0,
+                 pubkey_bin=PubKeyBin,
+                 frame=Frame,
+                 pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, AName, Device, Frame) of
+    case handle_frame(Packet0, PubKeyBin, Device, Frame) of
         {ok, Device1} ->
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, undefined},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink ~p", [Packet1]),
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, Packet1},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             Pid ! {packet, undefined},
             {noreply, State#state{frame_cache=Cache1}}
     end;
-handle_info({data_timeout, FCnt}, #state{device=Device, data_cache=Cache0, event_mgr=EventMgrRef}=State) ->
-    CachedData = maps:get(FCnt, Cache0),
-    ok = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
-    {noreply, State#state{data_cache=maps:remove(FCnt, Cache0)}};
-handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State) ->
+handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0, channels_worker=ChannelsWorker}=State) ->
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
     DeviceID = router_device:id(Device0),
     case router_device_api:get_device(DeviceID) of
@@ -238,95 +209,8 @@ handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0}=State)
             {noreply, State};
         {ok, APIDevice} ->
             Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
-            {ok, _} = router_device:save(DB, CF, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device=Device1}}
-    end;
-handle_info(refresh_channels, #state{device=Device, event_mgr=EventMgrRef, channels=Channels0}=State) ->
-    APIChannels = lists:foldl(
-                    fun(Channel, Acc) ->
-                            ID = router_channel:id(Channel),
-                            maps:put(ID, Channel, Acc)
-                    end,
-                    #{},
-                    router_device_api:get_channels(Device, self())),
-    Channels1 =
-        case maps:size(APIChannels) == 0 of
-            true ->
-                %% API returned no channels removing all of them and adding the "no channel"
-                lists:foreach(
-                  fun({router_no_channel, <<"no_channel">>}) -> ok;
-                     (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
-                  end,
-                  gen_event:which_handlers(EventMgrRef)),
-                NoChannel = maybe_start_no_channel(Device, EventMgrRef),
-                #{router_channel:id(NoChannel) => NoChannel};
-            false ->
-                %% Start channels asynchronously 
-                lists:foreach(
-                  fun(Channel) -> self() ! {start_channel, Channel} end,
-                  maps:values(APIChannels)),
-                %% Removing old channels left in cache but not in API call
-                remove_old_channels(EventMgrRef, APIChannels, Channels0)
-
-        end,
-    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
-    {noreply, State#state{channels=Channels1}};
-handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
-                                             channels=Channels, channels_backoffs=Backoffs0}=State) ->
-    ChannelID = router_channel:id(Channel),
-    case maps:get(ChannelID, Channels, undefined) of
-        undefined ->
-            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
-                {ok, Backoffs1} ->
-                    {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
-                                          channels_backoffs=Backoffs1}};
-                {error, _Reason, Backoffs1} ->
-                    {noreply, State#state{channels_backoffs=Backoffs1}}
-            end;
-        CachedChannel ->
-            ChannelHash = router_channel:hash(Channel),
-            case router_channel:hash(CachedChannel) of
-                ChannelHash ->
-                    lager:info("channel ~p already started", [ChannelID]),
-                    {noreply, State};
-                _OldHash ->
-                    lager:info("updating channel ~p", [ChannelID]),
-                    case update_channel(EventMgrRef, Channel, Device, Backoffs0) of  
-                        {ok, Backoffs1} ->
-                            lager:info("channel ~p updated", [ChannelID]),
-                            {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
-                                                  channels_backoffs=Backoffs1}};
-                        {error, _Reason, Backoffs1} ->
-                            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                                  channels_backoffs=Backoffs1}}
-                    end
-            end
-    end;
-handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=Device, channels=Channels,
-                                                                        event_mgr=EventMgrRef,
-                                                                        channels_backoffs=Backoffs0}=State) ->
-    case ExitReason of
-        {swapped, _NewHandler, _Pid} ->
-            lager:info("channel ~p got swapped ~p", [ChannelID, {_NewHandler, _Pid}]),
-            {noreply, State};
-        R when R == normal orelse R == shutdown ->
-            lager:info("channel ~p went down normally", [ChannelID]),
-            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                  channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
-        Error ->
-            Channel = maps:get(ChannelID, Channels),
-            ChannelName = router_channel:name(Channel),
-            lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
-            router_device_api:report_channel_status(Device, #{channel_id => ChannelID, channel_name => ChannelName,
-                                                              status => failure, category => <<"channel_crash">>,
-                                                              description => list_to_binary(io_lib:format("~p", [Error]))}),
-            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
-                {ok, Backoffs1} ->
-                    {noreply, State#state{channels_backoffs=Backoffs1}};
-                {error, _Reason, Backoffs1} ->
-                    {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                          channels_backoffs=Backoffs1}}
-            end
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -342,91 +226,17 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) -> ok.
+save_and_update(DB, CF, Pid, Device) ->
+    {ok, _} = router_device:save(DB, CF, Device),
+    ok = router_device_channels_worker:handle_device_update(Pid, Device).
+
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, ID) ->
     case router_device:get(DB, CF, ID) of
         {ok, D} -> D;
         _ -> router_device:new(ID)
     end.
-
--spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
-start_channel(EventMgrRef, Channel, Device, Backoffs) ->
-    ChannelID = router_channel:id(Channel),
-    ChannelName = router_channel:name(Channel),
-    case router_channel:add(EventMgrRef, Channel, Device) of
-        ok ->
-            lager:info("channel ~p started", [{ChannelID, ChannelName}]),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {_Delay, Backoff1} = backoff:succeed(Backoff0),
-            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
-        {E, Reason} when E == 'EXIT'; E == error ->
-            router_device_api:report_channel_status(Device,
-                                                    #{channel_id => ChannelID,
-                                                      channel_name => ChannelName,
-                                                      status => failure, category => <<"start_channel_failure">>,
-                                                      description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
-            lager:error("failed to start channel ~p: ~p, retrying in ~pms", [{ChannelID, ChannelName}, {E, Reason}, Delay]),
-            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
-    end.
-
--spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
-update_channel(EventMgrRef, Channel, Device, Backoffs) ->
-    ChannelID = router_channel:id(Channel),
-    ChannelName = router_channel:name(Channel),
-    case router_channel:update(EventMgrRef, Channel, Device) of
-        ok ->
-            lager:info("channel ~p updated", [{ChannelID, ChannelName}]),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {_Delay, Backoff1} = backoff:succeed(Backoff0),
-            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
-        {E, Reason} when E == 'EXIT'; E == error ->
-            lager:error("failed to update channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
-            router_device_api:report_channel_status(Device,
-                                                    #{channel_id => ChannelID,
-                                                      channel_name => ChannelName,
-                                                      status => failure, category => <<"update_channel_failure">>,
-                                                      description => list_to_binary(io_lib:format("~p ~p", [E, Reason]))}),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
-            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
-    end.
-
--spec remove_old_channels(pid(), map(), map()) -> map().
-remove_old_channels(EventMgrRef, APIChannels, Channels) ->
-    maps:filter(
-      fun(ChannelID, Channel) ->
-              case maps:get(ChannelID, APIChannels, undefined) of
-                  undefined ->
-                      ok = router_channel:delete(EventMgrRef, Channel),
-                      false;
-                  _ ->
-                      true
-              end
-      end,
-      Channels).
-
--spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
-maybe_start_no_channel(Device, EventMgrRef) ->
-    Handlers = gen_event:which_handlers(EventMgrRef),
-    NoChannel = router_channel:new(<<"no_channel">>,
-                                   router_no_channel,
-                                   <<"no_channel">>,
-                                   #{},
-                                   router_device:id(Device),
-                                   self()),
-    case lists:keyfind(router_no_channel, 1, Handlers) of
-        {router_no_channel, _} -> noop;
-        _ -> router_channel:add(EventMgrRef, NoChannel, Device)
-    end,
-    NoChannel.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -572,14 +382,15 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
 %% previous packet sent 
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame_packet(#packet_pb{}, string(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
-handle_frame_packet(Packet, AName, Device0) ->
+-spec handle_frame_packet(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
+handle_frame_packet(Packet, PubKeyBin, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),
@@ -591,10 +402,10 @@ handle_frame_packet(Packet, AName, Device0) ->
         0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                         [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-            StatusMsg = <<"Packet with double fopts received from AppEUI: ",
-                          (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                          (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_device_status(Device0, failure, AName, StatusMsg, error),
+            Desc = <<"Packet with double fopts received from AppEUI: ",
+                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+            ok = report_status(up, Desc, Device0, error, PubKeyBin, Packet, 0, DevAddr),
             {error, double_fopts};
         _N ->
             AppSKey = router_device:app_s_key(Device0),
@@ -630,12 +441,12 @@ handle_frame_packet(Packet, AName, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame(#packet_pb{}, string(), router_device:device(), #frame{}) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet, AName, Device, Frame) ->
-    handle_frame(Packet, AName, Device, Frame, router_device:queue(Device)).
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet, PubKeyBin, Device, Frame) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, router_device:queue(Device)).
 
--spec handle_frame(#packet_pb{}, string(), router_device:device(), #frame{}, list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet0, AName, Device0, Frame, []) ->
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}, list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -667,7 +478,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
                                      {fcntdown, (FCntDown + 1)}
                                     ],
                     Device1 = router_device:update(DeviceUpdates, Device0),
-                    ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+                    ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
                     {send, Device1, Packet1}
             end;
         _ when ACK == 0 andalso ChannelCorrection == false andalso WereChannelsCorrected == true ->
@@ -676,7 +487,7 @@ handle_frame(Packet0, AName, Device0, Frame, []) ->
         _ ->
             noop
     end;
-handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
+handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame),
@@ -704,14 +515,14 @@ handle_frame(Packet0, AName, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
             {send, Device1, Packet1};
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, AName, Device1),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
             {send, Device1, Packet1}
     end.
 
@@ -734,7 +545,7 @@ were_channels_corrected(Frame) ->
             true;
         {link_adr_ans, 1, 1, 0} ->
             lager:info("device rejected channel adjustment"),
-            %% XXX we should get this to report_device_status somehow, but it's a bit tricky right now
+            %% XXX we should get this to report_status somehow, but it's a bit tricky right now
             true;
         _ ->
             false
@@ -748,65 +559,55 @@ mtype_to_ack(_) -> 0.
 ack_to_mtype(true) -> ?CONFIRMED_DOWN;
 ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
--spec report_frame_status(integer(), boolean(), any(), string(), router_device:device()) -> ok.
-report_frame_status(0, false, 0, AName, Device) ->
+-spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(),
+                          router_device:device(), #packet_pb{}, #frame{}) -> ok.
+report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down);
-report_frame_status(1, _ConfirmedDown, undefined, AName, Device) ->
+    Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
+report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(1, true, _Port, AName, Device) ->
+    Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
+report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(1, false, _Port, AName, Device) ->
+    Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
+report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, ack);
-report_frame_status(_, true, _Port, AName, Device) ->
+    Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
+report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down);
-report_frame_status(_, false, _Port, AName, Device) ->
+    Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
+report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
-    StatusMsg = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_device_status(Device, success, AName, StatusMsg, down).
+    Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr).
 
--spec report_device_status(router_device:device(), atom(), string(), binary(), atom()) -> ok.
-report_device_status(Device, Status, AName, Msg, Category) ->
-    StatusMap = #{status => Status,
-                  description => Msg,
-                  category => Category,
-                  hotspot_name => AName},
-    ok = router_device_api:report_device_status(Device, StatusMap).
-
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> ok.
-send_to_channel(CachedData, Device, EventMgrRef) ->
-    FoldFun =
-        fun({PubKeyBin, Packet, _, Time}, Acc) ->
-                B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-                {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
-                [#{id => erlang:list_to_binary(B58),
-                   name => erlang:list_to_binary(HotspotName),
-                   timestamp => Time,
-                   rssi => Packet#packet_pb.signal_strength,
-                   snr => Packet#packet_pb.snr,
-                   spreading => erlang:list_to_binary(Packet#packet_pb.datarate)}|Acc]
-        end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt}, Time}|_] = CachedData,
-    Map = #{id => router_device:id(Device),
-            name => router_device:name(Device),
-            dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-            app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-            metadata => router_device:metadata(Device),
-            fcnt => FCnt,
-            timestamp => Time,
-            payload => Data,
-            port => Port,
-            hotspots => lists:foldr(FoldFun, [], CachedData)},
-    ok = router_channel:handle_data(EventMgrRef, Map).
+-spec report_status(atom(), binary(), router_device:device(), success | error,
+                    libp2p_crypto:pubkey_bin(), #packet_pb{}, any(), any()) -> ok.
+report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) ->
+    HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+    Report = #{category => Category,
+               description => Desc,
+               reported_at => erlang:system_time(seconds),
+               payload => <<>>,
+               payload_size => 0,
+               port => Port,
+               devaddr => DevAddr,
+               hotspots => [#{id => erlang:list_to_binary(HotspotID),
+                              name => erlang:list_to_binary(HotspotName),
+                              reported_at => erlang:system_time(seconds),
+                              status => Status,
+                              rssi => Packet#packet_pb.signal_strength,
+                              snr => Packet#packet_pb.snr,
+                              spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
+                              frequency => Packet#packet_pb.frequency}],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->

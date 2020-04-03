@@ -50,10 +50,10 @@ init({[Channel, _Device], _}) ->
             {error, Reason}
     end.
 
-handle_event({data, Data}, #state{channel=Channel, connection=Conn, pub_topic=Topic}=State) ->
+handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, pub_topic=Topic}=State) ->
     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-    ok = handle_publish_res(Res, Channel, Data),
     lager:debug("published: ~p result: ~p", [Data, Res]),
+    ok = handle_publish_res(Res, Channel, Ref),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -86,7 +86,8 @@ handle_call(_Msg, State) ->
     {ok, ok, State}.
 
 handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connection=Pid, channel=Channel}=State) ->
-    router_device_worker:handle_downlink(Payload, Channel),
+    Controller = router_channel:controller(Channel),
+    router_device_channels_worker:handle_downlink(Controller, Payload),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),
@@ -115,18 +116,12 @@ ping(Conn) ->
 encode_data(#{payload := Payload}=Map) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
--spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
-handle_publish_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
-    Payload = maps:get(payload, Data),
-    Result0 = #{channel_id => router_channel:id(Channel),
-                channel_name => router_channel:name(Channel),
-                reported_at => erlang:system_time(seconds),
-                category => <<"up">>,
-                port => maps:get(port, Data),
-                payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload),
-                hotspots => maps:get(hotspots, Data)},
+-spec handle_publish_res(any(), router_channel:channel(), reference()) -> ok.
+handle_publish_res(Res, Channel, Ref) ->
+    Pid = router_channel:controller(Channel),
+    Result0 = #{id => router_channel:id(Channel),
+                name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
                   {ok, PacketID} ->
                       maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});
@@ -135,7 +130,7 @@ handle_publish_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_status(Pid, Ref, Result1).
 
 -spec topic(binary() | list()) -> binary().
 topic(<<>>) ->

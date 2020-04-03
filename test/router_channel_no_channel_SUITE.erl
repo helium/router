@@ -1,4 +1,4 @@
--module(router_no_channel_SUITE).
+-module(router_channel_no_channel_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
@@ -69,13 +69,26 @@ no_channel_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{<<"status">> => <<"success">>,
+    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"category">> => <<"activation">>,
+                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
+                                           <<"payload">> => <<>>,
+                                           <<"payload_size">> => 0,
+                                           <<"port">> => '_',
+                                           <<"devaddr">> => '_',
+                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                <<"reported_at">> => fun erlang:is_integer/1,
+                                                                <<"status">> => <<"success">>,
+                                                                <<"rssi">> => 0.0,
+                                                                <<"snr">> => 0.0,
+                                                                <<"spreading">> => <<"SF8BW125">>,
+                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                           <<"channels">> => []}),
+
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
 
@@ -88,48 +101,54 @@ no_channel_test(Config) ->
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
 
     %% Waiting for report channel status from No channel
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
-                                            <<"description">> => <<"no channels configured">>,
-                                            <<"channel_id">> => <<"no_channel">>,
-                                            <<"channel_name">> => <<"no_channel">>,
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
+                                            <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"up">>,
+                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"timestamp">> => fun erlang:is_integer/1,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+                                                                 <<"spreading">> => <<"SF8BW125">>,
+                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                            <<"channels">> => [#{<<"id">> => <<"no_channel">>,
+                                                                 <<"name">> => <<"no_channel">>,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"description">> => <<"no channels configured">>}]}),
 
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Checking that device worker has only no_channel 
-    {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    %% Checking that device channels worker has only no_channel 
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
     NoChannel = router_channel:new(<<"no_channel">>,
                                    router_no_channel,
                                    <<"no_channel">>,
                                    #{},
                                    ?CONSOLE_DEVICE_ID,
-                                   DeviceWorkerPid),
+                                   DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, sys:get_state(DeviceWorkerPid)),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
 
     %% Force to refresh channels list
-    DeviceWorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only HTTP channel now
-    State0 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _}, State0),
-    ?assertEqual(1, maps:size(erlang:element(8, State0))),
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _}, State0),
+    ?assertEqual(1, maps:size(erlang:element(5, State0))),
 
     %% Send UNCONFIRMED_UP frame packet to check http channel is working
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -141,33 +160,43 @@ no_channel_test(Config) ->
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"fcnt">> => 1,
-                                   <<"timestamp">> => fun erlang:is_integer/1,
+                                   <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
+                                   <<"devaddr">> => '_',
                                    <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                         <<"name">> => erlang:list_to_binary(HotspotName),
-                                                        <<"timestamp">> => fun erlang:is_integer/1,
+                                                        <<"reported_at">> => fun erlang:is_integer/1,
+                                                        <<"status">> => <<"success">>,
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
-                                                        <<"spreading">> => <<"SF8BW125">>}]}),
+                                                        <<"spreading">> => <<"SF8BW125">>,
+                                                        <<"frequency">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"success">>,
-                                            <<"description">> => <<"success">>,
-                                            <<"channel_id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                                            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
+                                            <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"up">>,
+                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => 0,
                                             <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"timestamp">> => fun erlang:is_integer/1,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>}]}),
+                                                                 <<"spreading">> => <<"SF8BW125">>,
+                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                            <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                                                                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"description">> => '_'}]}),
 
     %% Ignore down messages updates
     ok = test_utils:ignore_messages(),
@@ -176,12 +205,11 @@ no_channel_test(Config) ->
     ets:insert(Tab, {no_channel, true}),
 
     %% Force to refresh channels list
-    DeviceWorkerPid ! refresh_channels,
-    timer:sleep(250),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only no_channel 
-    State1 = sys:get_state(DeviceWorkerPid),
-    ?assertMatch({state, _, _, _, _, _, _, #{NoChannelID := NoChannel}, _, _}, State1),
-    ?assertEqual(1, maps:size(erlang:element(8, State1))),
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, State1),
+    ?assertEqual(1, maps:size(erlang:element(5, State1))),
 
     ok.

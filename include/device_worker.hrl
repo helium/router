@@ -11,5 +11,3 @@
                 fport,
                 data
                }).
-
--define(DATA_TIMEOUT, timer:seconds(1)).

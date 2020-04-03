@@ -1,4 +1,4 @@
--module(router_device_worker_SUITE).
+-module(router_device_channels_worker_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
@@ -25,15 +25,13 @@
         {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
          erlang:make_ref()}).
 
--record(state, {db :: rocksdb:db_handle(),
-                cf :: rocksdb:cf_handle(),
+-record(state, {event_mgr :: pid(),
+                device_worker :: pid(),
                 device :: router_device:device(),
-                join_cache = #{} :: map(),
-                frame_cache = #{} :: map(),
-                event_mgr :: pid(),
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
-                data_cache = #{} :: map()}).
+                data_cache = #{} :: map(),
+                channels_resp_cache = #{} :: map()}).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -70,19 +68,20 @@ refresh_channels_test(Config) ->
 
     %% Starting worker with no channels
     DeviceID = ?CONSOLE_DEVICE_ID,
-    {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
 
     %% Waiting for worker to init properly
     timer:sleep(250),
 
     %% Checking worker's channels, should only be "no_channel"
-    State0 = sys:get_state(WorkerPid),
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"no_channel">> => router_channel:new(<<"no_channel">>,
                                                           router_no_channel,
                                                           <<"no_channel">>,
                                                           #{},
                                                           DeviceID,
-                                                          WorkerPid)},
+                                                          DeviceChannelsWorkerPid)},
                  State0#state.channels),
 
     %% Add 2 http channels and force a refresh
@@ -100,11 +99,10 @@ refresh_channels_test(Config) ->
                      <<"name">> => <<"HTTP_NAME_2">>},
     ets:insert(Tab, {no_channel, false}),
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2]}),
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
-    State1 = sys:get_state(WorkerPid),
-    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel1),
-                   <<"HTTP_2">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel2)},
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel1),
+                   <<"HTTP_2">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel2)},
                  State1#state.channels),
 
     %% Modify HTTP Channel 2
@@ -115,23 +113,21 @@ refresh_channels_test(Config) ->
                        <<"id">> => <<"HTTP_2">>,
                        <<"name">> => <<"HTTP_NAME_2">>},
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2_1]}),
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
-    State2 = sys:get_state(WorkerPid),
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
+    State2 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(2, maps:size(State2#state.channels)),
-    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State2#state.device, WorkerPid, HTTPChannel1),
-                   <<"HTTP_2">> => convert_channel(State2#state.device, WorkerPid, HTTPChannel2_1)},
+    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State2#state.device, DeviceChannelsWorkerPid, HTTPChannel1),
+                   <<"HTTP_2">> => convert_channel(State2#state.device, DeviceChannelsWorkerPid, HTTPChannel2_1)},
                  State2#state.channels),
 
     %% Remove HTTP Channel 1 and update 2 back to normal
     ets:insert(Tab, {channels, [HTTPChannel2]}),
-    WorkerPid ! refresh_channels,
-    timer:sleep(250),
-    State3 = sys:get_state(WorkerPid),
-    ?assertEqual(#{<<"HTTP_2">> => convert_channel(State3#state.device, WorkerPid, HTTPChannel2)},
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
+    State3 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertEqual(#{<<"HTTP_2">> => convert_channel(State3#state.device, DeviceChannelsWorkerPid, HTTPChannel2)},
                  State3#state.channels),
 
-    gen_server:stop(WorkerPid),
+    gen_server:stop(DeviceWorkerPid),
     ok.
 
 crashing_channel_test(Config) ->
@@ -150,14 +146,15 @@ crashing_channel_test(Config) ->
 
     %% Starting worker with 1 HTTP channel
     DeviceID = ?CONSOLE_DEVICE_ID,
-    {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
 
     %% Waiting for worker to init properly
     timer:sleep(250),
 
     %% Check that HTTP 1 is in there
-    State0 = sys:get_state(WorkerPid),
-    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State0#state.device, WorkerPid, HTTPChannel1)},
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State0#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State0#state.channels),
     {Backoff0, _} = maps:get(<<"HTTP_1">>, State0#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN, backoff:get(Backoff0)),
@@ -169,19 +166,28 @@ crashing_channel_test(Config) ->
     timer:sleep(250),
 
     %% Check that HTTP 1 go restarted after crash
-    State1 = sys:get_state(WorkerPid),
-    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, WorkerPid, HTTPChannel1)},
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State1#state.channels),
     {Backoff1, _} = maps:get(<<"HTTP_1">>, State1#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN, backoff:get(Backoff1)),
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"failure">>,
+
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"channel_crash">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"channel_crash">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"channel_id">> => <<"HTTP_1">>,
-                                            <<"channel_name">> => <<"HTTP_NAME_1">>}),
+                                            <<"device_id">> => DeviceID,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
+                                            <<"hotspots">> => [],
+                                            <<"channels">> => [#{<<"id">> => <<"HTTP_1">>,
+                                                                 <<"name">> => <<"HTTP_NAME_1">>,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"error">>,
+                                                                 <<"description">> => '_'}]}),
 
     %% Crash channel and crash on init
     meck:expect(router_http_channel, init, fun(_Args) -> {error, init_failed} end),
@@ -190,37 +196,53 @@ crashing_channel_test(Config) ->
     timer:sleep(250),
 
     %% Check that HTTP 1 is gone and that backoff increased
-    State2 = sys:get_state(WorkerPid),
+    State2 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{}, State2#state.channels),
     {Backoff2, _} = maps:get(<<"HTTP_1">>, State2#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN * 2, backoff:get(Backoff2)),
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"failure">>,
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"channel_crash">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"channel_crash">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"channel_id">> => <<"HTTP_1">>,
-                                            <<"channel_name">> => <<"HTTP_NAME_1">>}),
-    test_utils:wait_report_channel_status(#{<<"status">> => <<"failure">>,
+                                            <<"device_id">> => DeviceID,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
+                                            <<"hotspots">> => [],
+                                            <<"channels">> => [#{<<"id">> => <<"HTTP_1">>,
+                                                                 <<"name">> => <<"HTTP_NAME_1">>,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"error">>,
+                                                                 <<"description">> => '_'}]}),
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"channel_start_error">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"category">> => <<"start_channel_failure">>,
-                                            <<"frame_up">> => 0,
-                                            <<"frame_down">> => 0,
-                                            <<"channel_id">> => <<"HTTP_1">>,
-                                            <<"channel_name">> => <<"HTTP_NAME_1">>}),
+                                            <<"device_id">> => DeviceID,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
+                                            <<"hotspots">> => [],
+                                            <<"channels">> => [#{<<"id">> => <<"HTTP_1">>,
+                                                                 <<"name">> => <<"HTTP_NAME_1">>,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"error">>,
+                                                                 <<"description">> => '_'}]}),
 
     %% Fix crash and wait for HTTP channel to come back
     meck:unload(router_http_channel),
     timer:sleep(?BACKOFF_MIN * 2 + 250),
-    State3 = sys:get_state(WorkerPid),
-    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State3#state.device, WorkerPid, HTTPChannel1)},
+    State3 = sys:get_state(DeviceChannelsWorkerPid),
+    ?assertEqual(#{<<"HTTP_1">> => convert_channel(State3#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State1#state.channels),
     {Backoff3, _} = maps:get(<<"HTTP_1">>, State3#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN, backoff:get(Backoff3)),
 
-    gen_server:stop(WorkerPid),
+    gen_server:stop(DeviceWorkerPid),
     ok.
 
 %% ------------------------------------------------------------------
@@ -229,7 +251,7 @@ crashing_channel_test(Config) ->
 
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | router_channel:channel().
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_http_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -237,18 +259,18 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     Channel;
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_mqtt_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     Channel;
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -257,7 +279,7 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel)
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     Channel;
-convert_channel(_Device, _DeviceWorkerPid, _Channel) ->
+convert_channel(_Device, _Pid, _Channel) ->
     false.

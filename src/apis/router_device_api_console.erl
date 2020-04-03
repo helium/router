@@ -5,11 +5,11 @@
 -export([init/1,
          get_device/1, get_devices/2,
          get_channels/2,
-         report_device_status/2,
-         report_channel_status/2]).
+         report_status/2]).
 
 -define(TOKEN_CACHE_TIME, 600).
 -define(HANDLE_DATA_CACHE_TIME, 60).
+-define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 
 -spec init(Args :: any()) -> ok.
 init(_Args) ->
@@ -40,9 +40,10 @@ get_device(DeviceID) ->
 get_devices(DevEui, AppEui) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
-    URL = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
+    Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
             "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
-    case hackney:get(URL, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
+    lager:debug("get ~p", [Url]),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
             lists:map(
               fun(JSONDevice) ->
@@ -76,39 +77,26 @@ get_channels(Device, DeviceWorkerPid) ->
               Channels)
     end.
 
--spec report_device_status(Device :: router_device:device(), Map :: #{}) -> ok.
-report_device_status(Device, Map) ->
+-spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
+report_status(Device, Map) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
     DeviceID = router_device:id(Device),
-    Body = #{status => maps:get(status, Map, failure),
-             description => maps:get(description, Map, <<"">>),
-             reported_at => maps:get(reported_at, Map, erlang:system_time(second)),
-             category => maps:get(category, Map, <<"">>),
+    Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
+    Body = #{category => maps:get(category, Map),
+             description => maps:get(description, Map),
+             reported_at => maps:get(reported_at, Map),
+             device_id => DeviceID,
              frame_up => router_device:fcnt(Device),
              frame_down => router_device:fcntdown(Device),
-             hotspot_name => list_to_binary(maps:get(hotspot_name, Map, ""))},
-    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-                 [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
-                 jsx:encode(Body), [with_body, {pool, ?MODULE}]),
-    ok.
-
--spec report_channel_status(Device :: router_device:device(), Map :: #{}) -> ok.
-report_channel_status(Device, Map) ->
-    Endpoint = get_endpoint(),
-    JWT = get_token(Endpoint),
-    DeviceID = router_device:id(Device),
-    Core = #{status => maps:get(status, Map),
-             description => maps:get(description, Map),
-             channel_id => maps:get(channel_id, Map),
-             channel_name => maps:get(channel_name, Map),
-             reported_at => maps:get(reported_at, Map, erlang:system_time(seconds)),
-             category => maps:get(category, Map),
-             frame_up => router_device:fcnt(Device),
-             frame_down => router_device:fcntdown(Device)},
-    Body = maps:merge(Core, maps:with([hotspots, payload, payload_size], Map)),
-    hackney:post(<<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-                 [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, {<<"Content-Type">>, <<"application/json">>}],
+             payload => maps:get(payload, Map),
+             payload_size => maps:get(payload_size, Map),
+             port => maps:get(port, Map),
+             devaddr => maps:get(devaddr, Map),
+             hotspots => maps:get(hotspots, Map),
+             channels => maps:get(channels, Map)},
+    lager:debug("post ~p to ~p", [Body, Url]),
+    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, ?HEADER_JSON],
                  jsx:encode(Body), [with_body, {pool, ?MODULE}]),
     ok.
 
@@ -117,7 +105,7 @@ report_channel_status(Device, Map) ->
 %% ------------------------------------------------------------------
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_http_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -125,18 +113,18 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"http">>}=JSONChannel
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_mqtt_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
+convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
@@ -145,16 +133,16 @@ convert_channel(Device, DeviceWorkerPid, #{<<"type">> := <<"aws">>}=JSONChannel)
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, DeviceWorkerPid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
     {true, Channel};
-convert_channel(_Device, _DeviceWorkerPid, _Channel) ->
+convert_channel(_Device, _Pid, _Channel) ->
     false.
 
 -spec get_token(binary()) -> binary().
 get_token(Endpoint) ->
     Secret = get_secret(),
     CacheFun = fun() ->
-                       case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [{<<"Content-Type">>, <<"application/json">>}],
+                       case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [?HEADER_JSON],
                                          jsx:encode(#{secret => Secret}) , [with_body, {pool, ?MODULE}]) of
                            {ok, 201, _Headers, Body} ->
                                #{<<"jwt">> := JWT} = jsx:decode(Body, [return_maps]),
@@ -168,10 +156,11 @@ get_device_(Device) ->
     Endpoint = get_endpoint(),
     JWT = get_token(Endpoint),
     DeviceId = router_device:id(Device),
-    case hackney:get(<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
-                     [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
+    Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
+    lager:debug("get ~p", [Url]),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
-            lager:info("Body for ~p ~p", [<<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>, Body]),
+            lager:info("Body for ~p ~p", [Url, Body]),
             {ok, jsx:decode(Body, [return_maps])};
         _Other ->
             {error, {get_device_failed, _Other}}

@@ -32,10 +32,10 @@ init({[Channel, _Device], _}) ->
                                [{<<"Content-Type">>, <<"application/json">>}]),
     {ok, #state{channel=Channel, url=URL, headers=Headers1, method=Method}}.
 
-handle_event({data, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
+handle_event({data, Ref, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
     Res = make_http_req(Method, URL, Headers, encode_data(Data)),
-    ok = handle_http_res(Res, Channel, Data),
     lager:debug("published: ~p result: ~p", [Data, Res]),
+    ok = handle_http_res(Res, Channel, Ref),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -76,21 +76,15 @@ make_http_req(Method, URL, Headers, Payload) ->
         What:Why:_Stacktrace -> {error, {What, Why}}
     end.
 
--spec handle_http_res(any(), router_channel:channel(), map()) -> ok.
-handle_http_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
-    Payload = maps:get(payload, Data),
-    Result0 = #{channel_id => router_channel:id(Channel),
-                channel_name => router_channel:name(Channel),
-                reported_at => erlang:system_time(seconds),
-                category => <<"up">>,
-                port => maps:get(port, Data),
-                payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload),
-                hotspots => maps:get(hotspots, Data)},
+-spec handle_http_res(any(), router_channel:channel(), reference()) -> ok.
+handle_http_res(Res, Channel, Ref) ->
+    Pid = router_channel:controller(Channel),
+    Result0 = #{id => router_channel:id(Channel),
+                name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
-                      router_device_worker:handle_downlink(ResponseBody, Channel),
+                      router_device_channels_worker:handle_downlink(Pid, ResponseBody),
                       maps:merge(Result0, #{status => success, description => ResponseBody});
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
                       maps:merge(Result0, #{status => failure, 
@@ -99,4 +93,4 @@ handle_http_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_status(Pid, Ref, Result1).

@@ -50,9 +50,9 @@ init({[Channel, Device], _}) ->
             end
     end.
 
-handle_event({data, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
+handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-    ok = handle_publish_res(Res, Channel, Data),
+    ok = handle_publish_res(Res, Channel, Ref, Data),
     lager:debug("published: ~p result: ~p", [Data, Res]),
     {ok, State};
 handle_event(_Msg, State) ->
@@ -95,9 +95,9 @@ ping(Conn) ->
 encode_data(#{payload := Payload}=Map) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
--spec handle_publish_res(any(), router_channel:channel(), map()) -> ok.
-handle_publish_res(Res, Channel, Data) ->
-    DeviceWorkerPid = router_channel:device_worker(Channel),
+-spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
+handle_publish_res(Res, Channel, Ref, Data) ->
+    Pid = router_channel:controller(Channel),
     Payload = maps:get(payload, Data),
     Result0 = #{channel_id => router_channel:id(Channel),
                 channel_name => router_channel:name(Channel),
@@ -115,7 +115,7 @@ handle_publish_res(Res, Channel, Data) ->
                   {error, Reason} ->
                       maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
-    router_device_worker:report_channel_status(DeviceWorkerPid, Result1).
+    router_device_channels_worker:report_status(Pid, Ref, Result1).
 
 -spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->

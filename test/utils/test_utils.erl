@@ -313,7 +313,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
                       oui=2,
                       payload=Payload1,
                       frequency=923.3,
-                      datarate= <<"SF8BW125">>
+                      datarate= <<"SF8BW125">>,
+                      signal_strength=maps:get(rssi, Options, 0.0)
                      },
     Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
@@ -363,9 +364,9 @@ match_map(Expected, Got) ->
                  (K, V, true) when is_map(V) ->
                       match_map(V, maps:get(K, Got, #{}));
                  (K, V0, true) when is_list(V0) ->
-                      V1 = lists:zip(lists:seq(1, erlang:length(V0)), V0),
+                      V1 = lists:zip(lists:seq(1, erlang:length(V0)), lists:sort(V0)),
                       G0 = maps:get(K, Got, []),
-                      G1 = lists:zip(lists:seq(1, erlang:length(G0)), G0),
+                      G1 = lists:zip(lists:seq(1, erlang:length(G0)), lists:sort(G0)),
                       match_map(maps:from_list(V1),  maps:from_list(G1));
                  (K, V, true) ->
                       case maps:get(K, Got, undefined) of

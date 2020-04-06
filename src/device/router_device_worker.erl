@@ -597,7 +597,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                payload => <<>>,
                payload_size => 0,
                port => Port,
-               devaddr => DevAddr,
+               devaddr => lorawan_utils:binary_to_hex(DevAddr),
                hotspots => [#{id => erlang:list_to_binary(HotspotID),
                               name => erlang:list_to_binary(HotspotName),
                               reported_at => erlang:system_time(seconds),

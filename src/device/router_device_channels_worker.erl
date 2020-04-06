@@ -306,7 +306,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             reported_at => Time,
             payload => Data,
             port => Port,
-            devaddr => DevAddr,
+            devaddr => lorawan_utils:binary_to_hex(DevAddr),
             hotspots => lists:foldr(FoldFun, [], CachedData)},
     {ok, Ref} = router_channel:handle_data(EventMgrRef, Map),
     {ok, Ref, Map}.

@@ -111,15 +111,24 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, Data}, #state{data_cache=DataCache0}=State) ->
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1 =
         case maps:get(FCnt, DataCache0, undefined) of
             undefined ->
                 _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
-                maps:put(FCnt, [Data], DataCache0);
-            CachedData ->
-                maps:put(FCnt, [Data|CachedData], DataCache0)
+                maps:put(FCnt, #{PubKeyBin => Data}, DataCache0);
+            CachedData0 ->
+                CachedData1 = maps:put(PubKeyBin, Data, CachedData0),
+                case maps:get(PubKeyBin, CachedData0, undefined) of
+                    undefined ->
+                        maps:put(FCnt, CachedData1, DataCache0);
+                    {_, #packet_pb{signal_strength=RSSI}, _, _} ->
+                        case Packet#packet_pb.signal_strength > RSSI of
+                            true -> maps:put(FCnt, CachedData1, DataCache0);
+                            false -> DataCache0
+                        end
+                end
         end,
     {noreply, State#state{device=Device, data_cache=DataCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker=DeviceWorker}=State) ->
@@ -145,8 +154,8 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
                                          data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
-    CachedData = maps:get(FCnt, DataCache0),
-    {ok, Ref, Map} = send_to_channel(lists:reverse(CachedData), Device, EventMgrRef),
+    CachedData = maps:values(maps:get(FCnt, DataCache0)),
+    {ok, Ref, Map} = send_to_channel(CachedData, Device, EventMgrRef),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, Ref}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
                           channels_resp_cache=maps:put(Ref, {Map, []}, RespCache0)}};

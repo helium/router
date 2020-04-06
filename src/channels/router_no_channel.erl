@@ -28,7 +28,7 @@ init({[Channel, _Device], _}) ->
 
 handle_event({data, Ref, _Data}, #state{channel=Channel}=State) ->
     Pid = router_channel:controller(Channel),
-    Report = #{status => success,
+    Report = #{status => <<"no_channel">>,
                description => <<"no channels configured">>,
                id => router_channel:id(Channel),
                name => router_channel:name(Channel),

@@ -122,7 +122,7 @@ no_channel_test(Config) ->
                                             <<"channels">> => [#{<<"id">> => <<"no_channel">>,
                                                                  <<"name">> => <<"no_channel">>,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
+                                                                 <<"status">> => <<"no_channel">>,
                                                                  <<"description">> => <<"no channels configured">>}]}),
 
     %% We ignore the channel correction and down messages

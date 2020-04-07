@@ -42,7 +42,7 @@ init({[Channel, Device], _}) ->
                     {error, Reason};
                 {ok, Conn} ->
                     _ = ping(Conn),
-                    Topic = <<"$aws/things/", DeviceID/binary, "/shadow/#">>,  
+                    Topic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
                     {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
                     #{topic := PubTopic} = router_channel:args(Channel),
                     {ok, #state{channel=Channel, aws=AWS,
@@ -65,8 +65,9 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{client_pid := Conn}}, #state{connection=Conn}=State) ->
-    %% TODO: Handle downlink
+handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connection=Conn, channel=Channel}=State) ->
+    Controller = router_channel:controller(Channel),
+    router_device_channels_worker:handle_downlink(Controller, Payload),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),

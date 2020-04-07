@@ -18,6 +18,16 @@
                                 <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                 <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME}).
 
+-define(CONSOLE_AWS_CHANNEL_ID, <<"101112">>).
+-define(CONSOLE_AWS_CHANNEL_NAME, <<"fake_aws">>).
+-define(CONSOLE_AWS_CHANNEL, #{<<"type">> => <<"aws">>,
+                               <<"credentials">> => #{<<"aws_access_key">> => list_to_binary(os:getenv("aws_access_key")),
+                                                      <<"aws_secret_key">> => list_to_binary(os:getenv("aws_secret_key")),
+                                                      <<"aws_region">> => <<"us-west-1">>,
+                                                      <<"topic">> => <<"helium/test">>},
+                               <<"id">> => ?CONSOLE_AWS_CHANNEL_ID,
+                               <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME}).
+
 -define(CONSOLE_LABELS, [#{<<"id">> => <<"label_id">>,
                            <<"name">> => <<"label_name">>,
                            <<"organization_id">> => <<"label_organization_id">>}]).

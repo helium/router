@@ -42,7 +42,7 @@ init({[Channel, Device], _}) ->
                     {error, Reason};
                 {ok, Conn} ->
                     _ = ping(Conn),
-                    Topic = <<"$aws/things/", DeviceID/binary, "/shadow/#">>,  
+                    Topic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
                     {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
                     #{topic := PubTopic} = router_channel:args(Channel),
                     {ok, #state{channel=Channel, aws=AWS,
@@ -52,8 +52,8 @@ init({[Channel, Device], _}) ->
 
 handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
-    ok = handle_publish_res(Res, Channel, Ref, Data),
     lager:debug("published: ~p result: ~p", [Data, Res]),
+    ok = handle_publish_res(Res, Channel, Ref),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -65,8 +65,9 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({publish, #{client_pid := Conn}}, #state{connection=Conn}=State) ->
-    %% TODO: Handle downlink
+handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connection=Conn, channel=Channel}=State) ->
+    Controller = router_channel:controller(Channel),
+    router_device_channels_worker:handle_downlink(Controller, Payload),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),
@@ -95,18 +96,12 @@ ping(Conn) ->
 encode_data(#{payload := Payload}=Map) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
--spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
-handle_publish_res(Res, Channel, Ref, Data) ->
+-spec handle_publish_res(any(), router_channel:channel(), reference()) -> ok.
+handle_publish_res(Res, Channel, Ref) ->
     Pid = router_channel:controller(Channel),
-    Payload = maps:get(payload, Data),
-    Result0 = #{channel_id => router_channel:id(Channel),
-                channel_name => router_channel:name(Channel),
-                reported_at => erlang:system_time(seconds),
-                category => <<"up">>,
-                port => maps:get(port, Data),
-                payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload),
-                hotspots => maps:get(hotspots, Data)},
+    Result0 = #{id => router_channel:id(Channel),
+                name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
                   {ok, PacketID} ->
                       maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});

@@ -47,25 +47,133 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
-aws_test(_Config) ->
+aws_test(Config) ->
+    %% Set console to AWS channel mode
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, aws}),
+
     <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
     UUID = list_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b", 
                                         [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E])),
-    DeviceID = <<"TEST_", UUID/binary>>,
-    AWSArgs = #{aws_access_key => os:getenv("aws_access_key"),
-                aws_secret_key => os:getenv("aws_secret_key"),
-                aws_region => "us-west-1",
-                topic => <<"helium">>},
-    Channel = router_channel:new(<<"channel_id">>, router_aws_channel, <<"aws">>, AWSArgs, DeviceID, self()),
-    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
-    timer:sleep(250),
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Channel]),
-    {ok, EventMgrRef} = router_channel:start_link(),
-    Device = router_device:new(DeviceID),
-    ok = router_channel:add(EventMgrRef, Channel, Device),
-    timer:sleep(5000),
-    gen_event:stop(EventMgrRef),
-    gen_server:stop(DeviceWorkerPid),
+    DeviceID = <<"CT_", UUID/binary>>,
+    ets:insert(Tab, {device_id, DeviceID}),
+
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    {ok, RouterSwarm} = router_p2p:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"device_id">> => DeviceID,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"payload">> => <<>>,
+                                           <<"payload_size">> => 0,
+                                           <<"port">> => '_',
+                                           <<"devaddr">> => '_',
+                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                <<"reported_at">> => fun erlang:is_integer/1,
+                                                                <<"status">> => <<"success">>,
+                                                                <<"rssi">> => 0.0,
+                                                                <<"snr">> => 0.0,
+                                                                <<"spreading">> => <<"SF8BW125">>,
+                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                           <<"channels">> => []}),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(DeviceID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
+
+    %% Waiting for report channel status from AWS channel
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"device_id">> => DeviceID,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
+                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>,
+                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                            <<"channels">> => [#{<<"id">> => ?CONSOLE_AWS_CHANNEL_ID,
+                                                                 <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"description">> => '_'}]}),
+
+    %% We ignore the channel correction messages
+    ok = test_utils:ignore_messages(),
+
+    %% Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/DEVICE_ID/down
+    DownlinkPayload = <<"mqttpayload">>,
+    timer:sleep(timer:seconds(20)),
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
+
+    %% Waiting for report channel status from AWS channel
+    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
+                                            <<"description">> => '_',
+                                            <<"reported_at">> => fun erlang:is_integer/1,
+                                            <<"device_id">> => DeviceID,
+                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"payload">> => <<>>,
+                                            <<"payload_size">> => 0,
+                                            <<"port">> => '_',
+                                            <<"devaddr">> => '_',
+                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"rssi">> => 0.0,
+                                                                 <<"snr">> => 0.0,
+                                                                 <<"spreading">> => <<"SF8BW125">>,
+                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                            <<"channels">> => [#{<<"id">> => ?CONSOLE_AWS_CHANNEL_ID,
+                                                                 <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME,
+                                                                 <<"reported_at">> => fun erlang:is_integer/1,
+                                                                 <<"status">> => <<"success">>,
+                                                                 <<"description">> => '_'}]}),
+
+    %% Waiting for donwlink message on the hotspot
+    Msg0 = {false, 1, DownlinkPayload},
+    {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 0, 1, 1),
+
+    %% We ignore the report status down
+    ok = test_utils:ignore_messages(),
+    
     ok.
 
 %% ------------------------------------------------------------------

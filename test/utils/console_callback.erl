@@ -23,7 +23,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                 end,
     Channel = case ChannelType of
                   http -> ?CONSOLE_HTTP_CHANNEL;
-                  mqtt -> ?CONSOLE_MQTT_CHANNEL
+                  mqtt -> ?CONSOLE_MQTT_CHANNEL;
+                  aws -> ?CONSOLE_AWS_CHANNEL
               end,
     Channels = case NoChannel of
                    true -> [];
@@ -33,7 +34,11 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                            [{channels, C}] -> C
                        end
                end,
-    Body = #{<<"id">> => ?CONSOLE_DEVICE_ID,
+    DeviceID = case ets:lookup(Tab, device_id) of
+                   [] -> ?CONSOLE_DEVICE_ID;
+                   [{device_id, ID}] -> ID
+               end,
+    Body = #{<<"id">> => DeviceID,
              <<"name">> => ?CONSOLE_DEVICE_NAME,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
              <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),

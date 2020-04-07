@@ -64,7 +64,7 @@
             "id": "uuid",
             "name": "channel name",
             "reported_at": 123,
-            "status": "success | error",
+            "status": "success | error | no_channel",
             "description": "what happened"
         }
     ]

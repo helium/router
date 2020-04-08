@@ -562,7 +562,7 @@ adr_test(Config) ->
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
     %% ack the packet, we don't expect a reply here
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 2, #{should_ack => true})},
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 3, #{should_ack => true})},
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
@@ -570,7 +570,7 @@ adr_test(Config) ->
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"fcnt">> => 2,
+                                   <<"fcnt">> => 3,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
@@ -589,7 +589,7 @@ adr_test(Config) ->
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => 2,
+                                            <<"frame_up">> => 3,
                                             <<"frame_down">> => 2,
                                             <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
@@ -618,7 +618,7 @@ adr_test(Config) ->
     end,
 
     %% send a confimed up to provoke a 'bare ack'
-    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 3)},
+    Stream ! {send, test_utils:frame_packet(?CONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 4)},
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
@@ -626,7 +626,7 @@ adr_test(Config) ->
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"fcnt">> => 3,
+                                   <<"fcnt">> => 4,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
@@ -645,7 +645,7 @@ adr_test(Config) ->
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => 3,
+                                            <<"frame_up">> => 4,
                                             <<"frame_down">> => 3,
                                             <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
@@ -670,7 +670,7 @@ adr_test(Config) ->
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                           <<"frame_up">> => 3,
+                                           <<"frame_up">> => 4,
                                            <<"frame_down">> => 3,
                                            <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,

@@ -36,6 +36,7 @@
         {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
          erlang:make_ref()}).
 -define(DATA_TIMEOUT, timer:seconds(1)).
+-define(DATA_CLEANUP, timer:minutes(2)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
 -record(state, {event_mgr :: pid(),
@@ -118,6 +119,9 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #sta
             undefined ->
                 _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
                 maps:put(FCnt, #{PubKeyBin => Data}, DataCache0);
+            timeout ->
+                lager:debug("we received a late packet from ~p: ~p", [PubKeyBin, Packet]),
+                DataCache0;
             CachedData0 ->
                 CachedData1 = maps:put(PubKeyBin, Data, CachedData0),
                 case maps:get(PubKeyBin, CachedData0, undefined) of
@@ -157,8 +161,11 @@ handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
     {ok, Ref, Map} = send_to_channel(CachedData, Device, EventMgrRef),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, Ref}),
-    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
+    _ = erlang:send_after(?DATA_CLEANUP, self(), {data_cleanup, FCnt}),
+    {noreply, State#state{data_cache=maps:put(FCnt, timeout, DataCache0),
                           channels_resp_cache=maps:put(Ref, {Map, []}, RespCache0)}};
+handle_info({data_cleanup, FCnt}, #state{data_cache=DataCache}=State) ->
+    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache)}};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------

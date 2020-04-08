@@ -173,7 +173,7 @@ aws_test(Config) ->
 
     %% We ignore the report status down
     ok = test_utils:ignore_messages(),
-    
+
     ok.
 
 %% ------------------------------------------------------------------

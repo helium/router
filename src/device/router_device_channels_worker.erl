@@ -103,6 +103,7 @@ init(Args) ->
     Device = maps:get(device, Args),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
+    lager:md([{device_id, router_device:id(Device)}]),
     {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device}}.
 
 handle_call(_Msg, _From, State) ->

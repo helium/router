@@ -37,7 +37,7 @@ init_per_testcase(TestCase, Config) ->
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->
-            FormatStr = ["[", date, " ", time, "] ", pid, " [", severity,"]",  {nodeid, [" [", nodeid, "]"], ""}, " [",
+            FormatStr = ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " [",
                          {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"],
             ok = application:set_env(lager, handlers, [{lager_console_backend, [{level, debug},
                                                                                 {formatter_config, FormatStr}]}]);

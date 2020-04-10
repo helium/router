@@ -85,6 +85,7 @@ init(Args) ->
         router_device_channels_worker:start_link(#{device_worker => self(),
                                                    device => Device}),
     self() ! refresh_device_metadata,
+    lager:md([{device_id, router_device:id(Device)}]),
     {ok, #state{db=DB, cf=CF, device=Device, channels_worker=Pid}}.
 
 handle_call(_Msg, _From, State) ->
@@ -96,6 +97,7 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     Q = router_device:queue(Device0),
     Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+    lager:debug("queue downlink message"),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
                                                                        join_cache=Cache0}=State0) ->
@@ -192,7 +194,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
             Pid ! {packet, undefined},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
-            lager:info("sending downlink ~p", [Packet1]),
+            lager:info("sending downlink"),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, Packet1},
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
@@ -323,12 +325,11 @@ handle_join(_Packet, _PubKeyBin, _APIDevice, _AppKey, _Device) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
+            PubKeyBin, _APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, _DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
-    DeviceName = router_device:name(APIDevice),
-    lager:warning("Device ~s ~p ~p tried to join with stale nonce ~p via ~s", [DeviceName, OUI, DID, Nonce, AName]),
+    lager:warning("~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, Nonce, AName]),
     {error, bad_nonce};
 handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
                        payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
@@ -360,8 +361,8 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                                                               <<"datr">> => erlang:list_to_binary(DataRate),
                                                               <<"codr">> => <<"lol">>}),
     DeviceName = router_device:name(APIDevice),
-    lager:info("Device ~s DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
-               [DeviceName, lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
+    lager:info("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
+               [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
     Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     DeviceUpdates = [{name, DeviceName},
@@ -630,7 +631,6 @@ frame_to_packet_payload(Frame, Device) ->
                       EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, AppSKey, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
-    lager:debug("PktBody ~p, FOpts ~p", [PktBody, Frame#frame.fopts]),
     Msg = <<PktHdr/binary, PktBody/binary>>,
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.

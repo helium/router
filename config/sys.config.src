@@ -1,30 +1,27 @@
 %% -*- erlang -*-
-[
- {lager, [
-          {suppress_supervisor_start_stop, true},
+[{lager, [{suppress_supervisor_start_stop, true},
           {log_root, "/var/data/log/router"},
           {crash_log, "crash.log"},
           {colored, true},
-          {handlers, [{lager_console_backend, [
-                                               {level, info},
+          {handlers, [{lager_console_backend, [{level, info},
                                                {formatter_config,
-                                                [
-                                                 "[", date, " ", time, "] ", pid, " [", severity,"]",  {nodeid, [" [", nodeid, "]"], ""}, " [",
-                                                 {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"
-                                                ]
-                                               }
-                                              ]},
-                      {lager_file_backend, [{file, "console.log"}, {level, debug}]},
-                      {lager_file_backend, [{file, "error.log"}, {level, error}]}
-                     ]}
-         ]},
- {router, [
-           {port, 2154},
+                                                ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " " , message, "\n"]}]},
+                      {lager_file_backend, [{file, "debug.log"},
+                                            {level, debug},
+                                            {formatter_config,
+                                             ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " [",
+                                              {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"]}]},
+                      {lager_file_backend, [{file, "error.log"},
+                                            {level, error},
+                                            {formatter_config,
+                                             ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " [",
+                                              {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"]}]}
+                     ]}]},
+ {router, [{port, 2154},
            {base_dir, "/var/data"},
            {max_connections, 250},
            {router_device_api_module, router_device_api_console},
            {seed_nodes, "${ROUTER_SEED_NODES}"},
            {console_secret, <<"${ROUTER_CONSOLE_SECRET}">>},
            {console_endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>}
-          ]}
-].
+          ]}].

@@ -83,6 +83,8 @@ handle_http_res(Res, Channel, Ref) ->
                 name => router_channel:name(Channel),
                 reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
+                  {ok, StatusCode, _ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
+                      maps:merge(Result0, #{status => success, description => <<"Connection established">>});
                   {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
                       router_device_channels_worker:handle_downlink(Pid, ResponseBody),
                       maps:merge(Result0, #{status => success, description => ResponseBody});

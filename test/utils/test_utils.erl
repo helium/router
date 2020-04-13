@@ -21,7 +21,7 @@
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
--define(CONSOLE_URL, <<"http://localhost:3000">>).
+-define(CONSOLE_URL, <<"http://127.0.0.1:3000">>).
 -define(BASE_TMP_DIR, "./_build/test/tmp").
 -define(BASE_TMP_DIR_TEMPLATE, "XXXXXXXXXX").
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
@@ -32,6 +32,8 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
     ok = application:set_env(router, router_device_api_module, router_device_api_console),
+    ok = application:set_env(router, router_device_api_console, [{endpoint, ?CONSOLE_URL},
+                                                                 {secret, <<>>}]),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     filelib:ensure_dir(BaseDir ++ "/log"),

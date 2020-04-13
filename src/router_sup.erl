@@ -81,10 +81,11 @@ init([]) ->
                       key => Key},
     DBOpts = [BaseDir],
     DeviceAPIModule = router_device_api:module(),
+    DeviceAPIData = maps:from_list(application:get_env(router, DeviceAPIModule, [])),
     {ok, {?FLAGS, [?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
                    ?WORKER(router_p2p, [P2PWorkerOpts]),
-                   ?WORKER(DeviceAPIModule, [#{}])]}}.
+                   ?WORKER(DeviceAPIModule, [DeviceAPIData])]}}.
 
 %%====================================================================
 %% Internal functions

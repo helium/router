@@ -20,8 +20,7 @@
  {router, [{port, 2154},
            {base_dir, "/var/data"},
            {max_connections, 250},
-           {router_device_api_module, router_device_api_console},
            {seed_nodes, "${ROUTER_SEED_NODES}"},
-           {console_secret, <<"${ROUTER_CONSOLE_SECRET}">>},
-           {console_endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>}
-          ]}].
+           {router_device_api_module, router_device_api_console},
+           {router_device_api_console, [{endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
+                                        {secret, <<"${ROUTER_CONSOLE_SECRET}">>}]}]}].

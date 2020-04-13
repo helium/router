@@ -32,7 +32,8 @@
 -define(HANDLE_DATA_CACHE_TIME, 60).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 
--record(state, {}).
+-record(state, {endpoint :: binary(),
+                secret :: binary()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -42,10 +43,38 @@ start_link(Args) ->
 
 -spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
+    gen_server:call(?SERVER, {get_device, DeviceID}).
+
+-spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
+get_devices(DevEui, AppEui) ->
+    gen_server:call(?SERVER, {get_devices, DevEui, AppEui}).
+
+-spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
+get_channels(Device, DeviceWorkerPid) ->
+    gen_server:call(?SERVER, {get_channels, Device, DeviceWorkerPid}).
+
+-spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
+report_status(Device, Map) ->
+    gen_server:cast(?SERVER, {report_status, Device, Map}).
+
+%% ------------------------------------------------------------------
+%% gen_server Function Definitions
+%% ------------------------------------------------------------------
+init(Args) ->
+    lager:info("~p init with ~p", [?SERVER, Args]),
+    Endpoint = maps:get(endpoint, Args),
+    Secret = maps:get(secret, Args),
+    {ok, #state{endpoint=Endpoint, secret=Secret}}.
+
+
+
+handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
+                                                  secret=Secret}=State) ->
     Device = router_device:new(DeviceID),
-    case get_device_(Device) of
+    Token = get_token(Endpoint, Secret),
+    case get_device_(Endpoint, Token, Device) of
         {error, _Reason}=Error ->
-            Error;
+            {reply, Error, State};
         {ok, JSONDevice} ->
             Name = kvc:path([<<"name">>], JSONDevice),
             DevEui = kvc:path([<<"dev_eui">>], JSONDevice),
@@ -55,54 +84,56 @@ get_device(DeviceID) ->
                              {dev_eui, lorawan_utils:hex_to_binary(DevEui)},
                              {app_eui, lorawan_utils:hex_to_binary(AppEui)},
                              {metadata, Metadata}],
-            {ok, router_device:update(DeviceUpdates, Device)}
-    end.
-
--spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
-get_devices(DevEui, AppEui) ->
-    Endpoint = get_endpoint(),
-    JWT = get_token(Endpoint),
+            {reply, {ok, router_device:update(DeviceUpdates, Device)}, State}
+    end;
+handle_call({get_devices, DevEui, AppEui}, _From, #state{endpoint=Endpoint,
+                                                         secret=Secret}=State) ->
+    Token = get_token(Endpoint, Secret),
     Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
             "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
     lager:debug("get ~p", [Url]),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
-            lists:map(
-              fun(JSONDevice) ->
-                      ID = kvc:path([<<"id">>], JSONDevice),
-                      Name = kvc:path([<<"name">>], JSONDevice),
-                      AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
-                      Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
-                      DeviceUpdates = [{name, Name},
-                                       {dev_eui, DevEui},
-                                       {app_eui, AppEui},
-                                       {metadata, Metadata}],
-                      {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
-              end,
-              jsx:decode(Body, [return_maps])
-             );
+            Devices = lists:map(
+                        fun(JSONDevice) ->
+                                ID = kvc:path([<<"id">>], JSONDevice),
+                                Name = kvc:path([<<"name">>], JSONDevice),
+                                AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
+                                Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+                                DeviceUpdates = [{name, Name},
+                                                 {dev_eui, DevEui},
+                                                 {app_eui, AppEui},
+                                                 {metadata, Metadata}],
+                                {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
+                        end,
+                        jsx:decode(Body, [return_maps])),
+            {reply, Devices, State};
         _Other ->
-            []
-    end.
-
--spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
-get_channels(Device, DeviceWorkerPid) ->
-    case get_device_(Device) of
+            {reply, [], State}
+    end;
+handle_call({get_channels, Device, DeviceWorkerPid}, _From, #state{endpoint=Endpoint,
+                                                                   secret=Secret}=State) ->
+    Token = get_token(Endpoint, Secret),
+    case get_device_(Endpoint, Token, Device) of
         {error, _Reason} ->
-            [];
+            {reply, [], State};
         {ok, JSON} ->
-            Channels = kvc:path([<<"channels">>], JSON),
-            lists:filtermap(
-              fun(JSONChannel) ->
-                      convert_channel(Device, DeviceWorkerPid, JSONChannel)
-              end,
-              Channels)
-    end.
+            Channels0 = kvc:path([<<"channels">>], JSON),
+            Channels1 = lists:filtermap(
+                          fun(JSONChannel) ->
+                                  convert_channel(Device, DeviceWorkerPid, JSONChannel)
+                          end,
+                          Channels0),
+            {reply, Channels1, State}
+    end;
+handle_call(_Msg, _From, State) ->
+    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
+    {reply, ok, State}.
 
--spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
-report_status(Device, Map) ->
-    Endpoint = get_endpoint(),
-    JWT = get_token(Endpoint),
+
+handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
+                                                 secret=Secret}=State) ->
+    Token = get_token(Endpoint, Secret),
     DeviceID = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
     Body = #{category => maps:get(category, Map),
@@ -118,21 +149,9 @@ report_status(Device, Map) ->
              hotspots => maps:get(hotspots, Map),
              channels => maps:get(channels, Map)},
     lager:debug("post ~p to ~p", [Body, Url]),
-    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, ?HEADER_JSON],
+    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                  jsx:encode(Body), [with_body, {pool, ?MODULE}]),
-    ok.
-
-%% ------------------------------------------------------------------
-%% gen_server Function Definitions
-%% ------------------------------------------------------------------
-init(Args) ->
-    lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, #state{}}.
-
-handle_call(_Msg, _From, State) ->
-    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
-    {reply, ok, State}.
-
+    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -185,9 +204,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
 convert_channel(_Device, _Pid, _Channel) ->
     false.
 
--spec get_token(binary()) -> binary().
-get_token(Endpoint) ->
-    Secret = get_secret(),
+-spec get_token(binary(), binary()) -> binary().
+get_token(Endpoint, Secret) ->
     CacheFun = fun() ->
                        case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [?HEADER_JSON],
                                          jsx:encode(#{secret => Secret}) , [with_body, {pool, ?MODULE}]) of
@@ -198,25 +216,15 @@ get_token(Endpoint) ->
                end,
     e2qc:cache(console_cache, jwt, 600, CacheFun).
 
--spec get_device_(router_device:device()) -> {ok, map()} | {error, any()}.
-get_device_(Device) ->
-    Endpoint = get_endpoint(),
-    JWT = get_token(Endpoint),
+-spec get_device_(binary(), binary(), router_device:device()) -> {ok, map()} | {error, any()}.
+get_device_(Endpoint, Token, Device) ->
     DeviceId = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
     lager:debug("get ~p", [Url]),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?MODULE}]) of
         {ok, 200, _Headers, Body} ->
             lager:info("Body for ~p ~p", [Url, Body]),
             {ok, jsx:decode(Body, [return_maps])};
         _Other ->
             {error, {get_device_failed, _Other}}
     end.
-
--spec get_endpoint() -> binary().
-get_endpoint() ->
-    application:get_env(router, console_endpoint, undefined).
-
--spec get_secret() -> binary().
-get_secret() ->
-    application:get_env(router, console_secret, undefined).

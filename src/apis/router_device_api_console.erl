@@ -1,22 +1,44 @@
+%%%-------------------------------------------------------------------
+%% @doc
+%% == Router Device Channels Worker ==
+%% @end
+%%%-------------------------------------------------------------------
 -module(router_device_api_console).
 
+-behavior(gen_server).
 -behavior(router_device_api_behavior).
 
--export([init/1,
+
+%% ------------------------------------------------------------------
+%% API Function Exports
+%% ------------------------------------------------------------------
+-export([start_link/1,
          get_device/1, get_devices/2,
          get_channels/2,
          report_status/2]).
 
+%% ------------------------------------------------------------------
+%% gen_server Function Exports
+%% ------------------------------------------------------------------
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
+-define(SERVER, ?MODULE).
 -define(TOKEN_CACHE_TIME, 600).
 -define(HANDLE_DATA_CACHE_TIME, 60).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 
--spec init(Args :: any()) -> ok.
-init(_Args) ->
-    PoolName = ?MODULE,
-    Options = [{timeout, timer:seconds(15)}, {max_connections, 100}],
-    ok = hackney_pool:start_pool(PoolName, Options),
-    ok.
+-record(state, {}).
+
+%% ------------------------------------------------------------------
+%% API Function Definitions
+%% ------------------------------------------------------------------
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 -spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
@@ -98,6 +120,31 @@ report_status(Device, Map) ->
     lager:debug("post ~p to ~p", [Body, Url]),
     hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", JWT/binary>>}, ?HEADER_JSON],
                  jsx:encode(Body), [with_body, {pool, ?MODULE}]),
+    ok.
+
+%% ------------------------------------------------------------------
+%% gen_server Function Definitions
+%% ------------------------------------------------------------------
+init(Args) ->
+    lager:info("~p init with ~p", [?SERVER, Args]),
+    {ok, #state{}}.
+
+handle_call(_Msg, _From, State) ->
+    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
+    {reply, ok, State}.
+
+handle_cast(_Msg, State) ->
+    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
+    {noreply, State}.
+
+handle_info(_Msg, State) ->
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+terminate(_Reason, _State) ->
     ok.
 
 %% ------------------------------------------------------------------

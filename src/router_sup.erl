@@ -13,42 +13,30 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--define(SUP(I, Args), 
-        #{
-          id => I,
-          start => {I, start_link, Args},
-          restart => permanent,
-          shutdown => 5000,
-          type => supervisor,
-          modules => [I]
-         }).
+-define(SUP(I, Args), #{id => I,
+                        start => {I, start_link, Args},
+                        restart => permanent,
+                        shutdown => 5000,
+                        type => supervisor,
+                        modules => [I]}).
 
--define(WORKER(I, Args), 
-        #{
-          id => I,
-          start => {I, start_link, Args},
-          restart => permanent,
-          shutdown => 5000,
-          type => worker,
-          modules => [I]
-         }).
+-define(WORKER(I, Args), #{id => I,
+                           start => {I, start_link, Args},
+                           restart => permanent,
+                           shutdown => 5000,
+                           type => worker,
+                           modules => [I]}).
 
--define(WORKER(I, Mod, Args), 
-        #{
-          id => I,
-          start => {Mod, start_link, Args},
-          restart => permanent,
-          shutdown => 5000,
-          type => worker,
-          modules => [I]
-         }).
+-define(WORKER(I, Mod, Args), #{id => I,
+                                start => {Mod, start_link, Args},
+                                restart => permanent,
+                                shutdown => 5000,
+                                type => worker,
+                                modules => [I]}).
 
--define(FLAGS, 
-        #{
-          strategy => rest_for_one,
-          intensity => 1,
-          period => 5
-         }).
+-define(FLAGS, #{strategy => rest_for_one,
+                 intensity => 1,
+                 period => 5}).
 
 -define(SERVER, ?MODULE).
 
@@ -87,16 +75,16 @@ init([]) ->
                   ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
                   {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
           end,
-    P2PWorkerOpts = #{
-                      port => application:get_env(router, port, 0),
+    P2PWorkerOpts = #{port => application:get_env(router, port, 0),
                       seed_nodes => SeedNodes,
                       base_dir => BaseDir,
-                      key => Key
-                     },
+                      key => Key},
     DBOpts = [BaseDir],
+    DeviceAPIModule = router_device_api:module(),
     {ok, {?FLAGS, [?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
-                   ?WORKER(router_p2p, [P2PWorkerOpts])]}}.
+                   ?WORKER(router_p2p, [P2PWorkerOpts]),
+                   ?WORKER(DeviceAPIModule, [#{}])]}}.
 
 %%====================================================================
 %% Internal functions

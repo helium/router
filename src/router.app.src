@@ -23,7 +23,8 @@
     emqtt,
     erl_angry_purple_tiger,
     throttle,
-    httpc_aws
+    httpc_aws,
+    gun
    ]},
   {env,[]},
   {modules, []},

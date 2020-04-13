@@ -28,12 +28,12 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(TOKEN_CACHE_TIME, 600).
--define(HANDLE_DATA_CACHE_TIME, 60).
+-define(TOKEN_CACHE_TIME, timer:minutes(10)).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 
 -record(state, {endpoint :: binary(),
-                secret :: binary()}).
+                secret :: binary(),
+                token :: binary()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -64,14 +64,15 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     Endpoint = maps:get(endpoint, Args),
     Secret = maps:get(secret, Args),
-    {ok, #state{endpoint=Endpoint, secret=Secret}}.
+    Token = get_token(Endpoint, Secret),
+    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token}}.
 
 
 
 handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
-                                                  secret=Secret}=State) ->
+                                                  token=Token}=State) ->
     Device = router_device:new(DeviceID),
-    Token = get_token(Endpoint, Secret),
     case get_device_(Endpoint, Token, Device) of
         {error, _Reason}=Error ->
             {reply, Error, State};
@@ -87,8 +88,7 @@ handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
             {reply, {ok, router_device:update(DeviceUpdates, Device)}, State}
     end;
 handle_call({get_devices, DevEui, AppEui}, _From, #state{endpoint=Endpoint,
-                                                         secret=Secret}=State) ->
-    Token = get_token(Endpoint, Secret),
+                                                         token=Token}=State) ->
     Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
             "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
     lager:debug("get ~p", [Url]),
@@ -112,8 +112,7 @@ handle_call({get_devices, DevEui, AppEui}, _From, #state{endpoint=Endpoint,
             {reply, [], State}
     end;
 handle_call({get_channels, Device, DeviceWorkerPid}, _From, #state{endpoint=Endpoint,
-                                                                   secret=Secret}=State) ->
-    Token = get_token(Endpoint, Secret),
+                                                                   token=Token}=State) ->
     case get_device_(Endpoint, Token, Device) of
         {error, _Reason} ->
             {reply, [], State};
@@ -132,8 +131,7 @@ handle_call(_Msg, _From, State) ->
 
 
 handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
-                                                 secret=Secret}=State) ->
-    Token = get_token(Endpoint, Secret),
+                                                 token=Token}=State) ->
     DeviceID = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
     Body = #{category => maps:get(category, Map),
@@ -156,6 +154,10 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
+    Token = get_token(Endpoint, Secret),
+    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    {ok, State#state{token=Token}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -204,17 +206,15 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
 convert_channel(_Device, _Pid, _Channel) ->
     false.
 
+
 -spec get_token(binary(), binary()) -> binary().
 get_token(Endpoint, Secret) ->
-    CacheFun = fun() ->
-                       case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [?HEADER_JSON],
-                                         jsx:encode(#{secret => Secret}) , [with_body, {pool, ?MODULE}]) of
-                           {ok, 201, _Headers, Body} ->
-                               #{<<"jwt">> := JWT} = jsx:decode(Body, [return_maps]),
-                               JWT
-                       end
-               end,
-    e2qc:cache(console_cache, jwt, 600, CacheFun).
+    case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [?HEADER_JSON],
+                      jsx:encode(#{secret => Secret}) , [with_body, {pool, ?MODULE}]) of
+        {ok, 201, _Headers, Body} ->
+            #{<<"jwt">> := Token} = jsx:decode(Body, [return_maps]),
+            Token
+    end.
 
 -spec get_device_(binary(), binary(), router_device:device()) -> {ok, map()} | {error, any()}.
 get_device_(Endpoint, Token, Device) ->

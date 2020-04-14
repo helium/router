@@ -1,14 +1,35 @@
 -module(console_callback).
 
 -behaviour(elli_handler).
+-behaviour(elli_websocket_handler).
 
 -include("console_test.hrl").
 
--export([handle/2,
+-export([init/2,
+         handle/2,
          handle_event/3]).
 
+-export([websocket_init/2,
+         websocket_handle/3,
+         websocket_info/3,
+         websocket_handle_event/3]).
+
+init(Req, Args) ->
+    case elli_request:get_header(<<"Upgrade">>, Req) of
+        <<"websocket">> ->
+            init_ws(elli_request:path(Req), Req, Args);
+        _ ->
+            ignore
+    end.
+
 handle(Req, _Args) ->
-    handle(elli_request:method(Req), elli_request:path(Req), Req, _Args).
+     Method = case elli_request:get_header(<<"Upgrade">>, Req) of
+        <<"websocket">> ->
+            websocket;
+        _ ->
+            elli_request:method(Req)
+    end,
+    handle(Method, elli_request:path(Req), Req, _Args).
 
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
@@ -88,9 +109,47 @@ handle('POST', [<<"channel">>], Req, Args) ->
     catch _:_ ->
             {200, [], <<"success">>}
     end;
+handle('websocket', [<<"websocket">>], Req, Args) ->
+    %% Upgrade to a websocket connection.
+    elli_websocket:upgrade(Req, [{handler, ?MODULE},
+                                 {handler_opts, Args}]),
+    %% websocket is closed: 
+    %% See RFC-6455 (https://tools.ietf.org/html/rfc6455) for a list of
+    %% valid WS status codes than can be used on a close frame.
+    %% Note that the second element is the reason and is abitrary but should be meaningful
+    %% in regards to your server and sub-protocol.
+    {<<"1000">>, <<"Closed">>};
 handle(_Method, _Path, _Req, _Args) ->
     ct:pal("got unknown ~p req on ~p args=~p", [_Method, _Path, _Args]),
     {404, [], <<"Not Found">>}.
 
 handle_event(_Event, _Data, _Args) ->
     ok.
+
+websocket_init(Req, Opts) ->
+    lager:info("websocket_init ~p", [Req]),
+    lager:info("websocket_init ~p", [Opts]),
+    {ok, [], Opts}.
+
+websocket_handle(_Req, {text, <<"debug">>}, State) ->
+    lager:info("websocket_handle DEBUG"),
+    {reply, {text, <<"debug">>}, State};
+websocket_handle(_Req, _Frame, State) ->
+    lager:info("websocket_handle ~p", [_Req]),
+    lager:info("websocket_handle ~p", [_Frame]),
+    {ok, State}.
+
+websocket_info(_Req, _Msg, State) ->
+    lager:info("websocket_info ~p", [_Req]),
+    lager:info("websocket_info ~p", [_Msg]),
+    {ok, State}.
+
+websocket_handle_event(_Event, _Args, _State) ->
+    lager:info("websocket_handle_event ~p", [_Event]),
+    lager:info("websocket_handle_event ~p", [_Args]),
+    ok.
+
+init_ws([<<"websocket">>], _Req, _Args) ->
+    {ok, handover};
+init_ws(_, _, _) ->
+    ignore.

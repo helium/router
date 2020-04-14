@@ -1,4 +1,4 @@
--module(router_api_console_SUITE).
+-module(router_device_api_console_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
@@ -54,7 +54,12 @@ ws_test(_Config) ->
             ct:fail(timeout)
     end,
 
-    gun:ws_send(ConnPid, {text, <<"debug">>}),
+    receive
+        {websocket_init, Pid} ->
+            Pid ! {debug, <<"debug">>}
+    after 1000 ->
+            ct:fail(timeout2)
+    end,
 
     receive
         {gun_ws, ConnPid, _, {text, <<"debug">>}} ->

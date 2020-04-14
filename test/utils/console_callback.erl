@@ -129,16 +129,17 @@ handle_event(_Event, _Data, _Args) ->
 websocket_init(Req, Opts) ->
     lager:info("websocket_init ~p", [Req]),
     lager:info("websocket_init ~p", [Opts]),
+    maps:get(forward, Opts) ! {websocket_init, self()},
     {ok, [], Opts}.
 
-websocket_handle(_Req, {text, <<"debug">>}, State) ->
-    lager:info("websocket_handle DEBUG"),
-    {reply, {text, <<"debug">>}, State};
 websocket_handle(_Req, _Frame, State) ->
     lager:info("websocket_handle ~p", [_Req]),
     lager:info("websocket_handle ~p", [_Frame]),
     {ok, State}.
 
+websocket_info(_Req, {debug, <<"debug">>}, State) ->
+    lager:info("websocket_info DEBUG"),
+    {reply, {text, <<"debug">>}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Req]),
     lager:info("websocket_info ~p", [_Msg]),

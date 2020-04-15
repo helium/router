@@ -153,9 +153,9 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
         case maps:get(DeviceID, Debug0, undefined) of
             undefined ->
                 Channels = [maps:remove(debug, C) ||C <- maps:get(channels, Map)],
-                {maps:put(<<"channels">>, Channels, Body0), Debug0};
+                {maps:put(channels, Channels, Body0), Debug0};
             V ->
-                B0 = maps:put(<<"payload">>, maps:get(payload, Map), Body0),
+                B0 = maps:put(payload, maps:get(payload, Map), Body0),
                 case V-1 =< 0 of
                     true ->
                         {B0, maps:remove(DeviceID, Debug0)};

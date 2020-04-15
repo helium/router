@@ -32,6 +32,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, port, 3615),
     ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, router_device_api_console, [{endpoint, ?CONSOLE_URL},
+                                                                 {ws_endpoint, ?CONSOLE_WS_URL},
                                                                  {secret, <<>>}]),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),

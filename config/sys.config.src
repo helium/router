@@ -23,4 +23,5 @@
            {seed_nodes, "${ROUTER_SEED_NODES}"},
            {router_device_api_module, router_device_api_console},
            {router_device_api_console, [{endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
+                                        {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
                                         {secret, <<"${ROUTER_CONSOLE_SECRET}">>}]}]}].

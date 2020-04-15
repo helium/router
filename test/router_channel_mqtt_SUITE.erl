@@ -427,7 +427,7 @@ mqtt_update_test(Config) ->
 
     %% Switching endpoint channel should restart (back to sub topic 0)
     MQTTChannel1 = #{<<"type">> => <<"mqtt">>,
-                     <<"credentials">> => #{<<"endpoint">> => <<"mqtt://localhost:1883">>,
+                     <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
                                             <<"topic">> => SubTopic0},
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},

@@ -305,7 +305,7 @@ http_update_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     HTTPChannel = #{<<"type">> => <<"http">>,
                     <<"credentials">> => #{<<"headers">> => #{},
-                                           <<"endpoint">> => <<"http://localhost:3000/BAD">>,
+                                           <<"endpoint">> => <<"http://127.0.0.1:3000/BAD">>,
                                            <<"method">> => <<"PUT">>},
                     <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                     <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME},

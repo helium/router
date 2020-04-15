@@ -156,7 +156,6 @@ handle_message({_JRef, Ref, <<"phoenix">>, <<"heartbeat">>, #{}}, State) ->
     {reply, {text, Data}, State};
 handle_message({_JRef, Ref, Topic, <<"phx_join">>, #{}}, State) ->
     Data = router_console_ws_handler:encode_msg(Ref, Topic, <<"phx_reply">>, #{<<"status">> => <<"ok">>}, Ref),
-    self() ! {joined, Topic},
     {reply, {text, Data}, State};
 handle_message({_JRef, _Ref, _Topic, _Event, _Payload}=Msg, State) ->
     lager:wwring("got unknow message ~p", [Msg]),

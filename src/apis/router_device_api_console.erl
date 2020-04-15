@@ -32,7 +32,8 @@
 
 -record(state, {endpoint :: binary(),
                 secret :: binary(),
-                token :: binary()}).
+                token :: binary(),
+                debug = #{} ::map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -62,11 +63,15 @@ report_status(Device, Map) ->
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     Endpoint = maps:get(endpoint, Args),
+    WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
+    Url = <<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>,
+    {ok, _} = router_console_ws_handler:start_link(#{url => binary_to_list(Url),
+                                                     auto_join => [<<"device:all">>],
+                                                     forward => self()}),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token}}.
-
 
 handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
                                                   token=Token}=State) ->
@@ -129,24 +134,39 @@ handle_call(_Msg, _From, State) ->
 
 
 handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
-                                                 token=Token}=State) ->
+                                                 token=Token,
+                                                 debug=Debug0}=State) ->
     DeviceID = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-    Body = #{category => maps:get(category, Map),
-             description => maps:get(description, Map),
-             reported_at => maps:get(reported_at, Map),
-             device_id => DeviceID,
-             frame_up => router_device:fcnt(Device),
-             frame_down => router_device:fcntdown(Device),
-             payload_size => maps:get(payload_size, Map),
-             port => maps:get(port, Map),
-             devaddr => maps:get(devaddr, Map),
-             hotspots => maps:get(hotspots, Map),
-             channels => maps:get(channels, Map)},
-    lager:debug("post ~p to ~p", [Body, Url]),
+    Body0 = #{category => maps:get(category, Map),
+              description => maps:get(description, Map),
+              reported_at => maps:get(reported_at, Map),
+              device_id => DeviceID,
+              frame_up => router_device:fcnt(Device),
+              frame_down => router_device:fcntdown(Device),
+              payload_size => maps:get(payload_size, Map),
+              port => maps:get(port, Map),
+              devaddr => maps:get(devaddr, Map),
+              hotspots => maps:get(hotspots, Map),
+              channels => maps:get(channels, Map)},
+    {Body1, Debug1} =
+        case maps:get(DeviceID, Debug0, undefined) of
+            undefined ->
+                Channels = [maps:remove(debug, C) ||C <- maps:get(channels, Map)],
+                {maps:put(<<"channels">>, Channels, Body0), Debug0};
+            V ->
+                B0 = maps:put(<<"payload">>, maps:get(payload, Map), Body0),
+                case V-1 =< 0 of
+                    true ->
+                        {B0, maps:remove(DeviceID, Debug0)};
+                    false ->
+                        {B0, maps:put(DeviceID, V-1, Debug0)}
+                end
+        end,
+    lager:debug("post ~p to ~p", [Body1, Url]),
     hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                 jsx:encode(Body), [with_body, {pool, ?MODULE}]),
-    {noreply, State};
+                 jsx:encode(Body1), [with_body, {pool, ?MODULE}]),
+    {noreply, State#state{debug=Debug1}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -155,6 +175,16 @@ handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, State#state{token=Token}};
+handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
+            #state{debug=Debug0}=State) ->
+    lager:info("turning debug on for devices ~p", [DeviceIDs]),
+    Debug1 =lists:foldl(
+              fun(DeviceID, Acc) ->
+                      maps:put(DeviceID, 10, Acc)
+              end,
+              Debug0,
+              DeviceIDs),
+    {noreply, State#state{debug=Debug1}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

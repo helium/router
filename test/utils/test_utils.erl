@@ -21,7 +21,6 @@
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
--define(CONSOLE_URL, <<"http://127.0.0.1:3000">>).
 -define(BASE_TMP_DIR, "./_build/test/tmp").
 -define(BASE_TMP_DIR_TEMPLATE, "XXXXXXXXXX").
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).

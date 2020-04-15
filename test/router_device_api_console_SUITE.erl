@@ -8,6 +8,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+-include("utils/console_test.hrl").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -39,33 +40,17 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 ws_test(_Config) ->
-    {ok, ConnPid} = gun:open("127.0.0.1", 3000),
-    {ok, _Protocol} = gun:await_up(ConnPid),
-    gun:ws_upgrade(ConnPid, "/websocket"),
-
+    Url = "ws://" ++ binary_to_list(?CONSOLE_IP_PORT) ++ "/websocket",
+    router_console_ws_handler:start_link(#{url => Url,
+                                           auto_join => [<<"device:all">>],
+                                           forward => self()}),
     receive
-        {gun_upgrade, ConnPid, _, [<<"websocket">>], _Headers} ->
+        {ws_message, <<"device:all">>,<<"device:all:debug:devices">>,#{<<"devices">> := [?CONSOLE_DEVICE_ID]}} ->
             ok;
-        {gun_response, ConnPid, _, _, Status, Headers} ->
-            ct:fail({ws_upgrade_failed, Status, Headers});
-        {gun_error, ConnPid, _, Reason} ->
-            ct:fail({ws_upgrade_failed, Reason})
-    after 1000 ->
-            ct:fail(timeout)
-    end,
-
-    receive
-        {websocket_init, Pid} ->
-            Pid ! {debug, <<"debug">>}
-    after 1000 ->
-            ct:fail(timeout2)
-    end,
-
-    receive
-        {gun_ws, ConnPid, _, {text, <<"debug">>}} ->
-            ok
-    after 1000 ->
-            ct:fail(timeout3)
+        {ws_message, _Other} ->
+            ct:fail(_Other)
+    after 10000 ->
+        ct:fail(timeout)
     end,
     ok.
 

@@ -23,12 +23,12 @@ init(Req, Args) ->
     end.
 
 handle(Req, _Args) ->
-     Method = case elli_request:get_header(<<"Upgrade">>, Req) of
-        <<"websocket">> ->
-            websocket;
-        _ ->
-            elli_request:method(Req)
-    end,
+    Method = case elli_request:get_header(<<"Upgrade">>, Req) of
+                 <<"websocket">> ->
+                     websocket;
+                 _ ->
+                     elli_request:method(Req)
+             end,
     handle(Method, elli_request:path(Req), Req, _Args).
 
 %% Get Device
@@ -132,23 +132,35 @@ websocket_init(Req, Opts) ->
     maps:get(forward, Opts) ! {websocket_init, self()},
     {ok, [], Opts}.
 
+websocket_handle(_Req, {text, Msg}, State) ->
+    {ok, {_JRef, _Ref, Topic, Event, Payload}} = router_console_ws_handler:decode_msg(Msg),
+    handle_message({_JRef, _Ref, Topic, Event, Payload}, State);
 websocket_handle(_Req, _Frame, State) ->
-    lager:info("websocket_handle ~p", [_Req]),
     lager:info("websocket_handle ~p", [_Frame]),
     {ok, State}.
 
-websocket_info(_Req, {debug, <<"debug">>}, State) ->
-    lager:info("websocket_info DEBUG"),
-    {reply, {text, <<"debug">>}, State};
+
+websocket_info(_Req, {joined, Topic}, State) ->
+    Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"device:all:debug:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID]}),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
-    lager:info("websocket_info ~p", [_Req]),
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.
 
 websocket_handle_event(_Event, _Args, _State) ->
     lager:info("websocket_handle_event ~p", [_Event]),
-    lager:info("websocket_handle_event ~p", [_Args]),
     ok.
+
+handle_message({_JRef, Ref, <<"phoenix">>, <<"heartbeat">>, #{}}, State) ->
+    Data = router_console_ws_handler:encode_msg(Ref, <<"phoenix">>, <<"phx_reply">>, #{<<"status">> => <<"ok">>}),
+    {reply, {text, Data}, State};
+handle_message({_JRef, Ref, Topic, <<"phx_join">>, #{}}, State) ->
+    Data = router_console_ws_handler:encode_msg(Ref, Topic, <<"phx_reply">>, #{<<"status">> => <<"ok">>}, Ref),
+    self() ! {joined, Topic},
+    {reply, {text, Data}, State};
+handle_message({_JRef, _Ref, _Topic, _Event, _Payload}=Msg, State) ->
+    lager:wwring("got unknow message ~p", [Msg]),
+    {ok, State}.
 
 init_ws([<<"websocket">>], _Req, _Args) ->
     {ok, handover};

@@ -1,3 +1,6 @@
+-define(CONSOLE_IP_PORT, <<"127.0.0.1:3000">>).
+-define(CONSOLE_URL, <<"http://", ?CONSOLE_IP_PORT/binary>>).
+
 -define(CONSOLE_DEVICE_ID, <<"yolo_id">>).
 -define(CONSOLE_DEVICE_NAME, <<"yolo_name">>).
 

@@ -50,7 +50,7 @@ ws_test(_Config) ->
         {ws_message, _Other} ->
             ct:fail(_Other)
     after 10000 ->
-        ct:fail(timeout)
+            ct:fail(timeout)
     end,
     ok.
 

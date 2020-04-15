@@ -8,7 +8,6 @@
 -behavior(gen_server).
 -behavior(router_device_api_behavior).
 
-
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -67,7 +66,6 @@ init(Args) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token}}.
-
 
 
 handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
@@ -140,7 +138,6 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
              device_id => DeviceID,
              frame_up => router_device:fcnt(Device),
              frame_down => router_device:fcntdown(Device),
-             payload => maps:get(payload, Map),
              payload_size => maps:get(payload_size, Map),
              port => maps:get(port, Map),
              devaddr => maps:get(devaddr, Map),

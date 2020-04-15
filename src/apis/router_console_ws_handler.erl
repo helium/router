@@ -20,11 +20,12 @@
          websocket_terminate/3]).
 
 -define(HEARTBEAT_TIMER, timer:seconds(30)).
--define(HEARTBEAT_REF, <<"BPM">>).
+-define(HEARTBEAT_REF, <<"BPM_">>).
 -define(TOPIC_PHX, <<"phoenix">>).
 -define(EVENT_JOIN, <<"phx_join">>).
 
--record(state, {auto_join = [] :: [binary()],
+-record(state, {heartbeat = 0 :: non_neg_integer(),
+                auto_join = [] :: [binary()],
                 forward :: pid()}).
 
 %% ------------------------------------------------------------------
@@ -88,11 +89,12 @@ websocket_handle(_Msg, _Req, State) ->
     lager:warning("rcvd unknown websocket_handle msg: ~p, ~p", [_Msg, _Req]),
     {ok, State}.
 
-websocket_info(heartbeat, _Req, State) ->
+websocket_info(heartbeat, _Req, #state{heartbeat=Heartbeat}=State) ->
+    Ref = <<?HEARTBEAT_REF/binary, (erlang:integer_to_binary(Heartbeat))/binary>>,
+    Payload = ?MODULE:encode_msg(Ref, ?TOPIC_PHX, <<"heartbeat">>),
+    lager:debug("sending heartbeat ~p", [Ref]),
     _ = erlang:send_after(?HEARTBEAT_TIMER, self(), heartbeat),
-    Payload = ?MODULE:encode_msg(?HEARTBEAT_REF, ?TOPIC_PHX, <<"heartbeat">>),
-    lager:debug("sending heartbeat"),
-    {reply, {text, Payload}, State};
+    {reply, {text, Payload}, State#state{heartbeat=Heartbeat+1}};
 websocket_info(auto_join, _Req, #state{auto_join=AutoJoin}=State) ->
     lists:foreach(
       fun(Topic) ->
@@ -115,10 +117,10 @@ websocket_terminate(Reason, _ConnState, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-handle_message({_JRef, ?HEARTBEAT_REF, <<"phoenix">>,<<"phx_reply">>, Payload}, State) ->
+handle_message({_JRef, <<"BPM_", Heartbeat/binary>>, <<"phoenix">>,<<"phx_reply">>, Payload}, State) ->
     case maps:get(<<"status">>, Payload, undefined) of
-        <<"ok">> -> lager:debug("hearbeat ok");
-        _Other -> lager:warning("hearbeat failed: ~p", [_Other])
+        <<"ok">> -> lager:debug("hearbeat ~p ok", [Heartbeat]);
+        _Other -> lager:warning("hearbeat ~p failed: ~p", [Heartbeat, _Other])
     end,
     {ok, State};
 handle_message({<<"REF_", Topic/binary>>, _Ref, Topic, <<"phx_reply">>, Payload}, #state{auto_join=AutoJoin}=State) ->

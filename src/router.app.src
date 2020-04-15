@@ -23,7 +23,7 @@
     erl_angry_purple_tiger,
     throttle,
     httpc_aws,
-    gun
+    websocket_client
    ]},
   {env,[]},
   {modules, []},

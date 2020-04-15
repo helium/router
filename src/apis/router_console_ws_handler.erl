@@ -48,11 +48,15 @@ encode_msg(Ref, Topic, Event, Payload) ->
 encode_msg(Ref, Topic, Event, Payload, JRef) ->
     jsx:encode([JRef, Ref, Topic, Event, Payload]).
 
--spec decode_msg(binary()) -> {ok, {any(), any(), binary(), binary(), map()}} | {error, any()}.
+-spec decode_msg(binary()) -> {ok, map()} | {error, any()}.
 decode_msg(Msg) ->
     try jsx:decode(Msg, [return_maps]) of
         [JRef, Ref, Topic, Event, Payload|_] ->
-            {ok, {JRef, Ref, Topic, Event, Payload}}
+            {ok, #{ref => Ref,
+                   jref => JRef,
+                   topic => Topic,
+                   event => Event,
+                   payload => Payload}}
     catch
         _:_ -> {error, "decode_failed"}     
     end.
@@ -117,13 +121,16 @@ websocket_terminate(Reason, _ConnState, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-handle_message({_JRef, <<"BPM_", Heartbeat/binary>>, <<"phoenix">>,<<"phx_reply">>, Payload}, State) ->
+handle_message(#{ref := <<"BPM_", Heartbeat/binary>>, topic := <<"phoenix">>, event := <<"phx_reply">>, payload := Payload},
+               #state{heartbeat_timeout=TimerRef}=State) ->
+    _ = erlang:cancel_timer(TimerRef),
     case maps:get(<<"status">>, Payload, undefined) of
         <<"ok">> -> lager:debug("hearbeat ~p ok", [Heartbeat]);
         _Other -> lager:warning("hearbeat ~p failed: ~p", [Heartbeat, _Other])
     end,
-    {ok, State};
-handle_message({<<"REF_", Topic/binary>>, _Ref, Topic, <<"phx_reply">>, Payload}, #state{auto_join=AutoJoin}=State) ->
+    {ok, State#state{heartbeat_timeout=undefined}};
+handle_message(#{jref := <<"REF_", Topic/binary>>, topic := Topic, event := <<"phx_reply">>, payload := Payload},
+               #state{auto_join=AutoJoin}=State) ->
     case lists:member(Topic, AutoJoin) of
         true ->
             case maps:get(<<"status">>, Payload, undefined) of
@@ -134,7 +141,7 @@ handle_message({<<"REF_", Topic/binary>>, _Ref, Topic, <<"phx_reply">>, Payload}
             lager:warning("joined unknown topic: ~p", [Topic])
     end,
     {ok, State};
-handle_message({_JRef, _Ref, Topic, Event, Payload}, #state{forward=Pid}=State) ->
+handle_message(#{topic := Topic, event := Event, payload := Payload}, #state{forward=Pid}=State) ->
     Pid ! {ws_message, Topic, Event, Payload},
     {ok, State};
 handle_message(_Msg, State) ->

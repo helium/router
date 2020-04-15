@@ -133,8 +133,8 @@ websocket_init(Req, Opts) ->
     {ok, [], Opts}.
 
 websocket_handle(_Req, {text, Msg}, State) ->
-    {ok, {_JRef, _Ref, Topic, Event, Payload}} = router_console_ws_handler:decode_msg(Msg),
-    handle_message({_JRef, _Ref, Topic, Event, Payload}, State);
+    {ok, Map} = router_console_ws_handler:decode_msg(Msg),
+    handle_message(Map, State);
 websocket_handle(_Req, _Frame, State) ->
     lager:info("websocket_handle ~p", [_Frame]),
     {ok, State}.
@@ -151,14 +151,14 @@ websocket_handle_event(_Event, _Args, _State) ->
     lager:info("websocket_handle_event ~p", [_Event]),
     ok.
 
-handle_message({_JRef, Ref, <<"phoenix">>, <<"heartbeat">>, #{}}, State) ->
+handle_message(#{ref := Ref, topic := <<"phoenix">>, event := <<"heartbeat">>}, State) ->
     Data = router_console_ws_handler:encode_msg(Ref, <<"phoenix">>, <<"phx_reply">>, #{<<"status">> => <<"ok">>}),
     {reply, {text, Data}, State};
-handle_message({_JRef, Ref, Topic, <<"phx_join">>, #{}}, State) ->
+handle_message(#{ref := Ref, topic := Topic, event := <<"phx_join">>}, State) ->
     Data = router_console_ws_handler:encode_msg(Ref, Topic, <<"phx_reply">>, #{<<"status">> => <<"ok">>}, Ref),
     {reply, {text, Data}, State};
-handle_message({_JRef, _Ref, _Topic, _Event, _Payload}=Msg, State) ->
-    lager:wwring("got unknow message ~p", [Msg]),
+handle_message(Map, State) ->
+    lager:warning("got unknow message ~p", [Map]),
     {ok, State}.
 
 init_ws([<<"websocket">>], _Req, _Args) ->

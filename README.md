@@ -66,7 +66,8 @@
             "reported_at": 123,
             "status": "success | error | no_channel",
             "description": "what happened",
-            "debug": {} // ONLY ON DEBUG MODE
+             // ONLY ON DEBUG MODE
+            "debug": {req: {}, res: {}}
         }
     ]
 }

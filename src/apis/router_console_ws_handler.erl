@@ -30,19 +30,24 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+-spec start_link(map()) -> {ok, pid()} | {error, any()}.
 start_link(Args) ->
     Url = maps:get(url, Args),
-    websocket_client:start_link(Url, ?MODULE, Args).
+    websocket_client:start_link(Url, ?MODULE, maps:to_list(Args)).
 
+-spec encode_msg(binary(), binary(), binary()) -> binary().
 encode_msg(Ref, Topic, Event) ->
     encode_msg(Ref, Topic, Event, #{}).
 
+-spec encode_msg(binary(), binary(), binary(), map()) -> binary().
 encode_msg(Ref, Topic, Event, Payload) ->
     encode_msg(Ref, Topic, Event, Payload, <<"0">>).
 
+-spec encode_msg(binary(), binary(), binary(), map(), binary()) -> binary().
 encode_msg(Ref, Topic, Event, Payload, JRef) ->
     jsx:encode([JRef, Ref, Topic, Event, Payload]).
 
+-spec decode_msg(binary()) -> {ok, {any(), any(), binary(), binary(), map()}} | {error, any()}.
 decode_msg(Msg) ->
     try jsx:decode(Msg, [return_maps]) of
         [JRef, Ref, Topic, Event, Payload|_] ->
@@ -54,7 +59,8 @@ decode_msg(Msg) ->
 %% ------------------------------------------------------------------
 %% websocket_client Function Definitions
 %% ------------------------------------------------------------------
-init(Args) ->
+init(ArgsList) ->
+    Args = maps:from_list(ArgsList),
     lager:info("~p init with ~p", [?MODULE, Args]),
     AutoJoin = maps:get(auto_join, Args, []),
     Pid = maps:get(forward, Args),

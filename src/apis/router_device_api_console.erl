@@ -177,7 +177,7 @@ handle_cast(_Msg, State) ->
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    {ok, State#state{token=Token}};
+    {noreply, State#state{token=Token}};
 handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
             #state{debug=Debug0}=State) ->
     lager:info("turning debug on for devices ~p", [DeviceIDs]),

@@ -152,7 +152,7 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
               hotspots => maps:get(hotspots, Map),
               channels => [maps:remove(debug, C) ||C <- Channels]},
     {Body1, Debug1} =
-        case maps:is_key(DeviceID, Debug0) andalso Category == <<"up">> of
+        case maps:is_key(DeviceID, Debug0) andalso  lists:member(Category, [<<"up">>, <<"down">>]) of
             false ->
                 {Body0, Debug0};
             true ->

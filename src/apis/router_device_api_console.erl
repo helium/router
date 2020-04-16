@@ -138,7 +138,9 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
                                                  debug=Debug0}=State) ->
     DeviceID = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-    Body0 = #{category => maps:get(category, Map),
+    Category = maps:get(category, Map),
+    Channels = maps:get(channels, Map),
+    Body0 = #{category => Category,
               description => maps:get(description, Map),
               reported_at => maps:get(reported_at, Map),
               device_id => DeviceID,
@@ -148,19 +150,20 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
               port => maps:get(port, Map),
               devaddr => maps:get(devaddr, Map),
               hotspots => maps:get(hotspots, Map),
-              channels => maps:get(channels, Map)},
+              channels => [maps:remove(debug, C) ||C <- Channels]},
     {Body1, Debug1} =
-        case maps:get(DeviceID, Debug0, undefined) of
-            undefined ->
-                Channels = [maps:remove(debug, C) ||C <- maps:get(channels, Map)],
-                {maps:put(channels, Channels, Body0), Debug0};
-            V ->
+        case maps:is_key(DeviceID, Debug0) andalso Category == <<"up">> of
+            false ->
+                {Body0, Debug0};
+            true ->
+                DebugLeft = maps:get(DeviceID, Debug0),
                 B0 = maps:put(payload, maps:get(payload, Map), Body0),
-                case V-1 =< 0 of
+                B1 = maps:put(channels, Channels, B0),
+                case DebugLeft-1 =< 0 of
                     true ->
-                        {B0, maps:remove(DeviceID, Debug0)};
+                        {B1, maps:remove(DeviceID, Debug0)};
                     false ->
-                        {B0, maps:put(DeviceID, V-1, Debug0)}
+                        {B1, maps:put(DeviceID, DebugLeft-1, Debug0)}
                 end
         end,
     lager:debug("post ~p to ~p", [Body1, Url]),

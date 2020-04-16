@@ -163,9 +163,9 @@ debug_test(Config) ->
     %% We ignore the channel correction  and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Making sure debug is on for our device and at 8 now (NOT 9 cause of channel correction above)
+    %% Making sure debug is on for our device and at 9 now
     State1 = sys:get_state(router_device_api_console),
-    ?assertMatch({state, _, _, _, #{?CONSOLE_DEVICE_ID := 8}}, State1),
+    ?assertMatch({state, _, _, _, #{?CONSOLE_DEVICE_ID := 9}}, State1),
     ok.
 
 %% ------------------------------------------------------------------

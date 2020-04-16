@@ -122,13 +122,12 @@ websocket_terminate(Reason, _ConnState, _State) ->
 %% ------------------------------------------------------------------
 
 handle_message(#{ref := <<"BPM_", Heartbeat/binary>>, topic := <<"phoenix">>, event := <<"phx_reply">>, payload := Payload},
-               #state{heartbeat_timeout=TimerRef}=State) ->
-    _ = erlang:cancel_timer(TimerRef),
+               State) ->
     case maps:get(<<"status">>, Payload, undefined) of
         <<"ok">> -> lager:debug("hearbeat ~p ok", [Heartbeat]);
         _Other -> lager:warning("hearbeat ~p failed: ~p", [Heartbeat, _Other])
     end,
-    {ok, State#state{heartbeat_timeout=undefined}};
+    {ok, State};
 handle_message(#{jref := <<"REF_", Topic/binary>>, topic := Topic, event := <<"phx_reply">>, payload := Payload},
                #state{auto_join=AutoJoin}=State) ->
     case lists:member(Topic, AutoJoin) of

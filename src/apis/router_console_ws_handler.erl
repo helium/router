@@ -25,6 +25,7 @@
 -define(EVENT_JOIN, <<"phx_join">>).
 
 -record(state, {heartbeat = 0 :: non_neg_integer(),
+                heartbeat_timeout :: undefined | reference(),
                 auto_join = [] :: [binary()],
                 forward :: pid()}).
 
@@ -98,7 +99,11 @@ websocket_info(heartbeat, _Req, #state{heartbeat=Heartbeat}=State) ->
     Payload = ?MODULE:encode_msg(Ref, ?TOPIC_PHX, <<"heartbeat">>),
     lager:debug("sending heartbeat ~p", [Ref]),
     _ = erlang:send_after(?HEARTBEAT_TIMER, self(), heartbeat),
-    {reply, {text, Payload}, State#state{heartbeat=Heartbeat+1}};
+    TimerRef = erlang:send_after(?HEARTBEAT_TIMER, self(), {heartbeat_timeout, Ref}),
+    {reply, {text, Payload}, State#state{heartbeat=Heartbeat+1, heartbeat_timeout=TimerRef}};
+websocket_info({heartbeat_timeout, Ref}, _Req, State) ->
+    lager:warning("we missed heartbeat ~p, disconnecting", [Ref]),
+    {close, <<"failed heartbeat">>, State#state{heartbeat=0, heartbeat_timeout=undefined}};
 websocket_info(auto_join, _Req, #state{auto_join=AutoJoin}=State) ->
     lists:foreach(
       fun(Topic) ->
@@ -122,12 +127,13 @@ websocket_terminate(Reason, _ConnState, _State) ->
 %% ------------------------------------------------------------------
 
 handle_message(#{ref := <<"BPM_", Heartbeat/binary>>, topic := <<"phoenix">>, event := <<"phx_reply">>, payload := Payload},
-               State) ->
+               #state{heartbeat_timeout=TimerRef}=State) ->
+    _ = erlang:cancel_timer(TimerRef),
     case maps:get(<<"status">>, Payload, undefined) of
         <<"ok">> -> lager:debug("hearbeat ~p ok", [Heartbeat]);
         _Other -> lager:warning("hearbeat ~p failed: ~p", [Heartbeat, _Other])
     end,
-    {ok, State};
+    {ok, State#state{heartbeat_timeout=undefined}};
 handle_message(#{jref := <<"REF_", Topic/binary>>, topic := Topic, event := <<"phx_reply">>, payload := Payload},
                #state{auto_join=AutoJoin}=State) ->
     case lists:member(Topic, AutoJoin) of

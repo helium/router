@@ -26,6 +26,7 @@
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
                 connection :: pid(),
+                endpoint :: binary(),
                 pubtopic :: binary()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -46,14 +47,19 @@ init({[Channel, Device], _}) ->
                     {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
                     #{topic := PubTopic} = router_channel:args(Channel),
                     {ok, #state{channel=Channel, aws=AWS,
-                                connection=Conn, pubtopic=PubTopic}}
+                                connection=Conn, endpoint=Endpoint, pubtopic=PubTopic}}
             end
     end.
 
-handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, pubtopic=Topic}=State) ->
+handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, endpoint=Endpoint, pubtopic=Topic}=State) ->
+    Body = encode_data(Data),
     Res = emqtt:publish(Conn, Topic, encode_data(Data), 0),
     lager:debug("published: ~p result: ~p", [Data, Res]),
-    ok = handle_publish_res(Res, Channel, Ref),
+    Debug = #{req => #{endpoint => Endpoint,
+                       topic => Topic,
+                       qos => 0,
+                       body => Body}},
+    ok = handle_publish_res(Res, Channel, Ref, Debug),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -96,19 +102,25 @@ ping(Conn) ->
 encode_data(#{payload := Payload}=Map) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
--spec handle_publish_res(any(), router_channel:channel(), reference()) -> ok.
-handle_publish_res(Res, Channel, Ref) ->
+-spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
+handle_publish_res(Res, Channel, Ref, Debug) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{id => router_channel:id(Channel),
                 name => router_channel:name(Channel),
                 reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
                   {ok, PacketID} ->
-                      maps:merge(Result0, #{status => success, description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{packet_id => PacketID}}),
+                                            status => success,
+                                            description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});
                   ok ->
-                      maps:merge(Result0, #{status => success, description => <<"ok">>});
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{}}),
+                                            status => success,
+                                            description => <<"ok">>});
                   {error, Reason} ->
-                      maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{}}),
+                                            status => failure,
+                                            description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 

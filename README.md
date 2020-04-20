@@ -43,7 +43,7 @@
     "device_id": "device_uuid",
     "frame_up": 2,
     "frame_down": 2,
-    "payload": "base64 payload",
+    "payload": "base64 payload", // ONLY ON DEBUG MODE
     "payload_size": 12,
     "port": 1,
     "devaddr": "devaddr",
@@ -65,7 +65,9 @@
             "name": "channel name",
             "reported_at": 123,
             "status": "success | error | no_channel",
-            "description": "what happened"
+            "description": "what happened",
+             // ONLY ON DEBUG MODE
+            "debug": {req: {}, res: {}}
         }
     ]
 }

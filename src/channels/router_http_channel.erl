@@ -33,9 +33,14 @@ init({[Channel, _Device], _}) ->
     {ok, #state{channel=Channel, url=URL, headers=Headers1, method=Method}}.
 
 handle_event({data, Ref, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
-    Res = make_http_req(Method, URL, Headers, encode_data(Data)),
+    Body = encode_data(Data),
+    Res = make_http_req(Method, URL, Headers, Body),
     lager:debug("published: ~p result: ~p", [Data, Res]),
-    ok = handle_http_res(Res, Channel, Ref),
+    Debug = #{req => #{method => Method,
+                       url => URL,
+                       headers => Headers,
+                       body => Body}},
+    ok = handle_http_res(Res, Channel, Ref, Debug),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -76,23 +81,36 @@ make_http_req(Method, URL, Headers, Payload) ->
         What:Why:_Stacktrace -> {error, {What, Why}}
     end.
 
--spec handle_http_res(any(), router_channel:channel(), reference()) -> ok.
-handle_http_res(Res, Channel, Ref) ->
+-spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.
+handle_http_res(Res, Channel, Ref, Debug) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{id => router_channel:id(Channel),
                 name => router_channel:name(Channel),
                 reported_at => erlang:system_time(seconds)},
     Result1 = case Res of
-                  {ok, StatusCode, _ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
-                      maps:merge(Result0, #{status => success, description => <<"Connection established">>});
-                  {ok, StatusCode, _ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
+                  {ok, StatusCode, ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{code => StatusCode,
+                                                                                  headers => ResponseHeaders,
+                                                                                  body => <<>>}}),
+                                            status => success,
+                                            description => <<"Connection established">>});
+                  {ok, StatusCode, ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
                       router_device_channels_worker:handle_downlink(Pid, ResponseBody),
-                      maps:merge(Result0, #{status => success, description => ResponseBody});
-                  {ok, StatusCode, _ResponseHeaders, ResponseBody} ->
-                      maps:merge(Result0, #{status => failure, 
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{code => StatusCode,
+                                                                                  headers => ResponseHeaders,
+                                                                                  body => ResponseBody}}),
+                                            status => success,
+                                            description => ResponseBody});
+                  {ok, StatusCode, ResponseHeaders, ResponseBody} ->
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{code => StatusCode,
+                                                                                  headers => ResponseHeaders,
+                                                                                  body => ResponseBody}}),
+                                            status => failure, 
                                             description => <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary,
                                                              " Body ", ResponseBody/binary>>});
                   {error, Reason} ->
-                      maps:merge(Result0, #{status => failure, description => list_to_binary(io_lib:format("~p", [Reason]))})
+                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{}}),
+                                            status => failure,
+                                            description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).

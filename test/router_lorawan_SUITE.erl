@@ -13,7 +13,6 @@
 
 -export([join_test/1]).
 
--define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,0,0,0,0,0>>).
 -define(DEVEUI, <<16#EF, 16#BE, 16#AD, 16#DE, 16#EF, 16#BE, 16#AD, 16#DE>>).
@@ -67,8 +66,6 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
-    e2qc:teardown(console_cache),
-    ok = application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
@@ -112,7 +109,6 @@ join_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
@@ -176,7 +172,6 @@ join_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => base64:encode(<<0>>),
                                             <<"payload_size">> => 1,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -200,7 +195,6 @@ join_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
@@ -248,7 +242,6 @@ join_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => base64:encode(<<0>>),
                                             <<"payload_size">> => 1,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -272,7 +265,6 @@ join_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => fun erlang:is_integer/1,
                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',

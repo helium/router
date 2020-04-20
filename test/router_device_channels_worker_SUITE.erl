@@ -15,7 +15,6 @@
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 
--define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
@@ -90,13 +89,13 @@ refresh_channels_test(Config) ->
     %% Add 2 http channels and force a refresh
     HTTPChannel1 = #{<<"type">> => <<"http">>,
                      <<"credentials">> => #{<<"headers">> => #{},
-                                            <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                            <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                             <<"method">> => <<"POST">>},
                      <<"id">> => <<"HTTP_1">>,
                      <<"name">> => <<"HTTP_NAME_1">>},
     HTTPChannel2 = #{<<"type">> => <<"http">>,
                      <<"credentials">> => #{<<"headers">> => #{},
-                                            <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                            <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                             <<"method">> => <<"POST">>},
                      <<"id">> => <<"HTTP_2">>,
                      <<"name">> => <<"HTTP_NAME_2">>},
@@ -111,7 +110,7 @@ refresh_channels_test(Config) ->
     %% Modify HTTP Channel 2
     HTTPChannel2_1 = #{<<"type">> => <<"http">>,
                        <<"credentials">> => #{<<"headers">> => #{},
-                                              <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                              <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                               <<"method">> => <<"PUT">>},
                        <<"id">> => <<"HTTP_2">>,
                        <<"name">> => <<"HTTP_NAME_2">>},
@@ -137,7 +136,7 @@ crashing_channel_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     HTTPChannel1 = #{<<"type">> => <<"http">>,
                      <<"credentials">> => #{<<"headers">> => #{},
-                                            <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                            <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                             <<"method">> => <<"POST">>},
                      <<"id">> => <<"HTTP_1">>,
                      <<"name">> => <<"HTTP_NAME_1">>},
@@ -181,7 +180,6 @@ crashing_channel_test(Config) ->
                                             <<"device_id">> => DeviceID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -209,7 +207,6 @@ crashing_channel_test(Config) ->
                                             <<"device_id">> => DeviceID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -225,7 +222,6 @@ crashing_channel_test(Config) ->
                                             <<"device_id">> => DeviceID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -273,7 +269,6 @@ late_packet_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
@@ -345,7 +340,6 @@ late_packet_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',

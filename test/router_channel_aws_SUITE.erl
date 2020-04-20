@@ -13,7 +13,6 @@
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 
--define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
@@ -82,7 +81,6 @@ aws_test(Config) ->
                                            <<"device_id">> => DeviceID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
@@ -114,7 +112,6 @@ aws_test(Config) ->
                                             <<"device_id">> => DeviceID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -149,7 +146,6 @@ aws_test(Config) ->
                                             <<"device_id">> => DeviceID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',

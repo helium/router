@@ -13,7 +13,6 @@
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 
--define(CONSOLE_URL, <<"http://localhost:3000">>).
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
@@ -74,7 +73,6 @@ http_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
@@ -129,7 +127,6 @@ http_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',                                            
@@ -182,7 +179,6 @@ http_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',                                            
@@ -234,7 +230,6 @@ http_update_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"payload">> => <<>>,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',                                            
@@ -286,7 +281,6 @@ http_update_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
@@ -311,7 +305,7 @@ http_update_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     HTTPChannel = #{<<"type">> => <<"http">>,
                     <<"credentials">> => #{<<"headers">> => #{},
-                                           <<"endpoint">> => <<"http://localhost:3000/BAD">>,
+                                           <<"endpoint">> => <<"http://127.0.0.1:3000/BAD">>,
                                            <<"method">> => <<"PUT">>},
                     <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                     <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME},
@@ -330,7 +324,6 @@ http_update_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>,
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',

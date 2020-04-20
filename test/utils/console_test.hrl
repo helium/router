@@ -1,3 +1,7 @@
+-define(CONSOLE_IP_PORT, <<"127.0.0.1:3000">>).
+-define(CONSOLE_URL, <<"http://", ?CONSOLE_IP_PORT/binary>>).
+-define(CONSOLE_WS_URL, <<"ws://", ?CONSOLE_IP_PORT/binary, "/websocket">>).
+
 -define(CONSOLE_DEVICE_ID, <<"yolo_id">>).
 -define(CONSOLE_DEVICE_NAME, <<"yolo_name">>).
 
@@ -5,7 +9,7 @@
 -define(CONSOLE_HTTP_CHANNEL_NAME, <<"fake_http">>).
 -define(CONSOLE_HTTP_CHANNEL, #{<<"type">> => <<"http">>,
                                 <<"credentials">> => #{<<"headers">> => #{},
-                                                       <<"endpoint">> => <<"http://localhost:3000/channel">>,
+                                                       <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
                                                        <<"method">> => <<"POST">>},
                                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME}).

@@ -1,28 +1,26 @@
 -module(router_device_api).
 
--export([
-         init/1,
+-export([module/0,
          get_device/1,
          get_device/4,
          get_channels/2,
-         report_status/2
-        ]).
+         report_status/2]).
 
 -define(API_MOD, router_device_api_module).
 
--spec init(any()) -> ok.
-init(Args) ->
-    {ok, Mod} = application:get_env(router, ?API_MOD),
-    Mod:init(Args).
+-spec module() -> atom().
+module() ->
+    {ok, Module} = application:get_env(router, ?API_MOD),
+    Module.
 
 -spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
-    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod = ?MODULE:module(),
     Mod:get_device(DeviceID).
 
 -spec get_device(binary(), binary(), binary(), binary()) -> {ok, router_device:device(), binary()} | {error, any()}.
 get_device(DevEui, AppEui, Msg, MIC) ->
-    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod = ?MODULE:module(),
     case Mod:get_devices(DevEui, AppEui) of
         [] -> {error, api_not_found};
         KeysAndDevices -> find_device(Msg, MIC, KeysAndDevices)
@@ -30,12 +28,12 @@ get_device(DevEui, AppEui, Msg, MIC) ->
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
 get_channels(Device, DeviceWorkerPid) ->
-    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod = ?MODULE:module(),
     Mod:get_channels(Device, DeviceWorkerPid).
 
 -spec report_status(router_device:device(), map()) -> ok.
 report_status(Device, Map) ->
-    {ok, Mod} = application:get_env(router, ?API_MOD),
+    Mod = ?MODULE:module(),
     Mod:report_status(Device, Map).
 
 %% ------------------------------------------------------------------

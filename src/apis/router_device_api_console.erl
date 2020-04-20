@@ -223,7 +223,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, <<"decoder_id_test">>, Pid),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),

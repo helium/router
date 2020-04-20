@@ -33,9 +33,10 @@ init({[Channel, _Device], _}) ->
     {ok, #state{channel=Channel, url=URL, headers=Headers1, method=Method}}.
 
 handle_event({data, Ref, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
-    Body = encode_data(Data),
+    lager:debug("got data: ~p", [Data]),
+    Body = encode_data(Data, router_channel:decoder_id(Channel)),
     Res = make_http_req(Method, URL, Headers, Body),
-    lager:debug("published: ~p result: ~p", [Data, Res]),
+    lager:debug("published: ~p result: ~p", [Body, Res]),
     Debug = #{req => #{method => Method,
                        url => URL,
                        headers => Headers,
@@ -69,9 +70,20 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec encode_data(map()) -> binary().
-encode_data(#{payload := Payload}=Map) ->
-    jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
+-spec encode_data(map(), undefined | binary()) -> binary().
+encode_data(#{payload := Payload}=Map, undefined) ->
+    jsx:encode(maps:put(payload, base64:encode(Payload), Map));
+encode_data(#{payload := Payload}=Map, DecoderID) ->
+    Updates = case router_v8:decode(DecoderID, Payload, 1) of
+                  {ok, DecodedPayload} ->
+                      #{payload_raw => base64:encode(Payload),
+                        payload => DecodedPayload};
+                  {error, _Reason} ->
+                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, _Reason]),
+                      #{payload_raw => base64:encode(Payload),
+                        payload => <<>>}
+              end,
+    jsx:encode(maps:merge(Map, Updates)).
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->

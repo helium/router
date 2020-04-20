@@ -340,8 +340,8 @@ tmp_dir(SubDir) ->
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
--spec match_map(map(), map()) -> true | {false, term()}.
-match_map(Expected, Got) ->
+-spec match_map(map(), any()) -> true | {false, term()}.
+match_map(Expected, Got) when is_map(Got) ->
     case maps:size(Expected) == maps:size(Got) of
         false ->
             {false, {size_mismatch, maps:size(Expected), maps:size(Got)}};
@@ -376,7 +376,9 @@ match_map(Expected, Got) ->
               end,
               true,
               Expected)
-    end.
+    end;
+match_map(_Expected, _Got) ->
+    {false, not_map}.
 
 -spec create_tmp_dir(list()) -> list().
 create_tmp_dir(Path)->

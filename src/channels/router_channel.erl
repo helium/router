@@ -74,11 +74,11 @@ args(Channel) ->
 device_id(Channel) ->
     Channel#channel.device_id.
 
--spec decoder_id(channel()) -> binary().
+-spec decoder_id(channel()) -> undefined | binary().
 decoder_id(Channel) ->
     Channel#channel.decoder_id.
 
--spec decoder_body(channel()) -> binary().
+-spec decoder_body(channel()) -> undefined | binary().
 decoder_body(Channel) ->
     Channel#channel.decoder_body.
 

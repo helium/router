@@ -93,10 +93,10 @@ decode_test(Config) ->
     ContextID = <<"decoder_id_test">>,
     ok = router_v8:add_decoder(ContextID, ?DECODER),
 
-    %% Send UNCONFIRMED_UP frame packet
+    %% Send UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
     EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0, #{body => EncodedPayload})},
+                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,

@@ -45,7 +45,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Channel = case ChannelType of
                   http -> ?CONSOLE_HTTP_CHANNEL;
                   mqtt -> ?CONSOLE_MQTT_CHANNEL;
-                  aws -> ?CONSOLE_AWS_CHANNEL
+                  aws -> ?CONSOLE_AWS_CHANNEL;
+                  decoder -> ?CONSOLE_DECODER_CHANNEL
               end,
     Channels = case NoChannel of
                    true -> [];

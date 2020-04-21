@@ -9,7 +9,6 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("utils/console_test.hrl").
--include("utils/decoder.hrl").
 -include("lorawan_vars.hrl").
 
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
@@ -45,6 +44,10 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 decode_test(Config) ->
+    %% Set console to decoder channel mode
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, decoder}),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
@@ -89,9 +92,6 @@ decode_test(Config) ->
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
-
-    ContextID = <<"decoder_id_test">>,
-    ok = router_v8:add_decoder(ContextID, ?DECODER),
 
     %% Send UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
     EncodedPayload = to_real_payload(<<"20 02 F8 00">>),

@@ -76,7 +76,6 @@ encode_data(#{payload := Payload}=Map, undefined) ->
 encode_data(#{payload := Payload, port := Port}=Map, DecoderID) ->
     Updates = case router_v8:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->
-                      ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {Payload, DecodedPayload}]),
                       #{payload_raw => base64:encode(Payload),
                         payload => DecodedPayload};
                   {error, _Reason} ->

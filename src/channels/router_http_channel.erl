@@ -73,8 +73,8 @@ terminate(_Reason, _State) ->
 -spec encode_data(map(), undefined | binary()) -> binary().
 encode_data(#{payload := Payload}=Map, undefined) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map));
-encode_data(#{payload := Payload}=Map, DecoderID) ->
-    Updates = case router_v8:decode(DecoderID, Payload, 1) of
+encode_data(#{payload := Payload, port := Port}=Map, DecoderID) ->
+    Updates = case router_v8:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->
                       #{payload_raw => base64:encode(Payload),
                         payload => DecodedPayload};

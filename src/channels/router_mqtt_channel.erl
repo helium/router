@@ -51,7 +51,7 @@ init({[Channel, _Device], _}) ->
     end.
 
 handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, endpoint=Endpoint, pub_topic=Topic}=State) ->
-    Body = encode_data(Data),
+    Body = router_channel:encode_data(Channel, Data),
     Res = emqtt:publish(Conn, Topic, Body, 0),
     lager:debug("published: ~p result: ~p", [Data, Res]),
     Debug = #{req => #{endpoint => Endpoint,
@@ -116,10 +116,6 @@ terminate(_Reason, #state{connection=Conn}) ->
 -spec ping(pid()) -> reference().
 ping(Conn) ->
     erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
-
--spec encode_data(map()) -> binary().
-encode_data(#{payload := Payload}=Map) ->
-    jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->

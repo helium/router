@@ -99,7 +99,7 @@ debug_test(Config) ->
 
     %% Making sure debug is on for our device
     timer:sleep(250),
-    State0 = sys:get_state(router_device_api_console),
+    State0 = router_device_api_console:state(),
     ?assertMatch({state, _, _, _, _, _, #{?CONSOLE_DEVICE_ID := 10}}, State0),
 
     %% Send UNCONFIRMED_UP frame packet
@@ -164,7 +164,7 @@ debug_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     %% Making sure debug is on for our device and at 9 now
-    State1 = sys:get_state(router_device_api_console),
+    State1 = router_device_api_console:state(),
     ?assertMatch({state, _, _, _, _, _, #{?CONSOLE_DEVICE_ID := 9}}, State1),
 
     lists:foreach(
@@ -233,7 +233,7 @@ debug_test(Config) ->
       end,
       lists:seq(1, 9)),
 
-    State2 = sys:get_state(router_device_api_console),
+    State2 = router_device_api_console:state(),
     ?assertMatch({state, _, _, _, _, _,#{}}, State2),
 
     ok.

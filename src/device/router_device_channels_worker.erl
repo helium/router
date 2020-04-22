@@ -17,7 +17,8 @@
          handle_device_update/2,
          handle_data/3,
          report_status/3,
-         handle_downlink/2]).
+         handle_downlink/2,
+         state/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -47,11 +48,17 @@
                 data_cache = #{} :: map(),
                 channels_resp_cache = #{} :: map()}).
 
+-type state() :: #state{}.
+
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
+
+-spec state(Pid :: pid()) -> state().
+state(Pid) ->
+    gen_server:call(Pid, state, infinity).
 
 -spec handle_device_update(pid(), router_device:device()) -> ok.
 handle_device_update(Pid, Device) ->
@@ -107,6 +114,8 @@ init(Args) ->
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device}}.
 
+handle_call(state, _From, State) ->
+    {reply, State, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

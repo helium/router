@@ -125,7 +125,7 @@ no_channel_test(Config) ->
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Checking that device channels worker has only no_channel 
+    %% Checking that device channels worker has only no_channel
     DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
     NoChannel = router_channel:new(<<"no_channel">>,
                                    router_no_channel,
@@ -134,7 +134,7 @@ no_channel_test(Config) ->
                                    ?CONSOLE_DEVICE_ID,
                                    DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, router_device_channels_worker:state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
@@ -143,7 +143,7 @@ no_channel_test(Config) ->
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
     %% Checking that device worker has only HTTP channel now
-    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    State0 = router_device_worker:state(DeviceChannelsWorkerPid),
     ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(5, State0))),
 
@@ -203,8 +203,8 @@ no_channel_test(Config) ->
     %% Force to refresh channels list
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
-    %% Checking that device worker has only no_channel 
-    State1 = sys:get_state(DeviceChannelsWorkerPid),
+    %% Checking that device worker has only no_channel
+    State1 = router_device_worker:state(DeviceChannelsWorkerPid),
     ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(5, State1))),
 

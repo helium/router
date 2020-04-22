@@ -34,7 +34,7 @@ init({[Channel, _Device], _}) ->
 
 handle_event({data, Ref, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
     lager:debug("got data: ~p", [Data]),
-    Body = encode_data(Data, router_channel:decoder_id(Channel)),
+    Body = router_channel:encode_data(Channel, Data),
     Res = make_http_req(Method, URL, Headers, Body),
     lager:debug("published: ~p result: ~p", [Body, Res]),
     Debug = #{req => #{method => Method,
@@ -69,21 +69,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec encode_data(map(), undefined | binary()) -> binary().
-encode_data(#{payload := Payload}=Map, undefined) ->
-    jsx:encode(maps:put(payload, base64:encode(Payload), Map));
-encode_data(#{payload := Payload, port := Port}=Map, DecoderID) ->
-    Updates = case router_v8:decode(DecoderID, Payload, Port) of
-                  {ok, DecodedPayload} ->
-                      #{payload_raw => base64:encode(Payload),
-                        payload => DecodedPayload};
-                  {error, _Reason} ->
-                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, _Reason]),
-                      #{payload_raw => base64:encode(Payload),
-                        payload => <<>>}
-              end,
-    jsx:encode(maps:merge(Map, Updates)).
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->

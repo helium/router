@@ -401,13 +401,16 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
 
 -spec maybe_start_decoder(router_channel:channel()) -> ok.
 maybe_start_decoder(Channel) ->
-    case router_channel:decoder_id(Channel) of
+    case router_channel:decoder(Channel) of
         undefined ->
             lager:debug("no decoder attached");
-        DecoderID ->
-            lager:info("decoder ~p attached", [DecoderID]),
-            DecoderBody = router_channel:decoder_body(Channel),
-            ok = router_v8:add_decoder(DecoderID, DecoderBody)
+        Decoder ->
+            ChannelID = router_channel:id(Channel),
+            DecoderID = router_decoder:id(Decoder),
+            case router_decoder:add(Decoder) of
+                ok -> lager:info("decoder ~p attached to ~p", [DecoderID, ChannelID]);
+                {error, _Reason} -> lager:info("failed to attached decoder ~p to ~p: ~p", [DecoderID, ChannelID, _Reason])
+            end
     end.
 
 -spec remove_old_channels(pid(), map(), map()) -> map().

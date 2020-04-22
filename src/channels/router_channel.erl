@@ -1,19 +1,19 @@
 -module(router_channel).
 
--export([new/6, new/8,
+-export([new/6, new/7,
          id/1,
          handler/1,
          name/1,
          args/1,
          device_id/1,
-         decoder_id/1,
-         decoder_body/1,
+         decoder/1,
          controller/1,
          hash/1]).
 
 -export([start_link/0,
          add/3, delete/2, update/3,
-         handle_data/2]).
+         handle_data/2,
+         encode_data/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -24,9 +24,8 @@
                   name :: binary(),
                   args :: map(),
                   device_id  :: binary(),
-                  decoder_id :: undefined | binary(),
-                  decoder_body :: undefined | binary(),
-                  controller :: pid() | undefined}).
+                  controller :: pid() | undefined,
+                  decoder :: undefined | router_decoder:decoder()}).
 
 -type channel() :: #channel{}.
 
@@ -41,22 +40,19 @@ new(ID, Handler, Name, Args, DeviceID, Pid) ->
              device_id=DeviceID,
              controller=Pid}.
 
--spec new(binary(), atom(), binary(), map(), binary(), binary(),  binary(), pid()) -> channel().
-new(ID, Handler, Name, Args, DeviceID, DecoderID, DecoderBody, Pid) ->
+-spec new(binary(), atom(), binary(), map(), binary(), pid(), undefined | router_decoder:decoder()) -> channel().
+new(ID, Handler, Name, Args, DeviceID, Pid, Decoder) ->
     #channel{id=ID,
              handler=Handler,
              name=Name,
              args=Args,
              device_id=DeviceID,
-             decoder_id=DecoderID,
-             decoder_body=DecoderBody,
-             controller=Pid}.
+             controller=Pid,
+             decoder=Decoder}.
 
 -spec id(channel()) -> binary().
-id(#channel{id=ID, decoder_id=undefined}) ->
-    ID;
-id(#channel{id=ID, decoder_id=DecoderID}) ->
-    <<ID/binary, DecoderID/binary>>.
+id(#channel{id=ID}) ->
+    ID.
 
 -spec handler(channel()) -> {atom(), binary()}.
 handler(Channel) ->
@@ -74,13 +70,9 @@ args(Channel) ->
 device_id(Channel) ->
     Channel#channel.device_id.
 
--spec decoder_id(channel()) -> undefined | binary().
-decoder_id(Channel) ->
-    Channel#channel.decoder_id.
-
--spec decoder_body(channel()) -> undefined | binary().
-decoder_body(Channel) ->
-    Channel#channel.decoder_body.
+-spec decoder(channel()) -> undefined | router_decoder:decoder().
+decoder(Channel) ->
+    Channel#channel.decoder.
 
 -spec controller(channel()) -> pid().
 controller(Channel) ->
@@ -117,6 +109,25 @@ handle_data(Pid, Data) ->
     ok = gen_event:notify(Pid, {data, Ref, Data}),
     {ok, Ref}.
 
+-spec encode_data(channel(), map()) -> binary().
+encode_data(Channel, Map) ->
+    encode_data_(?MODULE:decoder(Channel), Map).
+
+encode_data_(undefined, #{payload := Payload}=Map) ->
+    jsx:encode(maps:put(payload, base64:encode(Payload), Map));
+encode_data_(Decoder, #{payload := Payload, port := Port}=Map) ->
+    DecoderID = router_decoder:id(Decoder),
+    Updates = case router_decoder:decode(DecoderID, Payload, Port) of
+                  {ok, DecodedPayload} ->
+                      #{payload_raw => base64:encode(Payload),
+                        payload => DecodedPayload};
+                  {error, _Reason} ->
+                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, _Reason]),
+                      #{payload_raw => base64:encode(Payload),
+                        payload => <<>>}
+              end,
+    jsx:encode(maps:merge(Map, Updates)).
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -128,28 +139,25 @@ new_test() ->
                         name= <<"channel_name">>,
                         args=[],
                         device_id= <<"device_id">>,
-                        decoder_id=undefined,
-                        controller=self()},
+                        controller=self(),
+                        decoder=undefined},
     ?assertEqual(Channel0, new(<<"channel_id">>, router_http_channel, <<"channel_name">>,
                                [], <<"device_id">>, self())),
+    Decoder = router_decoder:new(<<"decoder_id">>, custom, #{}),
     Channel1 = #channel{id= <<"channel_id">>,
                         handler=router_http_channel,
                         name= <<"channel_name">>,
                         args=[],
                         device_id= <<"device_id">>,
-                        decoder_id= <<"decoder_id">>,
-                        decoder_body= <<"decoder_body">>,
-                        controller=self()},
+                        controller=self(),
+                        decoder=Decoder},
     ?assertEqual(Channel1, new(<<"channel_id">>, router_http_channel, <<"channel_name">>,
-                               [], <<"device_id">>, <<"decoder_id">>, <<"decoder_body">>, self())).
+                               [], <<"device_id">>, self(), Decoder)).
 
 id_test() ->
     Channel0 = new(<<"channel_id">>, router_http_channel,
                    <<"channel_name">>, [], <<"device_id">>, self()),
-    ?assertEqual(<<"channel_id">>, id(Channel0)),
-    Channel1 = new(<<"channel_id">>, router_http_channel, <<"channel_name">>,
-                   [], <<"device_id">>, <<"decoder_id">>, <<"decoder_body">>, self()),
-    ?assertEqual(<<"channel_iddecoder_id">>, id(Channel1)).
+    ?assertEqual(<<"channel_id">>, id(Channel0)).
 
 handler_test() ->
     Channel = new(<<"channel_id">>, router_http_channel,
@@ -171,15 +179,10 @@ device_id_test() ->
                   <<"channel_name">>, [], <<"device_id">>, self()),
     ?assertEqual(<<"device_id">>, device_id(Channel)).
 
-decoder_id_test() ->
+decoder_test() ->
     Channel = new(<<"channel_id">>, router_http_channel,
                   <<"channel_name">>, [], <<"device_id">>, self()),
-    ?assertEqual(undefined, decoder_id(Channel)).
-
-decoder_body_test() ->
-    Channel = new(<<"channel_id">>, router_http_channel,
-                  <<"channel_name">>, [], <<"device_id">>, self()),
-    ?assertEqual(undefined, decoder_body(Channel)).
+    ?assertEqual(undefined, decoder(Channel)).
 
 controller_test() ->
     Channel = new(<<"channel_id">>, router_http_channel,

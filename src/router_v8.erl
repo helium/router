@@ -11,8 +11,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         add_decoder/2,
-         decode/3]).
+         get/0]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -35,40 +34,14 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec add_decoder(binary(), binary()) -> ok.
-add_decoder(ID, Function) ->
-    case binary:match(Function, <<"function Decoder(bytes, port)">>) of
-        nomatch ->
-            {error, no_decoder_fun_found};
-        _ ->
-            {ok, VM} = gen_server:call(?SERVER, vm),
-            Hash = crypto:hash(sha256, Function),
-            case ets:lookup(?SERVER, ID) of
-                [] ->
-                    create_context(VM, ID, Function);
-                [{ID, {Hash, _VM, _Context}}] ->
-                    lager:debug("context ~p already exists", [ID]),
-                    ok;
-                [{ID, _}] ->
-                    _ = ets:delete(?SERVER, ID),
-                    create_context(VM, ID, Function)
-            end
-    end.
-
--spec decode(binary(), binary(), integer()) -> {ok, any()} | {error, any()}.
-decode(ID, Payload, Port) ->
-    case ets:lookup(?SERVER, ID) of
-        [] ->
-            {error, unknown_decoder};
-        [{ID, {_Hash, VM, Context}}] ->
-            erlang_v8:call(VM, Context, <<"Decoder">>, [erlang:binary_to_list(Payload), Port])
-    end.
+-spec get() -> {ok, pid()}.
+get() ->
+    gen_server:call(?SERVER, vm).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(_Args) ->
-    ets:new(?SERVER, [public, named_table, set]),
     lager:info("~p init with ~p", [?SERVER, _Args]),
     {ok, VM} = erlang_v8:start_vm(),
     {ok, #state{vm=VM}}.
@@ -97,17 +70,3 @@ terminate(_Reason, #state{vm=VM}=_State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec create_context(pid(), binary(), binary()) -> ok | {error, any()}.
-create_context(VM, ID, Function) ->
-    {ok, Context} = erlang_v8:create_context(VM),
-    case erlang_v8:eval(VM, Context, Function) of
-        {ok, _} ->
-            lager:info("context ~p created with ~p", [ID, Function]),
-            Hash = crypto:hash(sha256, Function),
-            ets:insert(?SERVER, {ID, {Hash, VM, Context}}),
-            ok;
-        {error, _Reason}=Error ->
-            lager:warning("failed to create context ~p: ~p", [ID, _Reason]),
-            Error
-    end.

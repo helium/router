@@ -223,12 +223,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
     DeviceID = router_device:id(Device),
-    Channel = case decoder(JSONChannel) of
-                  {undefined, undefined} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, Pid);
-                  {DecoderID, DecoderBody} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, DecoderID, DecoderBody, Pid)
-              end,
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -237,12 +233,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = case decoder(JSONChannel) of
-                  {undefined, undefined} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, Pid);
-                  {DecoderID, DecoderBody} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, DecoderID, DecoderBody, Pid)
-              end,
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -253,27 +245,30 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = case decoder(JSONChannel) of
-                  {undefined, undefined} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, Pid);
-                  {DecoderID, DecoderBody} ->
-                      router_channel:new(ID, Handler, Name, Args, DeviceID, DecoderID, DecoderBody, Pid)
-              end,
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     {true, Channel};
 convert_channel(_Device, _Pid, _Channel) ->
     false.
 
--spec decoder(map()) -> {undefined | binary(), undefined | binary()}.
-decoder(JSONChannel) ->
+-spec convert_decoder(map()) -> undefined | router_decoder:decoder().
+convert_decoder(JSONChannel) ->
     case kvc:path([<<"function">>], JSONChannel, undefined) of
         undefined ->
-            {undefined, undefined};
-        Function ->
-            case kvc:path([<<"active">>], Function, false) of
+            undefined;
+        JSONDecoder ->
+            case kvc:path([<<"active">>], JSONDecoder, false) of
                 false ->
-                    {undefined, undefined};
+                    undefined;
                 true ->
-                    {kvc:path([<<"id">>], Function), kvc:path([<<"body">>], Function)}
+                    case kvc:path([<<"format">>], JSONDecoder, undefined) of
+                        <<"custom">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder),
+                                               custom,
+                                               #{function => kvc:path([<<"body">>], JSONDecoder)});
+                        _ ->
+                            undefined
+                    end
             end
     end.
 

@@ -93,7 +93,6 @@ handle_info(client, {Port, {data,{eol,<<"{\"rxpk\"", _/binary>> = JSONBin}}}, St
     State#state.pid ! rx,
     HeliumPacket = #packet_pb{
                       type=lorawan,
-                      oui=2,
                       payload=base64:decode(maps:get(<<"data">>, JSON)),
                       signal_strength=maps:get(<<"rssi">>, JSON),
                       frequency=maps:get(<<"freq">>, JSON),

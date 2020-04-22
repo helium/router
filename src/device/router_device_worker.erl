@@ -17,7 +17,8 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          handle_packet/2,
-         queue_message/2]).
+         queue_message/2,
+         state/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -50,9 +51,12 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
+                oui :: pos_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
                 frame_cache = #{} :: #{integer() => #frame_cache{}}}).
+
+-type state() :: #state{}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -73,6 +77,10 @@ handle_packet(Packet, PubKeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
+-spec state(Pid :: pid()) -> state().
+state(Pid) ->
+    gen_server:call(Pid, state, infinity).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -81,14 +89,18 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
+    {ok, OUI} = application:get_env(router, oui),
     Device = get_device(DB, CF, ID),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{device_worker => self(),
                                                    device => Device}),
     self() ! refresh_device_metadata,
     lager:md([{device_id, router_device:id(Device)}]),
-    {ok, #state{db=DB, cf=CF, device=Device, channels_worker=Pid}}.
+    {ok, #state{db=DB, cf=CF, device=Device, oui=OUI, channels_worker=Pid}}.
 
+handle_call(state, _From, State) ->
+    lager:info("got state msg, state: ~p", [State]),
+    {reply, State, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -101,8 +113,9 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     lager:debug("queue downlink message"),
     {noreply, State#state{device=Device1}};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
-                                                                       join_cache=Cache0}=State0) ->
-    case handle_join(Packet0, PubKeyBin, APIDevice, AppKey, Device0) of
+                                                                       join_cache=Cache0,
+                                                                       oui=OUI}=State0) ->
+    case handle_join(Packet0, PubKeyBin, OUI, APIDevice, AppKey, Device0) of
         {error, _Reason} ->
             {noreply, State0};
         {ok, Packet1, Device1, JoinNonce} ->
@@ -315,29 +328,34 @@ maybe_start_worker(DeviceID) ->
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), router_device:device(), binary(), router_device:device()) ->
+-spec handle_join(#packet_pb{},
+                  libp2p_crypto:pubkey_to_bin(),
+                  pos_integer(),
+                  router_device:device(),
+                  binary(),
+                  router_device:device()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
-            PubKeyBin, APIDevice, AppKey, Device) when MType == ?JOIN_REQ ->
-    handle_join(Packet, PubKeyBin, APIDevice, AppKey, Device, router_device:join_nonce(Device));
-handle_join(_Packet, _PubKeyBin, _APIDevice, _AppKey, _Device) ->
+            PubKeyBin, OUI, APIDevice, AppKey, Device) when MType == ?JOIN_REQ ->
+    handle_join(Packet, PubKeyBin, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device));
+handle_join(_Packet, _PubKeyBin, _OUI, _APIDevice, _AppKey, _Device) ->
     {error, not_join_req}.
 
--spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
+-spec handle_join(#packet_pb{}, libp2p_crypto:pubkey_to_bin(), pos_integer(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, #packet_pb{}, router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, _APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
+            PubKeyBin, OUI, _APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, _DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
     lager:warning("~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, Nonce, AName]),
     {error, bad_nonce};
-handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
+handle_join(#packet_pb{type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
                        payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, APIDevice, AppKey, Device0, _OldNonce) ->
+            PubKeyBin, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     NetID = <<"He2">>,
@@ -366,7 +384,7 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
     DeviceName = router_device:name(APIDevice),
     lager:info("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-    Packet = #packet_pb{oui=OUI, type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+    Packet = #packet_pb{type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     DeviceUpdates = [{name, DeviceName},
                      {dev_eui, DevEUI},
@@ -383,7 +401,7 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
 %% @doc
 %% Handle frame packet, figures out FPort/FOptsLen to see if
 %% frame is valid and check if packet is ACKnowledging
-%% previous packet sent 
+%% previous packet sent
 %% @end
 %%%-------------------------------------------------------------------
 -spec handle_frame_packet(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
@@ -519,7 +537,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, R
                                           router_device:offset(Device0),
                                           #{<<"tmst">> => Packet0#packet_pb.timestamp, <<"freq">> => Packet0#packet_pb.frequency,
                                             <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
-    Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
+    Packet1 = #packet_pb{type=Packet0#packet_pb.type, payload=Reply,
                          timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
     case ConfirmedDown of
         true ->

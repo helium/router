@@ -10,7 +10,7 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
-         join_packet/3, join_packet/4, 
+         join_packet/3, join_packet/4,
          frame_packet/5, frame_packet/6,
          tmp_dir/0, tmp_dir/1]).
 
@@ -30,6 +30,7 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
+    ok = application:set_env(router, oui, 1),
     ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, router_device_api_console, [{endpoint, ?CONSOLE_URL},
                                                                  {ws_endpoint, ?CONSOLE_WS_URL},
@@ -94,18 +95,18 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    {state, _DB, _CF, _Device, _OUI, Pid, _, _} = router_device_worker:state(WorkerPid),
     Pid.
 
 force_refresh_channels(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    {state, _DB, _CF, _Device, _OUI, Pid, _, _} = router_device_worker:state(WorkerPid),
     Pid ! refresh_channels,
     timer:sleep(250),
     ok.
 
 ignore_messages() ->
-    receive 
+    receive
         Msg ->
             ct:pal("ignored message: ~p~n", [Msg]),
             ?MODULE:ignore_messages()
@@ -275,7 +276,6 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     Payload1 = <<Payload0/binary, MIC:4/binary>>,
     HeliumPacket = #packet_pb{
                       type=lorawan,
-                      oui=2,
                       payload=Payload1,
                       signal_strength=RSSI,
                       frequency=923.3,
@@ -311,7 +311,6 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Payload1 = <<Payload0/binary, MIC:4/binary>>,
     HeliumPacket = #packet_pb{
                       type=lorawan,
-                      oui=2,
                       payload=Payload1,
                       frequency=923.3,
                       datarate= <<"SF8BW125">>,

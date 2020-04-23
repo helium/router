@@ -23,8 +23,8 @@
          terminate/2,
          code_change/3]).
 
-
 -define(SERVER, ?MODULE).
+-define(REG_NAME, router_v8_vm).
 
 -record(state, {vm :: pid()}).
 
@@ -36,7 +36,7 @@ start_link(Args) ->
 
 -spec get() -> {ok, pid()}.
 get() ->
-    gen_server:call(?SERVER, vm).
+    {ok, erlang:whereis(?REG_NAME)}.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -44,10 +44,9 @@ get() ->
 init(_Args) ->
     lager:info("~p init with ~p", [?SERVER, _Args]),
     {ok, VM} = erlang_v8:start_vm(),
+    true = erlang:register(?REG_NAME, VM),
     {ok, #state{vm=VM}}.
 
-handle_call(vm, _From, #state{vm=VM}=State) ->
-    {reply, {ok, VM}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -64,6 +63,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{vm=VM}=_State) ->
+    _ = erlang:unregister(?REG_NAME),
     _ = erlang_v8:stop_vm(VM),
     ok.
 

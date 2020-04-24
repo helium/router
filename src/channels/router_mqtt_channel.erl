@@ -54,7 +54,7 @@ handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, endpoin
     Body = encode_data(Data),
     Res = emqtt:publish(Conn, Topic, Body, 0),
     lager:debug("published: ~p result: ~p", [Data, Res]),
-    Debug = #{req => #{endpoint => Endpoint,
+    Debug = #{req => #{endpoint => erlang:list_to_binary(Endpoint),
                        topic => Topic,
                        qos => 0,
                        body => Body}},

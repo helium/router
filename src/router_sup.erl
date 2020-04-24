@@ -56,6 +56,8 @@ start_link() ->
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
+    _ = router_decoder:init_ets(),
+
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
@@ -85,7 +87,8 @@ init([]) ->
     {ok, {?FLAGS, [?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
                    ?WORKER(router_p2p, [P2PWorkerOpts]),
-                   ?WORKER(DeviceAPIModule, [DeviceAPIData])]}}.
+                   ?WORKER(DeviceAPIModule, [DeviceAPIData]),
+                   ?WORKER(router_v8, [#{}])]}}.
 
 %%====================================================================
 %% Internal functions

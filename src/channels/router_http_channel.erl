@@ -33,9 +33,10 @@ init({[Channel, _Device], _}) ->
     {ok, #state{channel=Channel, url=URL, headers=Headers1, method=Method}}.
 
 handle_event({data, Ref, Data}, #state{channel=Channel, url=URL, headers=Headers, method=Method}=State) ->
-    Body = encode_data(Data),
+    lager:debug("got data: ~p", [Data]),
+    Body = router_channel:encode_data(Channel, Data),
     Res = make_http_req(Method, URL, Headers, Body),
-    lager:debug("published: ~p result: ~p", [Data, Res]),
+    lager:debug("published: ~p result: ~p", [Body, Res]),
     Debug = #{req => #{method => Method,
                        url => URL,
                        headers => Headers,
@@ -68,10 +69,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec encode_data(map()) -> binary().
-encode_data(#{payload := Payload}=Map) ->
-    jsx:encode(maps:put(payload, base64:encode(Payload), Map)).
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->

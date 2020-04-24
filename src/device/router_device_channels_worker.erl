@@ -336,6 +336,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
     case router_channel:add(EventMgrRef, Channel, Device) of
         ok ->
             lager:info("channel ~p started", [{ChannelID, ChannelName}]),
+            ok = maybe_start_decoder(Channel),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
@@ -371,6 +372,7 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
     case router_channel:update(EventMgrRef, Channel, Device) of
         ok ->
             lager:info("channel ~p updated", [{ChannelID, ChannelName}]),
+            ok = maybe_start_decoder(Channel),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
@@ -395,6 +397,20 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
             {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
+    end.
+
+-spec maybe_start_decoder(router_channel:channel()) -> ok.
+maybe_start_decoder(Channel) ->
+    case router_channel:decoder(Channel) of
+        undefined ->
+            lager:debug("no decoder attached");
+        Decoder ->
+            ChannelID = router_channel:id(Channel),
+            DecoderID = router_decoder:id(Decoder),
+            case router_decoder:add(Decoder) of
+                ok -> lager:info("decoder ~p attached to ~p", [DecoderID, ChannelID]);
+                {error, _Reason} -> lager:info("failed to attached decoder ~p to ~p: ~p", [DecoderID, ChannelID, _Reason])
+            end
     end.
 
 -spec remove_old_channels(pid(), map(), map()) -> map().

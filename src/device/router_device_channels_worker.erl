@@ -36,7 +36,6 @@
         {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
          erlang:make_ref()}).
 -define(DATA_TIMEOUT, timer:seconds(1)).
--define(DATA_CLEANUP, timer:minutes(15)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
 -record(state, {event_mgr :: pid(),
@@ -45,6 +44,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
+                fcnt :: non_neg_integer(),
                 channels_resp_cache = #{} :: map()}).
 
 %% ------------------------------------------------------------------
@@ -102,10 +102,11 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     DeviceWorker = maps:get(device_worker, Args),
     Device = maps:get(device, Args),
+    lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    lager:md([{device_id, router_device:id(Device)}]),
-    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device}}.
+    FCnt = router_device:fcnt(Device),
+    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=FCnt}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -113,25 +114,28 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0}=State) ->
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1 =
-        case maps:get(FCnt, DataCache0, undefined) of
-            undefined ->
-                _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
-                maps:put(FCnt, #{PubKeyBin => Data}, DataCache0);
-            timeout ->
+        case FCnt > CurrFCnt of
+            false ->
                 lager:debug("we received a late packet from ~p: ~p", [PubKeyBin, Packet]),
                 DataCache0;
-            CachedData0 ->
-                CachedData1 = maps:put(PubKeyBin, Data, CachedData0),
-                case maps:get(PubKeyBin, CachedData0, undefined) of
+            true ->
+                case maps:get(FCnt, DataCache0, undefined) of
                     undefined ->
-                        maps:put(FCnt, CachedData1, DataCache0);
-                    {_, #packet_pb{signal_strength=RSSI}, _, _} ->
-                        case Packet#packet_pb.signal_strength > RSSI of
-                            true -> maps:put(FCnt, CachedData1, DataCache0);
-                            false -> DataCache0
+                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
+                        maps:put(FCnt, #{PubKeyBin => Data}, DataCache0);
+                    CachedData0 ->
+                        CachedData1 = maps:put(PubKeyBin, Data, CachedData0),
+                        case maps:get(PubKeyBin, CachedData0, undefined) of
+                            undefined ->
+                                maps:put(FCnt, CachedData1, DataCache0);
+                            {_, #packet_pb{signal_strength=RSSI}, _, _} ->
+                                case Packet#packet_pb.signal_strength > RSSI of
+                                    true -> maps:put(FCnt, CachedData1, DataCache0);
+                                    false -> DataCache0
+                                end
                         end
                 end
         end,
@@ -162,11 +166,9 @@ handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
     {ok, Ref, Map} = send_to_channel(CachedData, Device, EventMgrRef),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, Ref}),
-    _ = erlang:send_after(?DATA_CLEANUP, self(), {data_cleanup, FCnt}),
-    {noreply, State#state{data_cache=maps:put(FCnt, timeout, DataCache0),
+    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
+                          fcnt=FCnt,
                           channels_resp_cache=maps:put(Ref, {Map, []}, RespCache0)}};
-handle_info({data_cleanup, FCnt}, #state{data_cache=DataCache}=State) ->
-    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache)}};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------

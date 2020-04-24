@@ -36,7 +36,7 @@
         {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
          erlang:make_ref()}).
 -define(DATA_TIMEOUT, timer:seconds(1)).
--define(DATA_CLEANUP, timer:minutes(2)).
+-define(DATA_CLEANUP, timer:minutes(15)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
 -record(state, {event_mgr :: pid(),

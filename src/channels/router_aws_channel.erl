@@ -26,7 +26,7 @@
 -record(state, {channel :: router_channel:channel(),
                 aws :: pid(),
                 connection :: pid(),
-                endpoint :: binary(),
+                endpoint :: string(),
                 pubtopic :: binary()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -124,7 +124,7 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
--spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
+-spec connect(binary(), string(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
@@ -147,8 +147,7 @@ der_encode_cert(PEMCert) ->
     public_key:der_encode('Certificate', Cert).
 
 -spec setup_aws(router_channel:channel(),
-                router_device:device()) -> {ok, pid(), binary(), any(), any()}
-              | {error, any()}.
+                router_device:device()) -> {ok, pid(), string(), any(), any()} | {error, any()}.
 setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
     #{aws_access_key := AccessKey,
@@ -286,12 +285,14 @@ ensure_certificate(AWS, Device) ->
             end
     end.
 
+-spec get_iot_endpoint(pid()) -> {ok, string()} | {error, any()}.
 get_iot_endpoint(AWS) ->
     case httpc_aws:get(AWS, "iot", "/endpoint", []) of
         {error, _Reason, _} -> {error, {get_endpoint_failed, _Reason}};
         {ok, {_, [{"endpointAddress", Hostname}]}} -> {ok, Hostname}
     end.
 
+-spec get_certificate_from_arn(pid(), string()) -> {ok, string()} | {error, any()}.
 get_certificate_from_arn(AWS, CertificateArn) ->
     ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateArn, ":"),
     ["cert", CertificateId] = string:tokens(Resource, "/"),
@@ -303,6 +304,7 @@ get_certificate_from_arn(AWS, CertificateArn) ->
             {ok, proplists:get_value("certificatePem", CertificateDesc)}
     end.
 
+-spec attach_certificate(pid(), binary(), string()) -> ok | {error, any()}.
 attach_certificate(AWS, DeviceID, CertificateArn) ->
     Headers0 = [{"x-amzn-iot-principal", CertificateArn},
                 {"content-type", "text/plain"}],

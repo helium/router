@@ -44,7 +44,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
-                fcnt :: non_neg_integer(),
+                fcnt :: integer(),
                 channels_resp_cache = #{} :: map()}).
 
 %% ------------------------------------------------------------------
@@ -105,8 +105,7 @@ init(Args) ->
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    FCnt = router_device:fcnt(Device),
-    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=FCnt}}.
+    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=-1}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

@@ -31,6 +31,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
+                fcnt :: integer(),
                 channels_resp_cache = #{} :: map()}).
 
 %%--------------------------------------------------------------------

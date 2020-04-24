@@ -134,7 +134,7 @@ no_channel_test(Config) ->
                                    ?CONSOLE_DEVICE_ID,
                                    DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
@@ -144,7 +144,7 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only HTTP channel now
     State0 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _}, State0),
+    ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(5, State0))),
 
     %% Send UNCONFIRMED_UP frame packet to check http channel is working
@@ -205,7 +205,7 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only no_channel 
     State1 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _}, State1),
+    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(5, State1))),
 
     ok.

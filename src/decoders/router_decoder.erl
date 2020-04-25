@@ -49,10 +49,10 @@ add(Decoder) ->
 -spec decode(binary(), binary(), integer()) -> {ok, any()} | {error, any()}.
 decode(ID, Payload, Port) ->
     case lookup(ID) of
-        {ok, custom, {_Hash, VM, Context}} ->
-            erlang_v8:call(VM, Context, <<"Decoder">>, [erlang:binary_to_list(Payload), Port]);
         {error, not_found} ->
             {error, unknown_decoder};
+        {ok, custom, _Pid} ->
+            router_decoder_custom_sup:decode(ID, erlang:binary_to_list(Payload), Port);
         {ok, Type, _} ->
             {error, {unhandled_decoder, Type}}
     end.
@@ -63,42 +63,15 @@ decode(ID, Payload, Port) ->
 
 -spec add(atom(), decoder()) -> ok | {error, any()}.
 add(custom, Decoder) ->
-    ID = ?MODULE:id(Decoder),
-    Args = ?MODULE:args(Decoder),
-    Function = maps:get(function, Args),
-    case binary:match(Function, <<"function Decoder(bytes, port)">>) of
-        nomatch ->
-            {error, no_decoder_fun_found};
-        _ ->
-            {ok, VM} = router_v8:get(),
-            Hash = crypto:hash(sha256, Function),
-            case lookup(ID) of
-                {error, not_found} ->
-                    create_context(VM, ID, Function);
-                {ok, custom, {Hash, _VM, _Context}} ->
-                    lager:debug("context ~p already exists", [ID]),
-                    ok;
-                {ok, custom, {_Hash, _VM, _Context}} ->
-                    ok = delete(ID),
-                    create_context(VM, ID, Function)
-            end
+    case router_decoder_custom_sup:add(Decoder) of
+        {error, _Reason}=Error ->
+            Error;
+        {ok, Pid} ->
+            ID = ?MODULE:id(Decoder),
+            insert(ID, custom, Pid)
     end;
 add(Other, _Decoder) ->
     {error, {decoder_not_handled, Other}}.
-
--spec create_context(pid(), binary(), binary()) -> ok | {error, any()}.
-create_context(VM, ID, Function) ->
-    {ok, Context} = erlang_v8:create_context(VM),
-    case erlang_v8:eval(VM, Context, Function) of
-        {ok, _} ->
-            lager:info("context ~p created with ~p", [ID, Function]),
-            Hash = crypto:hash(sha256, Function),
-            ok = insert(ID, custom, {Hash, VM, Context}),
-            ok;
-        {error, _Reason}=Error ->
-            lager:warning("failed to create context ~p: ~p", [ID, _Reason]),
-            Error
-    end.
 
 -spec lookup(binary()) -> {ok, atom(), any()} | {error, not_found}.
 lookup(ID) ->
@@ -110,11 +83,6 @@ lookup(ID) ->
 -spec insert(binary(), atom(), any()) -> ok.
 insert(ID, Type, Info) ->
     true = ets:insert(?ETS, {ID, {Type, Info}}),
-    ok.
-
--spec delete(binary()) -> ok.
-delete(ID) ->
-    true = ets:delete(?ETS, ID),
     ok.
 
 %% ------------------------------------------------------------------

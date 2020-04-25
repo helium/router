@@ -23,7 +23,8 @@
     erl_angry_purple_tiger,
     throttle,
     httpc_aws,
-    websocket_client
+    websocket_client,
+    erlang_v8
    ]},
   {env,[]},
   {modules, []},

@@ -19,7 +19,7 @@
 -define(FLAGS,  #{strategy => simple_one_for_one,
                   intensity => 3,
                   period => 60}).
--define(ETS, router_decoders_sup_ets).
+-define(ETS, router_decoder_custom_sup_ets).
 
 %%====================================================================
 %% API functions
@@ -28,6 +28,7 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+-spec add(router_decoder:decoder()) -> {ok, pid()} | {error, any()}.
 add(Decoder) ->
     ID = router_decoder:id(Decoder),
     Args = router_decoder:args(Decoder),
@@ -41,8 +42,8 @@ add(Decoder) ->
                 {error, not_found} ->
                     start_worker(ID, Hash, Args);
                 {ok, Hash, Pid} ->
-                    lager:debug("context ~p already exists here: ", [ID, Pid]),
-                    ok;
+                    lager:debug("context ~p already exists here: ~p", [ID, Pid]),
+                    {ok, Pid};
                 {ok, _Hash, Pid} ->
                     ok = stop_worker(ID, Pid),
                     start_worker(ID, Hash, Args)
@@ -55,7 +56,7 @@ decode(ID, Payload, Port) ->
         {error, _Reason}=Error ->
             Error;
         {ok, _Hash, Pid} ->
-            router_decoder_custom:decode(Pid, Payload, Port)
+            router_decoder_custom_worker:decode(Pid, Payload, Port)
     end.
 
 %%====================================================================
@@ -64,7 +65,7 @@ decode(ID, Payload, Port) ->
 
 init([]) ->
     ets:new(?ETS, [public, named_table, set]),
-    {ok, {?FLAGS, [?WORKER(router_device_worker)]}}.
+    {ok, {?FLAGS, [?WORKER(router_decoder_custom_worker)]}}.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

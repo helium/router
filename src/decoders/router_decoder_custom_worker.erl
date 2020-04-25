@@ -3,7 +3,7 @@
 %% == Router v8 Context==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_decoder_custom).
+-module(router_decoder_custom_worker).
 
 -behavior(gen_server).
 
@@ -36,7 +36,7 @@ start_link(Args) ->
 
 -spec decode(pid(), list(), integer()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port) ->
-    gen_Server:call(Pid, {decode, Payload, Port}).
+    gen_server:call(Pid, {decode, Payload, Port}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

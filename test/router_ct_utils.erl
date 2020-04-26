@@ -541,11 +541,6 @@ init_per_testcase(Mod, TestCase, Config0, NumRouters) ->
     RoutersAndPorts = init_ports(Config, TotalRouters),
     RouterKeys = init_keys(Config, RoutersAndPorts),
 
-    {_Miner, {_TCPPort, _UDPPort}, _ECDH, _PubKey, Addr, _SigFun} = hd(MinerKeys),
-
-    %% TODO: This should probably be router addrs
-    DefaultRouters = libp2p_crypto:pubkey_bin_to_p2p(Addr),
-
     %% NOTE: elli must be running before router nodes start
     Tab = ets:new(router_ct_utils, [public, set]),
     ElliOpts = [{callback, console_callback},
@@ -555,42 +550,57 @@ init_per_testcase(Mod, TestCase, Config0, NumRouters) ->
                ],
     {ok, ElliPid} = elli:start_link(ElliOpts),
 
-    MinerConfigResult = miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, DefaultRouters, MinerKeys),
-    RouterConfigResult = router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys),
-
-    Miners = [M || {M, _} <- MinersAndPorts],
-    Routers = [M || {M, _} <- RoutersAndPorts],
+    %% Get miner config results
+    MinerConfigResult = miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, MinerKeys),
 
     %% check that the config loaded correctly on each miner
     true = check_config_result(MinerConfigResult),
+
+    %% Get router config results
+    RouterConfigResult = router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys),
+
+    %% Gather router nodes
+    Routers = [M || {M, _} <- RoutersAndPorts],
+
     %% check that the config loaded correctly on each router
     true = check_config_result(RouterConfigResult),
 
-    MinerAddrs = gather_addrs(Miners),
-    RouterAddrs = gather_addrs(Routers),
+    %% Gather miner nodes
+    Miners = [M || {M, _} <- MinersAndPorts],
+
+    %% Gather miner listen addrs
+    MinerListenAddrs = acc_listen_addrs(Miners),
+
+    %% Gather router listen addrs
+    RouterListenAddrs = acc_listen_addrs(Routers),
 
     %% connect miners
-    true = connect_addrs(Miners, MinerAddrs),
+    true = connect_addrs(Miners, MinerListenAddrs),
 
     %% connect routers
-    true = connect_addrs(Routers, RouterAddrs),
+    true = connect_addrs(Routers, RouterListenAddrs),
 
     %% make sure each miner is gossiping with a majority of its peers
-    true = check_gossip(Miners, MinerAddrs),
+    true = check_gossip(Miners, MinerListenAddrs),
 
     %% accumulate the pubkey_bins of each miner
-    MinerPubkeyBins = gather_pubkey_bins(Miners),
+    MinerPubkeyBins = acc_pubkey_bins(Miners),
 
     %% accumulate the pubkey_bins of each miner
-    RouterPubkeyBins = gather_pubkey_bins(Routers),
+    RouterPubkeyBins = acc_pubkey_bins(Routers),
 
+    %% Set these routers as miner default routers
+    DefaultRouters = [libp2p_crypto:pubkey_bin_to_p2p(P) || P <- RouterPubkeyBins],
+    true = set_miner_default_routers(Miners, DefaultRouters),
+
+    %% add both miners and router to cover
     {ok, _} = ct_cover:add_nodes(Miners ++ Routers),
 
     %% wait until we get confirmation the miners are fully up
     %% which we are determining by the miner_consensus_mgr being registered
     ok = router_ct_utils:wait_for_registration(Miners, miner_consensus_mgr),
-                                                %ok = router_ct_utils:wait_for_registration(Miners, blockchain_worker),
 
+    %% XXX Configure packet forwarder, this is not required?
     UpdatedMinersAndPorts = lists:map(fun({Miner, {TCPPort, _}}) ->
                                               {ok, RandomPort} = ct_rpc:call(Miner, miner_lora, port, []),
                                               ct:pal("~p is listening for packet forwarder on ~p", [Miner, RandomPort]),
@@ -611,7 +621,8 @@ init_per_testcase(Mod, TestCase, Config0, NumRouters) ->
      {election_interval, Interval},
      {num_consensus_members, NumConsensusMembers},
      {rpc_timeout, timer:seconds(5)},
-     {elli, ElliPid}
+     {elli, ElliPid},
+     {default_routers, DefaultRouters}
     | Config
     ].
 
@@ -998,7 +1009,7 @@ check_config_result(ConfigResult) ->
       ConfigResult
      ).
 
-gather_addrs(Nodes) ->
+acc_listen_addrs(Nodes) ->
     router_ct_utils:pmap(
       fun(Node) ->
               Swarm = ct_rpc:call(Node, blockchain_swarm, swarm, [], 2000),
@@ -1035,7 +1046,7 @@ check_gossip(Nodes, Addrs) ->
                                                          end
                                                  end, Nodes)
                                end).
-gather_pubkey_bins(Nodes) ->
+acc_pubkey_bins(Nodes) ->
     lists:foldl(
       fun(Node, Acc) ->
               Address = ct_rpc:call(Node, blockchain_swarm, pubkey_bin, []),
@@ -1086,7 +1097,7 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
       RouterKeys
      ).
 
-miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, DefaultRouters, MinerKeys) ->
+miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, MinerKeys) ->
     router_ct_utils:pmap(
       fun({Miner, {TCPPort, UDPPort}, ECDH, PubKey, _Addr, SigFun}) ->
               ct:pal("Miner ~p", [Miner]),
@@ -1124,7 +1135,6 @@ miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, Defaul
               ct_rpc:call(Miner, application, set_env, [miner, curve, Curve]),
               ct_rpc:call(Miner, application, set_env, [miner, radio_device, {{127,0,0,1}, UDPPort, {127,0,0,1}, TCPPort}]),
               ct_rpc:call(Miner, application, set_env, [miner, stabilization_period_start, 2]),
-              ct_rpc:call(Miner, application, set_env, [miner, default_routers, [DefaultRouters]]),
 
               {ok, _StartedApps} = ct_rpc:call(Miner, application, ensure_all_started, [miner]),
               ok
@@ -1142,3 +1152,10 @@ start_runner() ->
         {error, {already_started, _}} -> ok;
         {error, {{already_started, _},_}} -> ok
     end.
+
+set_miner_default_routers(Miners, DefaultRouters) ->
+    Res = router_ct_utils:pmap(fun(M) ->
+                                       ct_rpc:call(M, application, set_env, [miner, default_routers, DefaultRouters])
+                               end,
+                               Miners),
+    lists:all(fun(R) -> R == ok end, Res).

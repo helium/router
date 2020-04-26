@@ -30,10 +30,10 @@ init_per_suite(Config) ->
 end_per_suite(Config) ->
     Config.
 
-init_per_testcase(_TestCase, Config0) ->
-    Config = router_ct_utils:init_per_testcase(?MODULE, _TestCase, Config0),
+init_per_testcase(TestCase, Config0) ->
+    Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),
-    Addresses = ?config(addresses, Config),
+    Addresses = ?config(miner_pubkey_bins, Config),
     Balance = 5000,
     InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
     InitialDCTxns = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
@@ -44,6 +44,7 @@ init_per_testcase(_TestCase, Config0) ->
     BlockTime = ?config(block_time, Config),
     BatchSize = ?config(batch_size, Config),
     Curve = ?config(dkg_curve, Config),
+    Routers = ?config(routers, Config),
 
     SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
                ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
@@ -73,15 +74,21 @@ init_per_testcase(_TestCase, Config0) ->
 
     %% Get both consensus and non consensus miners
     {ConsensusMiners, NonConsensusMiners} = router_ct_utils:miners_by_consensus_state(Miners),
-    %% integrate genesis block
-    _GenesisLoadResults = router_ct_utils:integrate_genesis_block(hd(ConsensusMiners), NonConsensusMiners),
 
-    %% confirm we have a height of 1
+    %% integrate genesis block on non_consensus_miners
+    true = router_ct_utils:integrate_genesis_block(hd(ConsensusMiners), NonConsensusMiners),
+
+    %% integrate genesis block on routers
+    true = router_ct_utils:integrate_genesis_block(hd(ConsensusMiners), Routers),
+
+    %% confirm we have a height of 1 on all miners
     ok = router_ct_utils:wait_for_gte(height_exactly, Miners, 1),
 
+    %% confirm we have a height of 1 on routers
+    ok = router_ct_utils:wait_for_gte(height_exactly, Routers, 1),
+
     [{consensus_miners, ConsensusMiners},
-     {non_consensus_miners, NonConsensusMiners},
-     {default_routers, application:get_env(miner, default_routers, [])}
+     {non_consensus_miners, NonConsensusMiners}
     | Config].
 
 end_per_testcase(_TestCase, Config) ->

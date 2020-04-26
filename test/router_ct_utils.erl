@@ -6,9 +6,14 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
 -include("router_ct_macros.hrl").
+-include("utils/console_test.hrl").
 
 -define(BASE_TMP_DIR, "./_build/test/tmp").
 -define(BASE_TMP_DIR_TEMPLATE, "XXXXXXXXXX").
+-define(APPEUI, <<0,0,0,0,0,0,0,0>>).
+-define(DEVEUI, <<16#EF, 16#BE, 16#AD, 16#DE, 16#EF, 16#BE, 16#AD, 16#DE>>).
+-define(APPKEY, <<16#2B, 16#7E, 16#15, 16#16, 16#28, 16#AE, 16#D2, 16#A6, 16#AB, 16#F7, 16#15, 16#88, 16#09, 16#CF, 16#4F, 16#3C>>).
+
 
 -export([
          init_per_testcase/3,
@@ -151,14 +156,14 @@ election_check(NotSeen0, Miners, AddrList, Owner) ->
     Owner ! {not_seen, NotSeen},
     election_check(NotSeen, Miners, AddrList, Owner).
 
-integrate_genesis_block(ConsensusMiner, NonConsensusMiners)->
+integrate_genesis_block(ConsensusMiner, Nodes)->
     Blockchain = ct_rpc:call(ConsensusMiner, blockchain_worker, blockchain, []),
     {ok, GenesisBlock} = ct_rpc:call(ConsensusMiner, blockchain, genesis_block, [Blockchain]),
 
-    %% TODO - do we need to assert here on results from genesis load ?
-    router_ct_utils:pmap(fun(M) ->
-                                 ct_rpc:call(M, blockchain_worker, integrate_genesis_block, [GenesisBlock])
-                         end, NonConsensusMiners).
+    Res = router_ct_utils:pmap(fun(Node) ->
+                                       ct_rpc:call(Node, blockchain_worker, integrate_genesis_block, [GenesisBlock])
+                               end, Nodes),
+    lists:all(fun(R) -> R == ok end, Res).
 
 blockchain_worker_check(Miners)->
     lists:all(
@@ -508,174 +513,81 @@ partition_miners(Members, AddrList) ->
                             lists:member(Addr, Members)
                     end, Miners).
 
+%% configures one router by default
 init_per_testcase(Mod, TestCase, Config0) ->
+    init_per_testcase(Mod, TestCase, Config0, 1).
+
+init_per_testcase(Mod, TestCase, Config0, NumRouters) ->
     Config = init_base_dir_config(Mod, TestCase, Config0),
     BaseDir = ?config(base_dir, Config),
     LogDir = ?config(log_dir, Config),
 
-    os:cmd(os:find_executable("epmd")++" -daemon"),
-    {ok, Hostname} = inet:gethostname(),
-    case net_kernel:start([list_to_atom("runner-miner" ++
-                                            integer_to_list(erlang:system_time(nanosecond)) ++
-                                            "@"++Hostname), shortnames]) of
-        {ok, _} -> ok;
-        {error, {already_started, _}} -> ok;
-        {error, {{already_started, _},_}} -> ok
-    end,
+    ok = start_runner(),
 
     %% Miner configuration, can be input from os env
-    TotalMiners =
-        case TestCase of
-            restart_test ->
-                4;
-            _ ->
-                get_config("T", 8)
-        end,
-    NumConsensusMembers =
-        case TestCase of
-            group_change_test ->
-                4;
-            restart_test ->
-                4;
-            _ ->
-                get_config("N", 7)
-        end,
+    TotalMiners = get_config("T", 5),
+    NumConsensusMembers = get_config("N", 4),
     SeedNodes = [],
     Port = get_config("PORT", 0),
     Curve = 'SS512',
     BlockTime = get_config("BT", 100),
     BatchSize = get_config("BS", 500),
     Interval = get_config("INT", 5),
+    MinersAndPorts = init_ports(Config, TotalMiners),
+    MinerKeys = init_keys(Config, MinersAndPorts),
 
-    MinersAndPorts = router_ct_utils:pmap(
-                       fun(I) ->
-                               MinerName = list_to_atom(integer_to_list(I) ++ router_ct_utils:randname(5)),
-                               {router_ct_utils:start_node(MinerName, Config, miner_dist_SUITE), {45000, 0}}
-                       end,
-                       lists:seq(1, TotalMiners)
-                      ),
+    %% Router configuration
+    TotalRouters = get_config("R", NumRouters),
+    RoutersAndPorts = init_ports(Config, TotalRouters),
+    RouterKeys = init_keys(Config, RoutersAndPorts),
 
-    Keys = router_ct_utils:pmap(
-             fun({Miner, Ports}) ->
-                     router_ct_utils:start_node(Miner, Config, miner_dist_SUITE),
-                     #{secret := GPriv, public := GPub} =
-                         libp2p_crypto:generate_keys(ecc_compact),
-                     GECDH = libp2p_crypto:mk_ecdh_fun(GPriv),
-                     GAddr = libp2p_crypto:pubkey_to_bin(GPub),
-                     GSigFun = libp2p_crypto:mk_sig_fun(GPriv),
-                     {Miner, Ports, GECDH, GPub, GAddr, GSigFun}
-             end, MinersAndPorts),
+    {_Miner, {_TCPPort, _UDPPort}, _ECDH, _PubKey, Addr, _SigFun} = hd(MinerKeys),
 
-    {_Miner, {_TCPPort, _UDPPort}, _ECDH, _PubKey, Addr, _SigFun} = hd(Keys),
+    %% TODO: This should probably be router addrs
     DefaultRouters = libp2p_crypto:pubkey_bin_to_p2p(Addr),
 
-    ConfigResult = router_ct_utils:pmap(
-                     fun({Miner, {TCPPort, UDPPort}, ECDH, PubKey, _Addr, SigFun}) ->
-                             ct:pal("Miner ~p", [Miner]),
-                             ct_rpc:call(Miner, cover, start, []),
-                             ct_rpc:call(Miner, application, load, [lager]),
-                             ct_rpc:call(Miner, application, load, [miner]),
-                             ct_rpc:call(Miner, application, load, [blockchain]),
-                             ct_rpc:call(Miner, application, load, [libp2p]),
-                             %% give each miner its own log directory
-                             LogRoot = LogDir ++ "_" ++ atom_to_list(Miner),
-                             ct:pal("MinerLogRoot: ~p", [LogRoot]),
-                             ct_rpc:call(Miner, application, set_env, [lager, log_root, LogRoot]),
-                             ct_rpc:call(Miner, application, set_env, [lager, metadata_whitelist, [poc_id]]),
+    %% NOTE: elli must be running before router nodes start
+    Tab = ets:new(router_ct_utils, [public, set]),
+    ElliOpts = [{callback, console_callback},
+                {callback_args, #{forward => self(), ets => Tab,
+                                  app_key => ?APPKEY, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
+                {port, 3000}
+               ],
+    {ok, ElliPid} = elli:start_link(ElliOpts),
 
-                             %% set blockchain configuration
-                             Key = {PubKey, ECDH, SigFun},
-
-                             MinerBaseDir = BaseDir ++ "_" ++ atom_to_list(Miner),
-                             ct:pal("MinerBaseDir: ~p", [MinerBaseDir]),
-                             %% set blockchain env
-                             ct_rpc:call(Miner, application, set_env, [blockchain, base_dir, MinerBaseDir]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, port, Port]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, seed_nodes, SeedNodes]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, key, Key]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, peer_cache_timeout, 30000]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, peerbook_update_interval, 200]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, peerbook_allow_rfc1918, true]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, disable_poc_v4_target_challenge_age, true]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, max_inbound_connections, TotalMiners*2]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, outbound_gossip_connections, TotalMiners]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, sync_cooldown_time, 5]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, sc_client_handler, router_sc_client_handler]),
-                             ct_rpc:call(Miner, application, set_env, [blockchain, sc_packet_handler, router_sc_packet_handler]),
-                             %% set miner configuration
-                             ct_rpc:call(Miner, application, set_env, [miner, curve, Curve]),
-                             ct_rpc:call(Miner, application, set_env, [miner, radio_device, {{127,0,0,1}, UDPPort, {127,0,0,1}, TCPPort}]),
-                             ct_rpc:call(Miner, application, set_env, [miner, stabilization_period_start, 2]),
-                             ct_rpc:call(Miner, application, set_env, [miner, default_routers, [DefaultRouters]]),
-
-                             {ok, _StartedApps} = ct_rpc:call(Miner, application, ensure_all_started, [miner]),
-                             ok
-                     end,
-                     Keys
-                    ),
+    MinerConfigResult = miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, DefaultRouters, MinerKeys),
+    RouterConfigResult = router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys),
 
     Miners = [M || {M, _} <- MinersAndPorts],
+    Routers = [M || {M, _} <- RoutersAndPorts],
+
     %% check that the config loaded correctly on each miner
-    true = lists:all(
-             fun(ok) -> true;
-                (Res) ->
-                     ct:pal("config setup failure: ~p", [Res]),
-                     false
-             end,
-             ConfigResult
-            ),
+    true = check_config_result(MinerConfigResult),
+    %% check that the config loaded correctly on each router
+    true = check_config_result(RouterConfigResult),
 
-    Addrs = router_ct_utils:pmap(
-              fun(Miner) ->
-                      Swarm = ct_rpc:call(Miner, blockchain_swarm, swarm, [], 2000),
-                      [H|_] = ct_rpc:call(Miner, libp2p_swarm, listen_addrs, [Swarm], 2000),
-                      H
-              end, Miners),
+    MinerAddrs = gather_addrs(Miners),
+    RouterAddrs = gather_addrs(Routers),
 
-    router_ct_utils:pmap(
-      fun(Miner) ->
-              Swarm = ct_rpc:call(Miner, blockchain_swarm, swarm, [], 2000),
-              lists:foreach(
-                fun(A) ->
-                        ct_rpc:call(Miner, libp2p_swarm, connect, [Swarm, A], 2000)
-                end, Addrs)
-      end, Miners),
+    %% connect miners
+    true = connect_addrs(Miners, MinerAddrs),
 
+    %% connect routers
+    true = connect_addrs(Routers, RouterAddrs),
 
-    %% make sure each node is gossiping with a majority of its peers
-    true = router_ct_utils:wait_until(fun() ->
-                                              lists:all(fun(Miner) ->
-                                                                GossipPeers = ct_rpc:call(Miner, blockchain_swarm, gossip_peers, [], 2000),
-                                                                case length(GossipPeers) >= (length(Miners) / 2) + 1 of
-                                                                    true -> true;
-                                                                    false ->
-                                                                        ct:pal("~p is not connected to enough peers ~p", [Miner, GossipPeers]),
-                                                                        Swarm = ct_rpc:call(Miner, blockchain_swarm, swarm, [], 2000),
-                                                                        lists:foreach(
-                                                                          fun(A) ->
-                                                                                  CRes = ct_rpc:call(Miner, libp2p_swarm, connect, [Swarm, A], 2000),
-                                                                                  ct:pal("Connecting ~p to ~p: ~p", [Miner, A, CRes])
-                                                                          end, Addrs),
-                                                                        false
-                                                                end
-                                                        end, Miners)
-                                      end),
+    %% make sure each miner is gossiping with a majority of its peers
+    true = check_gossip(Miners, MinerAddrs),
 
-    %% accumulate the address of each miner
-    Addresses = lists:foldl(
-                  fun(Miner, Acc) ->
-                          Address = ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []),
-                          [Address | Acc]
-                  end,
-                  [],
-                  Miners
-                 ),
-    {ok, _} = ct_cover:add_nodes(Miners),
+    %% accumulate the pubkey_bins of each miner
+    MinerPubkeyBins = gather_pubkey_bins(Miners),
+
+    %% accumulate the pubkey_bins of each miner
+    RouterPubkeyBins = gather_pubkey_bins(Routers),
+
+    {ok, _} = ct_cover:add_nodes(Miners ++ Routers),
 
     %% wait until we get confirmation the miners are fully up
     %% which we are determining by the miner_consensus_mgr being registered
-    %% QUESTION: is there a better process to use to determine things are healthy
-    %%           and which works for both in consensus and non consensus miners?
     ok = router_ct_utils:wait_for_registration(Miners, miner_consensus_mgr),
                                                 %ok = router_ct_utils:wait_for_registration(Miners, blockchain_worker),
 
@@ -687,21 +599,27 @@ init_per_testcase(Mod, TestCase, Config0) ->
 
     [
      {miners, Miners},
-     {keys, Keys},
+     {routers, Routers},
+     {miner_keys, MinerKeys},
+     {router_keys, RouterKeys},
      {ports, UpdatedMinersAndPorts},
-     {addresses, Addresses},
+     {miner_pubkey_bins, MinerPubkeyBins},
+     {router_pubkey_bins, RouterPubkeyBins},
      {block_time, BlockTime},
      {batch_size, BatchSize},
      {dkg_curve, Curve},
      {election_interval, Interval},
      {num_consensus_members, NumConsensusMembers},
-     {rpc_timeout, timer:seconds(5)}
+     {rpc_timeout, timer:seconds(5)},
+     {elli, ElliPid}
     | Config
     ].
 
 end_per_testcase(TestCase, Config) ->
     Miners = ?config(miners, Config),
+    Routers = ?config(routers, Config),
     router_ct_utils:pmap(fun(Miner) -> ct_slave:stop(Miner) end, Miners),
+    router_ct_utils:pmap(fun(Router) -> ct_slave:stop(Router) end, Routers),
     case ?config(tc_status, Config) of
         ok ->
             %% test passed, we can cleanup
@@ -1049,3 +967,178 @@ load_genesis_block(GenesisBlock, Miners, Config) ->
      ),
 
     ok = router_ct_utils:wait_for_gte(height, Miners, 1, all, 30).
+
+init_ports(Config, Count) ->
+    router_ct_utils:pmap(
+      fun(I) ->
+              NodeName = list_to_atom(integer_to_list(I) ++ router_ct_utils:randname(5)),
+              {router_ct_utils:start_node(NodeName, Config, router_suite), {45000, 0}}
+      end,
+      lists:seq(1, Count)).
+
+init_keys(Config, NodesAndPorts) ->
+    router_ct_utils:pmap(
+      fun({Node, Ports}) ->
+              router_ct_utils:start_node(Node, Config, router_suite),
+              #{secret := GPriv, public := GPub} =
+              libp2p_crypto:generate_keys(ecc_compact),
+              GECDH = libp2p_crypto:mk_ecdh_fun(GPriv),
+              GAddr = libp2p_crypto:pubkey_to_bin(GPub),
+              GSigFun = libp2p_crypto:mk_sig_fun(GPriv),
+              {Node, Ports, GECDH, GPub, GAddr, GSigFun}
+      end, NodesAndPorts).
+
+check_config_result(ConfigResult) ->
+    lists:all(
+      fun(ok) -> true;
+         (Res) ->
+              ct:pal("config setup failure: ~p", [Res]),
+              false
+      end,
+      ConfigResult
+     ).
+
+gather_addrs(Nodes) ->
+    router_ct_utils:pmap(
+      fun(Node) ->
+              Swarm = ct_rpc:call(Node, blockchain_swarm, swarm, [], 2000),
+              [H|_] = ct_rpc:call(Node, libp2p_swarm, listen_addrs, [Swarm], 2000),
+              H
+      end, Nodes).
+
+connect_addrs(Nodes, Addrs) ->
+    Res = router_ct_utils:pmap(
+            fun(Node) ->
+                    Swarm = ct_rpc:call(Node, blockchain_swarm, swarm, [], 2000),
+                    lists:foreach(
+                      fun(A) ->
+                              ct_rpc:call(Node, libp2p_swarm, connect, [Swarm, A], 2000)
+                      end, Addrs)
+            end, Nodes),
+    lists:all(fun(R) -> R == ok end, Res).
+
+check_gossip(Nodes, Addrs) ->
+    router_ct_utils:wait_until(fun() ->
+                                       lists:all(fun(Node) ->
+                                                         GossipPeers = ct_rpc:call(Node, blockchain_swarm, gossip_peers, [], 2000),
+                                                         case length(GossipPeers) >= (length(Nodes) / 2) + 1 of
+                                                             true -> true;
+                                                             false ->
+                                                                 ct:pal("~p is not connected to enough peers ~p", [Node, GossipPeers]),
+                                                                 Swarm = ct_rpc:call(Node, blockchain_swarm, swarm, [], 2000),
+                                                                 lists:foreach(
+                                                                   fun(A) ->
+                                                                           CRes = ct_rpc:call(Node, libp2p_swarm, connect, [Swarm, A], 2000),
+                                                                           ct:pal("Connecting ~p to ~p: ~p", [Node, A, CRes])
+                                                                   end, Addrs),
+                                                                 false
+                                                         end
+                                                 end, Nodes)
+                               end).
+gather_pubkey_bins(Nodes) ->
+    lists:foldl(
+      fun(Node, Acc) ->
+              Address = ct_rpc:call(Node, blockchain_swarm, pubkey_bin, []),
+              [Address | Acc]
+      end,
+      [],
+      Nodes
+     ).
+
+router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
+    router_ct_utils:pmap(
+      fun({Router, {_TCPPort1, _UDPPort1}, _ECDH, _PubKey, _Addr, _SigFun}) ->
+              ct:pal("Router ~p", [Router]),
+              ct_rpc:call(Router, cover, start, []),
+              ct_rpc:call(Router, application, load, [lager]),
+              ct_rpc:call(Router, application, load, [blockchain]),
+              ct_rpc:call(Router, application, load, [libp2p]),
+              %% give each node its own log directory
+              LogRoot = LogDir ++ "_" ++ atom_to_list(Router),
+              ct_rpc:call(Router, application, set_env, [lager, log_root, LogRoot]),
+              ct_rpc:call(Router, lager, set_loglevel, [{lager_file_backend, "log/console.log"}, debug]),
+
+              %% set blockchain configuration
+              #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ecc_compact),
+              Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
+              RouterBaseDir = BaseDir ++ "_" ++ atom_to_list(Router),
+              ct_rpc:call(Router, application, set_env, [blockchain, base_dir, RouterBaseDir]),
+              ct_rpc:call(Router, application, set_env, [blockchain, port, Port]),
+              ct_rpc:call(Router, application, set_env, [blockchain, seed_nodes, SeedNodes]),
+              ct_rpc:call(Router, application, set_env, [blockchain, key, Key]),
+              ct_rpc:call(Router, application, set_env, [blockchain, sc_client_handler, sc_client_test_handler]),
+              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, sc_packet_test_handler]),
+
+              %% Set router configuration
+              ct_rpc:call(Router, application, set_env, [router, base_dir, RouterBaseDir]),
+              ct_rpc:call(Router, application, set_env, [router, port, Port]),
+              ct_rpc:call(Router, application, set_env, [router, seed_nodes, SeedNodes]),
+              ct_rpc:call(Router, application, set_env, [router, oui, 1]),
+              ct_rpc:call(Router, application, set_env, [router, router_device_api_module, router_device_api_console]),
+              ct_rpc:call(Router, application, set_env, [router, router_device_api_console,
+                                                       [{endpoint, ?CONSOLE_URL},
+                                                        {ws_endpoint, ?CONSOLE_WS_URL},
+                                                        {secret, <<"yolo">>}]]),
+
+              {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),
+              ct:pal("Router: ~p, StartedApps: ~p", [Router, StartedApps])
+      end,
+      RouterKeys
+     ).
+
+miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, DefaultRouters, MinerKeys) ->
+    router_ct_utils:pmap(
+      fun({Miner, {TCPPort, UDPPort}, ECDH, PubKey, _Addr, SigFun}) ->
+              ct:pal("Miner ~p", [Miner]),
+              ct_rpc:call(Miner, cover, start, []),
+              ct_rpc:call(Miner, application, load, [lager]),
+              ct_rpc:call(Miner, application, load, [miner]),
+              ct_rpc:call(Miner, application, load, [blockchain]),
+              ct_rpc:call(Miner, application, load, [libp2p]),
+              %% give each miner its own log directory
+              LogRoot = LogDir ++ "_" ++ atom_to_list(Miner),
+              ct:pal("MinerLogRoot: ~p", [LogRoot]),
+              ct_rpc:call(Miner, application, set_env, [lager, log_root, LogRoot]),
+              ct_rpc:call(Miner, application, set_env, [lager, metadata_whitelist, [poc_id]]),
+
+              %% set blockchain configuration
+              Key = {PubKey, ECDH, SigFun},
+
+              MinerBaseDir = BaseDir ++ "_" ++ atom_to_list(Miner),
+              ct:pal("MinerBaseDir: ~p", [MinerBaseDir]),
+              %% set blockchain env
+              ct_rpc:call(Miner, application, set_env, [blockchain, base_dir, MinerBaseDir]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, port, Port]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, seed_nodes, SeedNodes]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, key, Key]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, peer_cache_timeout, 30000]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, peerbook_update_interval, 200]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, peerbook_allow_rfc1918, true]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, disable_poc_v4_target_challenge_age, true]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, max_inbound_connections, TotalMiners*2]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, outbound_gossip_connections, TotalMiners]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, sync_cooldown_time, 5]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, sc_client_handler, router_sc_client_handler]),
+              ct_rpc:call(Miner, application, set_env, [blockchain, sc_packet_handler, router_sc_packet_handler]),
+              %% set miner configuration
+              ct_rpc:call(Miner, application, set_env, [miner, curve, Curve]),
+              ct_rpc:call(Miner, application, set_env, [miner, radio_device, {{127,0,0,1}, UDPPort, {127,0,0,1}, TCPPort}]),
+              ct_rpc:call(Miner, application, set_env, [miner, stabilization_period_start, 2]),
+              ct_rpc:call(Miner, application, set_env, [miner, default_routers, [DefaultRouters]]),
+
+              {ok, _StartedApps} = ct_rpc:call(Miner, application, ensure_all_started, [miner]),
+              ok
+      end,
+      MinerKeys
+     ).
+
+start_runner() ->
+    os:cmd(os:find_executable("epmd")++" -daemon"),
+    {ok, Hostname} = inet:gethostname(),
+    case net_kernel:start([list_to_atom("runner-miner" ++
+                                            integer_to_list(erlang:system_time(nanosecond)) ++
+                                            "@"++Hostname), shortnames]) of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok;
+        {error, {{already_started, _},_}} -> ok
+    end.

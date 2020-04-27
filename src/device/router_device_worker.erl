@@ -173,6 +173,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
                 pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
     Pid ! {packet, Packet},
     Device1 = router_device:join_nonce(JoinNonce, Device0),
+    ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
@@ -474,10 +475,8 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
                                                             <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
                     Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
                                          timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-                    DeviceUpdates = [
-                                     {channel_correction, ChannelsCorrected},
-                                     {fcntdown, (FCntDown + 1)}
-                                    ],
+                    DeviceUpdates = [{channel_correction, ChannelsCorrected},
+                                     {fcntdown, (FCntDown + 1)}],
                     Device1 = router_device:update(DeviceUpdates, Device0),
                     ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
                     {send, Device1, Packet1}

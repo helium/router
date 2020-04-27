@@ -14,6 +14,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
+         handle_join/1,
          handle_device_update/2,
          handle_data/3,
          report_status/3,
@@ -52,6 +53,10 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
+
+-spec handle_join(pid()) -> ok.
+handle_join(Pid) ->
+    gen_server:cast(Pid, handle_join).
 
 -spec handle_device_update(pid(), router_device:device()) -> ok.
 handle_device_update(Pid, Device) ->
@@ -111,6 +116,9 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+
+handle_cast(handle_join, State) ->
+    {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
 handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->

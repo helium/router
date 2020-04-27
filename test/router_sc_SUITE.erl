@@ -4,6 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
+-include("router_ct_macros.hrl").
 
 -export([
          init_per_suite/1,
@@ -33,9 +34,10 @@ init_per_testcase(TestCase, Config0) ->
     Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),
     Addresses = ?config(miner_pubkey_bins, Config),
+    RouterAddresses = ?config(router_pubkey_bins, Config),
     Balance = 5000,
-    InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
-    InitialDCTxns = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
+    InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
+    InitialDCTxns = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
     AddGwTxns = [blockchain_txn_gen_gateway_v1:new(Addr, Addr, h3:from_geo({37.780586, -122.469470}, 13), 0)
                  || Addr <- Addresses],
 
@@ -59,6 +61,7 @@ init_per_testcase(TestCase, Config0) ->
                     ?election_interval => infinity,
                     ?num_consensus_members => NumConsensusMembers,
                     ?batch_size => BatchSize,
+                    ?poc_challenge_interval => 1000,
                     ?dkg_curve => Curve},
 
     Keys = libp2p_crypto:generate_keys(ecc_compact),
@@ -110,9 +113,9 @@ basic_test(Config) ->
     RouterP2PAddress = ct_rpc:call(RouterNode, libp2p_swarm, p2p_address, [RouterSwarm]),
     ct:pal("RouterP2PAddress: ~p", [RouterP2PAddress]),
 
-    EUIs = [{16#deadbeef, 16#deadc0de}],
+    %% EUIs = [{?DEVEUI, ?APPEUI}],
     {Filter, _} = xor16:to_bin(xor16:new([ <<DevEUI:64/integer-unsigned-little,
-                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- EUIs],
+                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- ?EUIS],
                                          fun xxhash:hash64/1)),
 
     OUITxn = ct_rpc:call(RouterNode,
@@ -130,10 +133,18 @@ basic_test(Config) ->
     %% check that oui txn appears on miners
     CheckTypeOUI = fun(T) -> blockchain_txn:type(T) == blockchain_txn_oui_v1 end,
     CheckTxnOUI = fun(T) -> T == SignedOUITxn end,
+    ok = miner_test:wait_for_txn(Routers, CheckTypeOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Routers, CheckTxnOUI, timer:seconds(30)),
     ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
     ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
 
     Height = miner_test:height(RouterNode),
+
+    ct:pal("Height: ~p", [Height]),
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    ct:pal("RouterChain: ~p", [RouterChain]),
+    Blocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
+    ct:pal("Blocks: ~p", [Blocks]),
 
     %% open a state channel
     ID = crypto:strong_rand_bytes(32),

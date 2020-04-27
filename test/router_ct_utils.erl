@@ -6,11 +6,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
 -include("utils/console_test.hrl").
-
--define(APPEUI, <<0,0,0,0,0,0,0,0>>).
--define(DEVEUI, <<16#EF, 16#BE, 16#AD, 16#DE, 16#EF, 16#BE, 16#AD, 16#DE>>).
--define(APPKEY, <<16#2B, 16#7E, 16#15, 16#16, 16#28, 16#AE, 16#D2, 16#A6, 16#AB, 16#F7, 16#15, 16#88, 16#09, 16#CF, 16#4F, 16#3C>>).
-
+-include("router_ct_macros.hrl").
 
 -export([
          init_per_testcase/3,
@@ -62,14 +58,13 @@ init_router_config(Config, NumRouters) ->
     %% Gather router listen addrs
     RouterListenAddrs = miner_test:acc_listen_addrs(Routers),
 
-    %% connect routers
-    true = miner_test:connect_addrs(Routers, RouterListenAddrs),
-
-    %% connect routers to miners too
+    %% connect nodes
+    true = miner_test:connect_addrs(Miners, RouterListenAddrs),
     true = miner_test:connect_addrs(Routers, MinerListenAddrs),
 
     %% make sure routers are also talking to the miners
     true = miner_test:check_gossip(Routers, MinerListenAddrs),
+    true = miner_test:check_gossip(Miners, RouterListenAddrs),
 
     %% accumulate the pubkey_bins of each miner
     RouterPubkeyBins = miner_test:acc_pubkey_bins(Routers),

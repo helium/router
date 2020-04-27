@@ -20,6 +20,7 @@
                   intensity => 3,
                   period => 60}).
 -define(ETS, router_decoder_custom_sup_ets).
+-define(MAX_V8_CONTEXT, 100).
 
 %%====================================================================
 %% API functions
@@ -40,11 +41,12 @@ add(Decoder) ->
             Hash = crypto:hash(sha256, Function),
             case lookup(ID) of
                 {error, not_found} ->
+                    ok = maybe_delete_old_context(),
                     start_worker(ID, Hash, Args);
-                {ok, Hash, Pid} ->
+                {ok, Hash, Pid, _Time} ->
                     lager:debug("context ~p already exists here: ~p", [ID, Pid]),
                     {ok, Pid};
-                {ok, _Hash, Pid} ->
+                {ok, _Hash, Pid, _Time} ->
                     ok = stop_worker(ID, Pid),
                     start_worker(ID, Hash, Args)
             end
@@ -61,7 +63,7 @@ decode(ID, Payload, Port) ->
     case lookup(ID) of
         {error, _Reason}=Error ->
             Error;
-        {ok, _Hash, Pid} ->
+        {ok, _Hash, Pid, _Time} ->
             router_decoder_custom_worker:decode(Pid, Payload, Port)
     end.
 
@@ -91,23 +93,37 @@ start_worker(ID, Hash, Args) ->
 
 -spec stop_worker(binary(), pid()) -> ok.
 stop_worker(ID, Pid) ->
-    ok = delete(ID),
+    ok = ?MODULE:delete(ID),
     ok = supervisor:terminate_child(?MODULE, Pid),
     ok.
 
--spec lookup(binary()) -> {ok, binary(), pid()} | {error, not_found}.
+-spec lookup(binary()) -> {ok, binary(), pid(), integer()} | {error, not_found}.
 lookup(ID) ->
     case ets:lookup(?ETS, ID) of
         [] -> {error, not_found};
-        [{ID, {Hash, Pid}}] ->
+        [{ID, {Hash, Pid, Time}}] ->
             case erlang:is_process_alive(Pid) of
-                true -> {ok, Hash, Pid};
+                true -> {ok, Hash, Pid, Time};
                 false -> {error, not_found}
             end
     end.
 
 -spec insert(binary(), binary(), pid()) -> ok.
 insert(ID, Hash, Pid) ->
-    true = ets:insert(?ETS, {ID, {Hash, Pid}}),
+    true = ets:insert(?ETS, {ID, {Hash, Pid, erlang:system_time(seconds)}}),
     ok.
 
+-spec maybe_delete_old_context() -> ok.
+maybe_delete_old_context() ->
+    Max = application:get_env(router, max_v8_context, ?MAX_V8_CONTEXT),
+    case ets:info(?ETS, size) + 1 > Max of
+        false ->
+            ok;
+        true ->
+            Sorted = lists:sort(fun([{_, T1}], [{_, T2}]) -> T1 > T2 end,
+                                ets:match(?ETS, '$1')),
+            case Sorted of
+                [] -> ok;
+                [[{ID, {_Hash, Pid, _Time}}]|_] -> stop_worker(ID, Pid)
+            end
+    end.

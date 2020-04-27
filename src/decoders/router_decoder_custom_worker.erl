@@ -24,7 +24,7 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(TIMER, timer:minutes(15)).
+-define(TIMER, timer:hours(48)).
 
 -record(state, {id :: binary(),
                 vm :: pid(),

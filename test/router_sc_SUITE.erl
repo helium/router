@@ -61,7 +61,6 @@ init_per_testcase(TestCase, Config0) ->
                     ?election_interval => infinity,
                     ?num_consensus_members => NumConsensusMembers,
                     ?batch_size => BatchSize,
-                    ?poc_challenge_interval => 1000,
                     ?dkg_curve => Curve},
 
     Keys = libp2p_crypto:generate_keys(ecc_compact),

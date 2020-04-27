@@ -96,7 +96,106 @@ end_per_testcase(_TestCase, Config) ->
 
 basic_test(Config) ->
     Miners = ?config(miners, Config),
-    ct:pal("Config: ~p", [Config]),
-    ct:pal("Miners: ~p", [Miners]),
+    Routers = ?config(routers, Config),
+    DefaultRouters = ?config(default_routers, Config),
+
+    [ClientNode | _] = Miners,
+    [RouterNode | _] = Routers,
+
+    %% setup
+    %% oui txn
+    {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
+    RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
+    RouterSwarm = ct_rpc:call(RouterNode, blockchain_swarm, swarm, []),
+    ct:pal("RouterSwarm: ~p", [RouterSwarm]),
+    RouterP2PAddress = ct_rpc:call(RouterNode, libp2p_swarm, p2p_address, [RouterSwarm]),
+    ct:pal("RouterP2PAddress: ~p", [RouterP2PAddress]),
+
+    EUIs = [{16#deadbeef, 16#deadc0de}],
+    {Filter, _} = xor16:to_bin(xor16:new([ <<DevEUI:64/integer-unsigned-little,
+                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- EUIs],
+                                         fun xxhash:hash64/1)),
+
+    OUITxn = ct_rpc:call(RouterNode,
+                         blockchain_txn_oui_v1,
+                         new,
+                         [RouterPubkeyBin, [RouterPubkeyBin], Filter, 8, 1, 0]),
+    ct:pal("OUITxn: ~p", [OUITxn]),
+    SignedOUITxn = ct_rpc:call(RouterNode,
+                               blockchain_txn_oui_v1,
+                               sign,
+                               [OUITxn, RouterSigFun]),
+    ct:pal("SignedOUITxn: ~p", [SignedOUITxn]),
+    ok = ct_rpc:call(RouterNode, blockchain_worker, submit_txn, [SignedOUITxn]),
+
+    %% check that oui txn appears on miners
+    CheckTypeOUI = fun(T) -> blockchain_txn:type(T) == blockchain_txn_oui_v1 end,
+    CheckTxnOUI = fun(T) -> T == SignedOUITxn end,
+    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
+    ok = router_ct_utils:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
+
+    Height = router_ct_utils:height(RouterNode),
+
+    %% open a state channel
+    ID = crypto:strong_rand_bytes(32),
+    ExpireWithin = 25,
+    SCOpenTxn = ct_rpc:call(RouterNode,
+                            blockchain_txn_state_channel_open_v1,
+                            new,
+                            [ID, RouterPubkeyBin, ExpireWithin, 1, 1]),
+    ct:pal("SCOpenTxn: ~p", [SCOpenTxn]),
+    SignedSCOpenTxn = ct_rpc:call(RouterNode,
+                                  blockchain_txn_state_channel_open_v1,
+                                  sign,
+                                  [SCOpenTxn, RouterSigFun]),
+    ct:pal("SignedSCOpenTxn: ~p", [SignedSCOpenTxn]),
+    ok = ct_rpc:call(RouterNode, blockchain_worker, submit_txn, [SignedSCOpenTxn]),
+
+    %% check that sc open txn appears on miners
+    CheckTypeSCOpen = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_open_v1 end,
+    CheckTxnSCOpen = fun(T) -> T == SignedSCOpenTxn end,
+    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeSCOpen, timer:seconds(30)),
+    ok = router_ct_utils:wait_for_txn(Miners, CheckTxnSCOpen, timer:seconds(30)),
+
+    %% check state_channel appears on the ledger
+    {ok, SC} = router_ct_utils:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
+    true = router_ct_utils:check_ledger_state_channel(SC, RouterPubkeyBin, ID),
+    ct:pal("SC: ~p", [SC]),
+
+    %% At this point, we're certain that sc is open
+    %% Use client node to send some packets
+    Payload1 = crypto:strong_rand_bytes(rand:uniform(23)),
+    Payload2 = crypto:strong_rand_bytes(24+rand:uniform(23)),
+    Packet1 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload1),
+    Packet2 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload2),
+    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet1, DefaultRouters]),
+    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet2, DefaultRouters]),
+
+    %% wait ExpireWithin + 3 more blocks to be safe
+    ok = router_ct_utils:wait_for_gte(height, Miners, Height + ExpireWithin + 3),
+    %% for the state_channel_close txn to appear
+    CheckTypeSCClose = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end,
+    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeSCClose, timer:seconds(30)),
+
+    %% check state_channel is removed once the close txn appears
+    {error, not_found} = router_ct_utils:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
+
+    %% Check whether the balances are updated in the eventual sc close txn
+    BlockDetails = router_ct_utils:get_txn_block_details(RouterNode, CheckTypeSCClose),
+    SCCloseTxn = router_ct_utils:get_txn(BlockDetails, CheckTypeSCClose),
+    ct:pal("SCCloseTxn: ~p", [SCCloseTxn]),
+
+    %% find the block that this SC opened in, we need the hash
+    [{OpenHash, _}] = router_ct_utils:get_txn_block_details(RouterNode, CheckTypeSCOpen),
+
+    %% construct what the skewed merkle tree should look like
+    ExpectedTree = skewed:add(Payload2, skewed:add(Payload1, skewed:new(OpenHash))),
+    %% assert the root hashes should match
+    ?assertEqual(blockchain_state_channel_v1:root_hash(blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn)), skewed:root_hash(ExpectedTree)),
+
+    %% Check whether clientnode's balance is correct
+    ClientNodePubkeyBin = ct_rpc:call(ClientNode, blockchain_swarm, pubkey_bin, []),
+    true = router_ct_utils:check_sc_num_packets(SCCloseTxn, ClientNodePubkeyBin, 2),
+    true = router_ct_utils:check_sc_num_dcs(SCCloseTxn, ClientNodePubkeyBin, 3),
 
     ok.

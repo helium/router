@@ -4,7 +4,6 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
--include("router_ct_macros.hrl").
 
 -export([
          init_per_suite/1,
@@ -64,28 +63,28 @@ init_per_testcase(TestCase, Config0) ->
 
     Keys = libp2p_crypto:generate_keys(ecc_compact),
 
-    InitialVars = router_ct_utils:make_vars(Keys, maps:merge(DefaultVars, SCVars)),
+    InitialVars = miner_test:make_vars(Keys, maps:merge(DefaultVars, SCVars)),
     ct:pal("InitialVars: ~p", [InitialVars]),
 
-    DKGResults = router_ct_utils:inital_dkg(Miners,
-                                            InitialVars ++ InitialPaymentTransactions ++ AddGwTxns ++ InitialDCTxns,
-                                            Addresses, NumConsensusMembers, Curve),
+    DKGResults = miner_test:inital_dkg(Miners,
+                                       InitialVars ++ InitialPaymentTransactions ++ AddGwTxns ++ InitialDCTxns,
+                                       Addresses, NumConsensusMembers, Curve),
     true = lists:all(fun(Res) -> Res == ok end, DKGResults),
 
     %% Get both consensus and non consensus miners
-    {ConsensusMiners, NonConsensusMiners} = router_ct_utils:miners_by_consensus_state(Miners),
+    {ConsensusMiners, NonConsensusMiners} = miner_test:miners_by_consensus_state(Miners),
 
     %% integrate genesis block on non_consensus_miners
-    true = router_ct_utils:integrate_genesis_block(hd(ConsensusMiners), NonConsensusMiners),
+    true = miner_test:integrate_genesis_block(hd(ConsensusMiners), NonConsensusMiners),
 
     %% integrate genesis block on routers
-    true = router_ct_utils:integrate_genesis_block(hd(ConsensusMiners), Routers),
+    true = miner_test:integrate_genesis_block(hd(ConsensusMiners), Routers),
 
     %% confirm we have a height of 1 on all miners
-    ok = router_ct_utils:wait_for_gte(height_exactly, Miners, 1),
+    ok = miner_test:wait_for_gte(height_exactly, Miners, 1),
 
     %% confirm we have a height of 1 on routers
-    ok = router_ct_utils:wait_for_gte(height_exactly, Routers, 1),
+    ok = miner_test:wait_for_gte(height_exactly, Routers, 1),
 
     [{consensus_miners, ConsensusMiners},
      {non_consensus_miners, NonConsensusMiners}
@@ -131,10 +130,10 @@ basic_test(Config) ->
     %% check that oui txn appears on miners
     CheckTypeOUI = fun(T) -> blockchain_txn:type(T) == blockchain_txn_oui_v1 end,
     CheckTxnOUI = fun(T) -> T == SignedOUITxn end,
-    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
-    ok = router_ct_utils:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
 
-    Height = router_ct_utils:height(RouterNode),
+    Height = miner_test:height(RouterNode),
 
     %% open a state channel
     ID = crypto:strong_rand_bytes(32),
@@ -154,12 +153,12 @@ basic_test(Config) ->
     %% check that sc open txn appears on miners
     CheckTypeSCOpen = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_open_v1 end,
     CheckTxnSCOpen = fun(T) -> T == SignedSCOpenTxn end,
-    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeSCOpen, timer:seconds(30)),
-    ok = router_ct_utils:wait_for_txn(Miners, CheckTxnSCOpen, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTypeSCOpen, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTxnSCOpen, timer:seconds(30)),
 
     %% check state_channel appears on the ledger
-    {ok, SC} = router_ct_utils:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
-    true = router_ct_utils:check_ledger_state_channel(SC, RouterPubkeyBin, ID),
+    {ok, SC} = miner_test:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
+    true = miner_test:check_ledger_state_channel(SC, RouterPubkeyBin, ID),
     ct:pal("SC: ~p", [SC]),
 
     %% At this point, we're certain that sc is open
@@ -172,21 +171,21 @@ basic_test(Config) ->
     ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet2, DefaultRouters]),
 
     %% wait ExpireWithin + 3 more blocks to be safe
-    ok = router_ct_utils:wait_for_gte(height, Miners, Height + ExpireWithin + 3),
+    ok = miner_test:wait_for_gte(height, Miners, Height + ExpireWithin + 3),
     %% for the state_channel_close txn to appear
     CheckTypeSCClose = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end,
-    ok = router_ct_utils:wait_for_txn(Miners, CheckTypeSCClose, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTypeSCClose, timer:seconds(30)),
 
     %% check state_channel is removed once the close txn appears
-    {error, not_found} = router_ct_utils:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
+    {error, not_found} = miner_test:get_ledger_state_channel(RouterNode, ID, RouterPubkeyBin),
 
     %% Check whether the balances are updated in the eventual sc close txn
-    BlockDetails = router_ct_utils:get_txn_block_details(RouterNode, CheckTypeSCClose),
-    SCCloseTxn = router_ct_utils:get_txn(BlockDetails, CheckTypeSCClose),
+    BlockDetails = miner_test:get_txn_block_details(RouterNode, CheckTypeSCClose),
+    SCCloseTxn = miner_test:get_txn(BlockDetails, CheckTypeSCClose),
     ct:pal("SCCloseTxn: ~p", [SCCloseTxn]),
 
     %% find the block that this SC opened in, we need the hash
-    [{OpenHash, _}] = router_ct_utils:get_txn_block_details(RouterNode, CheckTypeSCOpen),
+    [{OpenHash, _}] = miner_test:get_txn_block_details(RouterNode, CheckTypeSCOpen),
 
     %% construct what the skewed merkle tree should look like
     ExpectedTree = skewed:add(Payload2, skewed:add(Payload1, skewed:new(OpenHash))),
@@ -195,7 +194,7 @@ basic_test(Config) ->
 
     %% Check whether clientnode's balance is correct
     ClientNodePubkeyBin = ct_rpc:call(ClientNode, blockchain_swarm, pubkey_bin, []),
-    true = router_ct_utils:check_sc_num_packets(SCCloseTxn, ClientNodePubkeyBin, 2),
-    true = router_ct_utils:check_sc_num_dcs(SCCloseTxn, ClientNodePubkeyBin, 3),
+    true = miner_test:check_sc_num_packets(SCCloseTxn, ClientNodePubkeyBin, 2),
+    true = miner_test:check_sc_num_dcs(SCCloseTxn, ClientNodePubkeyBin, 3),
 
     ok.

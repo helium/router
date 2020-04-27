@@ -68,7 +68,12 @@
          get_txn_block_details/2, get_txn_block_details/3,
          get_txn/2,
          get_genesis_block/2,
-         load_genesis_block/3
+         load_genesis_block/3,
+
+         get_ledger_state_channel/3,
+         check_ledger_state_channel/3,
+         check_sc_num_dcs/3,
+         check_sc_num_packets/3
         ]).
 
 
@@ -580,8 +585,14 @@ init_per_testcase(Mod, TestCase, Config0, NumRouters) ->
     %% connect routers
     true = connect_addrs(Routers, RouterListenAddrs),
 
+    %% connect routers to miners too
+    true = connect_addrs(Routers, MinerListenAddrs),
+
     %% make sure each miner is gossiping with a majority of its peers
     true = check_gossip(Miners, MinerListenAddrs),
+
+    %% make sure routers are also talking to the miners
+    true = check_gossip(Routers, MinerListenAddrs),
 
     %% accumulate the pubkey_bins of each miner
     MinerPubkeyBins = acc_pubkey_bins(Miners),
@@ -853,6 +864,7 @@ wait_for_txn(Miners, PredFun, Timeout, ExpectedResult)->
                      Result = lists:all(
                                 fun(Miner) ->
                                         Res = get_txn_block_details(Miner, PredFun, Timeout),
+                                        lager:info("Res: ~p", [Res]),
                                         Res /= []
 
                                 end, router_ct_utils:shuffle(Miners))
@@ -1065,20 +1077,20 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
               ct_rpc:call(Router, application, load, [blockchain]),
               ct_rpc:call(Router, application, load, [libp2p]),
               %% give each node its own log directory
-              LogRoot = LogDir ++ "_" ++ atom_to_list(Router),
+              LogRoot = LogDir ++ "_router_" ++ atom_to_list(Router),
               ct_rpc:call(Router, application, set_env, [lager, log_root, LogRoot]),
               ct_rpc:call(Router, lager, set_loglevel, [{lager_file_backend, "log/console.log"}, debug]),
 
               %% set blockchain configuration
               #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ecc_compact),
               Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
-              RouterBaseDir = BaseDir ++ "_" ++ atom_to_list(Router),
+              RouterBaseDir = BaseDir ++ "_router_" ++ atom_to_list(Router),
               ct_rpc:call(Router, application, set_env, [blockchain, base_dir, RouterBaseDir]),
               ct_rpc:call(Router, application, set_env, [blockchain, port, Port]),
               ct_rpc:call(Router, application, set_env, [blockchain, seed_nodes, SeedNodes]),
               ct_rpc:call(Router, application, set_env, [blockchain, key, Key]),
-              ct_rpc:call(Router, application, set_env, [blockchain, sc_client_handler, sc_client_test_handler]),
-              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, sc_packet_test_handler]),
+              ct_rpc:call(Router, application, set_env, [blockchain, sc_client_handler, router_sc_client_handler]),
+              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, router_sc_packet_handler]),
 
               %% Set router configuration
               ct_rpc:call(Router, application, set_env, [router, base_dir, RouterBaseDir]),
@@ -1107,7 +1119,7 @@ miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, MinerK
               ct_rpc:call(Miner, application, load, [blockchain]),
               ct_rpc:call(Miner, application, load, [libp2p]),
               %% give each miner its own log directory
-              LogRoot = LogDir ++ "_" ++ atom_to_list(Miner),
+              LogRoot = LogDir ++ "_miner_" ++ atom_to_list(Miner),
               ct:pal("MinerLogRoot: ~p", [LogRoot]),
               ct_rpc:call(Miner, application, set_env, [lager, log_root, LogRoot]),
               ct_rpc:call(Miner, application, set_env, [lager, metadata_whitelist, [poc_id]]),
@@ -1115,7 +1127,7 @@ miner_config_result(LogDir, BaseDir, Port, SeedNodes, TotalMiners, Curve, MinerK
               %% set blockchain configuration
               Key = {PubKey, ECDH, SigFun},
 
-              MinerBaseDir = BaseDir ++ "_" ++ atom_to_list(Miner),
+              MinerBaseDir = BaseDir ++ "_miner_" ++ atom_to_list(Miner),
               ct:pal("MinerBaseDir: ~p", [MinerBaseDir]),
               %% set blockchain env
               ct_rpc:call(Miner, application, set_env, [blockchain, base_dir, MinerBaseDir]),
@@ -1159,3 +1171,23 @@ set_miner_default_routers(Miners, DefaultRouters) ->
                                end,
                                Miners),
     lists:all(fun(R) -> R == ok end, Res).
+
+get_ledger_state_channel(Node, SCID, PubkeyBin) ->
+    RouterChain = ct_rpc:call(Node, blockchain_worker, blockchain, []),
+    RouterLedger = ct_rpc:call(Node, blockchain, ledger, [RouterChain]),
+    ct_rpc:call(Node, blockchain_ledger_v1, find_state_channel, [SCID, PubkeyBin, RouterLedger]).
+
+check_ledger_state_channel(LedgerSC, OwnerPubkeyBin, SCID) ->
+    CheckId = SCID == blockchain_ledger_state_channel_v1:id(LedgerSC),
+    CheckOwner = OwnerPubkeyBin == blockchain_ledger_state_channel_v1:owner(LedgerSC),
+    CheckId andalso CheckOwner.
+
+check_sc_num_packets(SCCloseTxn, ClientPubkeyBin, ExpectedNumPackets) ->
+    SC = blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn),
+    {ok, NumPackets} = blockchain_state_channel_v1:num_packets_for(ClientPubkeyBin, SC),
+    ExpectedNumPackets == NumPackets.
+
+check_sc_num_dcs(SCCloseTxn, ClientPubkeyBin, ExpectedNumDCs) ->
+    SC = blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn),
+    {ok, NumDCs} = blockchain_state_channel_v1:num_dcs_for(ClientPubkeyBin, SC),
+    ExpectedNumDCs == NumDCs.

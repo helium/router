@@ -6,7 +6,7 @@
          args/1]).
 
 -export([init_ets/0,
-         add/1,
+         add/1, delete/1,
          decode/3]).
 
 -ifdef(TEST).
@@ -45,6 +45,11 @@ init_ets() ->
 -spec add(decoder()) -> ok | {error, any()}.
 add(Decoder) ->
     add(?MODULE:type(Decoder), Decoder).
+
+-spec delete(binary()) -> ok.
+delete(ID) ->
+    true = ets:delete(?ETS, ID),
+    ok.
 
 -spec decode(binary(), binary(), integer()) -> {ok, any()} | {error, any()}.
 decode(ID, Payload, Port) ->

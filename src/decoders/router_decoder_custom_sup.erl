@@ -4,7 +4,7 @@
 
 %% API
 -export([start_link/0,
-         add/1,
+         add/1, delete/1,
          decode/3]).
 
 %% Supervisor callbacks
@@ -50,6 +50,12 @@ add(Decoder) ->
             end
     end.
 
+-spec delete(binary()) -> ok.
+delete(ID) ->
+    ok = router_decoder:delete(ID),
+    true = ets:delete(?ETS, ID),
+    ok.
+
 -spec decode(binary(), list(), integer()) -> {ok, any()} | {error, any()}.
 decode(ID, Payload, Port) ->
     case lookup(ID) of
@@ -73,8 +79,8 @@ init([]) ->
 
 -spec start_worker(binary(), binary(), map()) -> {ok, pid()} | {error, any()}.
 start_worker(ID, Hash, Args) ->
-    {ok, DB, [_DefaultCF, DevicesCF]} = router_db:get(),
-    Map = maps:merge(Args, #{db => DB, cf => DevicesCF, id => ID}),
+    {ok, VM} = router_v8:get(),
+    Map = maps:merge(Args, #{id => ID, vm => VM}),
     case supervisor:start_child(?MODULE, [Map]) of
         {error, _Err}=Err ->
             Err;
@@ -88,7 +94,6 @@ stop_worker(ID, Pid) ->
     ok = delete(ID),
     ok = supervisor:terminate_child(?MODULE, Pid),
     ok.
-
 
 -spec lookup(binary()) -> {ok, binary(), pid()} | {error, not_found}.
 lookup(ID) ->
@@ -104,10 +109,5 @@ lookup(ID) ->
 -spec insert(binary(), binary(), pid()) -> ok.
 insert(ID, Hash, Pid) ->
     true = ets:insert(?ETS, {ID, {Hash, Pid}}),
-    ok.
-
--spec delete(binary()) -> ok.
-delete(ID) ->
-    true = ets:delete(?ETS, ID),
     ok.
 

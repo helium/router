@@ -94,7 +94,7 @@ start_worker(ID, Hash, Args) ->
 -spec stop_worker(binary(), pid()) -> ok.
 stop_worker(ID, Pid) ->
     ok = ?MODULE:delete(ID),
-    ok = supervisor:terminate_child(?MODULE, Pid),
+    ok = gen_server:stop(Pid),
     ok.
 
 -spec lookup(binary()) -> {ok, binary(), pid(), integer()} | {error, not_found}.

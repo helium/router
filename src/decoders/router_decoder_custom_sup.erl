@@ -63,7 +63,8 @@ decode(ID, Payload, Port) ->
     case lookup(ID) of
         {error, _Reason}=Error ->
             Error;
-        {ok, _Hash, Pid, _Time} ->
+        {ok, Hash, Pid, _Time} ->
+            ok = insert(ID, Hash, Pid),
             router_decoder_custom_worker:decode(Pid, Payload, Port)
     end.
 

@@ -75,8 +75,8 @@ add(custom, Decoder) ->
             ID = ?MODULE:id(Decoder),
             insert(ID, custom, Pid)
     end;
-add(Other, _Decoder) ->
-    {error, {decoder_not_handled, Other}}.
+add(_Type, _Decoder) ->
+    {error, unhandled_decoder}.
 
 -spec lookup(binary()) -> {ok, atom(), any()} | {error, not_found}.
 lookup(ID) ->

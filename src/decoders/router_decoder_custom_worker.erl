@@ -25,6 +25,7 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMER, timer:hours(48)).
+-define(MAX_EXECUTION, 500).
 
 -record(state, {id :: binary(),
                 vm :: pid(),
@@ -39,7 +40,7 @@ start_link(Args) ->
 
 -spec decode(pid(), list(), integer()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port) ->
-    gen_server:call(Pid, {decode, Payload, Port}).
+    gen_server:call(Pid, {decode, Payload, Port}, ?MAX_EXECUTION).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -57,7 +58,7 @@ init(Args) ->
 handle_call({decode, Payload, Port}, _From, #state{vm=VM, context=Context, timer=TimerRef0}=State) ->
     _ = erlang:cancel_timer(TimerRef0),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-    Reply = erlang_v8:call(VM, Context, <<"Decoder">>, [Payload, Port]),
+    Reply = erlang_v8:call(VM, Context, <<"Decoder">>, [Payload, Port], ?MAX_EXECUTION),
     {reply, Reply, State#state{timer=TimerRef1}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

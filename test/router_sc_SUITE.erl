@@ -33,6 +33,7 @@ end_per_suite(Config) ->
 init_per_testcase(TestCase, Config0) ->
     Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),
+    Routers = ?config(routers, Config),
     Addresses = ?config(miner_pubkey_bins, Config),
     RouterAddresses = ?config(router_pubkey_bins, Config),
     Balance = 5000,
@@ -45,7 +46,15 @@ init_per_testcase(TestCase, Config0) ->
     BlockTime = ?config(block_time, Config),
     BatchSize = ?config(batch_size, Config),
     Curve = ?config(dkg_curve, Config),
-    Routers = ?config(routers, Config),
+
+    %% Before doing anything, check that we're in test mode
+    [RouterNode | _] = Routers,
+    RouterChainModInfo = ct_rpc:call(RouterNode, blockchain, module_info, []),
+    ?assert(lists:member({save_block, 2}, proplists:get_value(exports, RouterChainModInfo))),
+
+    [Miner | _] = Miners,
+    MinerModInfo = ct_rpc:call(Miner, miner, module_info, []),
+    ?assert(lists:member({test_version, 0}, proplists:get_value(exports, MinerModInfo))),
 
     SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
                ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)

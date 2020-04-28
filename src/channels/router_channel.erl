@@ -119,12 +119,14 @@ encode_data_(Decoder, #{payload := Payload, port := Port}=Map) ->
     DecoderID = router_decoder:id(Decoder),
     Updates = case router_decoder:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->
-                      #{payload_raw => base64:encode(Payload),
-                        payload => DecodedPayload};
-                  {error, _Reason} ->
-                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, _Reason]),
-                      #{payload_raw => base64:encode(Payload),
-                        payload => <<>>}
+                      #{decoded => #{status => success,
+                                     payload => DecodedPayload},
+                        payload => base64:encode(Payload)};
+                  {error, Reason} ->
+                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, Reason]),
+                      #{decoded => #{status => error,
+                                     error => Reason},
+                        payload => base64:encode(Payload)}
               end,
     jsx:encode(maps:merge(Map, Updates)).
 

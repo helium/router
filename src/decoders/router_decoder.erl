@@ -58,8 +58,8 @@ decode(ID, Payload, Port) ->
             {error, unknown_decoder};
         {ok, custom, _Pid} ->
             router_decoder_custom_sup:decode(ID, erlang:binary_to_list(Payload), Port);
-        {ok, Type, _} ->
-            {error, {unhandled_decoder, Type}}
+        {ok, _Type, _} ->
+            {error, unhandled_decoder}
     end.
 
 %% ------------------------------------------------------------------

@@ -15,9 +15,13 @@
     "metadata": {},
     "fcnt": 2,
     "reported_at": 123,
-    // ONLY if payload is decoded (payload filed will then be the decoded payload)
-    "payload_raw": "base64 encoded payload",
     "payload": "base64 encoded payload",
+     // ONLY if payload is decoded
+    "decoded": {
+        "status": "success | error",
+        "error": "...",
+        "payload": "..."
+    },
     "port": 1,
     "devaddr": "devaddr",
     "hotspots": [

@@ -1,0 +1,4 @@
+-define(APPEUI, <<0,0,0,0,0,0,0,0>>).
+-define(DEVEUI, <<16#EF, 16#BE, 16#AD, 16#DE, 16#EF, 16#BE, 16#AD, 16#DE>>).
+-define(APPKEY, <<16#2B, 16#7E, 16#15, 16#16, 16#28, 16#AE, 16#D2, 16#A6, 16#AB, 16#F7, 16#15, 16#88, 16#09, 16#CF, 16#4F, 16#3C>>).
+-define(EUIS, [{16#deadbeef, 16#deadc0de}]).

@@ -93,5 +93,34 @@ insert(Decoder) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+new_test() ->
+    Decoder = #decoder{id= <<"id">>, type=custom, args= #{}},
+    ?assertEqual(Decoder, new(<<"id">>, custom, #{})).
+
+id_test() ->
+    Decoder = new(<<"id">>, custom, #{}),
+    ?assertEqual(<<"id">>, id(Decoder)).
+
+type_test() ->
+    Decoder = new(<<"id">>, custom, #{}),
+    ?assertEqual(custom, type(Decoder)).
+
+args_test() ->
+    Decoder = new(<<"id">>, custom, #{}),
+    ?assertEqual(#{}, args(Decoder)).
+
+add_test() ->
+    Decoder = new(<<"id">>, unkown, #{}),
+    ?assertEqual({error, unhandled_decoder}, add(Decoder)).
+
+insert_lookup_delete_test() ->
+    _ = init_ets(),
+    ID = <<"id">>,
+    Decoder = new(ID, custom, #{}),
+    ok = insert(Decoder),
+    ok = delete(ID),
+    ?assertEqual({error, not_found}, lookup(ID)),
+    true = ets:delete(?ETS).
+
 
 -endif.

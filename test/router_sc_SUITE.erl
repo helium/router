@@ -15,13 +15,15 @@
         ]).
 
 -export([
-         basic_test/1
+         maintain_channels_test/1,
+         handle_packets_test/1
         ]).
 
 %% common test callbacks
 
 all() -> [
-          basic_test
+          maintain_channels_test,
+          handle_packets_test
          ].
 
 init_per_suite(Config) ->
@@ -97,14 +99,15 @@ init_per_testcase(TestCase, Config0) ->
     %% confirm we have a height of 1 on routers
     ok = miner_test:wait_for_gte(height_exactly, Routers, 1),
 
-    [{consensus_miners, ConsensusMiners},
-     {non_consensus_miners, NonConsensusMiners}
-    | Config].
+    NewConfig =  [{consensus_miners, ConsensusMiners}, {non_consensus_miners, NonConsensusMiners} |
+                  Config],
+    ct:pal("Config: ~p", [NewConfig]),
+    NewConfig.
 
 end_per_testcase(_TestCase, Config) ->
     router_ct_utils:end_per_testcase(_TestCase, Config).
 
-basic_test(Config) ->
+maintain_channels_test(Config) ->
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
 
@@ -175,5 +178,81 @@ basic_test(Config) ->
 
     RouterState3 = ct_rpc:call(RouterNode, router_sc_worker, state, []),
     ct:pal("Final RouterState: ~p", [RouterState3]),
+
+    ok.
+
+handle_packets_test(Config) ->
+    Miners = ?config(miners, Config),
+    Routers = ?config(routers, Config),
+    DefaultRouters = ?config(default_routers, Config),
+
+    [RouterNode | _] = Routers,
+    [ClientNode | _] = Miners,
+
+    %% setup
+    %% oui txn
+    {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
+    RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
+
+    {Filter, _} = xor16:to_bin(xor16:new([ <<DevEUI:64/integer-unsigned-little,
+                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- ?EUIS],
+                                         fun xxhash:hash64/1)),
+
+    OUITxn = ct_rpc:call(RouterNode,
+                         blockchain_txn_oui_v1,
+                         new,
+                         [RouterPubkeyBin, [RouterPubkeyBin], Filter, 8, 1, 0]),
+    ct:pal("OUITxn: ~p", [OUITxn]),
+    SignedOUITxn = ct_rpc:call(RouterNode,
+                               blockchain_txn_oui_v1,
+                               sign,
+                               [OUITxn, RouterSigFun]),
+    ct:pal("SignedOUITxn: ~p", [SignedOUITxn]),
+    ok = ct_rpc:call(RouterNode, blockchain_worker, submit_txn, [SignedOUITxn]),
+
+    %% check that oui txn appears on miners
+    CheckTypeOUI = fun(T) -> blockchain_txn:type(T) == blockchain_txn_oui_v1 end,
+    CheckTxnOUI = fun(T) -> T == SignedOUITxn end,
+    ok = miner_test:wait_for_txn(Routers, CheckTypeOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Routers, CheckTxnOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
+
+    RouterState = ct_rpc:call(RouterNode, router_sc_worker, state, []),
+    ct:pal("Before RouterState: ~p", [RouterState]),
+
+    true = miner_test:wait_until(fun() ->
+                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+                                         RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
+                                         MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
+                                         {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
+                                         map_size(SCs) == 2 andalso map_size(MySCs) == 2
+                                 end, 30, timer:seconds(1)),
+
+    %% At this point, we're certain that two state channels have been opened by the router
+    %% Use client node to send some packets
+    Payload1 = crypto:strong_rand_bytes(rand:uniform(23)),
+    Payload2 = crypto:strong_rand_bytes(24+rand:uniform(23)),
+    Packet1 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload1),
+    Packet2 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload2),
+    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet1, DefaultRouters]),
+    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet2, DefaultRouters]),
+
+    %% wait until sc close txn appears
+    CheckTypeSCClose = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end,
+    true = miner_test:wait_until(fun() ->
+                                         ok == miner_ct_utils:wait_for_txn(Miners, CheckTypeSCClose, timer:seconds(120))
+                                 end, 60, timer:seconds(5)),
+
+    %% Find all sc close txns
+    %% Check if any of them contain the summary
+
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    RouterBlocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
+
+    Txns = lists:map(fun({I, B}) -> Ts = blockchain_block:transactions(B), {I, Ts}  end, maps:to_list(RouterBlocks)),
+    SCCloseFiltered = lists:map(fun({I, Ts}) -> {I, lists:filter(fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1  end, Ts)}  end, Txns),
+    SCCloses = lists:filter(fun({_I, List}) -> length(List) /= 0  end, SCCloseFiltered),
+    ct:pal("SCCloses: ~p", [SCCloses]),
 
     ok.

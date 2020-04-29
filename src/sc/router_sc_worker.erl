@@ -74,7 +74,7 @@ init(Args) ->
     ok = blockchain_event:add_handler(self()),
     OUI = application:get_env(router, oui, undefined),
     erlang:send_after(500, self(), post_init),
-    {ok, #state{oui=OUI}}.
+    {ok, #state{oui=OUI, active_count=get_active_count()}}.
 
 handle_call(state, _From, State) ->
     {reply, State, State};

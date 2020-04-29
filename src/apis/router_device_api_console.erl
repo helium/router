@@ -175,10 +175,10 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
-handle_info({'EXIT', Pid, _Reason}, #state{ws=Pid, ws_url=Url}=State) ->
+handle_info({'EXIT', Pid0, _Reason}, #state{ws=Pid0, ws_url=Url}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
-    Pid = start_ws(Url),
-    {noreply, State#state{ws=Pid}};
+    Pid1 = start_ws(Url),
+    {noreply, State#state{ws=Pid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),

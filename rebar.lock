@@ -87,11 +87,7 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.7.0">>},0},
  {<<"libp2p">>,
   {git,"https://github.com/helium/erlang-libp2p.git",
-<<<<<<< HEAD
        {ref,"f3bc0338caa72696cff8dc17e775222feae120a7"}},
-=======
-       {ref,"30d00b160c895284197adc4fce4a881a47f754ed"}},
->>>>>>> fc9b791... Ensure miner and core run with test flag
   1},
  {<<"libp2p_crypto">>,{pkg,<<"libp2p_crypto">>,<<"1.0.1">>},2},
  {<<"meck">>,{pkg,<<"meck">>,<<"0.8.12">>},1},

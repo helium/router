@@ -56,9 +56,9 @@ decode(ID, Payload, Port) ->
     case lookup(ID) of
         {error, not_found} ->
             {error, unknown_decoder};
-        {ok, custom, _Pid} ->
+        {ok, #decoder{id=ID, type=custom}} ->
             router_decoder_custom_sup:decode(ID, erlang:binary_to_list(Payload), Port);
-        {ok, _Type, _} ->
+        {ok, _Decoder} ->
             {error, unhandled_decoder}
     end.
 
@@ -69,25 +69,23 @@ decode(ID, Payload, Port) ->
 -spec add(atom(), decoder()) -> ok | {error, any()}.
 add(custom, Decoder) ->
     case router_decoder_custom_sup:add(Decoder) of
-        {error, _Reason}=Error ->
-            Error;
-        {ok, Pid} ->
-            ID = ?MODULE:id(Decoder),
-            insert(ID, custom, Pid)
+        {error, _Reason}=Error -> Error;
+        {ok, _Pid} -> insert(Decoder)
     end;
 add(_Type, _Decoder) ->
     {error, unhandled_decoder}.
 
--spec lookup(binary()) -> {ok, atom(), any()} | {error, not_found}.
+-spec lookup(binary()) -> {ok, decoder()} | {error, not_found}.
 lookup(ID) ->
     case ets:lookup(?ETS, ID) of
         [] -> {error, not_found};
-        [{ID, {Type, Info}}] -> {ok, Type, Info}
+        [{ID, Decoder}] -> {ok, Decoder}
     end.
 
--spec insert(binary(), atom(), any()) -> ok.
-insert(ID, Type, Info) ->
-    true = ets:insert(?ETS, {ID, {Type, Info}}),
+-spec insert(decoder()) -> ok.
+insert(Decoder) ->
+    ID = ?MODULE:id(Decoder),
+    true = ets:insert(?ETS, {ID, Decoder}),
     ok.
 
 %% ------------------------------------------------------------------

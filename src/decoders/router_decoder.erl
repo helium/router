@@ -56,8 +56,8 @@ decode(ID, Payload, Port) ->
     case lookup(ID) of
         {error, not_found} ->
             {error, unknown_decoder};
-        {ok, #decoder{id=ID, type=custom}} ->
-            router_decoder_custom_sup:decode(ID, erlang:binary_to_list(Payload), Port);
+        {ok, #decoder{type=custom}=Decoder} ->
+            router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port);
         {ok, _Decoder} ->
             {error, unhandled_decoder}
     end.

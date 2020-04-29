@@ -201,14 +201,13 @@ timeout_test(Config) ->
                                                         <<"frequency">> => fun erlang:is_float/1}]}),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
-    [{DecoderID, {_Hash, DecoderPid, _Time}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
+   [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
 
     DecoderPid ! timeout,
     timer:sleep(1000),
 
     ?assertNot(erlang:is_process_alive(DecoderPid)),
     ?assertEqual([], ets:lookup(router_decoder_custom_sup_ets, DecoderID)),
-    ?assertEqual([], ets:lookup(router_decoder_ets, DecoderID)),
     ok.
 
 too_many_test(Config) ->
@@ -289,7 +288,7 @@ too_many_test(Config) ->
                                                         <<"frequency">> => fun erlang:is_float/1}]}),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
-    [{DecoderID, {_Hash, DecoderPid, _Time}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
+    [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
 
     NewDecoder = router_decoder:new(<<"new-decoder">>, custom, #{function => <<"function Decoder(bytes, port) {return 'ok'}">>}),
     ok = router_decoder:add(NewDecoder),
@@ -298,10 +297,10 @@ too_many_test(Config) ->
 
     NewDecoderID = router_decoder:id(NewDecoder),
     [{NewDecoderID, _}] = ets:lookup(router_decoder_custom_sup_ets, NewDecoderID),
-    ?assertEqual({error, unknown_decoder}, router_decoder:decode(DecoderID, <<>>, 1)),
+    %% decoder gets auto restarted if removed
+    ?assertEqual({ok, undefined}, router_decoder:decode(DecoderID, <<>>, 1)),
     ?assertEqual({ok, <<"ok">>}, router_decoder:decode(NewDecoderID, <<>>, 1)),
     ?assertEqual(1, ets:info(router_decoder_custom_sup_ets, size)),
-    ?assertEqual(1, ets:info(router_decoder_ets, size)),
     ok.
 
 %% ------------------------------------------------------------------

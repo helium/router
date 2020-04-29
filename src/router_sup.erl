@@ -94,10 +94,10 @@ init([]) ->
     DBOpts = [BaseDir],
     DeviceAPIModule = router_device_api:module(),
     DeviceAPIData = maps:from_list(application:get_env(router, DeviceAPIModule, [])),
-    {ok, {?FLAGS, [?WORKER(router_db, [DBOpts]),
+    {ok, {?FLAGS, [?SUP(blockchain_sup, [BlockchainOpts]),
+                   ?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
                    ?WORKER(router_p2p, [P2PWorkerOpts]),
-                   ?SUP(blockchain_sup, [BlockchainOpts]),
                    ?WORKER(router_sc_worker, [SCWorkerOpts]),
                    ?WORKER(DeviceAPIModule, [DeviceAPIData])]}}.
 

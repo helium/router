@@ -64,11 +64,23 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec handle_packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin()) -> ok.
+-spec handle_packet(blockchain_helium_packet_v1:packet() | blockchain_state_channel_packet_v1:packet(),
+                    libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
+handle_packet(SCPacket, Pid) when is_pid(Pid) ->
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    case handle_packet(Packet, PubkeyBin, Pid) of
+        {error, _Reason}=E ->
+            lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
+            E;
+        ok ->
+            ok
+    end;
 handle_packet(Packet, PubKeyBin) ->
     case handle_packet(Packet, PubKeyBin, self()) of
-        {error, _Reason} ->
-            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]);
+        {error, _Reason}=E ->
+            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
+            E;
         ok ->
             ok
     end.

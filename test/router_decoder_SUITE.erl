@@ -201,7 +201,7 @@ timeout_test(Config) ->
                                                         <<"frequency">> => fun erlang:is_float/1}]}),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
-   [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
+    [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
 
     DecoderPid ! timeout,
     timer:sleep(1000),

@@ -189,6 +189,8 @@ handle_packets_test(Config) ->
     [RouterNode | _] = Routers,
     [ClientNode | _] = Miners,
 
+    ClientPubkeyBin = ct_rpc:call(ClientNode, blockchain_swarm, pubkey_bin, []),
+
     %% setup
     %% oui txn
     {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
@@ -238,21 +240,47 @@ handle_packets_test(Config) ->
     ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet1, DefaultRouters]),
     ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet2, DefaultRouters]),
 
-    %% wait until sc close txn appears
-    CheckTypeSCClose = fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end,
+    %% Wait 100 blocks
     true = miner_test:wait_until(fun() ->
-                                         ok == miner_ct_utils:wait_for_txn(Miners, CheckTypeSCClose, timer:seconds(120))
+                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+                                         {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
+                                         RouterChainHeight > 100
                                  end, 60, timer:seconds(5)),
 
     %% Find all sc close txns
-    %% Check if any of them contain the summary
-
     RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
     RouterBlocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
 
-    Txns = lists:map(fun({I, B}) -> Ts = blockchain_block:transactions(B), {I, Ts}  end, maps:to_list(RouterBlocks)),
-    SCCloseFiltered = lists:map(fun({I, Ts}) -> {I, lists:filter(fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1  end, Ts)}  end, Txns),
-    SCCloses = lists:filter(fun({_I, List}) -> length(List) /= 0  end, SCCloseFiltered),
+    Txns = lists:map(fun({I, B}) ->
+                             Ts = blockchain_block:transactions(B),
+                             {I, Ts}
+                     end, maps:to_list(RouterBlocks)),
+
+    SCCloseFiltered = lists:map(fun({I, Ts}) ->
+                                        {I, lists:filter(fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end, Ts)}
+                                end, Txns),
+
+    SCCloses = lists:flatten(lists:foldl(fun({_I, List}, Acc) ->
+                                                 case length(List) /= 0 of
+                                                     true -> [Acc | List];
+                                                     false -> Acc
+                                                 end
+                                         end, [], SCCloseFiltered)),
+
     ct:pal("SCCloses: ~p", [SCCloses]),
+
+    Summary = hd(lists:flatten(lists:foldl(fun(SCCloseTxn, Acc) ->
+                                                   SC = blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn),
+                                                   Summaries = blockchain_state_channel_v1:summaries(SC),
+                                                   [Summaries | Acc]
+                                           end,
+                                           [],
+                                           SCCloses))),
+
+    ct:pal("Summary: ~p", [Summary]),
+
+    2 = blockchain_state_channel_summary_v1:num_packets(Summary),
+    3 = blockchain_state_channel_summary_v1:num_dcs(Summary),
+    ClientPubkeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
 
     ok.

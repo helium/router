@@ -54,7 +54,7 @@ end_per_testcase(TestCase, Config) ->
 dupes_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,
@@ -206,7 +206,7 @@ dupes_test(Config) ->
 join_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     BaseDir = proplists:get_value(base_dir, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
     Swarm1 = test_utils:start_swarm(BaseDir, join_test_swarm_1, 0),
@@ -279,7 +279,7 @@ join_test(Config) ->
 adr_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,

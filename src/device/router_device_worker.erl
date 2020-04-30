@@ -50,7 +50,7 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
-                oui :: pos_integer(),
+                oui :: undefined | pos_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
                 frame_cache = #{} :: #{integer() => #frame_cache{}}}).
@@ -88,7 +88,7 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    {ok, OUI} = application:get_env(router, oui),
+    OUI = application:get_env(router, oui, undefined),
     Device = get_device(DB, CF, ID),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{device_worker => self(),
@@ -111,6 +111,9 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     lager:debug("queue downlink message"),
     {noreply, State#state{device=Device1}};
+handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
+    lager:warning("got join packet when oui=undefined, standing by..."),
+    {noreply, State0};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
                                                                        join_cache=Cache0,
                                                                        oui=OUI}=State0) ->

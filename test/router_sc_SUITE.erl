@@ -56,6 +56,7 @@ init_per_testcase(TestCase, Config0) ->
 
     [Miner | _] = Miners,
     MinerModInfo = ct_rpc:call(Miner, miner, module_info, []),
+    ct:pal("MinerModInfo: ~p", [MinerModInfo]),
     ?assert(lists:member({test_version, 0}, proplists:get_value(exports, MinerModInfo))),
 
     SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
@@ -118,8 +119,10 @@ maintain_channels_test(Config) ->
     {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
     RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
 
-    {Filter, _} = xor16:to_bin(xor16:new([ <<DevEUI:64/integer-unsigned-little,
-                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- ?EUIS],
+    DevEUI = ?DEVEUI,
+    AppEUI = ?APPEUI,
+
+    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>],
                                          fun xxhash:hash64/1)),
 
     OUITxn = ct_rpc:call(RouterNode,
@@ -184,7 +187,6 @@ maintain_channels_test(Config) ->
 handle_packets_test(Config) ->
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
-    DefaultRouters = ?config(default_routers, Config),
 
     [RouterNode | _] = Routers,
     [ClientNode | _] = Miners,
@@ -196,8 +198,9 @@ handle_packets_test(Config) ->
     {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
     RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
 
-    {Filter, _} = xor16:to_bin(xor16:new([ <<DevEUI:64/integer-unsigned-little,
-                                             AppEUI:64/integer-unsigned-little>> || {DevEUI, AppEUI} <- ?EUIS],
+    DevEUI = ?DEVEUI,
+    AppEUI = ?APPEUI,
+    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>],
                                          fun xxhash:hash64/1)),
 
     OUITxn = ct_rpc:call(RouterNode,
@@ -233,12 +236,8 @@ handle_packets_test(Config) ->
 
     %% At this point, we're certain that two state channels have been opened by the router
     %% Use client node to send some packets
-    Payload1 = crypto:strong_rand_bytes(rand:uniform(23)),
-    Payload2 = crypto:strong_rand_bytes(24+rand:uniform(23)),
-    Packet1 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload1),
-    Packet2 = blockchain_helium_packet_v1:new({devaddr, 1}, Payload2),
-    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet1, DefaultRouters]),
-    ok = ct_rpc:call(ClientNode, blockchain_state_channels_client, packet, [Packet2, DefaultRouters]),
+    Packet = <<?JOIN_REQUEST:3, 0:5, AppEUI:64/integer-unsigned-little, DevEUI:64/integer-unsigned-little, 1111:16/integer-unsigned-big, 0:32/integer-unsigned-big>>,
+    ok = ct_rpc:call(ClientNode, miner_test_fake_radio_backplane, transmit, [Packet, 911.200, 631210968910285823]),
 
     %% Wait 100 blocks
     true = miner_test:wait_until(fun() ->

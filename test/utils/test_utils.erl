@@ -10,6 +10,7 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
+         join_payload/2,
          join_packet/3, join_packet/4,
          frame_packet/5, frame_packet/6,
          tmp_dir/0, tmp_dir/1]).
@@ -266,6 +267,13 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
     join_packet(PubKeyBin, AppKey, DevNonce, 0).
 
 join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
+    RoutingInfo = {devaddr, 1},
+    HeliumPacket = blockchain_helium_packet_v1:new(RoutingInfo, lorawan, join_payload(AppKey, DevNonce), 1000, RSSI, 923.3, <<"SF8BW125">>, 0.2),
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+join_payload(AppKey, DevNonce) ->
     MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
@@ -273,17 +281,7 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     DevEUI = lorawan_utils:reverse(?DEVEUI),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
     MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      payload=Payload1,
-                      signal_strength=RSSI,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    <<Payload0/binary, MIC:4/binary>>.
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).

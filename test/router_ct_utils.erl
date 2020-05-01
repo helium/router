@@ -1,5 +1,3 @@
-%% NOTE: This is an exact copy pasta of router_ct_utils
-%% TODO: Separate out related utilities into its own testing library
 -module(router_ct_utils).
 
 -include_lib("common_test/include/ct.hrl").

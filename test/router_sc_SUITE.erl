@@ -250,7 +250,7 @@ handle_packets_test(Config) ->
 
     %% At this point, we're certain that two state channels have been opened by the router
     %% Use client node to send some packets
-    Packet = <<?JOIN_REQUEST:3, 0:5, AppEUI:64/integer-unsigned-little, DevEUI:64/integer-unsigned-little, 1111:16/integer-unsigned-big, 0:32/integer-unsigned-big>>,
+    Packet = test_utils:join_payload(?APPKEY, crypto:strong_rand_bytes(2)),
     ok = miner_test_fake_radio_backplane:transmit(Packet, 911.200, 631210968910285823),
     ct:pal("transmitted packet ~p", [Packet]),
 

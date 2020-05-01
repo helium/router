@@ -50,7 +50,7 @@ end_per_testcase(TestCase, Config) ->
 console_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     true = ets:insert(Tab, {channel_type, console}),
-    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 10}),
+    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 1}),
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
@@ -128,11 +128,26 @@ console_test(Config) ->
                                                                  <<"description">> => '_',
                                                                  <<"debug">> => #{<<"req">> => #{<<"body">> => fun erlang:is_binary/1}}}]}),
 
+    %% Send another UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
+    EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
+                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
+
+    %%  Nothing should happen
+    ok = loop(10),
     ok.
 
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+loop(0) -> ok;
+loop(I) ->
+    receive
+        {report_channel_status, Got} -> ct:fail(Got);
+        _Something -> loop(I-1)
+    after 100 -> loop(I-1)
+    end.
 
 to_real_payload(Bin) ->
     erlang:list_to_binary(lists:map(fun(X)-> erlang:binary_to_integer(X, 16) end, binary:split(Bin, <<" ">>, [global]))).

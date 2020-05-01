@@ -19,12 +19,17 @@
          handle_packets_test/1
         ]).
 
+-define(SFLOCS, [631210968910285823, 631210968909003263, 631210968912894463, 631210968907949567]).
+-define(NYLOCS, [631243922668565503, 631243922671147007, 631243922895615999, 631243922665907711]).
+
 %% common test callbacks
 
 all() -> [
           maintain_channels_test,
           handle_packets_test
          ].
+
+
 
 init_per_suite(Config) ->
     Config.
@@ -41,8 +46,11 @@ init_per_testcase(TestCase, Config0) ->
     Balance = 5000,
     InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
     InitialDCTxns = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
-    AddGwTxns = [blockchain_txn_gen_gateway_v1:new(Addr, Addr, h3:from_geo({37.780586, -122.469470}, 13), 0)
-                 || Addr <- Addresses],
+
+
+    Locations = ?SFLOCS ++ ?NYLOCS,
+    AddressesWithLocations = lists:zip(Addresses, lists:sublist(Locations, length(Addresses))),
+    AddGwTxns  = [blockchain_txn_gen_gateway_v1:new(Addr, Addr, Loc, 0) || {Addr, Loc} <- AddressesWithLocations],
 
     NumConsensusMembers = ?config(num_consensus_members, Config),
     BlockTime = ?config(block_time, Config),
@@ -85,6 +93,10 @@ init_per_testcase(TestCase, Config0) ->
                                        Addresses, NumConsensusMembers, Curve),
     true = lists:all(fun(Res) -> Res == ok end, DKGResults),
 
+    MinersAndPorts = ?config(ports, Config),
+    RadioPorts = [ P || {_Miner, {_TP, P}} <- MinersAndPorts ],
+    miner_test_fake_radio_backplane:start_link(8, 45000, lists:zip(RadioPorts, lists:sublist(Locations, length(RadioPorts)))),
+
     %% Get both consensus and non consensus miners
     {ConsensusMiners, NonConsensusMiners} = miner_test:miners_by_consensus_state(Miners),
 
@@ -99,6 +111,8 @@ init_per_testcase(TestCase, Config0) ->
 
     %% confirm we have a height of 1 on routers
     ok = miner_test:wait_for_gte(height_exactly, Routers, 1),
+
+    miner_test_fake_radio_backplane ! go,
 
     NewConfig =  [{consensus_miners, ConsensusMiners}, {non_consensus_miners, NonConsensusMiners} |
                   Config],
@@ -237,7 +251,8 @@ handle_packets_test(Config) ->
     %% At this point, we're certain that two state channels have been opened by the router
     %% Use client node to send some packets
     Packet = <<?JOIN_REQUEST:3, 0:5, AppEUI:64/integer-unsigned-little, DevEUI:64/integer-unsigned-little, 1111:16/integer-unsigned-big, 0:32/integer-unsigned-big>>,
-    ok = ct_rpc:call(ClientNode, miner_test_fake_radio_backplane, transmit, [Packet, 911.200, 631210968910285823]),
+    ok = miner_test_fake_radio_backplane:transmit(Packet, 911.200, 631210968910285823),
+    ct:pal("transmitted packet ~p", [Packet]),
 
     %% Wait 100 blocks
     true = miner_test:wait_until(fun() ->

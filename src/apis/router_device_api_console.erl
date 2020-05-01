@@ -245,7 +245,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"console">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
-    Handler = router_aws_channel,
+    Handler = router_console_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),

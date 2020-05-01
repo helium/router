@@ -150,10 +150,10 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
                 #join_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
-                            catch Pid ! {packet, undefined},
+                            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
                             {noreply, State1};
                         true ->
-                            catch Pid2 ! {packet, undefined},
+                            catch blockchain_state_channel_handler:send_response(Pid2, blockchain_state_channel_response_v1:new(true)),
                             {noreply, State1#state{join_cache=Cache1}}
                     end
             end
@@ -182,11 +182,11 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                 #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->
                     case RSSI0 > RSSI1 of
                         false ->
-                            catch Pid ! {packet, undefined},
+                            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
                             Cache1 = maps:put(FCnt, FrameCache0#frame_cache{count=Count+1}, Cache0),
                             {noreply, State#state{device=Device1, frame_cache=Cache1}};
                         true ->
-                            catch Pid2 ! {packet, undefined},
+                            catch blockchain_state_channel_handler:send_response(Pid2, blockchain_state_channel_response_v1:new(true)),
                             Cache1 = maps:put(FCnt, FrameCache#frame_cache{count=Count+1}, Cache0),
                             {noreply, State#state{device=Device1, frame_cache=Cache1}}
                     end
@@ -202,7 +202,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
                 device=Device0,
                 pid=Pid,
                 pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
-    Pid ! {packet, Packet},
+    catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet)),
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
@@ -224,15 +224,15 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
     case handle_frame(Packet0, PubKeyBin, Device, Frame, Count) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            Pid ! {packet, undefined},
+            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, Packet1} ->
             lager:info("sending downlink"),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            Pid ! {packet, Packet1},
+            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet1)),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
-            Pid ! {packet, undefined},
+            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{frame_cache=Cache1}}
     end;
 handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0, channels_worker=ChannelsWorker}=State) ->
@@ -367,7 +367,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     <<OUI:32/integer-unsigned-big, DID:32/integer-unsigned-big>> = AppEUI,
     lager:warning("~p ~p tried to join with stale nonce ~p via ~s", [OUI, DID, Nonce, AName]),
     {error, bad_nonce};
-handle_join(#packet_pb{type=Type, timestamp=Time, frequency=Freq, datarate=DataRate,
+handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
                        payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
             PubKeyBin, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
@@ -399,7 +399,7 @@ handle_join(#packet_pb{type=Type, timestamp=Time, frequency=Freq, datarate=DataR
     DeviceName = router_device:name(APIDevice),
     lager:info("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-    Packet = #packet_pb{type=Type, payload=Reply, timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
+    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     DeviceUpdates = [{name, DeviceName},
                      {dev_eui, DevEUI},

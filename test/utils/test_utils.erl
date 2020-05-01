@@ -12,7 +12,9 @@
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
          join_payload/2,
          join_packet/3, join_packet/4,
+         frame_payload/6,
          frame_packet/5, frame_packet/6,
+         deframe_packet/2, deframe_join_packet/3,
          tmp_dir/0, tmp_dir/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -287,10 +289,23 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    MHDRRFU = 0,
-    Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
     DevAddr = <<OUI:32/integer-unsigned-big>>,
+    Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
+    HeliumPacket = #packet_pb{
+                      type=lorawan,
+                      payload=Payload1,
+                      frequency=923.3,
+                      datarate= <<"SF8BW125">>,
+                      signal_strength=maps:get(rssi, Options, 0.0)
+                     },
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
+    MHDRRFU = 0,
+    Major = 0,
     ADR = 0,
     ADRACKReq = 0,
     ACK = case maps:get(should_ack, Options, false) of
@@ -306,17 +321,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
                  FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
     B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      payload=Payload1,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>,
-                      signal_strength=maps:get(rssi, Options, 0.0)
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    <<Payload0/binary, MIC:4/binary>>.
+
 
 %%--------------------------------------------------------------------
 %% @doc

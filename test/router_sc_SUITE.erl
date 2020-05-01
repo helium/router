@@ -5,6 +5,8 @@
 -include_lib("kernel/include/inet.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
 -include("router_ct_macros.hrl").
+-include("lorawan_vars.hrl").
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 
 -export([
          init_per_suite/1,
@@ -38,6 +40,7 @@ end_per_suite(Config) ->
     Config.
 
 init_per_testcase(TestCase, Config0) ->
+    application:ensure_all_started(lager),
     Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
@@ -136,7 +139,7 @@ maintain_channels_test(Config) ->
     DevEUI = ?DEVEUI,
     AppEUI = ?APPEUI,
 
-    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>],
+    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI/binary, AppEUI/binary>>],
                                          fun xxhash:hash64/1)),
 
     OUITxn = ct_rpc:call(RouterNode,
@@ -203,9 +206,8 @@ handle_packets_test(Config) ->
     Routers = ?config(routers, Config),
 
     [RouterNode | _] = Routers,
-    [ClientNode | _] = Miners,
 
-    ClientPubkeyBin = ct_rpc:call(ClientNode, blockchain_swarm, pubkey_bin, []),
+    ClientPubkeyBins = [ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []) || Miner <- Miners],
 
     %% setup
     %% oui txn
@@ -214,7 +216,7 @@ handle_packets_test(Config) ->
 
     DevEUI = ?DEVEUI,
     AppEUI = ?APPEUI,
-    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>],
+    {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI/binary, AppEUI/binary>>],
                                          fun xxhash:hash64/1)),
 
     OUITxn = ct_rpc:call(RouterNode,
@@ -250,9 +252,39 @@ handle_packets_test(Config) ->
 
     %% At this point, we're certain that two state channels have been opened by the router
     %% Use client node to send some packets
-    Packet = test_utils:join_payload(?APPKEY, crypto:strong_rand_bytes(2)),
-    ok = miner_test_fake_radio_backplane:transmit(Packet, 911.200, 631210968910285823),
+    DevNonce = crypto:strong_rand_bytes(2),
+    Packet = test_utils:join_payload(?APPKEY, DevNonce),
+    ok = miner_test_fake_radio_backplane:transmit(Packet, 902.300, 631210968910285823),
     ct:pal("transmitted packet ~p", [Packet]),
+
+    miner_test_fake_radio_backplane:get_next_packet(),
+    {DevAddr, NetKey, AppKey} = receive
+                                    {fake_radio_backplane, ReplyPacket} ->
+                                        ct:pal("got downlink ~p", [ReplyPacket]),
+                                        ReplyPayload = maps:get(<<"data">>, ReplyPacket),
+                                        {_NetID, DA, _DLSettings, _RxDelay, NK, AK} = test_utils:deframe_join_packet(#packet_pb{payload=base64:decode(ReplyPayload)}, DevNonce, ?APPKEY),
+                                        {DA, NK, AK}
+                                after 5000 ->
+                                          ct:fail("no downlink")
+                                end,
+
+    ct:pal("DevAddr ~p", [DevAddr]),
+
+    DataPacket = test_utils:frame_payload(?CONFIRMED_UP, DevAddr, NetKey, AppKey, 1, #{body => <<1:8/integer, "hello">>}),
+
+    ok = miner_test_fake_radio_backplane:transmit(DataPacket, 902.300, 631210968910285823),
+    ct:pal("transmitted packet ~p", [DataPacket]),
+
+    miner_test_fake_radio_backplane:get_next_packet(),
+
+    receive
+        {fake_radio_backplane, ReplyPacket2} ->
+            ct:pal("got downlink ~p", [ReplyPacket2])
+    after
+        2000 ->
+            ct:fail("no downlink")
+    end,
+
 
     %% Wait 100 blocks
     true = miner_test:wait_until(fun() ->
@@ -294,7 +326,7 @@ handle_packets_test(Config) ->
     ct:pal("Summary: ~p", [Summary]),
 
     2 = blockchain_state_channel_summary_v1:num_packets(Summary),
-    3 = blockchain_state_channel_summary_v1:num_dcs(Summary),
-    ClientPubkeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
+    2 = blockchain_state_channel_summary_v1:num_dcs(Summary),
+    true = lists:member(blockchain_state_channel_summary_v1:client_pubkeybin(Summary), ClientPubkeyBins),
 
     ok.

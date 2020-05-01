@@ -88,7 +88,8 @@ init([]) ->
                    ?SUP(router_devices_sup, []),
                    ?WORKER(router_p2p, [P2PWorkerOpts]),
                    ?WORKER(DeviceAPIModule, [DeviceAPIData]),
-                   ?WORKER(router_v8, [#{}])]}}.
+                   ?WORKER(router_v8, [#{}]),
+                   ?SUP(router_decoder_custom_sup, [])]}}.
 
 %%====================================================================
 %% Internal functions

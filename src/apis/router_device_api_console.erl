@@ -27,6 +27,7 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(ETS, router_console_debug_ets).
 -define(TOKEN_CACHE_TIME, timer:minutes(10)).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 
@@ -34,8 +35,7 @@
                 secret :: binary(),
                 token :: binary(),
                 ws :: pid(),
-                ws_url :: list(),
-                debug = #{} ::map()}).
+                ws_url :: list()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -65,6 +65,7 @@ report_status(Device, Map) ->
 init(Args) ->
     erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
+    ets:new(?ETS, [public, named_table, set]),
     Endpoint = maps:get(endpoint, Args),
     WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
@@ -134,8 +135,7 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
-                                                 token=Token,
-                                                 debug=Debug0}=State) ->
+                                                 token=Token}=State) ->
     DeviceID = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
     Category = maps:get(category, Map),
@@ -151,25 +151,23 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
               devaddr => maps:get(devaddr, Map),
               hotspots => maps:get(hotspots, Map),
               channels => [maps:remove(debug, C) ||C <- Channels]},
-    {Body1, Debug1} =
-        case maps:is_key(DeviceID, Debug0) andalso  lists:member(Category, [<<"up">>, <<"down">>]) of
+    DebugLeft = debug_lookup(DeviceID),
+    Body1 =
+        case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of
             false ->
-                {Body0, Debug0};
+                Body0;
             true ->
-                DebugLeft = maps:get(DeviceID, Debug0),
-                B0 = maps:put(payload, maps:get(payload, Map), Body0),
-                B1 = maps:put(channels, Channels, B0),
                 case DebugLeft-1 =< 0 of
-                    true ->
-                        {B1, maps:remove(DeviceID, Debug0)};
-                    false ->
-                        {B1, maps:put(DeviceID, DebugLeft-1, Debug0)}
-                end
+                    false -> debug_insert(DeviceID, DebugLeft-1);
+                    true -> debug_delete(DeviceID)
+                end,
+                B0 = maps:put(payload, maps:get(payload, Map), Body0),
+                maps:put(channels, Channels, B0)
         end,
     lager:debug("post ~p to ~p", [Body1, Url]),
     hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                  jsx:encode(Body1), [with_body, {pool, ?MODULE}]),
-    {noreply, State#state{debug=Debug1}};
+    {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -183,16 +181,13 @@ handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {noreply, State#state{token=Token}};
-handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
-            #state{debug=Debug0}=State) ->
+handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
     lager:info("turning debug on for devices ~p", [DeviceIDs]),
-    Debug1 =lists:foldl(
-              fun(DeviceID, Acc) ->
-                      maps:put(DeviceID, 10, Acc)
-              end,
-              Debug0,
-              DeviceIDs),
-    {noreply, State#state{debug=Debug1}};
+    lists:foreach(fun(DeviceID) ->
+                          ok = debug_insert(DeviceID, 10)
+                  end,
+                  DeviceIDs),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -248,6 +243,14 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     Decoder = convert_decoder(JSONChannel),
     Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     {true, Channel};
+convert_channel(Device, Pid, #{<<"type">> := <<"console">>}=JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_console_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    DeviceID = router_device:id(Device),
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder),
+    {true, Channel};
 convert_channel(_Device, _Pid, _Channel) ->
     false.
 
@@ -293,3 +296,21 @@ get_device_(Endpoint, Token, Device) ->
         _Other ->
             {error, {get_device_failed, _Other}}
     end.
+
+
+-spec debug_lookup(binary()) -> integer().
+debug_lookup(DeviceID) ->
+    case ets:lookup(?ETS, DeviceID) of
+        [] -> 0;
+        [{DeviceID, Limit}] -> Limit
+    end.
+
+-spec debug_insert(binary(), integer()) -> ok.
+debug_insert(DeviceID, Limit) ->
+    true = ets:insert(?ETS, {DeviceID, Limit}),
+    ok.
+
+-spec debug_delete(binary()) -> ok.
+debug_delete(DeviceID) ->
+    true = ets:delete(?ETS, DeviceID),
+    ok.

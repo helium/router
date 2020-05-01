@@ -416,8 +416,10 @@ maybe_start_decoder(Channel) ->
             ChannelID = router_channel:id(Channel),
             DecoderID = router_decoder:id(Decoder),
             case router_decoder:add(Decoder) of
-                ok -> lager:info("decoder ~p attached to ~p", [DecoderID, ChannelID]);
-                {error, _Reason} -> lager:info("failed to attached decoder ~p to ~p: ~p", [DecoderID, ChannelID, _Reason])
+                ok ->
+                    lager:info("decoder ~p attached to ~p", [DecoderID, ChannelID]);
+                {error, _Reason} ->
+                    lager:error("failed to attached decoder ~p to ~p: ~p", [DecoderID, ChannelID, _Reason])
             end
     end.
 

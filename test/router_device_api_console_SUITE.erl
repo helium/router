@@ -99,8 +99,7 @@ debug_test(Config) ->
 
     %% Making sure debug is on for our device
     timer:sleep(250),
-    State0 = sys:get_state(router_device_api_console),
-    ?assertMatch({state, _, _, _, _, _, #{?CONSOLE_DEVICE_ID := 10}}, State0),
+    ?assertEqual([{?CONSOLE_DEVICE_ID, 10}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
@@ -164,8 +163,7 @@ debug_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     %% Making sure debug is on for our device and at 9 now
-    State1 = sys:get_state(router_device_api_console),
-    ?assertMatch({state, _, _, _, _, _, #{?CONSOLE_DEVICE_ID := 9}}, State1),
+   ?assertEqual([{?CONSOLE_DEVICE_ID, 9}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
 
     lists:foreach(
       fun(I) ->
@@ -233,9 +231,7 @@ debug_test(Config) ->
       end,
       lists:seq(1, 9)),
 
-    State2 = sys:get_state(router_device_api_console),
-    ?assertMatch({state, _, _, _, _, _,#{}}, State2),
-
+    ?assertEqual([], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
     ok.
 
 %% ------------------------------------------------------------------

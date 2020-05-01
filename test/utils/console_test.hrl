@@ -42,6 +42,14 @@
                                    <<"name">> => ?CONSOLE_DECODER_CHANNEL_NAME,
                                    <<"function">> => ?CONSOLE_DECODER}).
 
+-define(CONSOLE_CONSOLE_CHANNEL_ID, <<"1617181920">>).
+-define(CONSOLE_CONSOLE_CHANNEL_NAME, <<"fake_console">>).
+-define(CONSOLE_CONSOLE_CHANNEL, #{<<"type">> => <<"console">>,
+                                   <<"credentials">> => #{},
+                                   <<"id">> => ?CONSOLE_CONSOLE_CHANNEL_ID,
+                                   <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
+                                   <<"function">> => ?CONSOLE_DECODER}).
+
 -define(CONSOLE_DECODER, #{<<"active">> => true,
                            <<"body">> => ?DECODER,
                            <<"format">> => <<"custom">>,

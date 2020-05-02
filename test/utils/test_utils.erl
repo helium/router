@@ -239,18 +239,22 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
             {client_data, undefined, Data} ->
                 try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                     #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                        #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                        ct:pal("wait_state_channel_message packet ~p", [Packet]),
-                        Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
-                        ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
-                        ?assertEqual(FrameData, Frame#frame.data),
-                        %% we queued an unconfirmed packet
-                        ?assertEqual(Type, Frame#frame.mtype),
-                        ?assertEqual(FPending, Frame#frame.fpending),
-                        ?assertEqual(Ack, Frame#frame.ack),
-                        ?assertEqual(Fport, Frame#frame.fport),
-                        ?assertEqual(FCnt, Frame#frame.fcnt),
-                        {ok, Frame};
+                        case Resp of
+                            #blockchain_state_channel_response_v1_pb{accepted=true, downlink=undefined} ->
+                                wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt);
+                            #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} ->
+                                ct:pal("wait_state_channel_message packet ~p", [Packet]),
+                                Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
+                                ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
+                                ?assertEqual(FrameData, Frame#frame.data),
+                                %% we queued an unconfirmed packet
+                                ?assertEqual(Type, Frame#frame.mtype),
+                                ?assertEqual(FPending, Frame#frame.fpending),
+                                ?assertEqual(Ack, Frame#frame.ack),
+                                ?assertEqual(Fport, Frame#frame.fport),
+                                ?assertEqual(FCnt, Frame#frame.fcnt),
+                                {ok, Frame}
+                        end;
                     _Else ->
                         ct:fail("wait_state_channel_message wrong message ~p for ~p", [_Else, Msg])
                 catch _E:_R ->

@@ -599,7 +599,13 @@ adr_test(Config) ->
     timer:sleep(1000),
     receive
         {client_data, _,  _Data3} ->
-            ct:fail("unexpected_reply ~p", [blockchain_state_channel_v1_pb:decode_msg(_Data3, blockchain_state_channel_message_v1_pb)])
+            Decoded = {response, Response} = blockchain_state_channel_message_v1:decode(_Data3),
+            case blockchain_state_channel_response_v1:downlink(Response) of
+                undefined ->
+                    ok;
+                _ ->
+                    ct:fail("unexpected_reply ~p", [Decoded])
+            end
     after 0 ->
             ok
     end,

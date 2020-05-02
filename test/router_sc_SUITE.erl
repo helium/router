@@ -209,6 +209,11 @@ handle_packets_test(Config) ->
 
     [RouterNode | _] = Routers,
 
+    %% Set default routers for miners
+    RouterPubkeyBins = ?config(router_pubkey_bins, Config),
+    DefaultRouters = [libp2p_crypto:pubkey_bin_to_p2p(P) || P <- RouterPubkeyBins],
+    true = miner_test:set_miner_default_routers(Miners, DefaultRouters),
+
     ClientPubkeyBins = [ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []) || Miner <- Miners],
 
     %% setup
@@ -267,7 +272,7 @@ handle_packets_test(Config) ->
                                         {_NetID, DA, _DLSettings, _RxDelay, NK, AK} = test_utils:deframe_join_packet(#packet_pb{payload=base64:decode(ReplyPayload)}, DevNonce, ?APPKEY),
                                         {DA, NK, AK}
                                 after 5000 ->
-                                          ct:fail("no downlink")
+                                        ct:fail("no downlink")
                                 end,
 
     ct:pal("DevAddr ~p", [DevAddr]),
@@ -336,17 +341,11 @@ handle_packets_test(Config) ->
 
 default_routers_test(Config) ->
     Miners = ?config(miners, Config),
-    Routers = ?config(routers, Config),
 
-    [RouterNode | _] = Routers,
-
-    {ok, RouterPubkey, _RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
-    RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
-
-    RouterP2P = libp2p_crypto:bin_to_b58(RouterPubkeyBin),
-    ct:pal("router p2p address ~p", [RouterP2P]),
-
-    [ct_rpc:call(Miner, application, set_env, [miner, default_routers, ["/p2p/"++RouterP2P]]) || Miner <- Miners],
+    %% Set default routers for miners
+    RouterPubkeyBins = ?config(router_pubkey_bins, Config),
+    DefaultRouters = [libp2p_crypto:pubkey_bin_to_p2p(P) || P <- RouterPubkeyBins],
+    true = miner_test:set_miner_default_routers(Miners, DefaultRouters),
 
     %% Use client node to send some packets
     DevNonce = crypto:strong_rand_bytes(2),

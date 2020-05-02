@@ -67,10 +67,6 @@ init_router_config(Config, NumRouters) ->
     %% accumulate the pubkey_bins of each miner
     RouterPubkeyBins = miner_test:acc_pubkey_bins(Routers),
 
-    %% Set these routers as miner default routers
-    DefaultRouters = [libp2p_crypto:pubkey_bin_to_p2p(P) || P <- RouterPubkeyBins],
-    true = miner_test:set_miner_default_routers(Miners, DefaultRouters),
-
     %% add both miners and router to cover
     {ok, _} = ct_cover:add_nodes(Miners ++ Routers),
 
@@ -82,8 +78,7 @@ init_router_config(Config, NumRouters) ->
      {routers, Routers},
      {router_keys, RouterKeys},
      {router_pubkey_bins, RouterPubkeyBins},
-     {elli, ElliPid},
-     {default_routers, DefaultRouters}
+     {elli, ElliPid}
     | Config
     ].
 

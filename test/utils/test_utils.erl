@@ -138,7 +138,7 @@ wait_for_channel_correction(Device, HotspotName) ->
                                         <<"description">> => '_',
                                         <<"reported_at">> => fun erlang:is_integer/1,
                                         <<"category">> => <<"down">>,
-                                        <<"frame_up">> => 0,
+                                        <<"fcnt_up">> => 0,
                                         <<"frame_down">> => 1,
                                         <<"hotspot_name">> => erlang:list_to_binary(HotspotName)}),
     ok.

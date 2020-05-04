@@ -47,7 +47,7 @@
     "description": "any specific description ie.correcting channel mask, otherwise null",
     "reported_at": 123,
     "device_id": "device_uuid",
-    "frame_up": 2,
+    "fcnt_up": 2,
     "frame_down": 2,
     "payload": "base64 payload", // ONLY ON DEBUG MODE
     "payload_size": 12,

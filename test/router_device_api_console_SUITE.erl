@@ -66,7 +66,7 @@ debug_test(Config) ->
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                           <<"frame_up">> => 0,
+                                           <<"fcnt_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
@@ -130,7 +130,7 @@ debug_test(Config) ->
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => fun erlang:is_integer/1,
+                                            <<"fcnt_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                             <<"payload_size">> => 0,
@@ -200,7 +200,7 @@ debug_test(Config) ->
                                                       <<"description">> => '_',
                                                       <<"reported_at">> => fun erlang:is_integer/1,
                                                       <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                                      <<"frame_up">> => fun erlang:is_integer/1,
+                                                      <<"fcnt_up">> => fun erlang:is_integer/1,
                                                       <<"frame_down">> => fun erlang:is_integer/1,
                                                       <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                                       <<"payload_size">> => 0,

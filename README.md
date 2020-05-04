@@ -48,7 +48,7 @@
     "reported_at": 123,
     "device_id": "device_uuid",
     "fcnt_up": 2,
-    "frame_down": 2,
+    "fcnt_down": 2,
     "payload": "base64 payload", // ONLY ON DEBUG MODE
     "payload_size": 12,
     "port": 1,

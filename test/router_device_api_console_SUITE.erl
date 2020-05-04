@@ -67,7 +67,7 @@ debug_test(Config) ->
                                            <<"reported_at">> => fun erlang:is_integer/1,
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"fcnt_up">> => 0,
-                                           <<"frame_down">> => 0,
+                                           <<"fcnt_down">> => 0,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"dev_addr">> => '_',
@@ -131,7 +131,7 @@ debug_test(Config) ->
                                             <<"reported_at">> => fun erlang:is_integer/1,
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"fcnt_up">> => fun erlang:is_integer/1,
-                                            <<"frame_down">> => fun erlang:is_integer/1,
+                                            <<"fcnt_down">> => fun erlang:is_integer/1,
                                             <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
@@ -201,7 +201,7 @@ debug_test(Config) ->
                                                       <<"reported_at">> => fun erlang:is_integer/1,
                                                       <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                                       <<"fcnt_up">> => fun erlang:is_integer/1,
-                                                      <<"frame_down">> => fun erlang:is_integer/1,
+                                                      <<"fcnt_down">> => fun erlang:is_integer/1,
                                                       <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                                       <<"payload_size">> => 0,
                                                       <<"port">> => '_',

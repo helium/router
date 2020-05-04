@@ -4,7 +4,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([http_donwlink_test/1]).
+-export([http_downlink_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -29,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [http_donwlink_test].
+    [http_downlink_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -47,7 +47,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-http_donwlink_test(Config) ->
+http_downlink_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),

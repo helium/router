@@ -381,7 +381,21 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
     AppSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    DevAddr = <<OUI:32/integer-unsigned-big>>,
+    Chain = blockchain_worker:blockchain(),
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    DevAddr = case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                  {ok, RoutingEntry} ->
+                      Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                      <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
+                      %% just allocate the first address in the first subnet for now
+                      %% TODO we should implement geographic aware aliasing here
+                      <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>;
+                  _Error ->
+                      %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
+                      %% transition over to new routing
+                      <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>
+              end,
+
     RxDelay = ?RX_DELAY,
     DLSettings = 0,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,

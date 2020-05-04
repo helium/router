@@ -209,11 +209,6 @@ handle_packets_test(Config) ->
 
     [RouterNode | _] = Routers,
 
-    %% Set default routers for miners
-    RouterPubkeyBins = ?config(router_pubkey_bins, Config),
-    DefaultRouters = [libp2p_crypto:pubkey_bin_to_p2p(P) || P <- RouterPubkeyBins],
-    true = miner_test:set_miner_default_routers(Miners, DefaultRouters),
-
     ClientPubkeyBins = [ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []) || Miner <- Miners],
 
     %% setup
@@ -221,8 +216,8 @@ handle_packets_test(Config) ->
     {ok, RouterPubkey, RouterSigFun, _ECDHFun} = ct_rpc:call(RouterNode, blockchain_swarm, keys, []),
     RouterPubkeyBin = libp2p_crypto:pubkey_to_bin(RouterPubkey),
 
-    DevEUI = ?DEVEUI,
-    AppEUI = ?APPEUI,
+    DevEUI = lorawan_utils:reverse(?DEVEUI),
+    AppEUI = lorawan_utils:reverse(?APPEUI),
     {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI/binary, AppEUI/binary>>],
                                          fun xxhash:hash64/1)),
 
@@ -337,7 +332,6 @@ handle_packets_test(Config) ->
     true = lists:member(blockchain_state_channel_summary_v1:client_pubkeybin(Summary), ClientPubkeyBins),
 
     ok.
-
 
 default_routers_test(Config) ->
     Miners = ?config(miners, Config),

@@ -114,6 +114,9 @@ websocket_info(auto_join, _Req, #state{auto_join=AutoJoin}=State) ->
       end,
       AutoJoin),
     {ok, State};
+websocket_info(close, _Req, State) ->
+    lager:info("rcvd close msg"),
+    {close, <<>>, State};
 websocket_info(_Msg, _Req, State) ->
     lager:warning("rcvd unknown websocket_info msg: ~p, ~p", [_Msg, _Req]),
     {ok, State}.

@@ -35,7 +35,7 @@
                 secret :: binary(),
                 token :: binary(),
                 ws :: pid(),
-                ws_url :: list()}).
+                ws_endpoint :: list()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -70,10 +70,9 @@ init(Args) ->
     WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
-    Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
-    Pid = start_ws(Url),
+    Pid = start_ws(WSEndpoint, Token),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid, ws_url=Url}}.
+    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid, ws_endpoint=WSEndpoint}}.
 
 handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
                                                   token=Token}=State) ->
@@ -172,13 +171,17 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-
-handle_info({'EXIT', Pid0, _Reason}, #state{ws=Pid0, ws_url=Url}=State) ->
+handle_info({'EXIT', _Pid, normal}, #state{token=Token, ws_endpoint=WSEndpoint}=State) ->
+    lager:info("websocket connetion went down normally restarting"),
+    Pid = start_ws(WSEndpoint, Token),
+    {noreply, State#state{ws=Pid}};
+handle_info({'EXIT', _Pid, _Reason}, #state{token=Token, ws_endpoint=WSEndpoint}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
-    Pid1 = start_ws(Url),
-    {noreply, State#state{ws=Pid1}};
-handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
+    Pid = start_ws(WSEndpoint, Token),
+    {noreply, State#state{ws=Pid}};
+handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
+    Pid ! close,
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {noreply, State#state{token=Token}};
 handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
@@ -189,7 +192,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"
                   DeviceIDs),
     {noreply, State};
 handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -202,8 +205,9 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec start_ws(list()) -> pid().
-start_ws(Url) ->
+-spec start_ws(binary(), binary()) -> pid().
+start_ws(WSEndpoint, Token) ->
+    Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
     {ok, Pid} = router_console_ws_handler:start_link(#{url => Url,
                                                        auto_join => [<<"device:all">>],
                                                        forward => self()}),

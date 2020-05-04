@@ -52,7 +52,7 @@ decode_test(Config) ->
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,
@@ -130,7 +130,7 @@ timeout_test(Config) ->
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,
@@ -217,7 +217,7 @@ too_many_test(Config) ->
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,

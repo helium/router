@@ -1,6 +1,6 @@
 -record(frame, {
                 mtype,
-                devaddr,
+                dev_addr,
                 ack = 0,
                 adr = 0,
                 adrackreq = 0,

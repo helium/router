@@ -396,7 +396,7 @@ deframe_packet(Packet, SessionKey) ->
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)),
     ct:pal("FOpts ~p", [FOpts]),
-    #frame{mtype=MType, devaddr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
+    #frame{mtype=MType, dev_addr=DevAddr, adr=ADR, rfu=RFU, ack=ACK, fpending=FPending,
            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fdownopts(FOpts), fport=FPort, data=Data}.
 
 deframe_join_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>}, DevNonce, AppKey) when MType == ?JOIN_ACCEPT ->

@@ -431,7 +431,7 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
                                       router_device:fcnt(FCnt, Device0)
                               end
                       end,
-            Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
+            Frame = #frame{mtype=MType, dev_addr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
             {ok, Frame, Device1}
     end.
@@ -464,7 +464,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
                     Port = 0,
                     FCntDown = router_device:fcntdown(Device0),
                     MType = ack_to_mtype(ConfirmedDown),
-                    Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
+                    Reply = frame_to_packet_payload(#frame{mtype=MType, dev_addr=Frame#frame.dev_addr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
                                                     Device0),
                     DataRate = Packet0#packet_pb.datarate,
                     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
@@ -502,7 +502,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPay
                        %% more pending downlinks
                        1
                end,
-    Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload, fpending=FPending}, Device0),
+    Reply = frame_to_packet_payload(#frame{mtype=MType, dev_addr=Frame#frame.dev_addr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload, fpending=FPending}, Device0),
     DataRate = Packet0#packet_pb.datarate,
     #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
         lorawan_mac_region_old:rx1_window(<<"US902-928">>,
@@ -560,27 +560,27 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
 -spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(),
                           router_device:device(), #packet_pb{}, #frame{}) -> ok.
-report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr).
@@ -596,7 +596,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                payload => <<>>,
                payload_size => 0,
                port => Port,
-               devaddr => lorawan_utils:binary_to_hex(DevAddr),
+               dev_addr => lorawan_utils:binary_to_hex(DevAddr),
                hotspots => [#{id => erlang:list_to_binary(HotspotID),
                               name => erlang:list_to_binary(HotspotName),
                               reported_at => erlang:system_time(seconds),
@@ -612,7 +612,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
 frame_to_packet_payload(Frame, Device) ->
     FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
     FOptsLen = erlang:byte_size(FOpts),
-    PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (lorawan_utils:reverse(Frame#frame.devaddr))/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1,
+    PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (lorawan_utils:reverse(Frame#frame.dev_addr))/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1,
                (Frame#frame.fpending):1, FOptsLen:4, (Frame#frame.fcnt):16/integer-unsigned-little, FOpts:FOptsLen/binary>>,
     NwkSKey = router_device:nwk_s_key(Device),
     PktBody = case Frame#frame.data of
@@ -622,15 +622,15 @@ frame_to_packet_payload(Frame, Device) ->
                   <<Payload/binary>> when Frame#frame.fport == 0 ->
                       lager:debug("port 0 outbound"),
                       %% port 0 payload, encrypt with network key
-                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, NwkSKey, 1, Frame#frame.devaddr, Frame#frame.fcnt)))/binary>>;
+                      <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, NwkSKey, 1, Frame#frame.dev_addr, Frame#frame.fcnt)))/binary>>;
                   <<Payload/binary>> ->
                       lager:debug("port ~p outbound", [Frame#frame.fport]),
                       AppSKey = router_device:app_s_key(Device),
-                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, AppSKey, 1, Frame#frame.devaddr, Frame#frame.fcnt)),
+                      EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, AppSKey, 1, Frame#frame.dev_addr, Frame#frame.fcnt)),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
               end,
     Msg = <<PktHdr/binary, PktBody/binary>>,
-    MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
+    MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.dev_addr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
 
 -spec get_device_by_mic([router_device:device()], binary(), binary()) -> router_device:device() | undefined.

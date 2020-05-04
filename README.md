@@ -23,7 +23,7 @@
         "payload": "..."
     },
     "port": 1,
-    "devaddr": "devaddr",
+    "dev_addr": "dev_addr",
     "hotspots": [
         {
             "id": "hotspot_id",
@@ -52,7 +52,7 @@
     "payload": "base64 payload", // ONLY ON DEBUG MODE
     "payload_size": 12,
     "port": 1,
-    "devaddr": "devaddr",
+    "dev_addr": "dev_addr",
     "hotspots": [
         {
             "id": "hotspot_id",

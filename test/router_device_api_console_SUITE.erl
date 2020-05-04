@@ -70,7 +70,7 @@ debug_test(Config) ->
                                            <<"frame_down">> => 0,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
-                                           <<"devaddr">> => '_',
+                                           <<"dev_addr">> => '_',
                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
                                                                 <<"reported_at">> => fun erlang:is_integer/1,
@@ -115,7 +115,7 @@ debug_test(Config) ->
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
-                                   <<"devaddr">> => '_',
+                                   <<"dev_addr">> => '_',
                                    <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                         <<"name">> => erlang:list_to_binary(HotspotName),
                                                         <<"reported_at">> => fun erlang:is_integer/1,
@@ -135,7 +135,7 @@ debug_test(Config) ->
                                             <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
-                                            <<"devaddr">> => '_',
+                                            <<"dev_addr">> => '_',
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -163,7 +163,7 @@ debug_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     %% Making sure debug is on for our device and at 9 now
-   ?assertEqual([{?CONSOLE_DEVICE_ID, 9}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
+    ?assertEqual([{?CONSOLE_DEVICE_ID, 9}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
 
     lists:foreach(
       fun(I) ->
@@ -185,7 +185,7 @@ debug_test(Config) ->
                                              <<"reported_at">> => fun erlang:is_integer/1,
                                              <<"payload">> => <<>>,
                                              <<"port">> => 1,
-                                             <<"devaddr">> => '_',
+                                             <<"dev_addr">> => '_',
                                              <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                   <<"name">> => erlang:list_to_binary(HotspotName),
                                                                   <<"reported_at">> => fun erlang:is_integer/1,
@@ -205,7 +205,7 @@ debug_test(Config) ->
                                                       <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                                       <<"payload_size">> => 0,
                                                       <<"port">> => '_',
-                                                      <<"devaddr">> => '_',
+                                                      <<"dev_addr">> => '_',
                                                       <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                            <<"name">> => erlang:list_to_binary(HotspotName),
                                                                            <<"reported_at">> => fun erlang:is_integer/1,

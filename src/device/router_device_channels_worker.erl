@@ -45,7 +45,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
-                fcnt :: integer(),
+                fcnt_up :: integer(),
                 channels_resp_cache = #{} :: map()}).
 
 %% ------------------------------------------------------------------
@@ -110,7 +110,7 @@ init(Args) ->
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=-1}}.
+    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt_up=-1}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -118,11 +118,11 @@ handle_call(_Msg, _From, State) ->
 
 
 handle_cast(handle_join, State) ->
-    {noreply, State#state{fcnt=-1}};
+    {noreply, State#state{fcnt_up=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
-    FCnt = router_device:fcnt(Device),
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt_up=CurrFCnt}=State) ->
+    FCnt = router_device:fcnt_up(Device),
     DataCache1 =
         case FCnt > CurrFCnt of
             false ->
@@ -174,7 +174,7 @@ handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
     {ok, Ref, Map} = send_to_channel(CachedData, Device, EventMgrRef),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, Ref}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
-                          fcnt=FCnt,
+                          fcnt_up=FCnt,
                           channels_resp_cache=maps:put(Ref, {Map, []}, RespCache0)}};
 %% ------------------------------------------------------------------
 %% Channel Handling
@@ -328,7 +328,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
             app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
             metadata => router_device:metadata(Device),
-            fcnt => FCnt,
+            fcnt_up => FCnt,
             reported_at => Time,
             payload => Data,
             fport => Port,

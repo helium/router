@@ -13,7 +13,7 @@
     "dev_eui": "dev_eui",
     "app_eui": "app_eui",
     "metadata": {},
-    "fcnt": 2,
+    "fcnt_up": 2,
     "reported_at": 123,
     "payload": "base64 encoded payload",
      // ONLY if payload is decoded

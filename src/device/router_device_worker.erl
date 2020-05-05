@@ -139,7 +139,7 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
             RSSI0 = Packet0#packet_pb.signal_strength,
-            FCnt = router_device:fcnt(Device1),
+            FCnt = router_device:fcnt_up(Device1),
             FrameCache = #frame_cache{rssi=RSSI0,
                                       packet=Packet0,
                                       pubkey_bin=PubKeyBin,
@@ -370,7 +370,7 @@ handle_join(#packet_pb{oui=OUI, type=Type, timestamp=Time, frequency=Freq, datar
                      {app_eui, AppEUI},
                      {app_s_key, AppSKey},
                      {nwk_s_key, NwkSKey},
-                     {fcntdown, 0},
+                     {fcnt_down, 0},
                      {channel_correction, false},
                      {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
@@ -411,24 +411,24 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
         _N ->
             AppSKey = router_device:app_s_key(Device0),
             Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-            lager:info("~s packet from ~s ~s with ACK ~p fopts ~p fcnt ~p and data ~p received by ~s",
+            lager:info("~s packet from ~s ~s with ACK ~p fopts ~p fcnt_up ~p and data ~p received by ~s",
                        [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
                         ACK, lorawan_mac_commands:parse_fopts(FOpts), FCnt, Data, AName]),
             %% If frame countain ACK=1 we should clear message from queue and go on next
             Device1 = case ACK of
                           0 ->
-                              router_device:fcnt(FCnt, Device0);
+                              router_device:fcnt_up(FCnt, Device0);
                           1 ->
                               case router_device:queue(Device0) of
                                   %% Check if confirmed down link
                                   [{true, _, _}|T] ->
-                                      DeviceUpdates = [{fcnt, FCnt},
+                                      DeviceUpdates = [{fcnt_up, FCnt},
                                                        {queue, T},
-                                                       {fcntdown, router_device:fcntdown(Device0)+1}],
+                                                       {fcnt_down, router_device:fcnt_down(Device0)+1}],
                                       router_device:update(DeviceUpdates, Device0);
                                   _ ->
                                       lager:warning("Got ack when no confirmed downlinks in queue"),
-                                      router_device:fcnt(FCnt, Device0)
+                                      router_device:fcnt_up(FCnt, Device0)
                               end
                       end,
             Frame = #frame{mtype=MType, dev_addr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
@@ -462,7 +462,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
                 false ->
                     ConfirmedDown = false,
                     Port = 0,
-                    FCntDown = router_device:fcntdown(Device0),
+                    FCntDown = router_device:fcnt_down(Device0),
                     MType = ack_to_mtype(ConfirmedDown),
                     Reply = frame_to_packet_payload(#frame{mtype=MType, dev_addr=Frame#frame.dev_addr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
                                                     Device0),
@@ -475,7 +475,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
                     Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
                                          timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
                     DeviceUpdates = [{channel_correction, ChannelsCorrected},
-                                     {fcntdown, (FCntDown + 1)}],
+                                     {fcnt_down, (FCntDown + 1)}],
                     Device1 = router_device:update(DeviceUpdates, Device0),
                     ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
                     {send, Device1, Packet1}
@@ -493,7 +493,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPay
     lager:info("downlink with ~p, confirmed ~p fport ~p ACK ~p and channels corrected ~p",
                [ReplyPayload, ConfirmedDown, Port, ACK, router_device:channel_correction(Device0) orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
-    FCntDown = router_device:fcntdown(Device0),
+    FCntDown = router_device:fcnt_down(Device0),
     FPending = case T of
                    [] ->
                        %% no more packets
@@ -519,7 +519,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPay
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
-                             {fcntdown, (FCntDown + 1)}],
+                             {fcnt_down, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
             ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
             {send, Device1, Packet1}
@@ -561,28 +561,28 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 -spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(),
                           router_device:device(), #packet_pb{}, #frame{}) -> ok.
 report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
+    FCnt = router_device:fcnt_up(Device),
     Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
 report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    FCnt = router_device:fcnt_up(Device),
+    Desc = <<"Sending ACK in response to fcnt_up ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
 report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    FCnt = router_device:fcnt_up(Device),
+    Desc = <<"Sending ACK and confirmed data in response to fcnt_up ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
 report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    FCnt = router_device:fcnt_up(Device),
+    Desc = <<"Sending ACK and unconfirmed data in response to fcnt_up ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
 report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    FCnt = router_device:fcnt_up(Device),
+    Desc = <<"Sending confirmed data in response to fcnt_up ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
 report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{dev_addr=DevAddr, fport=FPort}) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
+    FCnt = router_device:fcnt_up(Device),
+    Desc = <<"Sending unconfirmed data in response to fcnt_up ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr).
 
 -spec report_status(atom(), binary(), router_device:device(), success | error,

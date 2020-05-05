@@ -35,7 +35,7 @@
                 secret :: binary(),
                 token :: binary(),
                 ws :: pid(),
-                ws_endpoint :: list()}).
+                ws_endpoint :: binary()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -143,8 +143,8 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
               description => maps:get(description, Map),
               reported_at => maps:get(reported_at, Map),
               device_id => DeviceID,
-              fcnt_up => router_device:fcnt(Device),
-              fcnt_down => router_device:fcntdown(Device),
+              fcnt_up => router_device:fcnt_up(Device),
+              fcnt_down => router_device:fcnt_down(Device),
               payload_size => maps:get(payload_size, Map),
               fport => maps:get(fport, Map),
               dev_addr => maps:get(dev_addr, Map),

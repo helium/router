@@ -312,7 +312,7 @@ late_packet_test(Config) ->
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                   <<"fcnt">> => 0,
+                                   <<"fcnt_up">> => 0,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,
                                    <<"fport">> => 1,

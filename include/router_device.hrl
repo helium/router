@@ -1,3 +1,18 @@
+-record(device_v3, {id :: binary() | undefined,
+                    name :: binary() | undefined,
+                    dev_eui :: binary() | undefined,
+                    app_eui :: binary() | undefined,
+                    nwk_s_key :: binary() | undefined,
+                    app_s_key :: binary() | undefined,
+                    join_nonce=0 :: non_neg_integer(),
+                    fcnt_up=0 :: non_neg_integer(),
+                    fcnt_down=0 :: non_neg_integer(),
+                    offset=0 :: non_neg_integer(),
+                    channel_correction=false :: boolean(),
+                    queue=[] :: [any()],
+                    keys :: map(),
+                    metadata=#{} :: map()}).
+
 -record(device_v2, {id :: binary() | undefined,
                     name :: binary() | undefined,
                     dev_eui :: binary() | undefined,

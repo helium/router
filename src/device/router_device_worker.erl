@@ -490,7 +490,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPay
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame),
-    lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
+    lager:info("downlink with ~p, confirmed ~p fport ~p ACK ~p and channels corrected ~p",
                [ReplyPayload, ConfirmedDown, Port, ACK, router_device:channel_correction(Device0) orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
     FCntDown = router_device:fcntdown(Device0),
@@ -595,7 +595,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                reported_at => erlang:system_time(seconds),
                payload => <<>>,
                payload_size => 0,
-               port => Port,
+               fport => Port,
                dev_addr => lorawan_utils:binary_to_hex(DevAddr),
                hotspots => [#{id => erlang:list_to_binary(HotspotID),
                               name => erlang:list_to_binary(HotspotName),
@@ -620,11 +620,11 @@ frame_to_packet_payload(Frame, Device) ->
                       %% no payload
                       <<>>;
                   <<Payload/binary>> when Frame#frame.fport == 0 ->
-                      lager:debug("port 0 outbound"),
-                      %% port 0 payload, encrypt with network key
+                      lager:debug("fport 0 outbound"),
+                      %% fport 0 payload, encrypt with network key
                       <<0:8/integer-unsigned, (lorawan_utils:reverse(lorawan_utils:cipher(Payload, NwkSKey, 1, Frame#frame.dev_addr, Frame#frame.fcnt)))/binary>>;
                   <<Payload/binary>> ->
-                      lager:debug("port ~p outbound", [Frame#frame.fport]),
+                      lager:debug("fport ~p outbound", [Frame#frame.fport]),
                       AppSKey = router_device:app_s_key(Device),
                       EncPayload = lorawan_utils:reverse(lorawan_utils:cipher(Payload, AppSKey, 1, Frame#frame.dev_addr, Frame#frame.fcnt)),
                       <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>

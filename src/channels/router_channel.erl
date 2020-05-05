@@ -115,7 +115,7 @@ encode_data(Channel, Map) ->
 
 encode_data_(undefined, #{payload := Payload}=Map) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map));
-encode_data_(Decoder, #{payload := Payload, port := Port}=Map) ->
+encode_data_(Decoder, #{payload := Payload, fport := Port}=Map) ->
     DecoderID = router_decoder:id(Decoder),
     Updates = case router_decoder:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->

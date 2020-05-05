@@ -76,7 +76,7 @@ handle_downlink(Pid, BinaryPayload) ->
         JSON ->
             case maps:find(<<"payload_raw">>, JSON) of
                 {ok, Payload} ->
-                    Port = case maps:find(<<"port">>, JSON) of
+                    Port = case maps:find(<<"fport">>, JSON) of
                                {ok, X} when is_integer(X), X > 0, X < 224 ->
                                    X;
                                _ ->
@@ -188,7 +188,7 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
                    reported_at => erlang:system_time(seconds),
                    payload => base64:encode(Payload),
                    payload_size => erlang:byte_size(Payload),
-                   port => maps:get(port, Data),
+                   fport => maps:get(fport, Data),
                    dev_addr => maps:get(dev_addr, Data),
                    hotspots => maps:get(hotspots, Data),
                    channels => CachedReports},
@@ -276,7 +276,7 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
                        reported_at => erlang:system_time(seconds),
                        payload => <<>>,
                        payload_size => 0,
-                       port => 0,
+                       fport => 0,
                        dev_addr => <<>>,
                        hotspots => [],
                        channels => [#{id => ChannelID,
@@ -331,7 +331,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
             fcnt => FCnt,
             reported_at => Time,
             payload => Data,
-            port => Port,
+            fport => Port,
             dev_addr => lorawan_utils:binary_to_hex(DevAddr),
             hotspots => lists:foldr(FoldFun, [], CachedData)},
     {ok, Ref} = router_channel:handle_data(EventMgrRef, Map),
@@ -356,7 +356,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
                        reported_at => erlang:system_time(seconds),
                        payload => <<>>,
                        payload_size => 0,
-                       port => 0,
+                       fport => 0,
                        dev_addr => <<>>,
                        hotspots => [],
                        channels => [#{id => ChannelID,

@@ -22,7 +22,7 @@
         "error": "...",
         "payload": "..."
     },
-    "port": 1,
+    "fport": 1,
     "dev_addr": "dev_addr",
     "hotspots": [
         {
@@ -51,7 +51,7 @@
     "fcnt_down": 2,
     "payload": "base64 payload", // ONLY ON DEBUG MODE
     "payload_size": 12,
-    "port": 1,
+    "fport": 1,
     "dev_addr": "dev_addr",
     "hotspots": [
         {

@@ -104,7 +104,7 @@ handle('POST', [<<"channel">>], Req, Args) ->
             Reply = base64:encode(<<"reply">>),
             case maps:find(<<"payload">>, JSON) of
                 {ok, Reply} ->
-                    {200, [], jsx:encode(#{payload_raw => base64:encode(<<"ack">>), port => 1, confirmed => true})};
+                    {200, [], jsx:encode(#{payload_raw => base64:encode(<<"ack">>), fport => 1, confirmed => true})};
                 _ ->
                     {200, [], Resp}
             end

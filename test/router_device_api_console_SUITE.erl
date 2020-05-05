@@ -68,7 +68,7 @@ debug_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"fcnt_up">> => 0,
                                            <<"fcnt_down">> => 0,
-                                           <<"payload_size">> => 0,
+                                           <<"frm_payload_size">> => 0,
                                            <<"fport">> => '_',
                                            <<"dev_addr">> => '_',
                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -113,7 +113,7 @@ debug_test(Config) ->
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"fcnt_up">> => 0,
                                    <<"reported_at">> => fun erlang:is_integer/1,
-                                   <<"payload">> => <<>>,
+                                   <<"frm_payload">> => <<>>,
                                    <<"fport">> => 1,
                                    <<"dev_addr">> => '_',
                                    <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -132,8 +132,8 @@ debug_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"fcnt_up">> => fun erlang:is_integer/1,
                                             <<"fcnt_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>, %% MAGIC Payload is here now...
-                                            <<"payload_size">> => 0,
+                                            <<"frm_payload">> => <<>>, %% MAGIC Payload is here now...
+                                            <<"frm_payload_size">> => 0,
                                             <<"fport">> => '_',
                                             <<"dev_addr">> => '_',
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -183,7 +183,7 @@ debug_test(Config) ->
                                              <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                              <<"fcnt_up">> => I,
                                              <<"reported_at">> => fun erlang:is_integer/1,
-                                             <<"payload">> => <<>>,
+                                             <<"frm_payload">> => <<>>,
                                              <<"fport">> => 1,
                                              <<"dev_addr">> => '_',
                                              <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -202,8 +202,8 @@ debug_test(Config) ->
                                                       <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                                       <<"fcnt_up">> => fun erlang:is_integer/1,
                                                       <<"fcnt_down">> => fun erlang:is_integer/1,
-                                                      <<"payload">> => <<>>, %% MAGIC Payload is here now...
-                                                      <<"payload_size">> => 0,
+                                                      <<"frm_payload">> => <<>>, %% MAGIC Payload is here now...
+                                                      <<"frm_payload_size">> => 0,
                                                       <<"fport">> => '_',
                                                       <<"dev_addr">> => '_',
                                                       <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),

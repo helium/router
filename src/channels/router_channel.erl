@@ -113,20 +113,20 @@ handle_data(Pid, Data) ->
 encode_data(Channel, Map) ->
     encode_data_(?MODULE:decoder(Channel), Map).
 
-encode_data_(undefined, #{payload := Payload}=Map) ->
-    jsx:encode(maps:put(payload, base64:encode(Payload), Map));
-encode_data_(Decoder, #{payload := Payload, fport := Port}=Map) ->
+encode_data_(undefined, #{frm_payload := Payload}=Map) ->
+    jsx:encode(maps:put(frm_payload, base64:encode(Payload), Map));
+encode_data_(Decoder, #{frm_payload := Payload, fport := Port}=Map) ->
     DecoderID = router_decoder:id(Decoder),
     Updates = case router_decoder:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->
                       #{decoded => #{status => success,
-                                     payload => DecodedPayload},
-                        payload => base64:encode(Payload)};
+                                     frm_payload => DecodedPayload},
+                        frm_payload => base64:encode(Payload)};
                   {error, Reason} ->
-                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, Reason]),
+                      lager:warning("~p failed to decode frm_payload ~p: ~p", [DecoderID, Payload, Reason]),
                       #{decoded => #{status => error,
                                      error => Reason},
-                        payload => base64:encode(Payload)}
+                        frm_payload => base64:encode(Payload)}
               end,
     jsx:encode(maps:merge(Map, Updates)).
 

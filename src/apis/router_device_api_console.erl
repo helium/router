@@ -145,7 +145,7 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
               device_id => DeviceID,
               fcnt_up => router_device:fcnt_up(Device),
               fcnt_down => router_device:fcnt_down(Device),
-              payload_size => maps:get(payload_size, Map),
+              frm_payload_size => maps:get(frm_payload_size, Map),
               fport => maps:get(fport, Map),
               dev_addr => maps:get(dev_addr, Map),
               hotspots => maps:get(hotspots, Map),
@@ -160,7 +160,7 @@ handle_cast({report_status, Device, Map}, #state{endpoint=Endpoint,
                     false -> debug_insert(DeviceID, DebugLeft-1);
                     true -> debug_delete(DeviceID)
                 end,
-                B0 = maps:put(payload, maps:get(payload, Map), Body0),
+                B0 = maps:put(frm_payload, maps:get(frm_payload, Map), Body0),
                 maps:put(channels, Channels, B0)
         end,
     lager:debug("post ~p to ~p", [Body1, Url]),

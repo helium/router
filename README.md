@@ -15,12 +15,12 @@
     "metadata": {},
     "fcnt_up": 2,
     "reported_at": 123,
-    "payload": "base64 encoded payload",
+    "frm_payload": "base64 encoded payload",
      // ONLY if payload is decoded
     "decoded": {
         "status": "success | error",
         "error": "...",
-        "payload": "..."
+        "frm_payload": "..."
     },
     "fport": 1,
     "dev_addr": "dev_addr",
@@ -49,8 +49,8 @@
     "device_id": "device_uuid",
     "fcnt_up": 2,
     "fcnt_down": 2,
-    "payload": "base64 payload", // ONLY ON DEBUG MODE
-    "payload_size": 12,
+    "frm_payload": "base64 payload", // ONLY ON DEBUG MODE
+    "frm_payload_size": 12,
     "fport": 1,
     "dev_addr": "dev_addr",
     "hotspots": [

@@ -17,6 +17,7 @@
                                              ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " [",
                                               {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"]}]}
                      ]}]},
+ {blockchain, [{sc_packet_handler, router_device_worker}]},
  {router, [{port, 2154},
            {base_dir, "/var/data"},
            {max_connections, 250},

@@ -1,18 +1,22 @@
--module(router_device_api_console_SUITE).
+-module(router_downlink_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([debug_test/1]).
+-export([http_downlink_test/1]).
 
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include("utils/console_test.hrl").
+-include("device_worker.hrl").
 -include("lorawan_vars.hrl").
+-include("utils/console_test.hrl").
 
+-define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
+-define(ETS, ?MODULE).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -25,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [debug_test].
+    [http_downlink_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -43,7 +47,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-debug_test(Config) ->
+http_downlink_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     {ok, RouterSwarm} = router_p2p:swarm(),
@@ -89,17 +93,17 @@ debug_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
+
+
     %% Sending debug event from websocket
     WSPid = receive
                 {websocket_init, P} -> P
             after 2500 ->
                     ct:fail(websocket_init_timeout)
             end,
-    WSPid ! {joined, <<"device:all">>},
-
-    %% Making sure debug is on for our device
-    timer:sleep(250),
-    ?assertEqual([{?CONSOLE_DEVICE_ID, 10}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
+    DownlinkPayload = <<"httpdownlink">>,
+    DownlinkMessage = jsx:encode(#{payload_raw => base64:encode(DownlinkPayload)}),    
+    WSPid ! {downlink, DownlinkMessage},
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
@@ -132,10 +136,9 @@ debug_test(Config) ->
                                             <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload">> => <<>>, %% MAGIC Payload is here now...
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
-                                            <<"devaddr">> => '_',
+                                            <<"devaddr">> => '_',                                            
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -148,91 +151,18 @@ debug_test(Config) ->
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
                                                                  <<"status">> => <<"success">>,
-                                                                 <<"description">> => '_',
-                                                                 <<"debug">> => #{<<"req">> =>
-                                                                                      #{<<"body">> => fun erlang:is_binary/1,
-                                                                                        <<"headers">> => '_',
-                                                                                        <<"method">> => <<"POST">>,
-                                                                                        <<"url">> => <<?CONSOLE_URL/binary, "/channel">>},
-                                                                                  <<"res">> =>
-                                                                                      #{<<"body">> => <<"success">>,
-                                                                                        <<"code">> => 200,
-                                                                                        <<"headers">> => '_'}}}]}),
+                                                                 <<"description">> => '_'}]}),
+
+    %% Waiting for donwlink message on the hotspot
+    Msg0 = {false, 1, DownlinkPayload},
+    {ok, _} = test_utils:wait_state_channel_message(Msg0, Device0, erlang:element(3, Msg0), ?UNCONFIRMED_DOWN, 0, 0, 1, 0),
 
     %% We ignore the channel correction  and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Making sure debug is on for our device and at 9 now
-    ?assertEqual([{?CONSOLE_DEVICE_ID, 9}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
-
-    lists:foreach(
-      fun(I) ->
-              Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                                      router_device:app_s_key(Device0), I)},
-              timer:sleep(100)
-      end,
-      lists:seq(1, 9)),
-
-    lists:foreach(
-      fun(I) ->
-              %% Waiting for data from HTTP channel
-              test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
-                                             <<"name">> => ?CONSOLE_DEVICE_NAME,
-                                             <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                             <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                             <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
-                                             <<"fcnt">> => I,
-                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                             <<"payload">> => <<>>,
-                                             <<"port">> => 1,
-                                             <<"devaddr">> => '_',
-                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                  <<"reported_at">> => fun erlang:is_integer/1,
-                                                                  <<"status">> => <<"success">>,
-                                                                  <<"rssi">> => 0.0,
-                                                                  <<"snr">> => 0.0,
-                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                  <<"frequency">> => fun erlang:is_float/1}]}),
-
-              %% Waiting for report channel status from HTTP channel
-              test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
-                                                      <<"description">> => '_',
-                                                      <<"reported_at">> => fun erlang:is_integer/1,
-                                                      <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                                      <<"frame_up">> => fun erlang:is_integer/1,
-                                                      <<"frame_down">> => fun erlang:is_integer/1,
-                                                      <<"payload">> => <<>>, %% MAGIC Payload is here now...
-                                                      <<"payload_size">> => 0,
-                                                      <<"port">> => '_',
-                                                      <<"devaddr">> => '_',
-                                                      <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                           <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                                                           <<"status">> => <<"success">>,
-                                                                           <<"rssi">> => 0.0,
-                                                                           <<"snr">> => 0.0,
-                                                                           <<"spreading">> => <<"SF8BW125">>,
-                                                                           <<"frequency">> => fun erlang:is_float/1}],
-                                                      <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                                                                           <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                                                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                                                           <<"status">> => <<"success">>,
-                                                                           <<"description">> => '_',
-                                                                           <<"debug">> => #{<<"req">> =>
-                                                                                                #{<<"body">> => fun erlang:is_binary/1,
-                                                                                                  <<"headers">> => '_',
-                                                                                                  <<"method">> => <<"POST">>,
-                                                                                                  <<"url">> => <<?CONSOLE_URL/binary, "/channel">>},
-                                                                                            <<"res">> =>
-                                                                                                #{<<"body">> => <<"success">>,
-                                                                                                  <<"code">> => 200,
-                                                                                                  <<"headers">> => '_'}}}]})
-      end,
-      lists:seq(1, 9)),
-
-    ?assertEqual([], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
+  
     ok.
+
 
 %% ------------------------------------------------------------------
 %% Helper functions

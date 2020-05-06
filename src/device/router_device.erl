@@ -24,7 +24,7 @@
          metadata/1, metadata/2,
          update/2,
          serialize/1, deserialize/1,
-         get/2, get/3, save/3
+         get/2, get/3, save/3, delete/3
         ]).
 
 -type device() :: #device_v2{}.
@@ -239,6 +239,10 @@ save(DB, CF, Device) ->
         ok -> {ok, Device}
     end.
 
+-spec delete(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> ok | {error, any()}.
+delete(DB, CF, DeviceID) ->
+    rocksdb:delete(DB, CF, <<DeviceID/binary>>, []).
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
@@ -372,7 +376,7 @@ serialize_deserialize_test() ->
     Device = new(<<"id">>),
     ?assertEqual(Device, deserialize(serialize(Device))).
 
-get_save_test() ->
+get_save_delete_test() ->
     Dir = test_utils:tmp_dir("get_save_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     {ok, DB, [_, CF]} = router_db:get(),
@@ -385,6 +389,8 @@ get_save_test() ->
     ?assertEqual({ok, Device}, get(DB, CF, DeviceID)),
     ?assertEqual([Device], get(DB, CF)),
     ?assertEqual({error, not_found}, get(DB, CF, <<"unknown">>)),
+    ?assertEqual(ok, delete(DB, CF, DeviceID)),
+    ?assertEqual({error, not_found}, get(DB, CF, DeviceID)),
     gen_server:stop(Pid).
 
 upgrade_test() ->

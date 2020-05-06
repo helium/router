@@ -314,6 +314,10 @@ convert_decoder(JSONChannel) ->
                             router_decoder:new(kvc:path([<<"id">>], JSONDecoder),
                                                custom,
                                                #{function => kvc:path([<<"body">>], JSONDecoder)});
+                        <<"cayenne">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder), cayenne, #{});
+                        <<"browan_object_locator">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder), browan_object_locator, #{});
                         _ ->
                             undefined
                     end

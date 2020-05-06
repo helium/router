@@ -159,7 +159,6 @@ http_downlink_test(Config) ->
 
     %% We ignore the channel correction  and down messages
     ok = test_utils:ignore_messages(),
-
     ok.
 
 

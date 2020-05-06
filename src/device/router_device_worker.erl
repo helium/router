@@ -279,8 +279,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
     DevAddr = lorawan_utils:reverse(DevAddr0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(router_device:get(DB, CF),
-                           <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
+    case get_device_by_mic(DB, CF, <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
         undefined ->
             lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
             {error, {unknown_device, lorawan_utils:binary_to_hex(DevAddr)}};
@@ -633,21 +632,32 @@ frame_to_packet_payload(Frame, Device) ->
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
 
--spec get_device_by_mic([router_device:device()], binary(), binary()) -> router_device:device() | undefined.
-get_device_by_mic([], _, _) ->
+-spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary()) -> router_device:device() | undefined.
+get_device_by_mic(DB, CF, Bin, MIC) ->
+    get_device_by_mic(DB, CF, Bin, MIC, router_device:get(DB, CF)).
+
+-spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary(), [router_device:device()]) -> router_device:device() | undefined.
+get_device_by_mic(_DB, _CF, _Bin, _MIC, []) ->
     undefined;
-get_device_by_mic([Device|Tail], Bin, MIC) ->
-    try
-        NwkSKey = router_device:nwk_s_key(Device),
-        case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
-            MIC ->
-                Device;
-            _ ->
-                get_device_by_mic(Tail, Bin, MIC)
-        end
-    catch _:_ ->
-            lager:warning("skipping invalid device ~p", [Device]),
-            get_device_by_mic(Tail, Bin, MIC)
+get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
+    case router_device:nwk_s_key(Device) of
+        undefined ->
+            DeviceID = router_device:id(Device),
+            lager:warning("device ~p did not have a nwk_s_key, deleting", [DeviceID]),
+            ok = router_device:delete(DB, CF, DeviceID),
+            get_device_by_mic(DB, CF, Bin, MIC, Devices);
+        NwkSKey ->
+            try
+                case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
+                    MIC ->
+                        Device;
+                    _ ->
+                        get_device_by_mic(DB, CF, Bin, MIC, Devices)
+                end
+            catch _:_ ->
+                    lager:warning("skipping invalid device ~p", [Device]),
+                    get_device_by_mic(DB, CF, Bin, MIC, Devices)
+            end
     end.
 
 -spec b0(integer(), binary(), integer(), integer()) -> binary().

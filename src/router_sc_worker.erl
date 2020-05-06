@@ -74,7 +74,7 @@ init(Args) ->
     %% TODO: Not really sure where exactly to install this handler at tbh...
     ok = router_handler:add_stream_handler(blockchain_swarm:swarm()),
     ok = blockchain_event:add_handler(self()),
-    OUI = application:get_env(router, oui, undefined),
+    OUI = router_utils:get_router_oui(),
     erlang:send_after(500, self(), post_init),
     {ok, #state{oui=OUI, active_count=get_active_count()}}.
 
@@ -100,7 +100,7 @@ handle_info(post_init, #state{chain=undefined}=State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            OUI = application:get_env(router, oui, undefined),
+            OUI = router_utils:get_router_oui(),
             {noreply, #state{chain=Chain, oui=OUI}}
     end;
 handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->

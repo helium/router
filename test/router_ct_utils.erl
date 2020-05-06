@@ -79,7 +79,7 @@ init_router_config(Config, NumRouters) ->
      {router_keys, RouterKeys},
      {router_pubkey_bins, RouterPubkeyBins},
      {elli, ElliPid}
-    | Config
+     | Config
     ].
 
 end_per_testcase(TestCase, Config) ->

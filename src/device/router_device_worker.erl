@@ -101,7 +101,7 @@ init(Args) ->
     DB = maps:get(db, Args),
     CF = maps:get(cf, Args),
     ID = maps:get(id, Args),
-    OUI = application:get_env(router, oui, undefined),
+    OUI = router_utils:get_router_oui(),
     Device = get_device(DB, CF, ID),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{device_worker => self(),

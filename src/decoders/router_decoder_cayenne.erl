@@ -15,7 +15,7 @@
 -define(GYROMETER, 134).
 -define(GPS, 136).
 
--spec decode(router_decoder:decoder(), binary(), integer()) -> {ok, binary()}.
+-spec decode(router_decoder:decoder(), binary(), integer()) -> {ok, binary()} | {error, any()}.
 decode(_Decoder, Payload, _Port) ->
     {ok, decode_lpp(Payload, [])}.
 
@@ -58,7 +58,7 @@ decode_lpp(<<Channel:8/unsigned-integer, ?GPS:8/integer, Lat:24/integer-signed-b
              Rest/binary>>, Acc) ->
     decode_lpp(Rest, [#{channel => Channel, type => ?GPS, value => #{latitude => Lat / 10000 , longitude => Lon / 10000, altitude => Alt / 100}, name => gps}|Acc]);
 decode_lpp(_, _) ->
-    error(lpp_decoder_failure).
+    {error, lpp_decoder_failure}.
 
 
 -ifdef(TEST).

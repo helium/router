@@ -17,12 +17,12 @@
 
 -spec decode(router_decoder:decoder(), binary(), integer()) -> {ok, binary()} | {error, any()}.
 decode(_Decoder, Payload, _Port) ->
-    {ok, decode_lpp(Payload, [])}.
+    decode_lpp(Payload, []).
 
 decode_lpp(<<>>, Acc) ->
-    lists:reverse(Acc);
+    {ok, lists:reverse(Acc)};
 decode_lpp(<<Channel:8/unsigned-integer, _/binary>>, _) when Channel > 99 ->
-    error(lpp_reserved_channel);
+    {error, lpp_reserved_channel};
 decode_lpp(<<Channel:8/unsigned-integer, ?DIGITAL_IN:8/integer, Value:8/unsigned-integer, Rest/binary>>, Acc) ->
     %% TODO this should be 0 or 1
     decode_lpp(Rest, [#{channel => Channel, type => ?DIGITAL_IN, value => Value, name => digital_in}|Acc]);
@@ -65,10 +65,10 @@ decode_lpp(_, _) ->
 -include_lib("eunit/include/eunit.hrl").
 decode_test() ->
     %% test vectors from https://github.com/myDevicesIoT/CayenneLPP
-    ?assertEqual([#{channel => 3, value => 27.2, unit => celcius, name => temperature, type=> ?TEMPERATURE},
-                  #{channel => 5, value => 25.5, unit => celcius, name => temperature, type => ?TEMPERATURE}],
+    ?assertEqual({ok, [#{channel => 3, value => 27.2, unit => celcius, name => temperature, type=> ?TEMPERATURE},
+                  #{channel => 5, value => 25.5, unit => celcius, name => temperature, type => ?TEMPERATURE}]},
                  decode_lpp(<<16#03, 16#67, 16#01, 16#10, 16#05, 16#67, 16#00, 16#FF>>, [])),
 
-    ?assertEqual([#{channel => 6, value => #{x => 1.234, y => -1.234, z => 0.0}, name => accelerometer, type => ?ACCELEROMETER, unit => 'G'}],
+    ?assertEqual({ok, [#{channel => 6, value => #{x => 1.234, y => -1.234, z => 0.0}, name => accelerometer, type => ?ACCELEROMETER, unit => 'G'}]},
                  decode_lpp(<<16#06, 16#71, 16#04, 16#D2, 16#FB, 16#2E, 16#00, 16#00>>, [])).
 -endif.

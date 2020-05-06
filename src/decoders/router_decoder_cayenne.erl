@@ -66,7 +66,7 @@ decode_lpp(_, _) ->
 decode_test() ->
     %% test vectors from https://github.com/myDevicesIoT/CayenneLPP
     ?assertEqual({ok, [#{channel => 3, value => 27.2, unit => celcius, name => temperature, type=> ?TEMPERATURE},
-                  #{channel => 5, value => 25.5, unit => celcius, name => temperature, type => ?TEMPERATURE}]},
+                       #{channel => 5, value => 25.5, unit => celcius, name => temperature, type => ?TEMPERATURE}]},
                  decode_lpp(<<16#03, 16#67, 16#01, 16#10, 16#05, 16#67, 16#00, 16#FF>>, [])),
 
     ?assertEqual({ok, [#{channel => 6, value => #{x => 1.234, y => -1.234, z => 0.0}, name => accelerometer, type => ?ACCELEROMETER, unit => 'G'}]},

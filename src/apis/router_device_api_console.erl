@@ -193,9 +193,9 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{<<"devices">> := DeviceIDs,
                                                                                 <<"payload">> := BinaryPayload}}, State) ->
-    lager:info("sending downlink for devices ~p", [DeviceIDs]),
+    lager:info("sending downlink ~p for devices ~p", [BinaryPayload, DeviceIDs]),
     lists:foreach(fun(DeviceID) ->
-                          ok = handle_downlink(DeviceID, BinaryPayload)
+                          ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload)
                   end,
                   DeviceIDs),
     {noreply, State};
@@ -212,39 +212,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec handle_downlink(binary(), binary()) -> ok.
-handle_downlink(DeviceID, BinaryPayload) ->
-    case router_devices_sup:lookup_device_worker(DeviceID) of
-        {error, _Reason} ->
-            lager:info("failed to find device ~p: ~p", [DeviceID, _Reason]);
-        {ok, Pid} ->
-            try jsx:decode(BinaryPayload, [return_maps]) of
-                JSON ->
-                    case maps:find(<<"payload_raw">>, JSON) of
-                        {ok, Payload} ->
-                            Port = case maps:find(<<"port">>, JSON) of
-                                       {ok, X} when is_integer(X), X > 0, X < 224 ->
-                                           X;
-                                       _ ->
-                                           1
-                                   end,
-                            Confirmed = case maps:find(<<"confirmed">>, JSON) of
-                                            {ok, true} ->
-                                                true;
-                                            _ ->
-                                                false
-                                        end,
-                            Msg = {Confirmed, Port, base64:decode(Payload)},
-                            router_device_worker:queue_message(Pid, Msg);
-                        error ->
-                            lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
-                    end
-            catch
-                _:_ ->
-                    lager:info("could not parse json downlink message ~p", [BinaryPayload])
-            end
-    end.
 
 -spec start_ws(binary(), binary()) -> pid().
 start_ws(WSEndpoint, Token) ->

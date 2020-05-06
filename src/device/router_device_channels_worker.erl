@@ -70,35 +70,26 @@ handle_data(Pid, Device, Data) ->
 report_status(Pid, Ref, Map) ->
     gen_server:cast(Pid, {report_status, Ref, Map}).
 
--spec handle_downlink(pid(), binary()) -> ok.
-handle_downlink(Pid, BinaryPayload) ->
-    try jsx:decode(BinaryPayload, [return_maps]) of
-        JSON ->
-            case maps:find(<<"payload_raw">>, JSON) of
-                {ok, Payload} ->
-                    Port = case maps:find(<<"port">>, JSON) of
-                               {ok, X} when is_integer(X), X > 0, X < 224 ->
-                                   X;
-                               _ ->
-                                   1
-                           end,
-                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
-                                    {ok, true} ->
-                                        true;
-                                    _ ->
-                                        false
-                                end,
-
-                    Msg = {Confirmed, Port, base64:decode(Payload)},
-                    gen_server:cast(Pid, {handle_downlink, Msg});
-                error ->
-                    lager:info("JSON downlink did not contain raw_payload field: ~p", [JSON])
+-spec handle_downlink(pid() | binary(), binary()) -> ok.
+handle_downlink(Pid, BinaryPayload) when is_pid(Pid) ->
+    case downlink_decode(BinaryPayload) of
+        {ok, Msg} ->
+            gen_server:cast(Pid, {handle_downlink, Msg});
+        {error, _Reason} ->
+            lager:info("could not parse json downlink message ~p", [_Reason])
+    end;
+handle_downlink(DeviceID, BinaryPayload) when is_binary(DeviceID) ->
+    case router_devices_sup:lookup_device_worker(DeviceID) of
+        {error, _Reason} ->
+            lager:info("failed to find device ~p: ~p", [DeviceID, _Reason]);
+        {ok, Pid} ->
+            case downlink_decode(BinaryPayload) of
+                {ok, Msg} ->
+                    router_device_worker:queue_message(Pid, Msg);
+                {error, _Reason} ->
+                    lager:info("could not parse json downlink message ~p", [_Reason])
             end
-    catch
-        _:_ ->
-            lager:info("could not parse json downlink message ~p", [BinaryPayload])
-    end,
-    ok.
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -306,6 +297,34 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec downlink_decode(binary()) -> {ok, {boolean(), integer(), binary()}} | {error, any()}.
+downlink_decode(BinaryPayload) ->
+    try jsx:decode(BinaryPayload, [return_maps]) of
+        JSON ->
+            case maps:find(<<"payload_raw">>, JSON) of
+                {ok, Payload} ->
+                    Port = case maps:find(<<"port">>, JSON) of
+                               {ok, X} when is_integer(X), X > 0, X < 224 ->
+                                   X;
+                               _ ->
+                                   1
+                           end,
+                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
+                                    {ok, true} ->
+                                        true;
+                                    _ ->
+                                        false
+                                end,
+
+                    {ok, {Confirmed, Port, base64:decode(Payload)}};
+                error ->
+                    {error, payload_raw_not_found}
+            end
+    catch
+        _:_ ->
+            {error, failed_to_decode_json}
+    end.
 
 -spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> {ok, reference(), map()}.
 send_to_channel(CachedData, Device, EventMgrRef) ->

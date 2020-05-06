@@ -60,6 +60,8 @@ decode(ID, Payload, Port) ->
             router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port);
         {ok, #decoder{type=cayenne}=Decoder} ->
             router_decoder_cayenne:decode(Decoder, Payload, Port);
+        {ok, #decoder{type=browan_object_locator}=Decoder} ->
+            router_decoder_browan_object_locator:decode(Decoder, Payload, Port);
         {ok, _Decoder} ->
             {error, unhandled_decoder}
     end.

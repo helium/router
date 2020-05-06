@@ -191,7 +191,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"
                   end,
                   DeviceIDs),
     {noreply, State};
-handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:device">>, #{<<"devices">> := DeviceIDs,
+handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{<<"devices">> := DeviceIDs,
                                                                                <<"payload">> := BinaryPayload}}, State) ->
     lager:info("sending downlink for devices ~p", [DeviceIDs]),
     lists:foreach(fun(DeviceID) ->

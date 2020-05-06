@@ -192,7 +192,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"
                   DeviceIDs),
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{<<"devices">> := DeviceIDs,
-                                                                               <<"payload">> := BinaryPayload}}, State) ->
+                                                                                <<"payload">> := BinaryPayload}}, State) ->
     lager:info("sending downlink for devices ~p", [DeviceIDs]),
     lists:foreach(fun(DeviceID) ->
                           ok = handle_downlink(DeviceID, BinaryPayload)
@@ -314,6 +314,8 @@ convert_decoder(JSONChannel) ->
                             router_decoder:new(kvc:path([<<"id">>], JSONDecoder),
                                                custom,
                                                #{function => kvc:path([<<"body">>], JSONDecoder)});
+                        <<"cayenne">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder), cayenne, #{});
                         _ ->
                             undefined
                     end

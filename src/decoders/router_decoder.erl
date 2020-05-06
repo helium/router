@@ -58,6 +58,8 @@ decode(ID, Payload, Port) ->
             {error, unknown_decoder};
         {ok, #decoder{type=custom}=Decoder} ->
             router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port);
+        {ok, #decoder{type=cayenne}=Decoder} ->
+            router_decoder_cayenne:decode(Decoder, Payload, Port);
         {ok, _Decoder} ->
             {error, unhandled_decoder}
     end.
@@ -72,6 +74,8 @@ add(custom, Decoder) ->
         {error, _Reason}=Error -> Error;
         {ok, _Pid} -> insert(Decoder)
     end;
+add(cayenne, Decoder) ->
+    insert(Decoder);
 add(_Type, _Decoder) ->
     {error, unhandled_decoder}.
 

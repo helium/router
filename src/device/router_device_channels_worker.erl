@@ -298,32 +298,33 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec downlink_decode(binary()) -> {ok, {boolean(), integer(), binary()}} | {error, any()}.
-downlink_decode(BinaryPayload) ->
+-spec downlink_decode(binary() | map()) -> {ok, {boolean(), integer(), binary()}} | {error, any()}.
+downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
     try jsx:decode(BinaryPayload, [return_maps]) of
-        JSON ->
-            case maps:find(<<"payload_raw">>, JSON) of
-                {ok, Payload} ->
-                    Port = case maps:find(<<"port">>, JSON) of
-                               {ok, X} when is_integer(X), X > 0, X < 224 ->
-                                   X;
-                               _ ->
-                                   1
-                           end,
-                    Confirmed = case maps:find(<<"confirmed">>, JSON) of
-                                    {ok, true} ->
-                                        true;
-                                    _ ->
-                                        false
-                                end,
-
-                    {ok, {Confirmed, Port, base64:decode(Payload)}};
-                error ->
-                    {error, payload_raw_not_found}
-            end
+        JSON -> downlink_decode(JSON)
     catch
         _:_ ->
             {error, failed_to_decode_json}
+    end;
+downlink_decode(MapPayload) when is_map(MapPayload) ->
+    case maps:find(<<"payload_raw">>, MapPayload) of
+        {ok, Payload} ->
+            Port = case maps:find(<<"port">>, MapPayload) of
+                       {ok, X} when is_integer(X), X > 0, X < 224 ->
+                           X;
+                       _ ->
+                           1
+                   end,
+            Confirmed = case maps:find(<<"confirmed">>, MapPayload) of
+                            {ok, true} ->
+                                true;
+                            _ ->
+                                false
+                        end,
+
+            {ok, {Confirmed, Port, base64:decode(Payload)}};
+        error ->
+            {error, payload_raw_not_found}
     end.
 
 -spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> {ok, reference(), map()}.

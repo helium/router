@@ -547,7 +547,7 @@ channel_correction_and_fopts(Packet, Device, Frame, Count) ->
              end,
     FOpts2 = case lists:member(link_check_req, Frame#frame.fopts) of
                  true ->
-                     Margin = trunc(Packet#packet_pb.snr - lorawan_mac_region:max_uplink_snr(Packet#packet_pb.datarate)),
+                     Margin = trunc(Packet#packet_pb.snr - lorawan_mac_region:max_uplink_snr(list_to_binary(Packet#packet_pb.datarate))),
                      lager:info("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                      [{link_check_ans, Margin, Count}|FOpts1];
                  false ->

@@ -41,6 +41,7 @@
                      pubkey_bin :: libp2p_crypto:pubkey_bin()}).
 
 -record(frame_cache, {rssi :: float(),
+                      count = 1 :: pos_integer(),
                       packet :: #packet_pb{},
                       pubkey_bin :: libp2p_crypto:pubkey_bin(),
                       frame :: #frame{},
@@ -145,18 +146,20 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                       pubkey_bin=PubKeyBin,
                                       frame=Frame,
                                       pid=Pid},
-            Cache1 = maps:put(FCnt, FrameCache, Cache0),
             case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
+                    Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{device=Device1, frame_cache=Cache1}};
-                #frame_cache{rssi=RSSI1, pid=Pid2} ->
+                #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch Pid ! {packet, undefined},
-                            {noreply, State#state{device=Device1}};
+                            Cache1 = maps:put(FCnt, FrameCache0#frame_cache{count=Count+1}, Cache0),
+                            {noreply, State#state{device=Device1, frame_cache=Cache1}};
                         true ->
                             catch Pid2 ! {packet, undefined},
+                            Cache1 = maps:put(FCnt, FrameCache#frame_cache{count=Count+1}, Cache0),
                             {noreply, State#state{device=Device1, frame_cache=Cache1}}
                     end
             end
@@ -187,9 +190,10 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
     #frame_cache{packet=Packet0,
                  pubkey_bin=PubKeyBin,
                  frame=Frame,
+                 count=Count,
                  pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, PubKeyBin, Device, Frame) of
+    case handle_frame(Packet0, PubKeyBin, Device, Frame, Count) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             Pid ! {packet, undefined},
@@ -441,19 +445,19 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet, PubKeyBin, Device, Frame) ->
-    handle_frame(Packet, PubKeyBin, Device, Frame, router_device:queue(Device)).
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}, pos_integer()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
 
--spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}, list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
-handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
+-spec handle_frame(#packet_pb{}, libp2p_crypto:pubkey_bin(), router_device:device(), #frame{}, pos_integer(), list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), #packet_pb{}}.
+handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),
     ChannelCorrection = router_device:channel_correction(Device0),
     lager:info("downlink with no queue, ACK ~p and channels corrected ~p", [ACK, ChannelCorrection orelse WereChannelsCorrected]),
     case ACK of
         X when X == 1 orelse (ChannelCorrection == false andalso not WereChannelsCorrected) ->
-            {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
+            {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame, Count),
             case ChannelsCorrected andalso (ChannelCorrection == false) andalso (ACK == 0) of
                 true ->
                     %% we corrected the channels but don't have anything else to send so just update the device
@@ -485,13 +489,13 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, []) ->
         _ ->
             noop
     end;
-handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
+handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame),
     lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
                [ReplyPayload, ConfirmedDown, Port, ACK, router_device:channel_correction(Device0) orelse WereChannelsCorrected]),
-    {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame),
+    {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame, Count),
     FCntDown = router_device:fcntdown(Device0),
     FPending = case T of
                    [] ->
@@ -524,8 +528,8 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, [{ConfirmedDown, Port, ReplyPay
             {send, Device1, Packet1}
     end.
 
--spec channel_correction_and_fopts(#packet_pb{}, router_device:device(), #frame{}) -> {boolean(), list()}.
-channel_correction_and_fopts(Packet, Device, Frame) ->
+-spec channel_correction_and_fopts(#packet_pb{}, router_device:device(), #frame{}, pos_integer()) -> {boolean(), list()}.
+channel_correction_and_fopts(Packet, Device, Frame, Count) ->
     ChannelsCorrected = were_channels_corrected(Frame),
     DataRate = Packet#packet_pb.datarate,
     ChannelCorrection = router_device:channel_correction(Device),
@@ -534,7 +538,14 @@ channel_correction_and_fopts(Packet, Device, Frame) ->
                  true -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
                  _ -> []
              end,
-    {ChannelsCorrected orelse ChannelCorrection, FOpts1}.
+    FOpts2 = case lists:member(link_check_req, Frame#frame.fopts) of
+                 true ->
+                     Margin = trunc(Packet#packet_pb.snr - lorawan_mac_region:max_uplink_snr(Packet#packet_pb.datarate)),
+                     [{link_check_ans, Margin, Count}|FOpts1];
+                 false ->
+                     FOpts1
+             end,
+    {ChannelsCorrected orelse ChannelCorrection, FOpts2}.
 
 were_channels_corrected(Frame) ->
     FOpts0 = Frame#frame.fopts,

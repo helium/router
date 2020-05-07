@@ -533,12 +533,9 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
                                                     <<"freq">> => blockchain_helium_packet_v1:frequency(Packet0),
                                                     <<"datr">> => erlang:list_to_binary(DataRate),
                                                     <<"codr">> => <<"ignored">>}),
-            Packet1 = #packet_pb{type=blockchain_helium_packet_v1:type(Packet0),
-                                 payload=Reply,
-                                 timestamp=TxTime,
-                                 datarate=TxDataRate,
-                                 signal_strength=27,
-                                 frequency=TxFreq},
+
+            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
+
             DeviceUpdates = [
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}
@@ -582,12 +579,10 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, R
                                             <<"freq">> => blockchain_helium_packet_v1:frequency(Packet0),
                                             <<"datr">> => erlang:list_to_binary(DataRate),
                                             <<"codr">> => <<"ignored">>}),
-    Packet1 = #packet_pb{type=blockchain_helium_packet_v1:type(Packet0),
-                         payload=Reply,
-                         timestamp=TxTime,
-                         datarate=TxDataRate,
-                         signal_strength=27,
-                         frequency=TxFreq},
+
+    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
+
+
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -614,7 +609,9 @@ channel_correction_and_fopts(Packet, Device, Frame, Count) ->
              end,
     FOpts2 = case lists:member(link_check_req, Frame#frame.fopts) of
                  true ->
-                     Margin = trunc(Packet#packet_pb.snr - lorawan_mac_region:max_uplink_snr(list_to_binary(Packet#packet_pb.datarate))),
+                     SNR = blockchain_helium_packet_v1:snr(Packet),
+                     MaxUplinkSNR = lorawan_mac_region:max_uplink_snr(list_to_binary(blockchain_helium_packet_v1:datarate(Packet))),
+                     Margin = trunc(SNR - MaxUplinkSNR),
                      lager:info("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                      [{link_check_ans, Margin, Count}|FOpts1];
                  false ->

@@ -455,35 +455,42 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
     WereChannelsCorrected = were_channels_corrected(Frame),
     ChannelCorrection = router_device:channel_correction(Device0),
     lager:info("downlink with no queue, ACK ~p and channels corrected ~p", [ACK, ChannelCorrection orelse WereChannelsCorrected]),
+    {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame, Count),
     case ACK of
-        X when X == 1 orelse (ChannelCorrection == false andalso not WereChannelsCorrected) ->
-            {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame, Count),
-            case FOpts1 == [] andalso (ACK == 0) of
+        _ when ACK == 1 orelse FOpts1 /= [] ->
+            ConfirmedDown = false,
+            Port = 0,
+            FCntDown = router_device:fcntdown(Device0),
+            MType = ack_to_mtype(ConfirmedDown),
+            Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
+                                            Device0),
+            DataRate = blockchain_helium_packet_v1:datarate(Packet0),
+            #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
+                lorawan_mac_region_old:rx1_window(<<"US902-928">>,
+                                                  router_device:offset(Device0),
+                                                  #{<<"tmst">> => blockchain_helium_packet_v1:timestamp(Packet0),
+                                                    <<"freq">> => blockchain_helium_packet_v1:frequency(Packet0),
+                                                    <<"datr">> => erlang:list_to_binary(DataRate),
+                                                    <<"codr">> => <<"ignored">>}),
+            Packet1 = #packet_pb{type=blockchain_helium_packet_v1:type(Packet0),
+                                 payload=Reply,
+                                 timestamp=TxTime,
+                                 datarate=TxDataRate,
+                                 signal_strength=27,
+                                 frequency=TxFreq},
+            DeviceUpdates = [
+                             {channel_correction, ChannelsCorrected},
+                             {fcntdown, (FCntDown + 1)}
+                            ],
+            Device1 = router_device:update(DeviceUpdates, Device0),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
+            case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
-                    %% we corrected the channels but don't have anything else to send so just update the device
-                    {ok, router_device:channel_correction(true, Device0)};
+                    {send, router_device:channel_correction(true, Device1), Packet1};
                 false ->
-                    ConfirmedDown = false,
-                    Port = 0,
-                    FCntDown = router_device:fcntdown(Device0),
-                    MType = ack_to_mtype(ConfirmedDown),
-                    Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
-                                                    Device0),
-                    DataRate = Packet0#packet_pb.datarate,
-                    #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
-                        lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                          router_device:offset(Device0),
-                                                          #{<<"tmst">> => Packet0#packet_pb.timestamp, <<"freq">> => Packet0#packet_pb.frequency,
-                                                            <<"datr">> => erlang:list_to_binary(DataRate), <<"codr">> => <<"ignored">>}),
-                    Packet1 = #packet_pb{oui=Packet0#packet_pb.oui, type=Packet0#packet_pb.type, payload=Reply,
-                                         timestamp=TxTime, datarate=TxDataRate, signal_strength=27, frequency=TxFreq},
-                    DeviceUpdates = [{channel_correction, ChannelsCorrected},
-                                     {fcntdown, (FCntDown + 1)}],
-                    Device1 = router_device:update(DeviceUpdates, Device0),
-                    ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
                     {send, Device1, Packet1}
             end;
-        _ when ACK == 0 andalso ChannelCorrection == false andalso WereChannelsCorrected == true ->
+        _ when ChannelCorrection == false andalso WereChannelsCorrected == true ->
             %% we corrected the channels but don't have anything else to send so just update the device
             {ok, router_device:channel_correction(true, Device0)};
         _ ->

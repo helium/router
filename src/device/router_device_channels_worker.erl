@@ -107,7 +107,6 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-
 handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->

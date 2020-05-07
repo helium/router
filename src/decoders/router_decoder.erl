@@ -78,6 +78,8 @@ add(custom, Decoder) ->
     end;
 add(cayenne, Decoder) ->
     insert(Decoder);
+add(browan_object_locator, Decoder) ->
+    insert(Decoder);
 add(_Type, _Decoder) ->
     {error, unhandled_decoder}.
 

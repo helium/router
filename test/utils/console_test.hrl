@@ -50,10 +50,11 @@
                                    <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
                                    <<"function">> => ?CONSOLE_DECODER}).
 
+-define(CONSOLE_DECODER_ID, <<"custom-decoder">>).
 -define(CONSOLE_DECODER, #{<<"active">> => true,
                            <<"body">> => ?DECODER,
                            <<"format">> => <<"custom">>,
-                           <<"id">> => <<"custom-decoder">>,
+                           <<"id">> => ?CONSOLE_DECODER_ID,
                            <<"name">> => <<"decoder name">>,
                            <<"type">> => <<"decoder">>}).
 

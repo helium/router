@@ -14,8 +14,7 @@
 -export([start_link/1,
          get_device/1, get_devices/2,
          get_channels/2,
-         report_status/2,
-         state/0]).
+         report_status/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -38,8 +37,6 @@
                 ws :: pid(),
                 ws_endpoint :: binary()}).
 
--type state() :: #state{}.
-
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
@@ -61,10 +58,6 @@ get_channels(Device, DeviceWorkerPid) ->
 -spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
 report_status(Device, Map) ->
     gen_server:cast(?SERVER, {report_status, Device, Map}).
-
--spec state() -> state().
-state() ->
-    gen_server:call(?SERVER, state, infinity).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

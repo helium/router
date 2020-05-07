@@ -78,7 +78,7 @@ refresh_channels_test(Config) ->
     timer:sleep(250),
 
     %% Checking worker's channels, should only be "no_channel"
-    State0 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"no_channel">> => router_channel:new(<<"no_channel">>,
                                                           router_no_channel,
                                                           <<"no_channel">>,
@@ -103,7 +103,7 @@ refresh_channels_test(Config) ->
     ets:insert(Tab, {no_channel, false}),
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State1 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel1),
                    <<"HTTP_2">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel2)},
                  State1#state.channels),
@@ -117,7 +117,7 @@ refresh_channels_test(Config) ->
                        <<"name">> => <<"HTTP_NAME_2">>},
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2_1]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State2 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State2 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(2, maps:size(State2#state.channels)),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State2#state.device, DeviceChannelsWorkerPid, HTTPChannel1),
                    <<"HTTP_2">> => convert_channel(State2#state.device, DeviceChannelsWorkerPid, HTTPChannel2_1)},
@@ -126,7 +126,7 @@ refresh_channels_test(Config) ->
     %% Remove HTTP Channel 1 and update 2 back to normal
     ets:insert(Tab, {channels, [HTTPChannel2]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State3 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State3 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"HTTP_2">> => convert_channel(State3#state.device, DeviceChannelsWorkerPid, HTTPChannel2)},
                  State3#state.channels),
 
@@ -156,7 +156,7 @@ crashing_channel_test(Config) ->
     timer:sleep(250),
 
     %% Check that HTTP 1 is in there
-    State0 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State0#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State0#state.channels),
     {Backoff0, _} = maps:get(<<"HTTP_1">>, State0#state.channels_backoffs),
@@ -169,7 +169,7 @@ crashing_channel_test(Config) ->
     timer:sleep(250),
 
     %% Check that HTTP 1 go restarted after crash
-    State1 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State1 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State1#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State1#state.channels),
     {Backoff1, _} = maps:get(<<"HTTP_1">>, State1#state.channels_backoffs),
@@ -198,7 +198,7 @@ crashing_channel_test(Config) ->
     timer:sleep(250),
 
     %% Check that HTTP 1 is gone and that backoff increased
-    State2 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State2 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{}, State2#state.channels),
     {Backoff2, _} = maps:get(<<"HTTP_1">>, State2#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN * 2, backoff:get(Backoff2)),
@@ -236,7 +236,7 @@ crashing_channel_test(Config) ->
     %% Fix crash and wait for HTTP channel to come back
     meck:unload(router_http_channel),
     timer:sleep(?BACKOFF_MIN * 2 + 250),
-    State3 = router_device_worker:state(DeviceChannelsWorkerPid),
+    State3 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(#{<<"HTTP_1">> => convert_channel(State3#state.device, DeviceChannelsWorkerPid, HTTPChannel1)},
                  State1#state.channels),
     {Backoff3, _} = maps:get(<<"HTTP_1">>, State3#state.channels_backoffs),

@@ -24,8 +24,7 @@
 %% API
 %% ------------------------------------------------------------------
 -export([
-         start_link/1,
-         state/0
+         start_link/1
         ]).
 
 %% ------------------------------------------------------------------
@@ -62,10 +61,6 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec state() -> state().
-state() ->
-    gen_server:call(?SERVER, state, infinity).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -78,8 +73,6 @@ init(Args) ->
     erlang:send_after(500, self(), post_init),
     {ok, #state{oui=OUI, active_count=get_active_count()}}.
 
-handle_call(state, _From, State) ->
-    {reply, State, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

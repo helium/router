@@ -393,12 +393,12 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
                   _Error ->
                       %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
                       %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+                      application:get_env(router, default_devaddr, <<OUI:32/integer-unsigned-big>>) %% <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
               catch
                   _:_ ->
                       %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
                       %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+                      application:get_env(router, default_devaddr, <<OUI:32/integer-unsigned-big>>) %% <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
               end,
 
     RxDelay = ?RX_DELAY,

@@ -458,7 +458,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
     case ACK of
         X when X == 1 orelse (ChannelCorrection == false andalso not WereChannelsCorrected) ->
             {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Device0, Frame, Count),
-            case ChannelsCorrected andalso (ChannelCorrection == false) andalso (ACK == 0) of
+            case FOpts1 == [] andalso (ACK == 0) of
                 true ->
                     %% we corrected the channels but don't have anything else to send so just update the device
                     {ok, router_device:channel_correction(true, Device0)};
@@ -541,6 +541,7 @@ channel_correction_and_fopts(Packet, Device, Frame, Count) ->
     FOpts2 = case lists:member(link_check_req, Frame#frame.fopts) of
                  true ->
                      Margin = trunc(Packet#packet_pb.snr - lorawan_mac_region:max_uplink_snr(Packet#packet_pb.datarate)),
+                     lager:info("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                      [{link_check_ans, Margin, Count}|FOpts1];
                  false ->
                      FOpts1

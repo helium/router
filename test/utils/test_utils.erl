@@ -10,8 +10,11 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
-         join_packet/3, join_packet/4, 
+         join_payload/2,
+         join_packet/3, join_packet/4,
+         frame_payload/6,
          frame_packet/5, frame_packet/6,
+         deframe_packet/2, deframe_join_packet/3,
          tmp_dir/0, tmp_dir/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -30,6 +33,7 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
+    ok = application:set_env(router, oui, 1),
     ok = application:set_env(router, router_device_api_module, router_device_api_console),
     ok = application:set_env(router, router_device_api_console, [{endpoint, ?CONSOLE_URL},
                                                                  {ws_endpoint, ?CONSOLE_WS_URL},
@@ -94,18 +98,17 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    {state, _DB, _CF, _Device, _, Pid, _, _} = sys:get_state(WorkerPid),
     Pid.
 
 force_refresh_channels(DeviceID) ->
-    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _DB, _CF, _Device, Pid, _, _} = sys:get_state(WorkerPid),
+    Pid = get_device_channels_worker(DeviceID),
     Pid ! refresh_channels,
     timer:sleep(250),
     ok.
 
 ignore_messages() ->
-    receive 
+    receive
         Msg ->
             ct:pal("ignored message: ~p~n", [Msg]),
             ?MODULE:ignore_messages()
@@ -235,18 +238,22 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
             {client_data, undefined, Data} ->
                 try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
                     #blockchain_state_channel_message_v1_pb{msg={response, Resp}} ->
-                        #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} = Resp,
-                        ct:pal("wait_state_channel_message packet ~p", [Packet]),
-                        Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
-                        ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
-                        ?assertEqual(FrameData, Frame#frame.data),
-                        %% we queued an unconfirmed packet
-                        ?assertEqual(Type, Frame#frame.mtype),
-                        ?assertEqual(FPending, Frame#frame.fpending),
-                        ?assertEqual(Ack, Frame#frame.ack),
-                        ?assertEqual(Fport, Frame#frame.fport),
-                        ?assertEqual(FCnt, Frame#frame.fcnt),
-                        {ok, Frame};
+                        case Resp of
+                            #blockchain_state_channel_response_v1_pb{accepted=true, downlink=undefined} ->
+                                wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt);
+                            #blockchain_state_channel_response_v1_pb{accepted=true, downlink=Packet} ->
+                                ct:pal("wait_state_channel_message packet ~p", [Packet]),
+                                Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
+                                ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
+                                ?assertEqual(FrameData, Frame#frame.data),
+                                %% we queued an unconfirmed packet
+                                ?assertEqual(Type, Frame#frame.mtype),
+                                ?assertEqual(FPending, Frame#frame.fpending),
+                                ?assertEqual(Ack, Frame#frame.ack),
+                                ?assertEqual(Fport, Frame#frame.fport),
+                                ?assertEqual(FCnt, Frame#frame.fcnt),
+                                {ok, Frame}
+                        end;
                     _Else ->
                         ct:fail("wait_state_channel_message wrong message ~p for ~p", [_Else, Msg])
                 catch _E:_R ->
@@ -265,6 +272,13 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
     join_packet(PubKeyBin, AppKey, DevNonce, 0).
 
 join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
+    RoutingInfo = {devaddr, 1},
+    HeliumPacket = blockchain_helium_packet_v1:new(RoutingInfo, lorawan, join_payload(AppKey, DevNonce), 1000, RSSI, 923.3, <<"SF8BW125">>, 0.0),
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+join_payload(AppKey, DevNonce) ->
     MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
@@ -272,27 +286,29 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     DevEUI = lorawan_utils:reverse(?DEVEUI),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
     MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      oui=2,
-                      payload=Payload1,
-                      signal_strength=RSSI,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    <<Payload0/binary, MIC:4/binary>>.
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    MHDRRFU = 0,
-    Major = 0,
     <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
     DevAddr = <<OUI:32/integer-unsigned-big>>,
+    Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
+    HeliumPacket = #packet_pb{
+                      type=lorawan,
+                      payload=Payload1,
+                      frequency=923.3,
+                      datarate= <<"SF8BW125">>,
+                      signal_strength=maps:get(rssi, Options, 0.0)
+                     },
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
+    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
+    blockchain_state_channel_v1_pb:encode_msg(Msg).
+
+frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
+    MHDRRFU = 0,
+    Major = 0,
     ADR = 0,
     ADRACKReq = 0,
     ACK = case maps:get(should_ack, Options, false) of
@@ -308,18 +324,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
                  FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
     B0 = b0(MType band 1, lorawan_utils:reverse(DevAddr), FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
-    Payload1 = <<Payload0/binary, MIC:4/binary>>,
-    HeliumPacket = #packet_pb{
-                      type=lorawan,
-                      oui=2,
-                      payload=Payload1,
-                      frequency=923.3,
-                      datarate= <<"SF8BW125">>,
-                      signal_strength=maps:get(rssi, Options, 0.0)
-                     },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin},
-    Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    <<Payload0/binary, MIC:4/binary>>.
+
 
 %%--------------------------------------------------------------------
 %% @doc

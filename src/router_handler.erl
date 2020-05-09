@@ -70,7 +70,7 @@ handle_data(server, Data, State) ->
         {error, _Reason} ->
             lager:debug("failed to transmit data ~p", [_Reason]);
         {ok, #packet_pb{type=lorawan}=Packet0, PubKeyBin} ->
-            ok = router_device_worker:handle_packet(Packet0, PubKeyBin);
+            router_device_worker:handle_packet(Packet0, PubKeyBin);
         {ok, #packet_pb{type=_Type}=_Packet, PubKeyBin} ->
             {ok, _AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
             lager:error("unknown packet type ~p coming from ~p: ~p", [_Type, _AName, _Packet])
@@ -80,6 +80,9 @@ handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
+handle_info(server, {send_response, Resp}, State) ->
+    Data = blockchain_state_channel_message_v1:encode(Resp),
+    {noreply, State, Data};
 handle_info(server, {packet, undefined}, State) ->
     {noreply, State};
 handle_info(server, {packet, #packet_pb{}=Packet}, State) ->

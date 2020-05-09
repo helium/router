@@ -77,16 +77,25 @@ init([]) ->
                   ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
                   {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
           end,
-    P2PWorkerOpts = #{port => application:get_env(router, port, 0),
-                      seed_nodes => SeedNodes,
-                      base_dir => BaseDir,
-                      key => Key},
+
+    BlockchainOpts = [
+                      {key, Key},
+                      {seed_nodes, SeedNodes},
+                      {max_inbound_connections, 10},
+                      {port, application:get_env(router, port, 0)},
+                      {base_dir, BaseDir},
+                      {update_dir, application:get_env(router, update_dir, undefined)}
+                     ],
+
+    SCWorkerOpts = #{},
+
     DBOpts = [BaseDir],
     DeviceAPIModule = router_device_api:module(),
     DeviceAPIData = maps:from_list(application:get_env(router, DeviceAPIModule, [])),
-    {ok, {?FLAGS, [?WORKER(router_db, [DBOpts]),
+    {ok, {?FLAGS, [?SUP(blockchain_sup, [BlockchainOpts]),
+                   ?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
-                   ?WORKER(router_p2p, [P2PWorkerOpts]),
+                   ?WORKER(router_sc_worker, [SCWorkerOpts]),
                    ?WORKER(DeviceAPIModule, [DeviceAPIData]),
                    ?WORKER(router_v8, [#{}]),
                    ?SUP(router_decoder_custom_sup, [])]}}.

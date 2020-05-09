@@ -52,7 +52,7 @@ no_channel_test(Config) ->
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    {ok, RouterSwarm} = router_p2p:swarm(),
+    RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
                                                    Address,
@@ -125,7 +125,7 @@ no_channel_test(Config) ->
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Checking that device channels worker has only no_channel 
+    %% Checking that device channels worker has only no_channel
     DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
     NoChannel = router_channel:new(<<"no_channel">>,
                                    router_no_channel,
@@ -203,7 +203,7 @@ no_channel_test(Config) ->
     %% Force to refresh channels list
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
 
-    %% Checking that device worker has only no_channel 
+    %% Checking that device worker has only no_channel
     State1 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(5, State1))),

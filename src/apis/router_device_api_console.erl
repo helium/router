@@ -74,6 +74,9 @@ init(Args) ->
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid, ws_endpoint=WSEndpoint}}.
 
+
+handle_call(state, _From, State) ->
+    {reply, State, State};
 handle_call({get_device, DeviceID}, _From, #state{endpoint=Endpoint,
                                                   token=Token}=State) ->
     Device = router_device:new(DeviceID),

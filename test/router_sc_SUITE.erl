@@ -79,6 +79,7 @@ init_per_testcase(TestCase, Config0) ->
                ?max_subnet_size => 65536,            %% Max subnet size
                ?min_subnet_size => 8,                %% Min subnet size
                ?max_subnet_num => 20,                %% Max subnet num
+               ?dc_payload_size => 24,
                ?sc_grace_blocks => 5},               %% Grace period (in num of blocks) for state channels to get GCd
 
     DefaultVars = #{?block_time => BlockTime,

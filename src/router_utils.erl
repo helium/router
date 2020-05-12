@@ -26,7 +26,7 @@ find_oui(PubkeyBin, Ledger) ->
             case MyOUIs of
                 [] -> undefined;
                 [OUI] -> OUI;
-                L when length(L) > 1 ->
+                [H|_T] ->
                     hd(L)
             end;
         OUI0 when is_list(OUI0) ->

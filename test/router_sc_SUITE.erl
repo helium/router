@@ -20,7 +20,8 @@
          maintain_channels_test/1,
          handle_packets_test/1,
          default_routers_test/1,
-         no_oui_test/1
+         no_oui_test/1,
+         no_dc_entry_test/1
         ]).
 
 -define(SFLOCS, [631210968910285823, 631210968909003263, 631210968912894463, 631210968907949567]).
@@ -32,10 +33,9 @@ all() -> [
           maintain_channels_test,
           handle_packets_test,
           default_routers_test,
-          no_oui_test
+          no_oui_test,
+          no_dc_entry_test
          ].
-
-
 
 init_per_suite(Config) ->
     Config.
@@ -52,8 +52,14 @@ init_per_testcase(TestCase, Config0) ->
     RouterAddresses = ?config(router_pubkey_bins, Config),
     Balance = 5000,
     InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
-    InitialDCTxns = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
 
+    InitialDCTxns = case TestCase of
+                        no_dc_entry_test ->
+                            %% no dc entries here
+                            [];
+                        _ ->
+                            [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses]
+                    end,
 
     Locations = ?SFLOCS ++ ?NYLOCS,
     AddressesWithLocations = lists:zip(Addresses, lists:sublist(Locations, length(Addresses))),
@@ -418,3 +424,7 @@ no_oui_test(Config) ->
     0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     ok.
+
+no_dc_entry_test(Config) ->
+    %% This is the same test except without any dc entries
+    maintain_channels_test(Config).

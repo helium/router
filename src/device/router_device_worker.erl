@@ -51,7 +51,7 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
-                oui :: undefined | pos_integer(),
+                oui :: undefined | non_neg_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
                 frame_cache = #{} :: #{integer() => #frame_cache{}}}).
@@ -351,7 +351,7 @@ maybe_start_worker(DeviceID) ->
 %%%-------------------------------------------------------------------
 -spec handle_join(blockchain_helium_packet_v1:packet(),
                   libp2p_crypto:pubkey_to_bin(),
-                  pos_integer(),
+                  non_neg_integer(),
                   router_device:device(),
                   binary(),
                   router_device:device()) ->
@@ -363,7 +363,7 @@ handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/bina
 handle_join(_Packet, _PubKeyBin, _OUI, _APIDevice, _AppKey, _Device) ->
     {error, not_join_req}.
 
--spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), pos_integer(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
+-spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), non_neg_integer(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, blockchain_helium_packet_v1:packet(), router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},

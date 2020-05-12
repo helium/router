@@ -609,7 +609,7 @@ channel_correction_and_fopts(Packet, Device, Frame, Count) ->
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     FOpts1 = case ChannelCorrectionNeeded andalso not ChannelsCorrected of
-                 true -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{48, 55}]}, []);
+                 true -> lorawan_mac_region:set_channels(<<"US902">>, {0, erlang:list_to_binary(DataRate), [{8, 15}]}, []);
                  _ -> []
              end,
     FOpts2 = case lists:member(link_check_req, Frame#frame.fopts) of

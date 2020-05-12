@@ -19,7 +19,8 @@
 -export([
          maintain_channels_test/1,
          handle_packets_test/1,
-         default_routers_test/1
+         default_routers_test/1,
+         no_oui_test/1
         ]).
 
 -define(SFLOCS, [631210968910285823, 631210968909003263, 631210968912894463, 631210968907949567]).
@@ -30,7 +31,8 @@
 all() -> [
           maintain_channels_test,
           handle_packets_test,
-          default_routers_test
+          default_routers_test,
+          no_oui_test
          ].
 
 
@@ -165,7 +167,12 @@ maintain_channels_test(Config) ->
     ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
     ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
 
-    RouterState = ct_rpc:call(RouterNode, router_sc_worker, state, []),
+    %% check that the router sees that the oui counter is up-to-date
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
+    {ok, 1} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
+
+    RouterState = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Before RouterState: ~p", [RouterState]),
 
     true = miner_test:wait_until(fun() ->
@@ -176,7 +183,7 @@ maintain_channels_test(Config) ->
                                          map_size(SCs) == 2 andalso map_size(MySCs) == 2
                                  end, 30, timer:seconds(1)),
 
-    RouterState2 = ct_rpc:call(RouterNode, router_sc_worker, state, []),
+    RouterState2 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Mid RouterState: ~p", [RouterState2]),
 
     %% Wait 200 blocks, for multiple sc open txns to have occured
@@ -199,7 +206,7 @@ maintain_channels_test(Config) ->
                                          blockchain_ledger_state_channel_v1:nonce(S) >= 4
                                  end, 60, timer:seconds(5)),
 
-    RouterState3 = ct_rpc:call(RouterNode, router_sc_worker, state, []),
+    RouterState3 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Final RouterState: ~p", [RouterState3]),
 
     ok.
@@ -211,6 +218,9 @@ handle_packets_test(Config) ->
     [RouterNode | _] = Routers,
 
     ClientPubkeyBins = [ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []) || Miner <- Miners],
+
+    %% router_sc_worker must be inactive before oui txn
+    false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
 
     %% setup
     %% oui txn
@@ -242,8 +252,11 @@ handle_packets_test(Config) ->
     ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
     ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
 
-    RouterState = ct_rpc:call(RouterNode, router_sc_worker, state, []),
+    RouterState = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Before RouterState: ~p", [RouterState]),
+
+    %% router_sc_worker must have become active now
+    true = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
 
     true = miner_test:wait_until(fun() ->
                                          RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
@@ -375,5 +388,33 @@ default_routers_test(Config) ->
         2000 ->
             ct:fail("no downlink")
     end,
+
+    ok.
+
+no_oui_test(Config) ->
+    %% If there is no oui on chain, don't try to open any state channels
+
+    Miners = ?config(miners, Config),
+    Routers = ?config(routers, Config),
+
+    [RouterNode | _] = Routers,
+
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
+
+    %% no ouis on the ledger
+    {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
+    %% Check that router_sc_worker is inactive
+    false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
+    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
+
+    %% Wait for 50 blocks
+    ok = miner_test:wait_for_gte(height_exactly, Miners, 50),
+    ok = miner_test:wait_for_gte(height_exactly, Routers, 50),
+
+    %% Same checks again
+    {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
+    false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
+    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     ok.

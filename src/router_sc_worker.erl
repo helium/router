@@ -24,7 +24,9 @@
 %% API
 %% ------------------------------------------------------------------
 -export([
-         start_link/1
+         start_link/1,
+         is_active/0,
+         active_count/0
         ]).
 
 %% ------------------------------------------------------------------
@@ -50,6 +52,7 @@
 -record(state, {
                 oui = undefined :: undefined | pos_integer(),
                 chain = undefined :: undefined | blockchain:blockchain(),
+                is_active = false :: boolean(),
                 active_count = 0 :: 0 | 1 | 2
                }).
 
@@ -61,6 +64,14 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
+-spec is_active() -> boolean().
+is_active() ->
+    gen_server:call(?SERVER, is_active).
+
+-spec active_count() -> 0 | 1 | 2.
+active_count() ->
+    gen_server:call(?SERVER, active_count).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -69,10 +80,13 @@ init(Args) ->
     %% TODO: Not really sure where exactly to install this handler at tbh...
     ok = router_handler:add_stream_handler(blockchain_swarm:swarm()),
     ok = blockchain_event:add_handler(self()),
-    OUI = router_utils:get_router_oui(),
     erlang:send_after(500, self(), post_init),
-    {ok, #state{oui=OUI, active_count=get_active_count()}}.
+    {ok, #state{active_count=get_active_count()}}.
 
+handle_call(is_active, _From, State) ->
+    {reply, State#state.is_active, State};
+handle_call(active_count, _From, State) ->
+    {reply, State#state.active_count, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -81,11 +95,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(_, #state{oui=undefined}=State) ->
-    %% Ignore all messages if OUI is undefined
-    %% However, keep running post_init just in case it gets configured later
-    erlang:send_after(500, self(), post_init),
-    {noreply, State};
 handle_info(post_init, #state{chain=undefined}=State) ->
     %% No chain
     case blockchain_worker:blockchain() of
@@ -93,22 +102,37 @@ handle_info(post_init, #state{chain=undefined}=State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            OUI = router_utils:get_router_oui(),
-            {noreply, #state{chain=Chain, oui=OUI}}
+            case router_utils:get_router_oui(Chain) of
+                undefined ->
+                    {noreply, State#state{chain=Chain}};
+                OUI ->
+                    %% We have a chain and an oui on chain, set is_active to true
+                    {noreply, State#state{chain=Chain, oui=OUI, is_active=true}}
+            end
     end;
 handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->
     %% Got block without a chain, wut?
     erlang:send_after(500, self(), post_init),
     {noreply, State};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=0}=State) ->
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{is_active=false, chain=Chain}=State) ->
+    %% We're inactive, check if we have an oui
+    case router_utils:get_router_oui(Chain) of
+        undefined ->
+            %% stay inactive
+            {noreply, State};
+        OUI ->
+            %% activate
+            {noreply, State#state{oui=OUI, is_active=true}}
+    end;
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=0, is_active=true}=State) ->
     lager:info("active_count = 0, initializing two state_channels"),
     ok = init_state_channels(State),
     {noreply, State#state{active_count=get_active_count()}};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, Ledger}}, #state{active_count=1}=State) ->
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, Ledger}}, #state{active_count=1, is_active=true}=State) ->
     lager:info("active_count = 1, opening next state_channel"),
     ok = open_next_state_channel(State, Ledger),
     {noreply, State#state{active_count=get_active_count()}};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=2}=State) ->
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=2, is_active=true}=State) ->
     %% Don't do anything
     lager:info("active_count = 2, standing by"),
     {noreply, State#state{active_count=get_active_count()}};

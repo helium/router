@@ -50,7 +50,7 @@
 -define(EXPIRATION, 45).
 
 -record(state, {
-                oui = undefined :: undefined | pos_integer(),
+                oui = undefined :: undefined | non_neg_integer(),
                 chain = undefined :: undefined | blockchain:blockchain(),
                 is_active = false :: boolean(),
                 active_count = 0 :: 0 | 1 | 2
@@ -173,7 +173,7 @@ open_next_state_channel(#state{oui=OUI}, Ledger) ->
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
                                   Nonce :: pos_integer(),
-                                  OUI :: pos_integer(),
+                                  OUI :: non_neg_integer(),
                                   Expiration :: pos_integer()) -> ok.
 create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration) ->
     %% Create and open a new state_channel

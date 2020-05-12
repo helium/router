@@ -10,7 +10,7 @@ get_router_oui(Chain) ->
     case blockchain_ledger_v1:get_oui_counter(Ledger) of
         {error, _} -> undefined;
         {ok, 0} -> undefined;
-        {ok, _} ->
+        {ok, _OUICounter} ->
             %% there are some ouis on chain
             find_oui(PubkeyBin, Ledger)
     end.

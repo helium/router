@@ -27,7 +27,7 @@ find_oui(PubkeyBin, Ledger) ->
                 [] -> undefined;
                 [OUI] -> OUI;
                 [H|_T] ->
-                    hd(L)
+                    H
             end;
         OUI0 when is_list(OUI0) ->
             %% app env comes in as a string

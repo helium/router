@@ -56,8 +56,7 @@ init_per_testcase(TestCase, Config) ->
     ElliOpts = [{callback, console_callback},
                 {callback_args, #{forward => self(), ets => Tab,
                                   app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
-                {port, 3000}
-               ],
+                {port, 3000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
     Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
@@ -76,6 +75,8 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
+    e2qc:teardown(router_device_api_console_get_devices),
+    ok = application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
@@ -84,13 +85,11 @@ end_per_testcase(_TestCase, Config) ->
 start_swarm(BaseDir, Name, Port) ->
     #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
-    SwarmOpts = [
-                 {base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
+    SwarmOpts = [{base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
                  {key, Key},
                  {libp2p_group_gossip, [{seed_nodes, []}]},
                  {libp2p_nat, [{enabled, false}]},
-                 {libp2p_proxy, [{limit, 1}]}
-                ],
+                 {libp2p_proxy, [{limit, 1}]}],
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),

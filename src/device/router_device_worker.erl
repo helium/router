@@ -245,6 +245,10 @@ handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0, channe
     _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
     DeviceID = router_device:id(Device0),
     case router_device_api:get_device(DeviceID) of
+        {error, not_found} ->
+            lager:info("device was not found, removing from DB and shutting down"),
+            ok = router_device:delete(DB, CF, DeviceID),
+            {stop, normal, State};
         {error, _Reason} ->
             lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
             {noreply, State};

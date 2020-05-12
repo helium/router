@@ -106,38 +106,41 @@ get_channels(Device, DeviceWorkerPid) ->
 
 -spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
 report_status(Device, Map) ->
-    {Endpoint, Token} = token_lookup(),
-    DeviceID = router_device:id(Device),
-    Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-    Category = maps:get(category, Map),
-    Channels = maps:get(channels, Map),
-    Body0 = #{category => Category,
-              description => maps:get(description, Map),
-              reported_at => maps:get(reported_at, Map),
-              device_id => DeviceID,
-              frame_up => router_device:fcnt(Device),
-              frame_down => router_device:fcntdown(Device),
-              payload_size => maps:get(payload_size, Map),
-              port => maps:get(port, Map),
-              devaddr => maps:get(devaddr, Map),
-              hotspots => maps:get(hotspots, Map),
-              channels => [maps:remove(debug, C) ||C <- Channels]},
-    DebugLeft = debug_lookup(DeviceID),
-    Body1 =
-        case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of
-            false ->
-                Body0;
-            true ->
-                case DebugLeft-1 =< 0 of
-                    false -> debug_insert(DeviceID, DebugLeft-1);
-                    true -> debug_delete(DeviceID)
-                end,
-                B0 = maps:put(payload, maps:get(payload, Map), Body0),
-                maps:put(channels, Channels, B0)
-        end,
-    lager:debug("post ~p to ~p", [Body1, Url]),
-    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                 jsx:encode(Body1), [with_body, {pool, ?POOL}]),
+    erlang:spawn(
+      fun() ->
+              {Endpoint, Token} = token_lookup(),
+              DeviceID = router_device:id(Device),
+              Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
+              Category = maps:get(category, Map),
+              Channels = maps:get(channels, Map),
+              Body0 = #{category => Category,
+                        description => maps:get(description, Map),
+                        reported_at => maps:get(reported_at, Map),
+                        device_id => DeviceID,
+                        frame_up => router_device:fcnt(Device),
+                        frame_down => router_device:fcntdown(Device),
+                        payload_size => maps:get(payload_size, Map),
+                        port => maps:get(port, Map),
+                        devaddr => maps:get(devaddr, Map),
+                        hotspots => maps:get(hotspots, Map),
+                        channels => [maps:remove(debug, C) ||C <- Channels]},
+              DebugLeft = debug_lookup(DeviceID),
+              Body1 =
+                  case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of
+                      false ->
+                          Body0;
+                      true ->
+                          case DebugLeft-1 =< 0 of
+                              false -> debug_insert(DeviceID, DebugLeft-1);
+                              true -> debug_delete(DeviceID)
+                          end,
+                          B0 = maps:put(payload, maps:get(payload, Map), Body0),
+                          maps:put(channels, Channels, B0)
+                  end,
+              lager:debug("post ~p to ~p", [Body1, Url]),
+              hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                           jsx:encode(Body1), [with_body, {pool, ?POOL}])
+      end),
     ok.
 
 start_link(Args) ->
@@ -305,8 +308,11 @@ get_device_(Endpoint, Token, Device) ->
     lager:debug("get ~p", [Url]),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?POOL}]) of
         {ok, 200, _Headers, Body} ->
-            lager:info("Body for ~p ~p", [Url, Body]),
+            lager:debug("Body for ~p ~p", [Url, Body]),
             {ok, jsx:decode(Body, [return_maps])};
+        {ok, 404, _ResponseHeaders, _ResponseBody} ->
+            lager:debug("device ~p not found", [DeviceId]),
+            {error, not_found};
         _Other ->
             {error, {get_device_failed, _Other}}
     end.

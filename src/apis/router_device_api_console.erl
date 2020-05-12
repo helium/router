@@ -64,29 +64,32 @@ get_device(DeviceID) ->
 
 -spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 get_devices(DevEui, AppEui) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
-            "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
-    lager:debug("get ~p", [Url]),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?POOL}]) of
-        {ok, 200, _Headers, Body} ->
-            Devices = lists:map(
-                        fun(JSONDevice) ->
-                                ID = kvc:path([<<"id">>], JSONDevice),
-                                Name = kvc:path([<<"name">>], JSONDevice),
-                                AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
-                                Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
-                                DeviceUpdates = [{name, Name},
-                                                 {dev_eui, DevEui},
-                                                 {app_eui, AppEui},
-                                                 {metadata, Metadata}],
-                                {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
-                        end,
-                        jsx:decode(Body, [return_maps])),
-            Devices;
-        _Other ->
-            []
-    end.
+    e2qc:cache(router_device_api_console_get_devices, {DevEui, AppEui}, 10,
+               fun() ->
+                       {Endpoint, Token} = token_lookup(),
+                       Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
+                               "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
+                       lager:debug("get ~p", [Url]),
+                       case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?POOL}]) of
+                           {ok, 200, _Headers, Body} ->
+                               Devices = lists:map(
+                                           fun(JSONDevice) ->
+                                                   ID = kvc:path([<<"id">>], JSONDevice),
+                                                   Name = kvc:path([<<"name">>], JSONDevice),
+                                                   AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
+                                                   Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+                                                   DeviceUpdates = [{name, Name},
+                                                                    {dev_eui, DevEui},
+                                                                    {app_eui, AppEui},
+                                                                    {metadata, Metadata}],
+                                                   {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
+                                           end,
+                                           jsx:decode(Body, [return_maps])),
+                               Devices;
+                           _Other ->
+                               []
+                       end
+               end).
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].
 get_channels(Device, DeviceWorkerPid) ->

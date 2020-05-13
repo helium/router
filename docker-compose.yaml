@@ -6,7 +6,6 @@ services:
     container_name: helium_router
     restart: always
     env_file: .env
-    ports:
-      - 2154:2154
+    network_mode: host
     volumes:
       - "/var/data:/var/data"

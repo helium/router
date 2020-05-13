@@ -76,7 +76,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(router),
     ok = application:stop(lager),
     e2qc:teardown(router_device_api_console_get_devices),
-    ok = application:stop(e2qc),
+    application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),

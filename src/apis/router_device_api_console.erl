@@ -70,7 +70,8 @@ get_devices(DevEui, AppEui) ->
                        Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
                                "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
                        lager:debug("get ~p", [Url]),
-                       case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?POOL}]) of
+                       Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+                       case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
                            {ok, 200, _Headers, Body} ->
                                Devices = lists:map(
                                            fun(JSONDevice) ->
@@ -309,7 +310,8 @@ get_device_(Endpoint, Token, Device) ->
     DeviceId = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
     lager:debug("get ~p", [Url]),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, [with_body, {pool, ?POOL}]) of
+    Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
             lager:debug("Body for ~p ~p", [Url, Body]),
             {ok, jsx:decode(Body, [return_maps])};

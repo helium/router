@@ -24,8 +24,7 @@
     throttle,
     httpc_aws,
     websocket_client,
-    erlang_v8,
-    e2qc
+    erlang_v8
    ]},
   {included_applications, [blockchain]},
   {env,[]},

@@ -33,6 +33,7 @@
 
 -define(SERVER, ?MODULE).
 -define(BACKOFF_MAX, timer:minutes(5)).
+-define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
 -record(join_cache, {rssi :: float(),
                      packet :: blockchain_helium_packet_v1:packet(),
@@ -325,18 +326,58 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                         [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, bad_mic}
     end;
-handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/binary, _ADR:1, _ADRACKReq:1,
+handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:32/integer-unsigned-little, _ADR:1, _ADRACKReq:1,
                                     _ACK:1, _RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer,
                                     _FOpts:FOptsLen/binary, PayloadAndMIC/binary>> =Payload}=Packet, PubKeyBin, Pid) ->
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) -4}),
     MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
-    DevAddr = lorawan_utils:reverse(DevAddr0),
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    case DevAddr of
+        <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
+            Chain = blockchain_worker:blockchain(),
+            OUI = case application:get_env(router, oui, undefined) of
+                      undefined -> undefined;
+                      OUI0 when is_list(OUI0) ->
+                          list_to_integer(OUI0);
+                      OUI0 ->
+                          OUI0
+                  end,
+            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                {ok, RoutingEntry} ->
+                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                    case lists:any(fun(Subnet) ->
+                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+                                           AddrBase >= Base andalso AddrBase < Base + Size
+                                   end, Subnets) of
+                        true ->
+                            %% ok device is in one of our subnets
+                            find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
+                        false ->
+                            {error, {unknown_device, DevAddr}}
+                    end;
+                _ ->
+                    %% no subnets
+                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+            catch
+                _:_ ->
+                    %% no subnets
+                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+            end;
+        _ ->
+            %% wrong devaddr prefix
+            {error, {unknown_device, DevAddr}}
+    end;
+handle_packet(#packet_pb{payload=Payload}, AName, _Pid) ->
+    {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
+
+find_device(Packet, Pid, PubKeyBin, DevAddr, B0, MIC) ->
+    %% TODO this should take devaddr into account
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(DB, CF, <<(b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)  of
+    case get_device_by_mic(DB, CF, B0, MIC) of
         undefined ->
-            lager:debug("packet from unknown device ~s received by ~s", [lorawan_utils:binary_to_hex(DevAddr), AName]),
-            {error, {unknown_device, lorawan_utils:binary_to_hex(DevAddr)}};
+            {error, {unknown_device, DevAddr}};
         Device ->
             DeviceID = router_device:id(Device),
             case maybe_start_worker(DeviceID) of
@@ -345,9 +386,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr0:4/bi
                 {ok, WorkerPid} ->
                     gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Pid})
             end
-    end;
-handle_packet(#packet_pb{payload=Payload}, AName, _Pid) ->
-    {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
+    end.
 
 %%%-------------------------------------------------------------------
 %% @doc

@@ -92,12 +92,14 @@ refresh_channels_test(Config) ->
                      <<"credentials">> => #{<<"headers">> => #{},
                                             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                             <<"method">> => <<"POST">>},
+                     <<"downlink_url">> => <<>>,
                      <<"id">> => <<"HTTP_1">>,
                      <<"name">> => <<"HTTP_NAME_1">>},
     HTTPChannel2 = #{<<"type">> => <<"http">>,
                      <<"credentials">> => #{<<"headers">> => #{},
                                             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
                                             <<"method">> => <<"POST">>},
+                     <<"downlink_url">> => <<>>,
                      <<"id">> => <<"HTTP_2">>,
                      <<"name">> => <<"HTTP_NAME_2">>},
     ets:insert(Tab, {no_channel, false}),
@@ -308,6 +310,7 @@ late_packet_test(Config) ->
 
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => fun erlang:is_binary/1,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
@@ -378,8 +381,6 @@ late_packet_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-
 -spec convert_channel(router_device:device(), pid(), map()) -> false | router_channel:channel().
 convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -387,9 +388,11 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{url =>  kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
-             method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))},
+             method => list_to_existing_atom(binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel))),
+             downlink_token => to_bin(kvc:path([<<"downlink_token">>], JSONChannel))},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     Channel;
 convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -398,7 +401,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     Args = #{endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
     Channel;
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -409,7 +413,46 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
              aws_region => binary_to_list(kvc:path([<<"credentials">>, <<"aws_region">>], JSONChannel)),
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid),
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
+    Channel;
+convert_channel(Device, Pid, #{<<"type">> := <<"console">>}=JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_console_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    DeviceID = router_device:id(Device),
+    Decoder = convert_decoder(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder),
     Channel;
 convert_channel(_Device, _Pid, _Channel) ->
     false.
+
+-spec convert_decoder(map()) -> undefined | router_decoder:decoder().
+convert_decoder(JSONChannel) ->
+    case kvc:path([<<"function">>], JSONChannel, undefined) of
+        undefined ->
+            undefined;
+        JSONDecoder ->
+            case kvc:path([<<"active">>], JSONDecoder, false) of
+                false ->
+                    undefined;
+                true ->
+                    case kvc:path([<<"format">>], JSONDecoder, undefined) of
+                        <<"custom">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder),
+                                               custom,
+                                               #{function => kvc:path([<<"body">>], JSONDecoder)});
+                        <<"cayenne">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder), cayenne, #{});
+                        <<"browan_object_locator">> ->
+                            router_decoder:new(kvc:path([<<"id">>], JSONDecoder), browan_object_locator, #{});
+                        _ ->
+                            undefined
+                    end
+            end
+    end.
+
+to_bin(Bin) when is_binary(Bin) ->
+    Bin;
+to_bin(List) when is_list(List) ->
+    erlang:list_to_binary(List).

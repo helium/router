@@ -152,6 +152,7 @@ join_test(Config) ->
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"fcnt">> => 1,
+                                   <<"downlink_url">> => fun erlang:is_binary/1,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
@@ -222,6 +223,7 @@ join_test(Config) ->
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
                                    <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
                                    <<"fcnt">> => 2,
+                                   <<"downlink_url">> => fun erlang:is_binary/1,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => base64:encode(<<0>>),
                                    <<"port">> => 2,
@@ -282,7 +284,7 @@ join_test(Config) ->
 
     Stream0 ! get_channel_mask,
     receive {channel_mask, Mask} ->
-            ExpectedMask = lists:seq(48, 55),
+            ExpectedMask = lists:seq(8, 15),
             Mask = ExpectedMask
     after 100 ->
             ct:fail("channel mask not corrected")

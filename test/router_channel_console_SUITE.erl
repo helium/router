@@ -121,7 +121,7 @@ console_test(Config) ->
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
                                                                  <<"frequency">> => fun erlang:is_float/1}],
-                                            <<"channels">> => [#{<<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary, ?CONSOLE_DECODER_ID/binary>>,
+                                            <<"channels">> => [#{<<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary>>,
                                                                  <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
                                                                  <<"status">> => <<"success">>,

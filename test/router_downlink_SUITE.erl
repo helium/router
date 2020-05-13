@@ -111,6 +111,7 @@ http_downlink_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => fun erlang:is_binary/1,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),

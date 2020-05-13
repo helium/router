@@ -14,7 +14,8 @@
 -export([start_link/1,
          get_device/1, get_devices/2,
          get_channels/2,
-         report_status/2]).
+         report_status/2,
+         get_downlink_url/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -147,6 +148,16 @@ report_status(Device, Map) ->
       end),
     ok.
 
+-spec get_downlink_url(router_channel:channel(), binary()) -> binary().
+get_downlink_url(Channel, DeviceID) ->
+    case maps:get(downlink_token, router_channel:args(Channel), undefined) of
+        undefined -> <<>>;
+        DownlinkToken ->
+            {Endpoint, _Token} = token_lookup(),
+            ChannelID = router_channel:id(Channel),
+            <<Endpoint/binary, "/api/v1/down/", ChannelID/binary, "/", DownlinkToken/binary, "/", DeviceID/binary>>
+    end.
+
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
@@ -233,7 +244,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{url =>  kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
-             method => list_to_existing_atom(binary_to_list(router_utils:to_bin(kvc:path([<<"credentials">>, <<"method">>], JSONChannel))))},
+             method => list_to_existing_atom(binary_to_list(router_utils:to_bin(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))),
+             downlink_token => to_bin(kvc:path([<<"downlink_token">>], JSONChannel))},
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
     Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
@@ -350,3 +362,8 @@ debug_insert(DeviceID, Limit) ->
 debug_delete(DeviceID) ->
     true = ets:delete(?ETS, DeviceID),
     ok.
+
+to_bin(Bin) when is_binary(Bin) ->
+    Bin;
+to_bin(List) when is_list(List) ->
+    erlang:list_to_binary(List).

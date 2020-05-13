@@ -4,7 +4,8 @@
          get_device/1,
          get_device/4,
          get_channels/2,
-         report_status/2]).
+         report_status/2,
+         get_downlink_url/2]).
 
 -define(API_MOD, router_device_api_module).
 
@@ -35,6 +36,11 @@ get_channels(Device, DeviceWorkerPid) ->
 report_status(Device, Map) ->
     Mod = ?MODULE:module(),
     Mod:report_status(Device, Map).
+
+-spec get_downlink_url(router_channel:channel(), binary()) -> binary().
+get_downlink_url(Channel, DeviceID) ->
+    Mod = ?MODULE:module(),
+    Mod:get_downlink_url(Channel, DeviceID).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

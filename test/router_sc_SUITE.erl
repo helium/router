@@ -446,31 +446,29 @@ no_dc_entry_test(Config) ->
     {Filter, _} = xor16:to_bin(xor16:new([<<DevEUI/binary, AppEUI/binary>>],
                                          fun xxhash:hash64/1)),
 
-    OUITxn = ct_rpc:call(RouterNode,
+    OUITxn = ct_rpc:call(PayerNode,
                          blockchain_txn_oui_v1,
                          new,
                          [RouterPubkeyBin, [RouterPubkeyBin], Filter, 8, PayerPubkeyBin, 1, 0]),
     ct:pal("OUITxn: ~p", [OUITxn]),
     SignedOUITxn0 = ct_rpc:call(RouterNode,
-                               blockchain_txn_oui_v1,
-                               sign,
-                               [OUITxn, RouterSigFun]),
+                                blockchain_txn_oui_v1,
+                                sign,
+                                [OUITxn, RouterSigFun]),
 
     %% payer must also sign the oui txn
-    SignedOUITxn = ct_rpc:call(RouterNode,
+    SignedOUITxn = ct_rpc:call(PayerNode,
                                blockchain_txn_oui_v1,
                                sign_payer,
                                [SignedOUITxn0, PayerSigFun]),
     ct:pal("SignedOUITxn: ~p", [SignedOUITxn]),
-    ok = ct_rpc:call(RouterNode, blockchain_worker, submit_txn, [SignedOUITxn]),
+    ok = ct_rpc:call(PayerNode, blockchain_worker, submit_txn, [SignedOUITxn]),
 
     %% check that oui txn appears on miners
     CheckTypeOUI = fun(T) -> blockchain_txn:type(T) == blockchain_txn_oui_v1 end,
     CheckTxnOUI = fun(T) -> T == SignedOUITxn end,
-    ok = miner_test:wait_for_txn(Routers, CheckTypeOUI, timer:seconds(30)),
-    ok = miner_test:wait_for_txn(Routers, CheckTxnOUI, timer:seconds(30)),
-    ok = miner_test:wait_for_txn(Miners, CheckTypeOUI, timer:seconds(30)),
-    ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Routers ++ Miners, CheckTypeOUI, timer:seconds(30)),
+    ok = miner_test:wait_for_txn(Routers ++ Miners, CheckTxnOUI, timer:seconds(30)),
 
     %% check that the router sees that the oui counter is up-to-date
     RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
@@ -515,4 +513,3 @@ no_dc_entry_test(Config) ->
     ct:pal("Final RouterState: ~p", [RouterState3]),
 
     ok.
-

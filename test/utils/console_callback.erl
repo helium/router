@@ -61,6 +61,10 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                    [] -> ?CONSOLE_DEVICE_ID;
                    [{device_id, ID}] -> ID
                end,
+    NotFound = case ets:lookup(Tab, device_not_found) of
+                   [] -> false;
+                   [{device_not_found, Bool}] -> Bool
+               end,
     Body = #{<<"id">> => DeviceID,
              <<"name">> => ?CONSOLE_DEVICE_NAME,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
@@ -68,11 +72,16 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
              <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
              <<"channels">> => Channels,
              <<"labels">> => ?CONSOLE_LABELS},
-    case DID == <<"unknown">> of
+    case NotFound of
         true ->
-            {200, [], jsx:encode([Body])};
+            {404, [], <<"Not Found">>};
         false ->
-            {200, [], jsx:encode(Body)}
+            case DID == <<"unknown">> of
+                true ->
+                    {200, [], jsx:encode([Body])};
+                false ->
+                    {200, [], jsx:encode(Body)}
+            end
     end;
 %% Get token
 handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->

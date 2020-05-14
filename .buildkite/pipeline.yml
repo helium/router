@@ -2,6 +2,7 @@ steps:
   - commands:
       - ". $HOME/.asdf/asdf.sh"
       - "asdf local erlang 22.1.8"
+      - "export GCLIENT_PY3=0"
       - "make ci -e GCLIENT_PY3=0"
     name: ":hammer: build"
     agents:

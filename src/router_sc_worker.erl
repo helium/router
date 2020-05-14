@@ -168,7 +168,7 @@ open_next_state_channel(#state{oui=OUI}, Ledger) ->
     MaxNonceSC = find_max_nonce_sc(PubkeyBin, Ledger),
     Nonce = blockchain_ledger_state_channel_v1:nonce(MaxNonceSC),
     ExpireAtBlock = blockchain_ledger_state_channel_v1:expire_at_block(MaxNonceSC),
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ExpireAtBlock * 2).
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ExpireAtBlock + 2 * ?EXPIRATION).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),

@@ -151,24 +151,20 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 
 -spec init_state_channels(State :: state()) -> ok.
-init_state_channels(#state{oui=OUI}) ->
-    %% We have no state channels at all on the ledger
+init_state_channels(#state{oui=OUI, chain=Chain}) ->
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
-
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, 1, OUI, ?EXPIRATION),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, 2, OUI, ?EXPIRATION * 2),
-    ok.
+    Ledger = blockchain:ledger(Chain),
+    Nonce = get_nonce(PubkeyBin, Ledger),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 2).
 
 -spec open_next_state_channel(State :: state(), Ledger :: blockchain_ledger_v1:ledger()) -> ok.
 open_next_state_channel(#state{oui=OUI}, Ledger) ->
-    %% Get my pubkey_bin and sigfun
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
-    MaxNonceSC = find_max_nonce_sc(PubkeyBin, Ledger),
-    Nonce = blockchain_ledger_state_channel_v1:nonce(MaxNonceSC),
-    ExpireAtBlock = blockchain_ledger_state_channel_v1:expire_at_block(MaxNonceSC),
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ExpireAtBlock + 2 * ?EXPIRATION).
+    Nonce = get_nonce(PubkeyBin, Ledger),
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, 2 * ?EXPIRATION).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
@@ -186,20 +182,19 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration) ->
 
 -spec get_active_count() -> non_neg_integer().
 get_active_count() ->
-    map_size(blockchain_state_channels_server:state_channels()).
+    %% only get the open ones
+    Filter = fun(_SCID, SC) -> blockchain_state_channel_v1:state(SC) == open end,
+    map_size(maps:filter(Filter, blockchain_state_channels_server:state_channels())).
 
--spec find_max_nonce_sc(PubkeyBin :: libp2p_crypto:pubkey_bin(),
-                        Ledger :: blockchain_ledger_v1:ledger()) -> blockchain_ledger_state_channel_v1:state_channel().
-find_max_nonce_sc(PubkeyBin, Ledger) ->
-    %% Sort currently active state_channels by nonce to fire the next one
-    SCSortFun = fun({_ID1, SC1}, {_ID2, SC2}) ->
-                        blockchain_ledger_state_channel_v1:nonce(SC1) >= blockchain_ledger_state_channel_v1:nonce(SC2)
-                end,
-
-    %% Find the sc with the max nonce currently
-    {ok, LedgerSCs} = blockchain_ledger_v1:find_scs_by_owner(PubkeyBin, Ledger),
-    {_, SC} = hd(lists:sort(SCSortFun, maps:to_list(LedgerSCs))),
-    SC.
+-spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin(),
+                Ledger :: blockchain_ledger_v1:ledger()) -> non_neg_integer().
+get_nonce(PubkeyBin, Ledger) ->
+    case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
+        {error, _} ->
+            0;
+        {ok, DCEntry} ->
+            blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

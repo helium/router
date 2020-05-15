@@ -1,12 +1,12 @@
 -module(router_utils).
 
--export([get_router_oui/1]).
+-export([get_router_oui/1,
+         to_bin/1]).
 
 -spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
 get_router_oui(Chain) ->
     Ledger = blockchain:ledger(Chain),
     PubkeyBin = blockchain_swarm:pubkey_bin(),
-
     case blockchain_ledger_v1:get_oui_counter(Ledger) of
         {error, _} -> undefined;
         {ok, 0} -> undefined;
@@ -15,6 +15,14 @@ get_router_oui(Chain) ->
             find_oui(PubkeyBin, Ledger)
     end.
 
+to_bin(Bin) when is_binary(Bin) ->
+    Bin;
+to_bin(List) when is_list(List) ->
+    erlang:list_to_binary(List).
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
 
 -spec find_oui(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                Ledger :: blockchain_ledger_v1:ledger()) -> non_neg_integer() | undefined.

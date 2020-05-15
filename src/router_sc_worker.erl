@@ -156,17 +156,15 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
-    {ok, ChainHeight} = blockchain:height(Chain),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ChainHeight + ?EXPIRATION),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ChainHeight + ?EXPIRATION * 2).
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 2).
 
 -spec open_next_state_channel(State :: state(), Ledger :: blockchain_ledger_v1:ledger()) -> ok.
-open_next_state_channel(#state{oui=OUI, chain=Chain}, Ledger) ->
+open_next_state_channel(#state{oui=OUI}, Ledger) ->
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Nonce = get_nonce(PubkeyBin, Ledger),
-    {ok, ChainHeight} = blockchain:height(Chain),
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ChainHeight + 2 * ?EXPIRATION).
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, 2 * ?EXPIRATION).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),

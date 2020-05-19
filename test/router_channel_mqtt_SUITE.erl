@@ -98,7 +98,9 @@ mqtt_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -138,7 +140,9 @@ mqtt_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -157,7 +161,9 @@ mqtt_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -201,7 +207,9 @@ mqtt_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -220,7 +228,9 @@ mqtt_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -282,7 +292,9 @@ mqtt_update_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -322,7 +334,9 @@ mqtt_update_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -341,7 +355,9 @@ mqtt_update_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -396,7 +412,9 @@ mqtt_update_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -415,7 +433,9 @@ mqtt_update_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -468,7 +488,9 @@ mqtt_update_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from MQTT channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -487,7 +509,9 @@ mqtt_update_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,

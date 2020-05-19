@@ -46,11 +46,11 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
-
 http_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
@@ -58,7 +58,6 @@ http_test(Config) ->
                                                    router_handler_test:version(),
                                                    router_handler_test,
                                                    [self()]),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
@@ -83,7 +82,9 @@ http_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => 37.00001962582851,
+                                                                <<"long">> => -120.9000053210367}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -121,7 +122,9 @@ http_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => 37.00001962582851,
+                                                        <<"long">> => -120.9000053210367}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -140,7 +143,9 @@ http_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => 37.00001962582851,
+                                                                 <<"long">> => -120.9000053210367}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -176,7 +181,9 @@ http_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => 37.00001962582851,
+                                                        <<"long">> => -120.9000053210367}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -195,7 +202,9 @@ http_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => 37.00001962582851,
+                                                                 <<"long">> => -120.9000053210367}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -246,7 +255,9 @@ http_update_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -281,7 +292,9 @@ http_update_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -300,7 +313,9 @@ http_update_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -343,7 +358,9 @@ http_update_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -358,4 +375,3 @@ http_update_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-

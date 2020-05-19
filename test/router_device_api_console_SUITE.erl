@@ -78,7 +78,9 @@ debug_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -124,7 +126,9 @@ debug_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -144,7 +148,9 @@ debug_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -195,7 +201,9 @@ debug_test(Config) ->
                                                                   <<"rssi">> => 0.0,
                                                                   <<"snr">> => 0.0,
                                                                   <<"spreading">> => <<"SF8BW125">>,
-                                                                  <<"frequency">> => fun erlang:is_float/1}]}),
+                                                                  <<"frequency">> => fun erlang:is_float/1,
+                                                                  <<"lat">> => fun erlang:is_float/1, 
+                                                                  <<"long">> => fun erlang:is_float/1}]}),
 
               %% Waiting for report channel status from HTTP channel
               test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -215,7 +223,9 @@ debug_test(Config) ->
                                                                            <<"rssi">> => 0.0,
                                                                            <<"snr">> => 0.0,
                                                                            <<"spreading">> => <<"SF8BW125">>,
-                                                                           <<"frequency">> => fun erlang:is_float/1}],
+                                                                           <<"frequency">> => fun erlang:is_float/1,
+                                                                           <<"lat">> => fun erlang:is_float/1, 
+                                                                           <<"long">> => fun erlang:is_float/1}],
                                                       <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                            <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                            <<"reported_at">> => fun erlang:is_integer/1,
@@ -257,7 +267,9 @@ debug_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -276,7 +288,9 @@ debug_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,

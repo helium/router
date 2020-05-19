@@ -48,7 +48,8 @@
                       frame :: #frame{},
                       pid :: pid()}).
 
--record(state, {db :: rocksdb:db_handle(),
+-record(state, {chain :: blockchain:blockchain(),
+                db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
                 oui :: undefined | non_neg_integer(),
@@ -109,12 +110,14 @@ init(Args) ->
                   OUI0
           end,
     Device = get_device(DB, CF, ID),
+    lager:md([{device_id, router_device:id(Device)}]),
+    Blockchain = blockchain_worker:blockchain(),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{device_worker => self(),
-                                                   device => Device}),
+                                                   device => Device,
+                                                   chain => Blockchain}),
     self() ! refresh_device_metadata,
-    lager:md([{device_id, router_device:id(Device)}]),
-    {ok, #state{db=DB, cf=CF, device=Device, oui=OUI, channels_worker=Pid}}.
+    {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device, oui=OUI, channels_worker=Pid}}.
 
 handle_call(state, _From, State) ->
     lager:info("got state msg, state: ~p", [State]),
@@ -166,8 +169,9 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
     end;
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                                      frame_cache=Cache0,
-                                                     channels_worker=ChannelsWorker}=State) ->
-    case handle_frame_packet(Packet0, PubKeyBin, Device0) of
+                                                     channels_worker=ChannelsWorker,
+                                                     chain=Blockchain}=State) ->
+    case handle_frame_packet(Packet0, PubKeyBin, Device0, Blockchain) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
@@ -202,7 +206,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
+handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0, chain=Blockchain}=State) ->
     #join_cache{packet=Packet,
                 packet_rcvd=PacketRcvd,
                 device=Device0,
@@ -216,18 +220,19 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
     AppEUI = router_device:app_eui(Device0),
     Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>),
+    ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>, Blockchain),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
-                                          channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
+                                          channels_worker=ChannelsWorker, frame_cache=Cache0,
+                                          chain=Blockchain}=State) ->
     #frame_cache{packet=Packet0,
                  pubkey_bin=PubKeyBin,
                  frame=Frame,
                  count=Count,
                  pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, PubKeyBin, Device, Frame, Count) of
+    case handle_frame(Packet0, PubKeyBin, Device, Frame, Count, Blockchain) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
@@ -447,8 +452,9 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
 %% previous packet sent
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame_packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
-handle_frame_packet(Packet, PubKeyBin, Device0) ->
+-spec handle_frame_packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(),
+                          router_device:device(), blockchain:blockchain()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
+handle_frame_packet(Packet, PubKeyBin, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
@@ -470,7 +476,7 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
             Desc = <<"Packet with double fopts received from AppEUI: ",
                      (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                      (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(up, Desc, Device0, error, PubKeyBin, Packet, 0, DevAddr),
+            ok = report_status(up, Desc, Device0, error, PubKeyBin, Packet, 0, DevAddr, Blockchain),
             {error, double_fopts};
         _N ->
             AppSKey = router_device:app_s_key(Device0),
@@ -510,17 +516,19 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
                    #frame{},
-                   pos_integer()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
-    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
+                   pos_integer(),
+                   blockchain:blockchain()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+handle_frame(Packet, PubKeyBin, Device, Frame, Count, Blockchain) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device), Blockchain).
 
 -spec handle_frame(blockchain_helium_packet_v1:packet(),
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
                    #frame{},
                    pos_integer(),
-                   list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
+                   list(),
+                   blockchain:blockchain()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [], Blockchain) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -550,7 +558,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
                              {fcntdown, (FCntDown + 1)}
                             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame, Blockchain),
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1};
@@ -563,7 +571,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
         _ ->
             noop
     end;
-handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
+handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, ReplyPayload}|T], Blockchain) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame),
@@ -595,18 +603,18 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, R
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame, Blockchain),
             {send, Device1, Packet1};
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame, Blockchain),
             {send, Device1, Packet1}
     end.
 
--spec channel_correction_and_fopts(blockchain_helium_packet_v1:packet(), router_device:device(), #frame{}, pos_integer()) -> {boolean(), list()}.
+-spec channel_correction_and_fopts(blockchain_helium_packet_v1:packet(), router_device:device(),#frame{}, pos_integer()) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Device, Frame, Count) ->
     ChannelsCorrected = were_channels_corrected(Frame),
     DataRate = blockchain_helium_packet_v1:datarate(Packet),
@@ -650,37 +658,39 @@ ack_to_mtype(true) -> ?CONFIRMED_DOWN;
 ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
 -spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(),
-                          router_device:device(), blockchain_helium_packet_v1:packet(), #frame{}) -> ok.
-report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+                          router_device:device(), blockchain_helium_packet_v1:packet(),
+                          #frame{},  blockchain:blockchain()) -> ok.
+report_frame_status(0, false, 0, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain);
+report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain);
+report_frame_status(1, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain);
+report_frame_status(1, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain);
+report_frame_status(_, true, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr);
-report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain);
+report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr).
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Packet, FPort, DevAddr, Blockchain).
 
 -spec report_status(atom(), binary(), router_device:device(), success | error,
-                    libp2p_crypto:pubkey_bin(), blockchain_helium_packet_v1:packet(), any(), any()) -> ok.
-report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) ->
+                    libp2p_crypto:pubkey_bin(), blockchain_helium_packet_v1:packet(), any(), any(), blockchain:blockchain()) -> ok.
+report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr, Blockchain) ->
     HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
     Report = #{category => Category,
                description => Desc,
                reported_at => erlang:system_time(seconds),
@@ -695,7 +705,9 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                               rssi => blockchain_helium_packet_v1:signal_strength(Packet),
                               snr => blockchain_helium_packet_v1:snr(Packet),
                               spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-                              frequency => blockchain_helium_packet_v1:frequency(Packet)}],
+                              frequency => blockchain_helium_packet_v1:frequency(Packet),
+                              lat => Lat,
+                              long => Long}],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

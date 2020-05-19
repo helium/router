@@ -84,7 +84,9 @@ no_channel_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -115,7 +117,9 @@ no_channel_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => <<"no_channel">>,
                                                                  <<"name">> => <<"no_channel">>,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -134,7 +138,7 @@ no_channel_test(Config) ->
                                    ?CONSOLE_DEVICE_ID,
                                    DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
+    ?assertMatch({state, _, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
@@ -144,8 +148,8 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only HTTP channel now
     State0 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _, _}, State0),
-    ?assertEqual(1, maps:size(erlang:element(5, State0))),
+    ?assertMatch({state, _, _, _, _, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _, _}, State0),
+    ?assertEqual(1, maps:size(erlang:element(6, State0))),
 
     %% Send UNCONFIRMED_UP frame packet to check http channel is working
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -169,7 +173,9 @@ no_channel_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -188,7 +194,9 @@ no_channel_test(Config) ->
                                                                  <<"rssi">> => 0.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -206,7 +214,7 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only no_channel
     State1 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, State1),
-    ?assertEqual(1, maps:size(erlang:element(5, State1))),
+    ?assertMatch({state, _, _, _, _, #{NoChannelID := NoChannel}, _, _, _, _}, State1),
+    ?assertEqual(1, maps:size(erlang:element(6, State1))),
 
     ok.

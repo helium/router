@@ -60,16 +60,8 @@ init_per_testcase(TestCase, Config) ->
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
     {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
-
     #{public := PubKey, secret := PrivKey} = Keys,
     blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
-
-                                                % Loc = h3:from_geo({37.780586, -122.469470}, 12),
-                                                % {InitialVars, _Keys} = create_vars(#{}),
-                                                % InitialGatewayTxn = blockchain_txn_gen_gateway_v1:new(PubKeyBin, PubKeyBin, Loc, 0),
-                                                % GenesisBlock = blockchain_block:new_genesis_block([InitialGatewayTxn] ++ InitialVars),
-                                                % ok = blockchain_worker:integrate_genesis_block(GenesisBlock),
-
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},

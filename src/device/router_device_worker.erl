@@ -314,13 +314,12 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                         [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
             {error, bad_mic}
     end;
-handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:32/integer-unsigned-little, _ADR:1, _ADRACKReq:1,
+handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
                                     _ACK:1, _RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer,
                                     _FOpts:FOptsLen/binary, PayloadAndMIC/binary>> =Payload}=Packet, PubKeyBin, Pid) ->
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) -4}),
     MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
             Chain = blockchain_worker:blockchain(),
@@ -330,7 +329,7 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:32/in
                           list_to_integer(OUI0);
                       OUI0 ->
                           OUI0
-                  end,
+                  end, 
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -341,17 +340,17 @@ handle_packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:32/in
                                    end, Subnets) of
                         true ->
                             %% ok device is in one of our subnets
-                            find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
+                            find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
                         false ->
                             {error, {unknown_device, DevAddr}}
                     end;
                 _ ->
                     %% no subnets
-                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
             catch
                 _:_ ->
                     %% no subnets
-                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:32/integer-unsigned-little>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+                    find_device(Packet, Pid, PubKeyBin, DevAddr, <<(b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
             end;
         _ ->
             %% wrong devaddr prefix

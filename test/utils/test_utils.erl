@@ -294,13 +294,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-                                                % <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
-
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    AddrBase = 5,
-    DevAddr = <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
-
-                                                % DevAddr = <<OUI:32/integer-unsigned-big>>,
+    <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
+    DevAddr = <<OUI:32/integer-unsigned-big>>,
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
     HeliumPacket = #packet_pb{
                       type=lorawan,

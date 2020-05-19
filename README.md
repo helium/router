@@ -33,7 +33,9 @@
             "rssi": -30,
             "snr": 0.2,
             "spreading": "SF9BW125",
-            "frequency": 923.3
+            "frequency": 923.3,
+            "lat" => 37.00001962582851,
+            "long" => -120.9000053210367
         }
     ]
 }
@@ -62,7 +64,9 @@
             "rssi": -30,
             "snr": 0.2,
             "spreading": "SF9BW125",
-            "frequency": 923.3
+            "frequency": 923.3,
+            "lat" => 37.00001962582851,
+            "long" => -120.9000053210367
         }
     ],
     "channels": [

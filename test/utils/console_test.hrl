@@ -5,12 +5,14 @@
 -define(CONSOLE_DEVICE_ID, <<"yolo_id">>).
 -define(CONSOLE_DEVICE_NAME, <<"yolo_name">>).
 
+-define(CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN, <<"downlink_token_123">>).
 -define(CONSOLE_HTTP_CHANNEL_ID, <<"12345">>).
 -define(CONSOLE_HTTP_CHANNEL_NAME, <<"fake_http">>).
 -define(CONSOLE_HTTP_CHANNEL, #{<<"type">> => <<"http">>,
                                 <<"credentials">> => #{<<"headers">> => #{},
                                                        <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
                                                        <<"method">> => <<"POST">>},
+                                <<"downlink_token">> => ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN,
                                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME}).
 

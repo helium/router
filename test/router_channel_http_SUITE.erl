@@ -102,6 +102,9 @@ http_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary,
+                                                           "/", ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary,
+                                                           "/", ?CONSOLE_DEVICE_ID/binary>>,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
@@ -154,6 +157,9 @@ http_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary,
+                                                           "/", ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary,
+                                                           "/", ?CONSOLE_DEVICE_ID/binary>>,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
@@ -256,6 +262,9 @@ http_update_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary,
+                                                           "/", ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary,
+                                                           "/", ?CONSOLE_DEVICE_ID/binary>>,
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),

@@ -1,10 +1,10 @@
--module(router_channel_console_SUITE).
+-module(router_device_worker_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([console_test/1]).
+-export([not_found_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -16,7 +16,6 @@
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,2,0,0,0,1>>).
 -define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
--define(ETS, ?MODULE).
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -29,7 +28,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [console_test].
+    [not_found_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -47,11 +46,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-console_test(Config) ->
-    Tab = proplists:get_value(ets, Config),
-    true = ets:insert(Tab, {channel_type, console}),
-    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 1}),
-
+not_found_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
@@ -78,7 +73,7 @@ console_test(Config) ->
                                            <<"frame_down">> => 0,
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
-                                           <<"devaddr">> => '_',                                            
+                                           <<"devaddr">> => '_',
                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
                                                                 <<"reported_at">> => fun erlang:is_integer/1,
@@ -94,60 +89,20 @@ console_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    ?assertMatch({ok, _}, router_device:get(DB, CF, DeviceID)),
 
-    %% Send UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
-    EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {device_not_found, true}),
+    {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
+    DeviceWorkerID ! refresh_device_metadata,
 
-    %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
-                                            <<"description">> => '_',
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => fun erlang:is_integer/1,
-                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => 4,
-                                            <<"payload">> => fun erlang:is_binary/1,
-                                            <<"port">> => '_',
-                                            <<"devaddr">> => '_',
-                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"rssi">> => 0.0,
-                                                                 <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
-                                            <<"channels">> => [#{<<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary>>,
-                                                                 <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"description">> => '_',
-                                                                 <<"debug">> => #{<<"req">> => #{<<"body">> => fun erlang:is_binary/1}}}]}),
+    timer:sleep(500),
+    ?assertNot(erlang:is_process_alive(DeviceWorkerID)),
+    ?assertMatch({error, not_found}, router_device:get(DB, CF, DeviceID)),
 
-    %% Send another UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
-    EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
-
-    %%  Nothing should happen
-    ok = loop(10),
     ok.
 
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-loop(0) -> ok;
-loop(I) ->
-    receive
-        {report_channel_status, Got} -> ct:fail(Got);
-        _Something -> loop(I-1)
-    after 100 -> loop(I-1)
-    end.
-
-to_real_payload(Bin) ->
-    erlang:list_to_binary(lists:map(fun(X)-> erlang:binary_to_integer(X, 16) end, binary:split(Bin, <<" ">>, [global]))).

@@ -196,7 +196,7 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->
-                            ID = router_channel:id(Channel),
+                            ID = router_channel:unique_id(Channel),
                             maps:put(ID, Channel, Acc)
                     end,
                     #{},
@@ -211,7 +211,7 @@ handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, chann
                   end,
                   gen_event:which_handlers(EventMgrRef)),
                 NoChannel = maybe_start_no_channel(Device, EventMgrRef),
-                #{router_channel:id(NoChannel) => NoChannel};
+                #{router_channel:unique_id(NoChannel) => NoChannel};
             false ->
                 %% Start channels asynchronously 
                 lists:foreach(
@@ -225,7 +225,7 @@ handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, chann
     {noreply, State#state{channels=Channels1}};
 handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
                                              channels=Channels, channels_backoffs=Backoffs0}=State) ->
-    ChannelID = router_channel:id(Channel),
+    ChannelID = router_channel:unique_id(Channel),
     case maps:get(ChannelID, Channels, undefined) of
         undefined ->
             case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
@@ -367,7 +367,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs) ->
-    ChannelID = router_channel:id(Channel),
+    ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
     case router_channel:add(EventMgrRef, Channel, Device) of
         ok ->
@@ -403,7 +403,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
 
 -spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
 update_channel(EventMgrRef, Channel, Device, Backoffs) ->
-    ChannelID = router_channel:id(Channel),
+    ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
     case router_channel:update(EventMgrRef, Channel, Device) of
         ok ->
@@ -441,7 +441,7 @@ maybe_start_decoder(Channel) ->
         undefined ->
             lager:debug("no decoder attached");
         Decoder ->
-            ChannelID = router_channel:id(Channel),
+            ChannelID = router_channel:unique_id(Channel),
             DecoderID = router_decoder:id(Decoder),
             case router_decoder:add(Decoder) of
                 ok ->

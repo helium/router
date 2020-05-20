@@ -4,7 +4,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/inet.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
--include("router_ct_macros.hrl").
+-include("utils/router_ct_macros.hrl").
 -include("lorawan_vars.hrl").
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 

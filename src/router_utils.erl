@@ -16,11 +16,11 @@ get_router_oui(Chain) ->
             find_oui(PubkeyBin, Ledger)
     end.
 
--spec get_hotspot_location(PubKeyBin :: libp2p_crypto:pubkey_bin(), Blockchain :: blockchain:blockchain()) -> {float(), float()}.
+-spec get_hotspot_location(PubKeyBin :: libp2p_crypto:pubkey_bin(), Blockchain :: blockchain:blockchain()) -> {float(), float()} | {unknown, unknown}.
 get_hotspot_location(PubKeyBin, Blockchain) ->
     Ledger = blockchain:ledger(Blockchain),
     case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _} -> {0.0, 0.0};
+        {error, _} -> {unknown, unknown};
         {ok, Hotspot} ->
             Loc = blockchain_ledger_gateway_v2:location(Hotspot),
             h3:to_geo(Loc)

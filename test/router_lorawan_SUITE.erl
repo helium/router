@@ -120,8 +120,8 @@ join_test(Config) ->
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => <<"SF7BW125">>,
                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
-                                                                <<"long">> => fun erlang:is_float/1}],
+                                                                <<"lat">> => '_', 
+                                                                <<"long">> => '_'}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply resp form router
@@ -167,8 +167,8 @@ join_test(Config) ->
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF7BW125">>,
                                                         <<"frequency">> => fun erlang:is_float/1,
-                                                        <<"lat">> => fun erlang:is_float/1, 
-                                                        <<"long">> => fun erlang:is_float/1}]}),
+                                                        <<"lat">> => '_', 
+                                                        <<"long">> => '_'}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -188,8 +188,8 @@ join_test(Config) ->
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF7BW125">>,
                                                                  <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"lat">> => fun erlang:is_float/1, 
-                                                                 <<"long">> => fun erlang:is_float/1}],
+                                                                 <<"lat">> => '_', 
+                                                                 <<"long">> => '_'}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -213,8 +213,8 @@ join_test(Config) ->
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => '_',
                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
-                                                                <<"long">> => fun erlang:is_float/1}],
+                                                                <<"lat">> => '_', 
+                                                                <<"long">> => '_'}],
                                            <<"channels">> => []}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),
@@ -244,8 +244,8 @@ join_test(Config) ->
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF7BW125">>,
                                                         <<"frequency">> => fun erlang:is_float/1,
-                                                        <<"lat">> => fun erlang:is_float/1, 
-                                                        <<"long">> => fun erlang:is_float/1}]}),
+                                                        <<"lat">> => '_', 
+                                                        <<"long">> => '_'}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -265,8 +265,8 @@ join_test(Config) ->
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF7BW125">>,
                                                                  <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"lat">> => fun erlang:is_float/1, 
-                                                                 <<"long">> => fun erlang:is_float/1}],
+                                                                 <<"lat">> => '_', 
+                                                                 <<"long">> => '_'}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -290,8 +290,8 @@ join_test(Config) ->
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => '_',
                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
-                                                                <<"long">> => fun erlang:is_float/1}],
+                                                                <<"lat">> => '_', 
+                                                                <<"long">> => '_'}],
                                            <<"channels">> => []}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),

@@ -350,7 +350,8 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
                    snr => Packet#packet_pb.snr,
                    spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
                    frequency => Freq,
-                   channel => lorawan_mac_region:f2uch(Freq, {9023, 2}, {9030, 16})}|Acc]
+                   %% TODO use correct regulatory domain here
+                   channel => lorawan_mac_region:f2uch(<<"US902">>, Freq)}|Acc]
         end,
     [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),

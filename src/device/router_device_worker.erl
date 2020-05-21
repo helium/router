@@ -697,7 +697,8 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                               snr => blockchain_helium_packet_v1:snr(Packet),
                               spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
                               frequency => Freq,
-                              channel => lorawan_mac_region:f2uch(Freq, {9023, 2}, {9030, 16})}],
+                              %% TODO use correct regulatory domain here
+                              channel => lorawan_mac_region:f2uch(<<"US902">>, Freq)}],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

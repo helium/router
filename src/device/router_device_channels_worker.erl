@@ -123,11 +123,11 @@ handle_cast({handle_device_update, Device}, State) ->
 handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1 =
-        case FCnt > CurrFCnt of
-            false ->
-                lager:debug("we received a late packet from ~p: ~p", [PubKeyBin, Packet]),
-                DataCache0;
+        case FCnt =< CurrFCnt of
             true ->
+                lager:debug("we received a late packet ~p from ~p: ~p", [{FCnt, CurrFCnt}, PubKeyBin, Packet]),
+                DataCache0;
+            false ->
                 case maps:get(FCnt, DataCache0, undefined) of
                     undefined ->
                         _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
@@ -190,7 +190,8 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
                    port => maps:get(port, Data),
                    devaddr => maps:get(devaddr, Data),
                    hotspots => maps:get(hotspots, Data),
-                   channels => CachedReports},
+                   channels => CachedReports,
+                   fcnt => maps:get(fcnt, Data)},
     ok = router_device_api:report_status(Device, ReportsMap),
     {noreply, State#state{channels_resp_cache=maps:remove(Ref, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->

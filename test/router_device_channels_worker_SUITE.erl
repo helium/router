@@ -293,7 +293,7 @@ late_packet_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
-    %% Simulate multiple hotspot sending data, 1 will be late and should not be sent
+    %% Simulate multiple hotspot sending data, 2 will be late and should not be sent
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin1, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},
     #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey2),
@@ -302,10 +302,18 @@ late_packet_test(Config) ->
 
     erlang:spawn_link(
       fun() ->
-              timer:sleep(timer:seconds(3)),
+              timer:sleep(1050),
               #{public := PubKey3} = libp2p_crypto:generate_keys(ecc_compact),
               PubKeyBin3 = libp2p_crypto:pubkey_to_bin(PubKey3),
               Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin3, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)}
+      end),
+
+    erlang:spawn_link(
+      fun() ->
+              timer:sleep(timer:seconds(3)),
+              #{public := PubKey4} = libp2p_crypto:generate_keys(ecc_compact),
+              PubKeyBin4 = libp2p_crypto:pubkey_to_bin(PubKey4),
+              Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin4, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)}
       end),
 
     %% Waiting for data from HTTP channel with 2 hotspots

@@ -372,7 +372,9 @@ late_packet_test(Config) ->
     %% Make sure we did not get a duplicate with that late message
     receive
         {report_channel_status, Got} ->
-            ct:fail("wait_report_channel_status failed we got ~p", [Got])
+            ct:fail("wait_report_channel_status failed we got ~p", [Got]);
+        {channel_data, Got} ->
+            ct:fail("wait_channel_data failed we got ~p", [Got])
     after 10000 ->
             ok
     end,

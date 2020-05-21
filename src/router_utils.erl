@@ -18,7 +18,9 @@ get_router_oui(Chain) ->
 to_bin(Bin) when is_binary(Bin) ->
     Bin;
 to_bin(List) when is_list(List) ->
-    erlang:list_to_binary(List).
+    erlang:list_to_binary(List);
+to_bin(_) ->
+    <<>>.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

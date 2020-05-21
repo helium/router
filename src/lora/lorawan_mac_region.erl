@@ -14,6 +14,7 @@
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
+-export([f2uch/3]).
 
 -include("lorawan_db.hrl").
 

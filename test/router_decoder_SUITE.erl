@@ -84,7 +84,8 @@ decode_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -121,7 +122,8 @@ decode_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
     ok.
 
 timeout_test(Config) ->
@@ -163,7 +165,8 @@ timeout_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -200,7 +203,8 @@ timeout_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
     [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),
@@ -251,7 +255,8 @@ too_many_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -288,7 +293,8 @@ too_many_test(Config) ->
                                                         <<"rssi">> => 0.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
     [{DecoderID, {custom_decoder, DecoderID, _Hash, _Fun, DecoderPid, _LastUsed}}] = ets:lookup(router_decoder_custom_sup_ets, DecoderID),

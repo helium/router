@@ -190,7 +190,8 @@ handle_info({report_status_timeout, Ref}, #state{device=Device, channels_resp_ca
                    port => maps:get(port, Data),
                    devaddr => maps:get(devaddr, Data),
                    hotspots => maps:get(hotspots, Data),
-                   channels => CachedReports},
+                   channels => CachedReports,
+                   fcnt => maps:get(fcnt, Data)},
     ok = router_device_api:report_status(Device, ReportsMap),
     {noreply, State#state{channels_resp_cache=maps:remove(Ref, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->

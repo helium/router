@@ -66,7 +66,7 @@ cipher(<<LastBlock/binary>>, Key, Dir, DevAddr, FCnt, I, Acc) ->
 
 -spec ai(integer(), binary(), integer(), integer()) -> binary().
 ai(Dir, DevAddr, FCnt, I) ->
-    <<16#01, 0,0,0,0, Dir, (reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, I>>.
+    <<16#01, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, I>>.
 
 -spec binxor(binary(), binary(), binary()) -> binary().
 binxor(<<>>, <<>>, Acc) -> Acc;

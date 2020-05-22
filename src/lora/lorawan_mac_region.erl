@@ -14,6 +14,7 @@
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
+-export([f2uch/2]).
 
 -include("lorawan_db.hrl").
 
@@ -53,6 +54,20 @@ rx2_rf(#network{region=Region, tx_codr=CodingRate}, #node{rxwin_use={_, DataRate
 rx2_rf(#network{region=Region, tx_codr=CodingRate, rxwin_init=WinInit}, #profile{rxwin_set=WinSet}) ->
     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
+
+f2uch(<<"US902">>, Freq) ->
+    f2uch(Freq, {9023, 2}, {9030, 16});
+f2uch(<<"US902-PR">>, Freq) ->
+    f2uch(Freq, {9023, 2}, {9030, 16});
+f2uch(<<"AU915">>, Freq) ->
+    f2uch(Freq, {9152, 2}, {9159, 16});
+f2uch(<<"CN470">>, Freq) ->
+    f2uch(Freq, {4073, 2});
+f2uch(<<"EU868">>, Freq) when Freq < 868 ->
+    f2uch(Freq, {8671, 2}) + 3;
+f2uch(<<"EU868">>, Freq) when Freq > 868 ->
+    f2uch(Freq, {8681, 2});
+
 
 f2uch(Freq, {Start, Inc}) -> round(10*Freq-Start) div Inc.
 
@@ -398,7 +413,11 @@ region_test_()-> [
                   ?_assertEqual(dr_to_datar(<<"US902">>, 8), <<"SF12BW500">>),
                   ?_assertEqual(datar_to_dr(<<"EU868">>, <<"SF9BW125">>), 3),
                   ?_assertEqual(datar_to_dr(<<"US902">>, <<"SF7BW500">>), 13),
-                  ?_assertEqual(<<"SF10BW500">>, datar_to_down(<<"US902">>, <<"SF10BW125">>, 0))].
+                  ?_assertEqual(<<"SF10BW500">>, datar_to_down(<<"US902">>, <<"SF10BW125">>, 0)),
+                  ?_assertEqual([0,1,2,3,4,5,6,7], [lorawan_mac_region:f2uch(<<"EU868">>, F) || F <- [868.1, 868.3, 868.5, 867.1, 867.3, 867.5, 867.7, 867.9]]),
+                  ?_assertEqual([0,1,2,3,4,5,6,7], [lorawan_mac_region:f2uch(<<"US902">>, F) || F <- [902.3, 902.5, 902.7, 902.9, 903.1, 903.3, 903.5, 903.7]]),
+                  ?_assertEqual([8, 9, 10, 11, 12, 13, 14, 15], [lorawan_mac_region:f2uch(<<"US902">>, F) || F <- [903.9, 904.1, 904.3, 904.5, 904.7, 904.9, 905.1, 905.3]])
+                 ].
 
 test_tx_time(Packet, DataRate, CodingRate) ->
     round(tx_time(byte_size(Packet),

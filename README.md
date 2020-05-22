@@ -33,7 +33,8 @@
             "rssi": -30,
             "snr": 0.2,
             "spreading": "SF9BW125",
-            "frequency": 923.3
+            "frequency": 923.3,
+            "channel": 12
         }
     ]
 }
@@ -62,7 +63,8 @@
             "rssi": -30,
             "snr": 0.2,
             "spreading": "SF9BW125",
-            "frequency": 923.3
+            "frequency": 923.3,
+            "channel": 12
         }
     ],
     "channels": [

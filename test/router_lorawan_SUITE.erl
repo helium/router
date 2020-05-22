@@ -119,7 +119,8 @@ join_test(Config) ->
                                                                 <<"rssi">> => '_',
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => <<"SF7BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply resp form router
@@ -164,7 +165,8 @@ join_test(Config) ->
                                                         <<"rssi">> => -35.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF7BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -183,7 +185,8 @@ join_test(Config) ->
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF7BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"channel">> => fun erlang:is_number/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -206,7 +209,8 @@ join_test(Config) ->
                                                                 <<"rssi">> => '_',
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => '_',
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),
@@ -235,7 +239,8 @@ join_test(Config) ->
                                                         <<"rssi">> => -35.0,
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF7BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1}]}),
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
@@ -254,7 +259,8 @@ join_test(Config) ->
                                                                  <<"rssi">> => -35.0,
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF7BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1}],
+                                                                 <<"frequency">> => fun erlang:is_float/1,
+                                                                 <<"channel">> => fun erlang:is_number/1}],
                                             <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                                                                  <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -277,7 +283,8 @@ join_test(Config) ->
                                                                 <<"rssi">> => '_',
                                                                 <<"snr">> => '_',
                                                                 <<"spreading">> => '_',
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),

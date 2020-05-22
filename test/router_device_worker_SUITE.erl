@@ -81,7 +81,8 @@ not_found_test(Config) ->
                                                                 <<"rssi">> => 0.0,
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1}],
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot

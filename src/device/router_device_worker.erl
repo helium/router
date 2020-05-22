@@ -690,6 +690,7 @@ report_frame_status(_, false, _Port, PubKeyBin, Device, Packet, #frame{devaddr=D
 report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) ->
     HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+    Freq = blockchain_helium_packet_v1:frequency(Packet),
     Report = #{category => Category,
                description => Desc,
                reported_at => erlang:system_time(seconds),
@@ -704,7 +705,9 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                               rssi => blockchain_helium_packet_v1:signal_strength(Packet),
                               snr => blockchain_helium_packet_v1:snr(Packet),
                               spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-                              frequency => blockchain_helium_packet_v1:frequency(Packet)}],
+                              frequency => Freq,
+                              %% TODO use correct regulatory domain here
+                              channel => lorawan_mac_region:f2uch(<<"US902">>, Freq)}],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

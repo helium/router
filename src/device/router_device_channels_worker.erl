@@ -342,6 +342,7 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
         fun({PubKeyBin, Packet, _, Time}, Acc) ->
                 B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
                 {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
+                Freq =  Packet#packet_pb.frequency,
                 [#{id => erlang:list_to_binary(B58),
                    name => erlang:list_to_binary(HotspotName),
                    reported_at => Time,
@@ -349,7 +350,9 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
                    rssi => Packet#packet_pb.signal_strength,
                    snr => Packet#packet_pb.snr,
                    spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
-                   frequency => Packet#packet_pb.frequency}|Acc]
+                   frequency => Freq,
+                   %% TODO use correct regulatory domain here
+                   channel => lorawan_mac_region:f2uch(<<"US902">>, Freq)}|Acc]
         end,
     [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),

@@ -237,6 +237,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
                  count=Count,
                  pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
+    lager:debug("frame tineout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
     case handle_frame(Packet, PubKeyBin, Device, Frame, Count) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),

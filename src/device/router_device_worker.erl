@@ -158,7 +158,7 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{db=DB, cf
                 undefined ->
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
-                    {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce}};
+                    {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
                 #join_cache{rssi=RSSI1, pid=Pid2} ->
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     case RSSI0 > RSSI1 of

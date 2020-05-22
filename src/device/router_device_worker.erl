@@ -51,6 +51,7 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
+                donwlink_handled_at = 0 :: integer(),
                 oui :: undefined | non_neg_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
@@ -167,7 +168,7 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                                      frame_cache=Cache0,
                                                      channels_worker=ChannelsWorker}=State) ->
-    case handle_frame_packet(Packet0, PubKeyBin, Device0) of
+    case validate_frame(Packet0, PubKeyBin, Device0) of
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1} ->
@@ -219,24 +220,25 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
     ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, donwlink_handled_at=DownlinkHandledAt,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
-    #frame_cache{packet=Packet0,
+    #frame_cache{packet=Packet,
                  pubkey_bin=PubKeyBin,
                  frame=Frame,
                  count=Count,
                  pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    case handle_frame(Packet0, PubKeyBin, Device, Frame, Count) of
+    AlreadyHandledDownlink = FCnt =< DownlinkHandledAt,
+    case handle_frame(Packet, PubKeyBin, Device, Frame, Count, FCnt =< AlreadyHandledDownlink) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
-        {send, Device1, Packet1} ->
-            lager:info("sending downlink"),
+        {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet1)),
-            {noreply, State#state{device=Device1, frame_cache=Cache1}};
+            lager:info("sending downlink for fcnt: ~p", [FCnt]),
+            catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
+            {noreply, State#state{device=Device1, frame_cache=Cache1, donwlink_handled_at=FCnt}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{frame_cache=Cache1}}
@@ -442,13 +444,13 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
 
 %%%-------------------------------------------------------------------
 %% @doc
-%% Handle frame packet, figures out FPort/FOptsLen to see if
+%% Validate frame packet, figures out FPort/FOptsLen to see if
 %% frame is valid and check if packet is ACKnowledging
 %% previous packet sent
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_frame_packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
-handle_frame_packet(Packet, PubKeyBin, Device0) ->
+-spec validate_frame(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
+validate_frame(Packet, PubKeyBin, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     DevAddr = lorawan_utils:reverse(DevAddrReversed),
@@ -510,16 +512,13 @@ handle_frame_packet(Packet, PubKeyBin, Device0) ->
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
                    #frame{},
-                   pos_integer()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
-    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
-
--spec handle_frame(blockchain_helium_packet_v1:packet(),
-                   libp2p_crypto:pubkey_bin(),
-                   router_device:device(),
-                   #frame{},
                    pos_integer(),
-                   list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+                   list() | boolean()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+
+handle_frame(_Packet, _PubKeyBin, _Device, _Frame, _Count, true) ->
+    noop;
+handle_frame(Packet, PubKeyBin, Device, Frame, Count, false) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device));
 handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),
@@ -544,11 +543,8 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
                                                     <<"codr">> => <<"ignored">>}),
 
             Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
-
-            DeviceUpdates = [
-                             {channel_correction, ChannelsCorrected},
-                             {fcntdown, (FCntDown + 1)}
-                            ],
+            DeviceUpdates = [{channel_correction, ChannelsCorrected},
+                             {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
             ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Device1, Packet0, Frame),
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
@@ -590,8 +586,6 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, R
                                             <<"codr">> => <<"ignored">>}),
 
     Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
-
-
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),

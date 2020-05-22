@@ -36,7 +36,7 @@
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
 -record(join_cache, {rssi :: float(),
-                     packet :: blockchain_helium_packet_v1:packet(),
+                     reply :: binary(),
                      packet_rcvd :: blockchain_helium_packet_v1:packet(),
                      device :: router_device:device(),
                      pid :: pid(),
@@ -139,36 +139,39 @@ handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
                                                                        join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
                                                                        channels_worker=ChannelsWorker}=State0) ->
+    %% TODO we should really just call this once per join nonce
+    %% and have a seperate function for getting the join nonce so we can check
+    %% the cache
     case handle_join(Packet0, PubKeyBin, OUI, APIDevice, AppKey, Device0) of
         {error, _Reason} ->
             {noreply, State0};
-        {ok, Packet1, Device1, JoinNonce} ->
+        {ok, Reply, Device1, JoinNonce} ->
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
-            JoinCache = #join_cache{rssi=RSSI0,
-                                    packet=Packet1,
-                                    packet_rcvd=Packet0,
-                                    device=Device1,
-                                    pid=Pid,
-                                    pubkey_bin=PubKeyBin},
-            Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
-            State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined when JoinNonceHandledAt == JoinNonce ->
                     %% late packet
                     {noreply, State0};
                 undefined ->
+                    JoinCache = #join_cache{rssi=RSSI0,
+                                            reply=Reply,
+                                            packet_rcvd=Packet0,
+                                            device=Device1,
+                                            pid=Pid,
+                                            pubkey_bin=PubKeyBin},
+                    Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
+                    State1 = State0#state{device=Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
-                #join_cache{rssi=RSSI1, pid=Pid2} ->
-                    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+                #join_cache{rssi=RSSI1, pid=Pid2}=JoinCache1 ->
                     case RSSI0 > RSSI1 of
                         false ->
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
-                            {noreply, State1};
+                            {noreply, State0};
                         true ->
                             catch blockchain_state_channel_handler:send_response(Pid2, blockchain_state_channel_response_v1:new(true)),
-                            {noreply, State1#state{join_cache=Cache1}}
+                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packet_rcvd=Packet0, rssi=RSSI0, pid=Pid, pubkey_bin=PubKeyBin}, Cache0),
+                            {noreply, State0#state{join_cache=Cache1}}
                     end
             end
     end;
@@ -215,11 +218,21 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
-    #join_cache{packet=Packet,
-                packet_rcvd=PacketRcvd,
+    #join_cache{reply=Reply,
+                packet_rcvd=#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate}=PacketRcvd,
                 device=Device0,
                 pid=Pid,
                 pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
+
+    #{tmst := TxTime,
+      datr := TxDataRate,
+      freq := TxFreq} = lorawan_mac_region_old:join1_window(<<"US902-928">>,
+                                                            #{<<"tmst">> => Time,
+                                                              <<"freq">> => Freq,
+                                                              <<"datr">> => erlang:list_to_binary(DataRate),
+                                                              <<"codr">> => <<"lol">>}),
+
+    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
     catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet)),
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
@@ -409,7 +422,7 @@ maybe_start_worker(DeviceID) ->
                   router_device:device(),
                   binary(),
                   router_device:device()) ->
-          {ok, blockchain_helium_packet_v1:packet(), router_device:device(), binary()} | {error, any()}.
+          {ok, Reply::binary(), Device::router_device:device(), DevAddr::binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
             PubKeyBin, OUI, APIDevice, AppKey, Device) when MType == ?JOIN_REQ ->
@@ -418,7 +431,7 @@ handle_join(_Packet, _PubKeyBin, _OUI, _APIDevice, _AppKey, _Device) ->
     {error, not_join_req}.
 
 -spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), non_neg_integer(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
-          {ok, blockchain_helium_packet_v1:packet(), router_device:device(), binary()} | {error, any()}.
+          {ok, binary(), router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
             PubKeyBin, _OUI, _APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
@@ -426,8 +439,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     lager:warning("~s ~s tried to join with stale nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), Nonce, AName]),
     {error, bad_nonce};
-handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
-                       payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
+handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
             PubKeyBin, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -452,12 +464,12 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
                   _Error ->
                       %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
                       %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<OUI:32/integer-unsigned-big>>) %% <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
               catch
                   _:_ ->
                       %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
                       %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<OUI:32/integer-unsigned-big>>) %% <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
               end,
 
     RxDelay = ?RX_DELAY,
@@ -467,17 +479,9 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
     Reply = <<ReplyHdr/binary, EncryptedReply/binary>>,
-    #{tmst := TxTime,
-      datr := TxDataRate,
-      freq := TxFreq} = lorawan_mac_region_old:join1_window(<<"US902-928">>,
-                                                            #{<<"tmst">> => Time,
-                                                              <<"freq">> => Freq,
-                                                              <<"datr">> => erlang:list_to_binary(DataRate),
-                                                              <<"codr">> => <<"lol">>}),
     DeviceName = router_device:name(APIDevice),
     lager:info("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     DeviceUpdates = [{name, DeviceName},
                      {dev_eui, DevEUI},
@@ -488,7 +492,7 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
                      {channel_correction, false},
                      {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
-    {ok, Packet, Device1, DevNonce}.
+    {ok, Reply, Device1, DevNonce}.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -499,9 +503,8 @@ handle_join(#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate,
 %%%-------------------------------------------------------------------
 -spec validate_frame(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
 validate_frame(Packet, PubKeyBin, Device0) ->
-    <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
+    <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-    DevAddr = lorawan_utils:reverse(DevAddrReversed),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
@@ -753,7 +756,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
 frame_to_packet_payload(Frame, Device) ->
     FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
     FOptsLen = erlang:byte_size(FOpts),
-    PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (lorawan_utils:reverse(Frame#frame.devaddr))/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1,
+    PktHdr = <<(Frame#frame.mtype):3, 0:3, 0:2, (Frame#frame.devaddr)/binary, (Frame#frame.adr):1, 0:1, (Frame#frame.ack):1,
                (Frame#frame.fpending):1, FOptsLen:4, (Frame#frame.fcnt):16/integer-unsigned-little, FOpts:FOptsLen/binary>>,
     NwkSKey = router_device:nwk_s_key(Device),
     PktBody = case Frame#frame.data of
@@ -804,7 +807,7 @@ get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
 
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
-    <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+    <<16#49, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->

@@ -291,9 +291,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    <<OUI:32/integer-unsigned-big, _DID:32/integer-unsigned-big>> = ?APPEUI,
-    DevAddrPrefix = $H,
-    DevAddr = <<OUI:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
+    DevAddr = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
     HeliumPacket = #packet_pb{
                       type=lorawan,
@@ -319,7 +317,7 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),
     <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
-    Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, lorawan_utils:reverse(DevAddr), FCnt)),
+    Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, DevAddr, FCnt)),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
                  FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
     B0 = b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
@@ -345,7 +343,7 @@ tmp_dir(SubDir) ->
 %% ------------------------------------------------------------------
 
 b0(Dir, DevAddr, FCnt, Len) ->
-    <<16#49, 0,0,0,0, Dir, (lorawan_utils:reverse(DevAddr)):4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+    <<16#49, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 -spec match_map(map(), any()) -> true | {false, term()}.
 match_map(Expected, Got) when is_map(Got) ->
@@ -396,9 +394,8 @@ nonl([H|T]) -> [H|nonl(T)];
 nonl([]) -> [].
 
 deframe_packet(Packet, SessionKey) ->
-    <<MType:3, _MHDRRFU:3, _Major:2, DevAddrReversed:4/binary, ADR:1, RFU:1, ACK:1, FPending:1,
+    <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, RFU:1, ACK:1, FPending:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Packet#packet_pb.payload,
-    DevAddr = lorawan_utils:reverse(DevAddrReversed),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)),
     ct:pal("FOpts ~p", [FOpts]),

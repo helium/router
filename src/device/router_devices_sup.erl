@@ -80,6 +80,11 @@ start_worker(ID, Args) ->
         {error, _Err}=Err ->
             Err;
         {ok, Pid}=OK ->
-            ets:insert(?ETS, {ID, Pid}),
-            OK
+            case ets:insert_new(?ETS, {ID, Pid}) of
+                true ->
+                    OK;
+                false ->
+                    supervisor:terminate_child(?MODULE, Pid),
+                    maybe_start_worker(ID, Args)
+            end
     end.

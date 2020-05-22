@@ -246,7 +246,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
     Args = #{url =>  kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
              headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
              method => list_to_existing_atom(binary_to_list(router_utils:to_bin(kvc:path([<<"credentials">>, <<"method">>], JSONChannel)))),
-             downlink_token => to_bin(kvc:path([<<"downlink_token">>], JSONChannel))},
+             downlink_token => router_utils:to_bin(kvc:path([<<"downlink_token">>], JSONChannel))},
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
     Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
@@ -363,8 +363,3 @@ debug_insert(DeviceID, Limit) ->
 debug_delete(DeviceID) ->
     true = ets:delete(?ETS, DeviceID),
     ok.
-
-to_bin(Bin) when is_binary(Bin) ->
-    Bin;
-to_bin(List) when is_list(List) ->
-    erlang:list_to_binary(List).

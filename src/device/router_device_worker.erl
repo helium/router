@@ -135,10 +135,9 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
 handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
     lager:warning("got join packet when oui=undefined, standing by..."),
     {noreply, State0};
-handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
-                                                                       join_cache=Cache0,
-                                                                       join_nonce_handled_at=JoinNonceHandledAt,
-                                                                       oui=OUI}=State0) ->
+handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
+                                                                       join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
+                                                                       channels_worker=ChannelsWorker}=State0) ->
     case handle_join(Packet0, PubKeyBin, OUI, APIDevice, AppKey, Device0) of
         {error, _Reason} ->
             {noreply, State0};
@@ -157,9 +156,11 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
                     %% late packet
                     {noreply, State0};
                 undefined ->
+                    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce}};
                 #join_cache{rssi=RSSI1, pid=Pid2} ->
+                    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     case RSSI0 > RSSI1 of
                         false ->
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),

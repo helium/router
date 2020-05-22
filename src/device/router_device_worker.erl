@@ -51,7 +51,7 @@
 -record(state, {db :: rocksdb:db_handle(),
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
-                donwlink_handled_at = 0 :: integer(),
+                downlink_handled_at = -1 :: integer(),
                 oui :: undefined | non_neg_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
@@ -220,7 +220,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
     ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, donwlink_handled_at=DownlinkHandledAt,
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, downlink_handled_at=DownlinkHandledAt,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
     #frame_cache{packet=Packet,
                  pubkey_bin=PubKeyBin,
@@ -238,7 +238,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, donwlink_
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
-            {noreply, State#state{device=Device1, frame_cache=Cache1, donwlink_handled_at=FCnt}};
+            {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{frame_cache=Cache1}}

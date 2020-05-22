@@ -52,6 +52,7 @@
                 cf :: rocksdb:cf_handle(),
                 device :: router_device:device(),
                 downlink_handled_at = -1 :: integer(),
+                join_nonce_handled_at = <<>> :: binary(),
                 oui :: undefined | non_neg_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
@@ -136,6 +137,7 @@ handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=
     {noreply, State0};
 handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=Device0,
                                                                        join_cache=Cache0,
+                                                                       join_nonce_handled_at=JoinNonceHandledAt,
                                                                        oui=OUI}=State0) ->
     case handle_join(Packet0, PubKeyBin, OUI, APIDevice, AppKey, Device0) of
         {error, _Reason} ->
@@ -151,9 +153,12 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
             Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
             State1 = State0#state{device=Device1},
             case maps:get(JoinNonce, Cache0, undefined) of
+                undefined when JoinNonceHandledAt == JoinNonce ->
+                    %% late packet
+                    {noreply, State0};
                 undefined ->
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
-                    {noreply, State1#state{join_cache=Cache1}};
+                    {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce}};
                 #join_cache{rssi=RSSI1, pid=Pid2} ->
                     case RSSI0 > RSSI1 of
                         false ->
@@ -167,6 +172,7 @@ handle_cast({join, Packet0, PubKeyBin, APIDevice, AppKey, Pid}, #state{device=De
     end;
 handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                                      frame_cache=Cache0,
+                                                     downlink_handled_at=DownlinkHandledAt,
                                                      channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Device0) of
         {error, _Reason} ->
@@ -182,10 +188,13 @@ handle_cast({frame, Packet0, PubKeyBin, Pid}, #state{device=Device0,
                                       frame=Frame,
                                       pid=Pid},
             case maps:get(FCnt, Cache0, undefined) of
+                undefined when FCnt =< DownlinkHandledAt ->
+                    %% late packet
+                    {noreply, State};
                 undefined ->
                     _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
                     Cache1 = maps:put(FCnt, FrameCache, Cache0),
-                    {noreply, State#state{device=Device1, frame_cache=Cache1}};
+                    {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
                 #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->
                     case RSSI0 > RSSI1 of
                         false ->
@@ -220,7 +229,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
     ok = report_status(activation, Desc, Device1, success, PubKeyBin, PacketRcvd, 0, <<>>),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
-handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, downlink_handled_at=DownlinkHandledAt,
+handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
     #frame_cache{packet=Packet,
                  pubkey_bin=PubKeyBin,
@@ -228,8 +237,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, downlink_
                  count=Count,
                  pid=Pid} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    AlreadyHandledDownlink = FCnt =< DownlinkHandledAt,
-    case handle_frame(Packet, PubKeyBin, Device, Frame, Count, FCnt =< AlreadyHandledDownlink) of
+    case handle_frame(Packet, PubKeyBin, Device, Frame, Count) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
@@ -238,7 +246,7 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device, downlink_
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
-            {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
+            {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{frame_cache=Cache1}}
@@ -508,17 +516,22 @@ validate_frame(Packet, PubKeyBin, Device0) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
+
+-spec handle_frame(blockchain_helium_packet_v1:packet(),
+                   libp2p_crypto:pubkey_bin(),
+                   router_device:device(),
+                   #frame{},
+                   pos_integer()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
+    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
+
+
 -spec handle_frame(blockchain_helium_packet_v1:packet(),
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
                    #frame{},
                    pos_integer(),
-                   list() | boolean()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
-
-handle_frame(_Packet, _PubKeyBin, _Device, _Frame, _Count, true) ->
-    noop;
-handle_frame(Packet, PubKeyBin, Device, Frame, Count, false) ->
-    handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device));
+                   list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
 handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame),

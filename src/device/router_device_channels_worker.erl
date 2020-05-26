@@ -330,8 +330,13 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
                             _ ->
                                 false
                         end,
-
-            {ok, {Confirmed, Port, base64:decode(Payload)}};
+            try base64:decode(Payload) of
+                Decoded ->
+                    {ok, {Confirmed, Port, Decoded}}
+            catch
+                _:_ ->
+                    {error, failed_to_decode_base64}
+            end;
         error ->
             {error, payload_raw_not_found}
     end.

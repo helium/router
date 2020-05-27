@@ -59,7 +59,9 @@ init_per_testcase(TestCase, Config) ->
                 {port, 3000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-    Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    #{public := PubKey, secret := PrivKey} = Keys,
+    blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},
@@ -83,7 +85,8 @@ end_per_testcase(_TestCase, Config) ->
     ok.
 
 start_swarm(BaseDir, Name, Port) ->
-    #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
+    #{secret := PrivKey, public := PubKey} = Keys,
     Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
     SwarmOpts = [{base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
                  {key, Key},
@@ -93,7 +96,7 @@ start_swarm(BaseDir, Name, Port) ->
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
-    Swarm.
+    {Swarm, Keys}.
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),

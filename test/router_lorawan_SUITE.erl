@@ -81,7 +81,7 @@ join_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
+    {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
     ct:pal("registered ~p", [registered()]),
     Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),

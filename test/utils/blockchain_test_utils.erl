@@ -28,6 +28,9 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
     GenSecPaymentTxs = [blockchain_txn_security_coinbase_v1:new(Addr, Balance)
                         || {Addr, _} <- GenesisMembers],
 
+    GenDCTxs = [blockchain_txn_dc_coinbase_v1:new(Addr, Balance)
+                || {Addr, _} <- GenesisMembers],
+
     Addresses = [Addr || {Addr, _} <- GenesisMembers],
 
     Locations = lists:foldl(
@@ -47,6 +50,7 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
         GenPaymentTxs ++
         GenSecPaymentTxs ++
         InitialGatewayTxn ++
+        GenDCTxs ++
         [GenConsensusGroupTx],
     lager:info("initial transactions: ~p", [Txs]),
 

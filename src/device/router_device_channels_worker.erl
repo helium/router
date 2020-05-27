@@ -267,30 +267,36 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
             {noreply, State#state{channels=maps:remove(ChannelID, Channels),
                                   channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
         Error ->
-            Channel = maps:get(ChannelID, Channels),
-            ChannelName = router_channel:name(Channel),
-            lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
-            Desc = erlang:list_to_binary(io_lib:format("~p", [Error])),
-            Report = #{category => <<"channel_crash">>,
-                       description => Desc,
-                       reported_at => erlang:system_time(seconds),
-                       payload => <<>>,
-                       payload_size => 0,
-                       port => 0,
-                       devaddr => <<>>,
-                       hotspots => [],
-                       channels => [#{id => ChannelID,
-                                      name => ChannelName,
-                                      reported_at => erlang:system_time(seconds),
-                                      status => <<"error">>,
-                                      description => Desc}]},
-            router_device_api:report_status(Device, Report),
-            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
-                {ok, Backoffs1} ->
-                    {noreply, State#state{channels_backoffs=Backoffs1}};
-                {error, _Reason, Backoffs1} ->
+            case maps:get(ChannelID, Channels, undefined) of
+                undefined ->
+                    lager:error("unknown channel ~p went down", [ChannelID]),
                     {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                          channels_backoffs=Backoffs1}}
+                                          channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
+                Channel -> 
+                    ChannelName = router_channel:name(Channel),
+                    lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
+                    Desc = erlang:list_to_binary(io_lib:format("~p", [Error])),
+                    Report = #{category => <<"channel_crash">>,
+                               description => Desc,
+                               reported_at => erlang:system_time(seconds),
+                               payload => <<>>,
+                               payload_size => 0,
+                               port => 0,
+                               devaddr => <<>>,
+                               hotspots => [],
+                               channels => [#{id => ChannelID,
+                                              name => ChannelName,
+                                              reported_at => erlang:system_time(seconds),
+                                              status => <<"error">>,
+                                              description => Desc}]},
+                    router_device_api:report_status(Device, Report),
+                    case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                        {ok, Backoffs1} ->
+                            {noreply, State#state{channels_backoffs=Backoffs1}};
+                        {error, _Reason, Backoffs1} ->
+                            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
+                                                  channels_backoffs=Backoffs1}}
+                    end
             end
     end;
 handle_info(_Msg, State) ->

@@ -15,7 +15,8 @@
          frame_payload/6,
          frame_packet/5, frame_packet/6,
          deframe_packet/2, deframe_join_packet/3,
-         tmp_dir/0, tmp_dir/1]).
+         tmp_dir/0, tmp_dir/1,
+         wait_until/1, wait_until/3]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -61,12 +62,14 @@ init_per_testcase(TestCase, Config) ->
     {ok, _} = application:ensure_all_started(router),
     {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
     #{public := PubKey, secret := PrivKey} = Keys,
-    blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
+    {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},
      {base_dir, BaseDir},
-     {swarm, Swarm} |Config].
+     {swarm, Swarm},
+     {keys, Keys},
+     {consensus_member, ConsensusMembers} |Config].
 
 end_per_testcase(_TestCase, Config) ->
     libp2p_swarm:stop(proplists:get_value(swarm, Config)),
@@ -340,6 +343,21 @@ tmp_dir(SubDir) ->
     Path = filename:join(?BASE_TMP_DIR, SubDir),
     os:cmd("mkdir -p " ++ Path),
     create_tmp_dir(Path ++ "/" ++ ?BASE_TMP_DIR_TEMPLATE).
+
+wait_until(Fun) ->
+    wait_until(Fun, 100, 100).
+
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        true ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until(Fun, Retry-1, Delay)
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

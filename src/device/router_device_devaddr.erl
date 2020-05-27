@@ -138,6 +138,6 @@ subnet_mask_to_size(Mask) ->
 
 next_subnet(Subnets, Nth) ->
     case Nth+1 > erlang:length(Subnets) of
-        true -> {1, list:nth(1, Subnets)};
-        false -> {Nth+1, list:nth(Nth+1, Subnets)}
+        true -> {1, lists:nth(1, Subnets)};
+        false -> {Nth+1, lists:nth(Nth+1, Subnets)}
     end.

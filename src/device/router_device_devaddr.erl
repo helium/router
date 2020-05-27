@@ -78,7 +78,7 @@ handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=S
                         Subnet = lists:nth(Nth, Subnets),
                         <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
                         Max = subnet_mask_to_size(Mask),
-                        case LastBase+1 > Base+Max of
+                        case LastBase+1 >= Base+Max of
                             true ->
                                 {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
                                 <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> = NextSubnet,

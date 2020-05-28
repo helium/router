@@ -291,7 +291,8 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
                     router_device_api:report_status(Device, Report),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
                         {ok, Backoffs1} ->
-                            {noreply, State#state{channels_backoffs=Backoffs1}};
+                            {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
+                                                  channels_backoffs=Backoffs1}};
                         {error, _Reason, Backoffs1} ->
                             {noreply, State#state{channels=maps:remove(ChannelID, Channels),
                                                   channels_backoffs=Backoffs1}}

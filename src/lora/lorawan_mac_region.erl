@@ -107,7 +107,7 @@ ch2fi(Ch, {Start, Inc}) -> (Ch*Inc + Start)/10.
 
 tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
-    #txq{freq=Freq, datr=DataRate, codr=RxQ#rxq.codr}.
+    #txq{freq=Freq, datr=DataRate, codr=RxQ#rxq.codr, time=RxQ#rxq.time}.
 
 get_window(join1_window) -> 5000000;
 get_window(join2_window) -> 6000000;

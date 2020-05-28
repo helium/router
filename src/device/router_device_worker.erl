@@ -227,7 +227,7 @@ handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=Chan
 
     #txq{time = TxTime,
          datr = TxDataRate,
-         freq = TxFreq} = lorawan_mac_region:join1_window(<<"US902-928">>, 0,
+         freq = TxFreq} = lorawan_mac_region:join1_window(<<"US902">>, 0,
                                                           packet_to_rxq(PacketRcvd)),
 
     Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
@@ -809,4 +809,3 @@ packet_to_rxq(Packet) ->
          tmms = blockchain_helium_packet_v1:timestamp(Packet),
          rssi = blockchain_helium_packet_v1:signal_strength(Packet),
          lsnr = blockchain_helium_packet_v1:snr(Packet)}.
-

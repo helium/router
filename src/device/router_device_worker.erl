@@ -588,7 +588,7 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
                                             Device0),
             #txq{time = TxTime,
                  datr = TxDataRate,
-                 freq = TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>, 0, 0,
+                 freq = TxFreq} = lorawan_mac_region:rx1_window(<<"US902">>, 0, 0,
                                                                 packet_to_rxq(Packet0)),
             Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
             DeviceUpdates = [{channel_correction, ChannelsCorrected},

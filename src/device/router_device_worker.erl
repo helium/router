@@ -566,7 +566,6 @@ validate_frame(Packet, PubKeyBin, Device0) ->
 handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
     handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
 
-
 -spec handle_frame(blockchain_helium_packet_v1:packet(),
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
@@ -591,7 +590,6 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
                  datr = TxDataRate,
                  freq = TxFreq} = lorawan_mac_region:rx1_window(<<"US902-928">>, 0, 0,
                                                                 packet_to_rxq(Packet0)),
-
             Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
@@ -802,13 +800,13 @@ b0(Dir, DevAddr, FCnt, Len) ->
 int_to_bin(Int) ->
     erlang:list_to_binary(erlang:integer_to_list(Int)).
 
+-spec packet_to_rxq(blockchain_helium_packet_v1:packet()) -> #rxq{}.
 packet_to_rxq(Packet) ->
-    #rxq{
-       freq = blockchain_helium_packet_v1:frequency(Packet),
-       datr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-       codr = <<"4/5">>,
-       time = calendar:now_to_datetime(os:timestamp()),
-       tmms = blockchain_helium_packet_v1:timestamp(Packet),
-       rssi = blockchain_helium_packet_v1:signal_strength(Packet),
-       lsnr = blockchain_helium_packet_v1:snr(Packet)}.
+    #rxq{freq = blockchain_helium_packet_v1:frequency(Packet),
+         datr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+         codr = <<"4/5">>,
+         time = calendar:now_to_datetime(os:timestamp()),
+         tmms = blockchain_helium_packet_v1:timestamp(Packet),
+         rssi = blockchain_helium_packet_v1:signal_strength(Packet),
+         lsnr = blockchain_helium_packet_v1:snr(Packet)}.
 

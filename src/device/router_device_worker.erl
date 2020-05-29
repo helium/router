@@ -661,6 +661,8 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count) ->
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     FOpts1 = case ChannelCorrectionNeeded andalso not ChannelsCorrected of
+                 %% TODO this is going to be different for each region, we can't simply pass the region into this function
+                 %% Some regions allow the channel list to be sent in the join response as well, so we may need to do that there as well
                  true -> lorawan_mac_region:set_channels(Region, {0, erlang:list_to_binary(DataRate), [{8, 15}]}, []);
                  _ -> []
              end,
@@ -746,7 +748,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Packet, Port, DevAddr) 
                               spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
                               frequency => Freq,
                               %% TODO use correct regulatory domain here
-                              channel => lorawan_mac_region:f2uch(<<"US902">>, Freq)}],
+                              channel => lorawan_mac_region:f2uch('US915', Freq)}],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

@@ -40,7 +40,10 @@ rx1_window(#network{region=Region, rx1_delay=Delay},
                                                 %tx_window(?FUNCTION_NAME, RxQ, rx2_rf(Network, Node)).
 
                                                 % we calculate in fixed-point numbers
-rx1_rf(<<"US902">> = Region, RxQ, Offset) ->
+rx1_rf(<<"US915">> = Region, RxQ, Offset) ->
+    RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
+    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
+rx1_rf(<<"EU868">> = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
     tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
 rx1_rf(<<"US902-PR">> = Region, RxQ, Offset) ->
@@ -61,13 +64,13 @@ rx2_rf(#network{region=Region, tx_codr=CodingRate, rxwin_init=WinInit}, #profile
     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
 
-f2uch(<<"US902">>, Freq) ->
+f2uch(<<"US915">>, Freq) ->
     f2uch(Freq, {9023, 2}, {9030, 16});
 f2uch(<<"US902-PR">>, Freq) ->
     f2uch(Freq, {9023, 2}, {9030, 16});
-f2uch(<<"AU915">>, Freq) ->
+f2uch(<<"AU915-928">>, Freq) ->
     f2uch(Freq, {9152, 2}, {9159, 16});
-f2uch(<<"CN470">>, Freq) ->
+f2uch(<<"CN470-510">>, Freq) ->
     f2uch(Freq, {4073, 2});
 f2uch(<<"EU868">>, Freq) when Freq < 868 ->
     f2uch(Freq, {8671, 2}) + 3;
@@ -84,10 +87,10 @@ f2uch(Freq, _, {Start2, Inc2}) when round(10*Freq-Start2) rem Inc2 == 0 ->
     64 + round(10*Freq-Start2) div Inc2.
 
 uch2f(Region, Ch)
-  when (Region == <<"US902">> orelse Region == <<"US902-PR">>) andalso Ch < 64 ->
+  when (Region == <<"US915">> orelse Region == <<"US902-PR">>) andalso Ch < 64 ->
     ch2fi(Ch, {9023, 2});
 uch2f(Region, Ch)
-  when Region == <<"US902">> orelse Region == <<"US902-PR">> ->
+  when Region == <<"US915">> orelse Region == <<"US902-PR">> ->
     ch2fi(Ch-64, {9030, 16});
 uch2f(<<"AU915">>, Ch)
   when Ch < 64 ->
@@ -98,7 +101,7 @@ uch2f(<<"CN470">>, Ch) ->
     ch2fi(Ch, {4703, 2}).
 
 dch2f(Region, Ch)
-  when Region == <<"US902">>; Region == <<"US902-PR">>; Region == <<"AU915">> ->
+  when Region == <<"US915">>; Region == <<"US902-PR">>; Region == <<"AU915">> ->
     ch2fi(Ch, {9233, 6});
 dch2f(<<"CN470">>, Ch) ->
     ch2fi(Ch, {5003, 2}).
@@ -137,7 +140,7 @@ dr_to_down(Region, DR, Offset) ->
     lists:nth(Offset+1, drs_to_down(Region, DR)).
 
 drs_to_down(Region, DR)
-  when Region == <<"US902">>; Region == <<"US902-PR">> ->
+  when Region == <<"US915">>; Region == <<"US902-PR">> ->
     case DR of
         0 -> [10, 9,  8,  8];
         1 -> [11, 10, 9,  8];
@@ -171,7 +174,7 @@ drs_to_down(_Region, DR) ->
                                                 % data rate and end-device output power encoding
 
 datars(Region)
-  when Region == <<"US902">>; Region == <<"US902-PR">> -> [
+  when Region == <<"US915">>; Region == <<"US902-PR">> -> [
                                                            {0,  {10, 125}, up},
                                                            {1,  {9, 125}, up},
                                                            {2,  {8, 125}, up},
@@ -235,11 +238,11 @@ codr_to_tuple(CodingRate) ->
                                                 % static channel plan parameters
 freq(<<"EU868">>) ->
     #{min=>863, max=>870, default=>[868.10, 868.30, 868.50]};
-freq(<<"US902">>) ->
+freq(<<"US915">>) ->
     #{min=>902, max=>928};
 freq(<<"US902-PR">>) ->
     #{min=>902, max=>928};
-freq(<<"CN779">>) ->
+freq(<<"CN7797">>) ->
     #{min=>779.5, max=>786.5, default=>[779.5, 779.7, 779.9]};
 freq(<<"EU433">>) ->
     #{min=>433.175, max=>434.665, default=>[433.175, 433.375, 433.575]};
@@ -249,7 +252,7 @@ freq(<<"CN470">>) ->
     #{min=>470, max=>510};
 freq(<<"AS923">>) ->
     #{min=>915, max=>928, default=>[923.20, 923.40]};
-freq(<<"KR920">>) ->
+freq(<<"KR9203">>) ->
     #{min=>920.9, max=>923.3, default=>[922.1, 922.3, 922.5]};
 freq(<<"IN865">>) ->
     #{min=>865, max=>867, default=>[865.0625, 865.4025, 865.985]};
@@ -257,7 +260,7 @@ freq(<<"RU868">>) ->
     #{min=>864, max=>870, default=>[868.9, 869.1]}.
 
 net_freqs(#network{region=Region, init_chans=Chans})
-  when Region == <<"US902">>; Region == <<"US902-PR">>; Region == <<"AU915">>; Region == <<"CN470">> ->
+  when Region == <<"US915">>; Region == <<"US902-PR">>; Region == <<"AU915">>; Region == <<"CN470">> ->
                                                 % convert enabled channels to frequencies
     lists:map(
       fun(Ch) -> uch2f(Region, Ch) end,
@@ -295,7 +298,7 @@ max_snr(SF) ->
                                                 % link_adr_req command
 
 set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut)
-  when Region == <<"US902">>; Region == <<"US902-PR">>; Region == <<"AU915">> ->
+  when Region == <<"US915">>; Region == <<"US902-PR">>; Region == <<"AU915">> ->
     case all_bit({0,63}, Chans) of
         true ->
             [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}), 6, 0} | FOptsOut];
@@ -424,13 +427,13 @@ region_test_()-> [
                   ?_assertEqual(21, test_tx_time(<<"0123456789">>, <<"SF7BW250">>, <<"4/5">>)),
                   ?_assertEqual(11, test_tx_time(<<"0123456789">>, <<"SF7BW500">>, <<"4/5">>)),
                   ?_assertEqual(dr_to_datar(<<"EU868">>, 0), <<"SF12BW125">>),
-                  ?_assertEqual(dr_to_datar(<<"US902">>, 8), <<"SF12BW500">>),
+                  ?_assertEqual(dr_to_datar(<<"US915">>, 8), <<"SF12BW500">>),
                   ?_assertEqual(datar_to_dr(<<"EU868">>, <<"SF9BW125">>), 3),
-                  ?_assertEqual(datar_to_dr(<<"US902">>, <<"SF7BW500">>), 13),
-                  ?_assertEqual(<<"SF10BW500">>, datar_to_down(<<"US902">>, <<"SF10BW125">>, 0)),
+                  ?_assertEqual(datar_to_dr(<<"US915">>, <<"SF7BW500">>), 13),
+                  ?_assertEqual(<<"SF10BW500">>, datar_to_down(<<"S902-928">>, <<"SF10BW125">>, 0)),
                   ?_assertEqual([0,1,2,3,4,5,6,7], [lorawan_mac_region:f2uch(<<"EU868">>, F) || F <- [868.1, 868.3, 868.5, 867.1, 867.3, 867.5, 867.7, 867.9]]),
-                  ?_assertEqual([0,1,2,3,4,5,6,7], [lorawan_mac_region:f2uch(<<"US902">>, F) || F <- [902.3, 902.5, 902.7, 902.9, 903.1, 903.3, 903.5, 903.7]]),
-                  ?_assertEqual([8, 9, 10, 11, 12, 13, 14, 15], [lorawan_mac_region:f2uch(<<"US902">>, F) || F <- [903.9, 904.1, 904.3, 904.5, 904.7, 904.9, 905.1, 905.3]])
+                  ?_assertEqual([0,1,2,3,4,5,6,7], [lorawan_mac_region:f2uch(<<"US915">>, F) || F <- [902.3, 902.5, 902.7, 902.9, 903.1, 903.3, 903.5, 903.7]]),
+                  ?_assertEqual([8, 9, 10, 11, 12, 13, 14, 15], [lorawan_mac_region:f2uch(<<"US915">>, F) || F <- [903.9, 904.1, 904.3, 904.5, 904.7, 904.9, 905.1, 905.3]])
                  ].
 
 test_tx_time(Packet, DataRate, CodingRate) ->
@@ -451,12 +454,12 @@ bits_test_()-> [
                 ?_assertEqual(false, none_bit({0, 15}, [{0,2}])),
                 ?_assertEqual([{link_adr_req, datar_to_dr(<<"EU868">>, <<"SF12BW125">>),14,7,0,0}],
                               set_channels(<<"EU868">>, {14, <<"SF12BW125">>, [{0, 2}]}, [])),
-                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,0,7,0},
-                               {link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,255,0,0}],
-                              set_channels(<<"US902">>, {20, <<"SF12BW500">>, [{0, 7}]}, [])),
-                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,2,7,0},
-                               {link_adr_req,datar_to_dr(<<"US902">>, <<"SF12BW500">>),20,65280,0,0}],
-                              set_channels(<<"US902">>, {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, []))
+                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US915">>, <<"SF12BW500">>),20,0,7,0},
+                               {link_adr_req,datar_to_dr(<<"US915">>, <<"SF12BW500">>),20,255,0,0}],
+                              set_channels(<<"US915">>, {20, <<"SF12BW500">>, [{0, 7}]}, [])),
+                ?_assertEqual([{link_adr_req,datar_to_dr(<<"US915">>, <<"SF12BW500">>),20,2,7,0},
+                               {link_adr_req,datar_to_dr(<<"US915">>, <<"SF12BW500">>),20,65280,0,0}],
+                              set_channels(<<"US915">>, {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, []))
                ].
 
                                                 % end of file

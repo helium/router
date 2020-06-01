@@ -34,7 +34,7 @@
 
 -record(area, {
                name :: nonempty_string(),
-               region :: binary(),
+               region :: atom(),
                admins :: [nonempty_string()],
                slack_channel :: 'undefined' | string(),
                log_ignored :: boolean()}).
@@ -68,7 +68,7 @@
 -record(network, {
                   name :: nonempty_string(),
                   netid :: binary(), % network id
-                  region :: binary(),
+                  region :: atom(),
                   tx_codr :: binary(),
                   join1_delay :: integer(),
                   join2_delay :: integer(),

@@ -43,9 +43,10 @@ rx1_window(#network{region=Region, rx1_delay=Delay},
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
     tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
-rx1_rf('EU868' = Region, RxQ, Offset) ->
-    RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
+%% TODO: original file does not have rx1_rf function to handle EU868 and other, is support required ?
+%%rx1_rf('EU868' = Region, RxQ, Offset) ->
+%%    RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
+%%    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
 rx1_rf('AU915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9152, 2}, {9159, 16}),
     tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);

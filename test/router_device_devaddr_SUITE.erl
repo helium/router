@@ -69,7 +69,10 @@ allocate(Config) ->
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
-    _ = router_device_devaddr:allocate(undef, undef),
+    ok = test_utils:wait_until(fun() ->
+                                       State = sys:get_state(router_device_devaddr),
+                                       erlang:element(2, State) =/= undefined
+                               end),
 
     DevAddrs = lists:foldl(fun(_I, Acc) ->
                                    {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),

@@ -27,7 +27,7 @@
 -define(ETS, router_device_devaddr_ets).
 -define(BITS_23, 8388607). %% 
 
--record(state, {chain :: blockchain:blockchain(),
+-record(state, {chain = undefined :: blockchain:blockchain() | undefined,
                 oui :: integer(),
                 subnets = [] :: list(),
                 devaddr_used = #{} :: map()}).
@@ -48,7 +48,6 @@ allocate(Device, PubKeyBin) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    Chain = blockchain_worker:blockchain(),
     OUI = case application:get_env(router, oui, undefined) of
               undefined -> undefined;
               OUI0 when is_list(OUI0) ->
@@ -56,13 +55,9 @@ init(Args) ->
               OUI0 ->
                   OUI0
           end,
-    Subnets = subnets(OUI, Chain),
-    {ok, #state{chain=Chain, oui=OUI, subnets=Subnets}}.
+    self() ! post_init,
+    {ok, #state{oui=OUI}}.
 
-handle_call({allocate, _Device, _PubKeyBin}, _From, #state{chain=undefined, oui=OUI}=State) ->
-    Chain = blockchain_worker:blockchain(),
-    Subnets = subnets(OUI, Chain),
-    {reply, {error, chain_undef}, State#state{chain=Chain, subnets=Subnets}};
 handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
     case pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _}=Error ->
@@ -99,6 +94,16 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+
+handle_info(post_init, #state{chain=undefined, oui=OUI}=State) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            Subnets = subnets(OUI, Chain),
+            {noreply, State#state{chain=Chain, subnets=Subnets}}
+    end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -123,6 +128,8 @@ subnets(OUI, Chain) ->
             []
     end.
 
+pubkeybin_to_loc(_PubKeyBin, undefined) ->
+    {error, no_chain};
 pubkeybin_to_loc(PubKeyBin, Chain) ->
     Ledger = blockchain:ledger(Chain),
     case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of

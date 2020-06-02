@@ -72,7 +72,7 @@ handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=S
                     {Nth, LastBase} ->
                         Subnet = lists:nth(Nth, Subnets),
                         <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
-                        Max = subnet_mask_to_size(Mask),
+                        Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
                         case LastBase+1 >= Base+Max of
                             true ->
                                 {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
@@ -139,9 +139,6 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
             Index = blockchain_ledger_gateway_v2:location(Hotspot),
             {ok, Index}
     end.
-
-subnet_mask_to_size(Mask) ->
-    (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1.
 
 next_subnet(Subnets, Nth) ->
     case Nth+1 > erlang:length(Subnets) of

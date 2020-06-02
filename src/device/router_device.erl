@@ -22,6 +22,7 @@
          channel_correction/1, channel_correction/2,
          queue/1, queue/2,
          keys/1, keys/2,
+         location/1, location/2,
          metadata/1, metadata/2,
          update/2,
          serialize/1, deserialize/1,
@@ -145,6 +146,14 @@ keys(Device) ->
 keys(Keys, Device) ->
     Device#device_v3{keys=Keys}.
 
+-spec location(device()) -> libp2p_crypto:pubkey_bin() | undefined.
+location(Device) ->
+    Device#device_v3.location.
+
+-spec location(libp2p_crypto:pubkey_bin() | undefined, device()) -> device().
+location(PubkeyBin, Device) ->
+    Device#device_v3{location=PubkeyBin}.
+
 -spec metadata(device()) -> map().
 metadata(Device) ->
     Device#device_v3.metadata.
@@ -182,6 +191,8 @@ update([{queue, Value}|T], Device) ->
     update(T, ?MODULE:queue(Value, Device));
 update([{keys, Value}|T], Device) ->
     update(T, ?MODULE:keys(Value, Device));
+update([{location, Value}|T], Device) ->
+    update(T, ?MODULE:location(Value, Device));
 update([{metadata, Value}|T], Device) ->
     update(T, ?MODULE:metadata(Value, Device)).
 
@@ -209,6 +220,7 @@ deserialize(Binary) ->
                        channel_correction=V2#device_v2.channel_correction,
                        queue=V2#device_v2.queue,
                        keys=V2#device_v2.keys,
+                       location=undefined,
                        metadata=V2#device_v2.metadata};
         #device_v1{}=V1 ->
             Keys = case V1#device_v1.key of
@@ -370,6 +382,11 @@ queue_test() ->
     ?assertEqual([], queue(Device)),
     ?assertEqual([a], queue(queue([a], Device))).
 
+location_test() ->
+    Device = new(<<"id">>),
+    ?assertEqual(undefined, location(Device)),
+    ?assertEqual(<<"location">>, location(location(<<"location">>, Device))).
+
 keys_test() ->
     Device = new(<<"id">>),
     ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, keys(Device)),
@@ -390,6 +407,7 @@ update_test() ->
                {channel_correction, true},
                {queue, [a]},
                {keys, #{}},
+               {location, <<"location">>},
                {metadata, #{a => b}}],
     UpdatedDevice = #device_v3{id = <<"id">>,
                                name = <<"name">>,
@@ -405,6 +423,7 @@ update_test() ->
                                channel_correction = true,
                                queue = [a],
                                keys = #{},
+                               location = <<"location">>,
                                metadata = #{a => b}},
     ?assertEqual(UpdatedDevice, update(Updates, Device)).
 

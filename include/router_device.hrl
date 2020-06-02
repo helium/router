@@ -12,6 +12,7 @@
                     channel_correction=false :: boolean(),
                     queue=[] :: [any()],
                     keys :: map(),
+                    location :: libp2p_crypto:pubkey_bin() | undefined,
                     metadata=#{} :: map()}).
 
 -record(device_v2, {id :: binary() | undefined,

@@ -28,8 +28,8 @@
 -define(BITS_23, 8388607). %% 
 
 -record(state, {chain = undefined :: blockchain:blockchain() | undefined,
-                oui :: integer(),
-                subnets = [] :: list(),
+                oui :: non_neg_integer(),
+                subnets = [] :: [binary()],
                 devaddr_used = #{} :: map()}).
 
                                                 % -type state() :: #state{}.
@@ -118,8 +118,7 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-subnets(_OUI, undefined) ->
-    [];
+-spec subnets(non_neg_integer(), blockchain:blockchain()) -> [binary()].
 subnets(OUI, Chain) ->
     case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
         {ok, RoutingEntry} ->
@@ -128,6 +127,7 @@ subnets(OUI, Chain) ->
             []
     end.
 
+-spec pubkeybin_to_loc(libp2p_crypto:pubkey_bin(), undefined | blockchain:blockchain()) -> {ok, non_neg_integer()} | {error, any()}.
 pubkeybin_to_loc(_PubKeyBin, undefined) ->
     {error, no_chain};
 pubkeybin_to_loc(PubKeyBin, Chain) ->
@@ -140,6 +140,7 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
             {ok, Index}
     end.
 
+-spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->
     case Nth+1 > erlang:length(Subnets) of
         true -> {1, lists:nth(1, Subnets)};

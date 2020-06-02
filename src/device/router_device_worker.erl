@@ -504,6 +504,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                      {app_eui, AppEUI},
                      {app_s_key, AppSKey},
                      {nwk_s_key, NwkSKey},
+                     {devaddr, DevAddr},
                      {fcntdown, 0},
                      {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
                      {metadata, router_device:metadata(APIDevice)}],

@@ -507,6 +507,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                      {devaddr, DevAddr},
                      {fcntdown, 0},
                      {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
+                     {location, PubKeyBin},
                      {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
     {ok, Reply, Device1, DevNonce}.
@@ -539,18 +540,23 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
             %% If frame countain ACK=1 we should clear message from queue and go on next
             Device1 = case ACK of
                           0 ->
-                              router_device:fcnt(FCnt, Device0);
+                              DeviceUpdates = [{fcnt, FCnt},
+                                               {location, PubKeyBin}],
+                              router_device:update(DeviceUpdates, Device0);
                           1 ->
                               case router_device:queue(Device0) of
                                   %% Check if confirmed down link
                                   [{true, _, _}|T] ->
                                       DeviceUpdates = [{fcnt, FCnt},
                                                        {queue, T},
+                                                       {location, PubKeyBin},
                                                        {fcntdown, router_device:fcntdown(Device0)+1}],
                                       router_device:update(DeviceUpdates, Device0);
                                   _ ->
                                       lager:warning("Got ack when no confirmed downlinks in queue"),
-                                      router_device:fcnt(FCnt, Device0)
+                                      DeviceUpdates = [{fcnt, FCnt},
+                                                       {location, PubKeyBin}],
+                                      router_device:update(DeviceUpdates, Device0)
                               end
                       end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,

@@ -453,7 +453,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     {error, bad_nonce};
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
+            PubKeyBin, Region, _OUI, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     NetID = <<"He2">>,
@@ -464,26 +464,14 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     AppSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    Chain = blockchain_worker:blockchain(),
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    DevAddr = try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-                  {ok, RoutingEntry} ->
-                      Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                      <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
-                      %% just allocate the first address in the first subnet for now
-                      %% TODO we should implement geographic aware aliasing here
-                      <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>;
-                  _Error ->
-                      %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
-                      %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
-              catch
-                  _:_ ->
-                      %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
-                      %% transition over to new routing
+    DevAddr = case router_device_devaddr:allocate(Device0, PubKeyBin) of
+                  {ok, D} ->
+                      D;
+                  {error, _Reason} ->
+                      lager:error("failed to allicate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
                       application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
               end,
-
     RxDelay = ?RX_DELAY,
     DLSettings = 0,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,

@@ -449,7 +449,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     {error, bad_nonce};
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, _Region, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
+            PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     NetID = <<"He2">>,
@@ -483,7 +483,23 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     RxDelay = ?RX_DELAY,
     DLSettings = 0,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
-    ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned>>,
+    CFList = case Region of
+                 'EU868' ->
+                     %% In this case the CFList is a list of five channel frequencies for the channels three to seven
+                     %% whereby each frequency is encoded as a 24 bits unsigned integer (three octets). All these
+                     %% channels are usable for DR0 to DR5 125kHz LoRa modulation. The list of frequencies is
+                     %% followed by a single CFListType octet for a total of 16 octets. The CFListType SHALL be equal
+                     %% to zero (0) to indicate that the CFList contains a list of frequencies.
+                     %%
+                     %% The actual channel frequency in Hz is 100 x frequency whereby values representing
+                     %% frequencies below 100 MHz are reserved for future use.
+                     Channels = << <<X:24/integer-unsigned-little >> || X <- [8671000, 8673000, 8675000, 8677000, 8679000] >>,
+                     <<Channels/binary, 0:8/integer>>;
+                 _ ->
+                     %% Not yet implemented for other regions
+                     <<>>
+             end,
+    ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
     Reply = <<ReplyHdr/binary, EncryptedReply/binary>>,
@@ -497,7 +513,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                      {app_s_key, AppSKey},
                      {nwk_s_key, NwkSKey},
                      {fcntdown, 0},
-                     {channel_correction, false},
+                     {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
                      {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
     {ok, Reply, Device1, DevNonce}.
@@ -586,7 +602,7 @@ handle_frame(Packet, PubKeyBin, Region, Device, Frame, Count) ->
                    list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
 handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
-    WereChannelsCorrected = were_channels_corrected(Frame),
+    WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
     lager:info("downlink with no queue, ACK ~p and channels corrected ~p", [ACK, ChannelCorrection orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Region, Device0, Frame, Count),
@@ -622,7 +638,7 @@ handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, []) ->
 handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
-    WereChannelsCorrected = were_channels_corrected(Frame),
+    WereChannelsCorrected = were_channels_corrected(Frame, Region),
     lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
                [ReplyPayload, ConfirmedDown, Port, ACK, router_device:channel_correction(Device0) orelse WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Region, Device0, Frame, Count),
@@ -657,7 +673,7 @@ handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, [{ConfirmedDown,
 
 -spec channel_correction_and_fopts(blockchain_helium_packet_v1:packet(), atom(), router_device:device(), #frame{}, pos_integer()) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count) ->
-    ChannelsCorrected = were_channels_corrected(Frame),
+    ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRate = blockchain_helium_packet_v1:datarate(Packet),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
@@ -679,7 +695,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count) ->
              end,
     {ChannelsCorrected orelse ChannelCorrection, FOpts2}.
 
-were_channels_corrected(Frame) ->
+were_channels_corrected(Frame, 'US915') ->
     FOpts0 = Frame#frame.fopts,
     case lists:keyfind(link_adr_ans, 1, FOpts0) of
         {link_adr_ans, 1, 1, 1} ->
@@ -690,7 +706,10 @@ were_channels_corrected(Frame) ->
             true;
         _ ->
             false
-    end.
+    end;
+were_channels_corrected(_Frame, _Region) ->
+    %% we only do channel correction for 915 right now
+    true.
 
 -spec mtype_to_ack(integer()) -> 0 | 1.
 mtype_to_ack(?CONFIRMED_UP) -> 1;

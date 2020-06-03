@@ -80,9 +80,7 @@ allocate(Config) ->
                            end,
                            [],
                            lists:seq(1, 10)),
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, DevAddrs]),
-
-    ct:fail(ok),
+    ?assertEqual(10, erlang:length(DevAddrs)),
     ok.
 
 %% ------------------------------------------------------------------

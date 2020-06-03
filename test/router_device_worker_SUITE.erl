@@ -4,7 +4,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([not_found_test/1]).
+-export([device_update_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -28,7 +28,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [not_found_test].
+    [device_update_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -46,7 +46,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-not_found_test(Config) ->
+device_update_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
@@ -95,8 +95,16 @@ not_found_test(Config) ->
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {device_not_found, true}),
+
+    %% Sending debug event from websocket
+    WSPid = receive
+                {websocket_init, P} -> P
+            after 2500 ->
+                    ct:fail(websocket_init_timeout)
+            end,
+    WSPid ! {device_update, <<"device:all">>},
+
     {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
-    DeviceWorkerID ! refresh_device_metadata,
 
     timer:sleep(500),
     ?assertNot(erlang:is_process_alive(DeviceWorkerID)),

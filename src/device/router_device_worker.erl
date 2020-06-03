@@ -18,7 +18,7 @@
 -export([start_link/1,
          handle_packet/2,
          queue_message/2,
-         state/1]).
+         device_update/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -59,8 +59,6 @@
                 join_cache = #{} :: #{integer() => #join_cache{}},
                 frame_cache = #{} :: #{integer() => #frame_cache{}}}).
 
--type state() :: #state{}.
-
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
@@ -92,9 +90,9 @@ handle_packet(Packet, PubKeyBin) ->
 queue_message(Pid, Msg) ->
     gen_server:cast(Pid, {queue_message, Msg}).
 
--spec state(Pid :: pid()) -> state().
-state(Pid) ->
-    gen_server:call(Pid, state, infinity).
+-spec device_update(Pid :: pid()) -> ok.
+device_update(Pid) ->
+    gen_server:cast(Pid, device_update).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -115,17 +113,34 @@ init(Args) ->
     {ok, Pid} =
         router_device_channels_worker:start_link(#{device_worker => self(),
                                                    device => Device}),
-    self() ! refresh_device_metadata,
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, #state{db=DB, cf=CF, device=Device, oui=OUI, channels_worker=Pid}}.
 
-handle_call(state, _From, State) ->
-    lager:info("got state msg, state: ~p", [State]),
-    {reply, State, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast(device_update, #state{db=DB, cf=CF, device=Device0, channels_worker=ChannelsWorker}=State) ->
+    DeviceID = router_device:id(Device0),
+    case router_device_api:get_device(DeviceID) of
+        {error, not_found} ->
+            lager:warning("device was removed, removing from DB and shutting down"),
+            ok = router_device:delete(DB, CF, DeviceID),
+            {stop, normal, State};
+        {error, _Reason} ->
+            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
+            {noreply, State};
+        {ok, APIDevice} ->
+            lager:info("device updated"),
+            ChannelsWorker ! refresh_channels,
+            DeviceUpdates = [{name, router_device:name(APIDevice)},
+                             {dev_eui, router_device:dev_eui(APIDevice)},
+                             {app_eui, router_device:app_eui(APIDevice)},
+                             {metadata, router_device:metadata(APIDevice)}],
+            Device1 = router_device:update(DeviceUpdates, Device0),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            {noreply, State#state{device=Device1}}
+    end;
 handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
                                                                   channels_worker=ChannelsWorker}=State) ->
     Q = router_device:queue(Device0),
@@ -266,22 +281,6 @@ handle_info({frame_timeout, FCnt}, #state{db=DB, cf=CF, device=Device,
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             {noreply, State#state{frame_cache=Cache1}}
-    end;
-handle_info(refresh_device_metadata, #state{db=DB, cf=CF, device=Device0, channels_worker=ChannelsWorker}=State) ->
-    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_device_metadata),
-    DeviceID = router_device:id(Device0),
-    case router_device_api:get_device(DeviceID) of
-        {error, not_found} ->
-            lager:info("device was not found, removing from DB and shutting down"),
-            ok = router_device:delete(DB, CF, DeviceID),
-            {stop, normal, State};
-        {error, _Reason} ->
-            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
-            {noreply, State};
-        {ok, APIDevice} ->
-            Device1 = router_device:metadata(router_device:metadata(APIDevice), Device0),
-            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            {noreply, State#state{device=Device1}}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),

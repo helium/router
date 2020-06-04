@@ -157,6 +157,9 @@ websocket_info(_Req, {downlink, Payload}, State) ->
     Data = router_console_ws_handler:encode_msg(<<"0">>, <<"device:all">>, <<"device:all:downlink:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID],
                                                                                                                 <<"payload">> => Payload}),
     {reply, {text, Data}, State};
+websocket_info(_Req, {device_update, Topic}, State) ->
+    Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"device:all:refetch:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID]}),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.

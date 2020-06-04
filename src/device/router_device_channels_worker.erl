@@ -222,7 +222,6 @@ handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, chann
                 remove_old_channels(EventMgrRef, APIChannels, Channels0)
 
         end,
-    _ = erlang:send_after(?BACKOFF_MAX, self(), refresh_channels),
     {noreply, State#state{channels=Channels1}};
 handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
                                              channels=Channels, channels_backoffs=Backoffs0}=State) ->

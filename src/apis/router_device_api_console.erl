@@ -216,6 +216,19 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                   end,
                   DeviceIDs),
     {noreply, State};
+handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
+    lager:info("got update for devices: ~p", [DeviceIDs]),
+    lists:foreach(
+      fun(DeviceID) ->
+              case router_devices_sup:lookup_device_worker(DeviceID) of
+                  {error, _Reason} ->
+                      lager:warning("got an update for unknown device ~p: ~p", [DeviceID, _Reason]);
+                  {ok, Pid} ->
+                      router_device_worker:device_update(Pid)
+              end
+      end,
+      DeviceIDs),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.

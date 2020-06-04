@@ -11,6 +11,7 @@
 -include_lib("public_key/include/public_key.hrl").
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
+-include("lorawan_db.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -219,20 +220,17 @@ handle_cast(_Msg, State) ->
 
 handle_info({join_timeout, JoinNonce}, #state{db=DB, cf=CF, channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
     #join_cache{reply=Reply,
-                packet_rcvd=#packet_pb{timestamp=Time, frequency=Freq, datarate=DataRate}=PacketRcvd,
+                packet_rcvd=PacketRcvd,
                 device=Device0,
                 pid=Pid,
                 pubkey_bin=PubKeyBin} = maps:get(JoinNonce, Cache0),
 
-    #{tmst := TxTime,
-      datr := TxDataRate,
-      freq := TxFreq} = lorawan_mac_region_old:join1_window(<<"US902-928">>,
-                                                            #{<<"tmst">> => Time,
-                                                              <<"freq">> => Freq,
-                                                              <<"datr">> => erlang:list_to_binary(DataRate),
-                                                              <<"codr">> => <<"lol">>}),
+    #txq{time = TxTime,
+         datr = TxDataRate,
+         freq = TxFreq} = lorawan_mac_region:join1_window(<<"US902">>, 0,
+                                                          packet_to_rxq(PacketRcvd)),
 
-    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
+    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
     catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet)),
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
@@ -564,10 +562,9 @@ validate_frame(Packet, PubKeyBin, Device0) ->
                    libp2p_crypto:pubkey_bin(),
                    router_device:device(),
                    #frame{},
-                   pos_integer()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+                   pos_integer()) -> noop | {ok, router_device:device()} | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
 handle_frame(Packet, PubKeyBin, Device, Frame, Count) ->
     handle_frame(Packet, PubKeyBin, Device, Frame, Count, router_device:queue(Device)).
-
 
 -spec handle_frame(blockchain_helium_packet_v1:packet(),
                    libp2p_crypto:pubkey_bin(),
@@ -589,16 +586,11 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, []) ->
             MType = ack_to_mtype(ConfirmedDown),
             Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data= <<>>},
                                             Device0),
-            DataRate = blockchain_helium_packet_v1:datarate(Packet0),
-            #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
-                lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                                  router_device:offset(Device0),
-                                                  #{<<"tmst">> => blockchain_helium_packet_v1:timestamp(Packet0),
-                                                    <<"freq">> => blockchain_helium_packet_v1:frequency(Packet0),
-                                                    <<"datr">> => erlang:list_to_binary(DataRate),
-                                                    <<"codr">> => <<"ignored">>}),
-
-            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
+            #txq{time = TxTime,
+                 datr = TxDataRate,
+                 freq = TxFreq} = lorawan_mac_region:rx1_window(<<"US902">>, 0, 0,
+                                                                packet_to_rxq(Packet0)),
+            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -632,16 +624,11 @@ handle_frame(Packet0, PubKeyBin, Device0, Frame, Count, [{ConfirmedDown, Port, R
                        1
                end,
     Reply = frame_to_packet_payload(#frame{mtype=MType, devaddr=Frame#frame.devaddr, fcnt=FCntDown, fopts=FOpts1, fport=Port, ack=ACK, data=ReplyPayload, fpending=FPending}, Device0),
-    DataRate = blockchain_helium_packet_v1:datarate(Packet0),
-    #{tmst := TxTime, datr := TxDataRate, freq := TxFreq} =
-        lorawan_mac_region_old:rx1_window(<<"US902-928">>,
-                                          router_device:offset(Device0),
-                                          #{<<"tmst">> => blockchain_helium_packet_v1:timestamp(Packet0),
-                                            <<"freq">> => blockchain_helium_packet_v1:frequency(Packet0),
-                                            <<"datr">> => erlang:list_to_binary(DataRate),
-                                            <<"codr">> => <<"ignored">>}),
-
-    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, TxDataRate),
+    #txq{time = TxTime,
+         datr = TxDataRate,
+         freq = TxFreq} = lorawan_mac_region:rx1_window(<<"US902">>, 0, 0,
+                                                        packet_to_rxq(Packet0)),
+    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -812,3 +799,13 @@ b0(Dir, DevAddr, FCnt, Len) ->
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->
     erlang:list_to_binary(erlang:integer_to_list(Int)).
+
+-spec packet_to_rxq(blockchain_helium_packet_v1:packet()) -> #rxq{}.
+packet_to_rxq(Packet) ->
+    #rxq{freq = blockchain_helium_packet_v1:frequency(Packet),
+         datr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+         codr = <<"4/5">>,
+         time = calendar:now_to_datetime(os:timestamp()),
+         tmms = blockchain_helium_packet_v1:timestamp(Packet),
+         rssi = blockchain_helium_packet_v1:signal_strength(Packet),
+         lsnr = blockchain_helium_packet_v1:snr(Packet)}.

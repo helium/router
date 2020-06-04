@@ -10,7 +10,7 @@
 -dialyzer([no_return, no_unused, no_match]).
 
 -export([freq/1, net_freqs/1, datars/1, datar_to_dr/2, dr_to_datar/2]).
--export([join1_window/2, join2_window/2, rx1_window/3, rx2_window/2, rx2_rf/2]).
+-export([join1_window/2, join1_window/3, rx1_window/4, rx1_window/3, rx2_rf/2]).
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
@@ -20,18 +20,24 @@
 
                                                 % receive windows
 
-join1_window(#network{region=Region, join1_delay=Delay}, RxQ) ->
-    tx_window(Delay, rx1_rf(Region, RxQ, 0)).
+join1_window(Region, Delay, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
 
-join2_window(#network{join2_delay=Delay}=Network, Node) ->
-    tx_window(Delay, rx2_rf(Network, Node)).
+join1_window(#network{region=Region, join1_delay=Delay}, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
+
+                                                %join2_window(#network{join2_delay=Delay}=Network, Node) ->
+                                                %tx_window(?FUNCTION_NAME, RxQ, Delay, rx2_rf(Network, Node)).
+
+rx1_window(Region, Delay, Offset, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
 
 rx1_window(#network{region=Region, rx1_delay=Delay},
            #node{rxwin_use={Offset, _, _}}, RxQ) ->
-    tx_window(Delay, rx1_rf(Region, RxQ, Offset)).
+    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
 
-rx2_window(#network{rx2_delay=Delay}=Network, Node) ->
-    tx_window(Delay, rx2_rf(Network, Node)).
+                                                %rx2_window(#network{rx2_delay=Delay}=Network, Node) ->
+                                                %tx_window(?FUNCTION_NAME, RxQ, rx2_rf(Network, Node)).
 
                                                 % we calculate in fixed-point numbers
 rx1_rf(<<"US902">> = Region, RxQ, Offset) ->
@@ -101,10 +107,18 @@ ch2fi(Ch, {Start, Inc}) -> (Ch*Inc + Start)/10.
 
 tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
-    #txq{freq=Freq, datr=DataRate, codr=RxQ#rxq.codr}.
+    #txq{freq=Freq, datr=DataRate, codr=RxQ#rxq.codr, time=RxQ#rxq.time}.
 
-tx_window(Delay, TxQ) ->
-    TxQ#txq{time=Delay}.
+get_window(join1_window) -> 5000000;
+get_window(join2_window) -> 6000000;
+get_window(rx1_window) -> 1000000;
+get_window(rx2_window) -> 2000000.
+
+tx_window(Window, #rxq{tmms=Stamp}, _Delay, TxQ) when is_integer(Stamp) ->
+    %% TODO check if the time is a datetime, which would imply gps timebase
+    %% TODO handle rx delay here
+    Delay = get_window(Window),
+    TxQ#txq{time= Stamp+Delay}.
 
 datar_to_down(Region, DataRate, Offset) ->
     DR2 = dr_to_down(Region, datar_to_dr(Region, DataRate), Offset),

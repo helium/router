@@ -217,7 +217,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                   DeviceIDs),
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
-    lager:info("turning debug on for devices ~p", [DeviceIDs]),
+    lager:info("got update for devices: ~p", [DeviceIDs]),
     lists:foreach(
       fun(DeviceID) ->
               case router_devices_sup:lookup_device_worker(DeviceID) of

@@ -98,7 +98,7 @@ handle_info(client, {Port, {data,{eol,<<"{\"rxpk\"", _/binary>> = JSONBin}}}, St
                       frequency=maps:get(<<"freq">>, JSON),
                       datarate= maps:get(<<"datr">>, JSON)
                      },
-    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=State#state.key},
+    Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=State#state.key, region = 'US915'},
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     {noreply, State, blockchain_state_channel_v1_pb:encode_msg(Msg)};
                                                 %handle_info(client, {Port, {data,{eol,<<"###### ===== JOINED ==== ######">>}}}, State = #state{port=Port}) ->

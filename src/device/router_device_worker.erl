@@ -396,9 +396,9 @@ handle_packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
-    %% TODO this should take devaddr into account
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(DB, CF, B0, MIC) of
+    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF), DevAddr, PubKeyBin),
+    case get_device_by_mic(DB, CF, B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};
         Device ->
@@ -464,13 +464,12 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     AppSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     DevAddr = case router_device_devaddr:allocate(Device0, PubKeyBin) of
                   {ok, D} ->
                       D;
                   {error, _Reason} ->
                       lager:error("failed to allicate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+                      router_device_devaddr:default_devaddr()
               end,
     RxDelay = ?RX_DELAY,
     DLSettings = 0,
@@ -821,11 +820,10 @@ frame_to_packet_payload(Frame, Device) ->
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
 
--spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary()) -> router_device:device() | undefined.
-get_device_by_mic(DB, CF, Bin, MIC) ->
-    get_device_by_mic(DB, CF, Bin, MIC, router_device:get(DB, CF)).
 
--spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary(), [router_device:device()]) -> router_device:device() | undefined.
+
+-spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(),
+                        binary(), [router_device:device()]) -> router_device:device() | undefined.
 get_device_by_mic(_DB, _CF, _Bin, _MIC, []) ->
     undefined;
 get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->

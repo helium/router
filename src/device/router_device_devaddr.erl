@@ -7,11 +7,18 @@
 
 -behavior(gen_server).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         allocate/2]).
+         default_devaddr/0,
+         allocate/2,
+         sort_devices/3,
+         pubkeybin_to_loc/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -32,16 +39,52 @@
                 subnets = [] :: [binary()],
                 devaddr_used = #{} :: map()}).
 
-                                                % -type state() :: #state{}.
-
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
+default_devaddr() ->
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>).
+
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
+
+sort_devices(Devices, DevAddr, PubKeyBin) ->
+    Filtered = lists:filter(fun(D) -> filter_by_devaddr(D, DevAddr) end, Devices),
+    Chain = blockchain_worker:blockchain(),
+    case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
+        {error, _Reason} ->
+            case Filtered of
+                [] -> Devices;
+                _ -> Filtered
+            end;
+        {ok, Index} ->
+            case Filtered of
+                [] ->
+                    lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Devices);
+                _ ->
+                    lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Filtered)
+            end
+    end.
+
+%% TODO: Maybe make this a ets table to avoid lookups all the time
+-spec pubkeybin_to_loc(undefined | libp2p_crypto:pubkey_bin(), undefined | blockchain:blockchain()) -> {ok, non_neg_integer()} | {error, any()}.
+pubkeybin_to_loc(undefined, _Chain) ->
+    {error, undef_pubkeybin};
+pubkeybin_to_loc(_PubKeyBin, undefined) ->
+    {error, no_chain};
+pubkeybin_to_loc(PubKeyBin, Chain) ->
+    Ledger = blockchain:ledger(Chain),
+    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
+        {error, _}=Error ->
+            Error;
+        {ok, Hotspot} ->
+            Index = blockchain_ledger_gateway_v2:location(Hotspot),
+            {ok, Index}
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -59,7 +102,7 @@ init(Args) ->
     {ok, #state{oui=OUI}}.
 
 handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
-    case pubkeybin_to_loc(PubKeyBin, Chain) of
+    case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _}=Error ->
             {reply, Error, State};
         {ok, Index} ->
@@ -127,22 +170,47 @@ subnets(OUI, Chain) ->
             []
     end.
 
--spec pubkeybin_to_loc(libp2p_crypto:pubkey_bin(), undefined | blockchain:blockchain()) -> {ok, non_neg_integer()} | {error, any()}.
-pubkeybin_to_loc(_PubKeyBin, undefined) ->
-    {error, no_chain};
-pubkeybin_to_loc(PubKeyBin, Chain) ->
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _}=Error ->
-            Error;
-        {ok, Hotspot} ->
-            Index = blockchain_ledger_gateway_v2:location(Hotspot),
-            {ok, Index}
-    end.
-
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->
     case Nth+1 > erlang:length(Subnets) of
         true -> {1, lists:nth(1, Subnets)};
         false -> {Nth+1, lists:nth(Nth+1, Subnets)}
     end.
+
+filter_by_devaddr(Device, DevAddr) ->
+    router_device:devaddr(Device) == DevAddr orelse
+        router_device:devaddr(Device) == default_devaddr().
+
+sort_devices_fun(DeviceA, DeviceB, Index) ->
+    Chain = blockchain_worker:blockchain(),
+    IndexA = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
+                 {error, _} -> undefined;
+                 {ok, IA} -> IA
+             end,
+    IndexB = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceB), Chain) of
+                 {error, _} -> undefined;
+                 {ok, IB} -> IB
+             end,
+    %% TODO: Maybe if resolution doest match we should get that index back to 12?
+    case
+        h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
+        h3:get_resolution(IndexA) == h3:get_resolution(Index)
+    of
+        false ->
+            Index1 = index_to_res12(Index),
+            h3:grid_distance(index_to_res12(IndexA), Index1) > h3:grid_distance(index_to_res12(IndexB), Index1);
+        true ->
+            h3:grid_distance(IndexA, Index) > h3:grid_distance(IndexB, Index)
+    end.
+
+index_to_res12(Index) ->
+    case h3:get_resolution(Index) of
+        12 -> Index;
+        _ -> h3:from_geo(h3:to_geo(Index), 12)
+    end.
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+-endif.

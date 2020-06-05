@@ -89,6 +89,7 @@
  {<<"libp2p">>,
   {git,"https://github.com/helium/erlang-libp2p.git",
 <<<<<<< HEAD
+<<<<<<< HEAD
        {ref,"e6a358b0b826c301e82626944b3b7bed32607b66"}},
 =======
 <<<<<<< HEAD
@@ -97,6 +98,9 @@
        {ref,"bc54ed4d3fb825dbca068f2b08f0bf0139c28c5c"}},
 >>>>>>> Upgrade blockchain and use blockchain_ledger_routing_v1 function
 >>>>>>> Upgrade blockchain and use blockchain_ledger_routing_v1 function
+=======
+       {ref,"7596b3b6652f328c13a65fdad48d1d9a19c5a5c5"}},
+>>>>>>> Fix rebar.lock
   1},
  {<<"libp2p_crypto">>,{pkg,<<"libp2p_crypto">>,<<"1.1.0">>},2},
  {<<"meck">>,{pkg,<<"meck">>,<<"0.8.12">>},1},

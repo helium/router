@@ -157,8 +157,8 @@ handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=
     lager:warning("got join packet when oui=undefined, standing by..."),
     {noreply, State0};
 handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
-                                                                       join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
-                                                                       channels_worker=ChannelsWorker}=State0) ->
+                                                                               join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
+                                                                               channels_worker=ChannelsWorker}=State0) ->
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
@@ -192,15 +192,15 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{d
                         true ->
                             catch blockchain_state_channel_handler:send_response(Pid2, blockchain_state_channel_response_v1:new(true)),
                             Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packet_rcvd=Packet0, rssi=RSSI0, pid=Pid,
-                                                                                pubkey_bin=PubKeyBin, region=Region}, Cache0),
+                                                                               pubkey_bin=PubKeyBin, region=Region}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}}
                     end
             end
     end;
 handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{device=Device0,
-                                                     frame_cache=Cache0,
-                                                     downlink_handled_at=DownlinkHandledAt,
-                                                     channels_worker=ChannelsWorker}=State) ->
+                                                             frame_cache=Cache0,
+                                                             downlink_handled_at=DownlinkHandledAt,
+                                                             channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0) of
         {error, _Reason} ->
             {noreply, State};

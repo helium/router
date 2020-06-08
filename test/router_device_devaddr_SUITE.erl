@@ -4,7 +4,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([allocate/1]).
+-export([allocate/1, route_packet/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -28,7 +28,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [allocate].
+    [allocate, route_packet].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -81,6 +81,112 @@ allocate(Config) ->
                            [],
                            lists:seq(1, 10)),
     ?assertEqual(10, erlang:length(DevAddrs)),
+    ok.
+
+route_packet(Config) ->
+    Swarm = proplists:get_value(swarm, Config),
+    Keys = proplists:get_value(keys, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    ConsensusMembers = proplists:get_value(consensus_member, Config),
+
+    Chain = blockchain_worker:blockchain(),
+    Ledger = blockchain:ledger(Chain),
+
+    OUI1 = 1,
+    {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8, 1, 0),
+    #{secret := PrivKey} = Keys,
+    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
+
+    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+    _ = blockchain_gossip_handler:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+
+    ok = test_utils:wait_until(fun() ->
+                                       State = sys:get_state(router_device_devaddr),
+                                       erlang:element(2, State) =/= undefined
+                               end),
+
+    AppKey = proplists:get_value(app_key, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"payload_size">> => 0,
+                                           <<"port">> => '_',
+                                           <<"devaddr">> => '_',
+                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                <<"reported_at">> => fun erlang:is_integer/1,
+                                                                <<"status">> => <<"success">>,
+                                                                <<"rssi">> => 0.0,
+                                                                <<"snr">> => 0.0,
+                                                                <<"spreading">> => <<"SF8BW125">>,
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1}],
+                                           <<"channels">> => []}),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    DevAddr = router_device:devaddr(Device0),
+
+    ?assert(DevAddr =/= undefined),
+    ?assert(DevAddr =/= router_device_devaddr:default_devaddr()),
+
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
+                                            router_device:app_s_key(Device0), 0, #{devaddr => DevAddr})},
+
+    %% Waiting for data from HTTP channel
+    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
+                                   <<"downlink_url">> => <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary,
+                                                           "/", ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary,
+                                                           "/", ?CONSOLE_DEVICE_ID/binary>>,
+                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
+                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"fcnt">> => 0,
+                                   <<"reported_at">> => fun erlang:is_integer/1,
+                                   <<"payload">> => <<>>,
+                                   <<"port">> => 1,
+                                   <<"devaddr">> => lorawan_utils:binary_to_hex(DevAddr),
+                                   <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                        <<"name">> => erlang:list_to_binary(HotspotName),
+                                                        <<"reported_at">> => fun erlang:is_integer/1,
+                                                        <<"status">> => <<"success">>,
+                                                        <<"rssi">> => 0.0,
+                                                        <<"snr">> => 0.0,
+                                                        <<"spreading">> => <<"SF8BW125">>,
+                                                        <<"frequency">> => fun erlang:is_float/1,
+                                                        <<"channel">> => fun erlang:is_number/1}]}),
+
     ok.
 
 %% ------------------------------------------------------------------

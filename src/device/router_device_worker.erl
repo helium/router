@@ -728,22 +728,22 @@ report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Region, Device, Pac
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr);
-report_frame_status(1, true, _Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+report_frame_status(1, true, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr);
-report_frame_status(1, false, _Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr);
+report_frame_status(1, false, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr);
-report_frame_status(_, true, _Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr);
+report_frame_status(_, true, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr);
-report_frame_status(_, false, _Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}) ->
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr);
+report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr).
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr).
 
 -spec report_status(atom(), binary(), router_device:device(), success | error,
                     libp2p_crypto:pubkey_bin(), atom(), blockchain_helium_packet_v1:packet(), any(), any()) -> ok.

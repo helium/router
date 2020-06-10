@@ -188,7 +188,7 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration) ->
 -spec get_active_count() -> non_neg_integer().
 get_active_count() ->
     %% only get the open ones
-    Filter = fun(_SCID, SC) -> blockchain_state_channel_v1:state(SC) == open end,
+    Filter = fun(_SCID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
     map_size(maps:filter(Filter, blockchain_state_channels_server:state_channels())).
 
 -spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin(),
@@ -205,7 +205,7 @@ get_nonce(PubkeyBin, Ledger) ->
 active_sc_expiration() ->
     ActiveSCID = blockchain_state_channels_server:active_sc_id(),
     SCs = blockchain_state_channels_server:state_channels(),
-    ActiveSC = maps:get(ActiveSCID, SCs),
+    {ActiveSC, _} = maps:get(ActiveSCID, SCs),
     blockchain_state_channel_v1:expire_at_block(ActiveSC).
 
 %% ------------------------------------------------------------------

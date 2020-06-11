@@ -77,8 +77,6 @@ active_count() ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    %% TODO: Not really sure where exactly to install this handler at tbh...
-    ok = router_handler:add_stream_handler(blockchain_swarm:swarm()),
     ok = blockchain_event:add_handler(self()),
     erlang:send_after(500, self(), post_init),
     {ok, #state{active_count=get_active_count()}}.

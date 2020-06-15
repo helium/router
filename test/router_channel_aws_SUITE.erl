@@ -46,16 +46,17 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+
+%% TODO
+%% - setup credential (aws_access_key, aws_secret_key)
+%% - sub to helium/#
+%% - Detach certificate for thing yolo_id (?CONSOLE_DEVICE_ID)
+%% - Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/yolo_id/down
 aws_test(Config) ->
     %% Set console to AWS channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, aws}),
-
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    UUID = list_to_binary(io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-                                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E])),
-    DeviceID = <<"CT_", UUID/binary>>,
-    ets:insert(Tab, {device_id, DeviceID}),
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
@@ -78,7 +79,7 @@ aws_test(Config) ->
     test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
                                            <<"description">> => '_',
                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"device_id">> => DeviceID,
+                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
                                            <<"payload_size">> => 0,
@@ -100,7 +101,7 @@ aws_test(Config) ->
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
-    WorkerID = router_devices_sup:id(DeviceID),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get(DB, CF, WorkerID),
 
     %% Send UNCONFIRMED_UP frame packet
@@ -110,7 +111,7 @@ aws_test(Config) ->
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => DeviceID,
+                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,
@@ -134,9 +135,9 @@ aws_test(Config) ->
     %% We ignore the channel correction messages
     ok = test_utils:ignore_messages(),
 
-    %% Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/DEVICE_ID/down
+    %% Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/yolo_id/down
     DownlinkPayload = <<"mqttpayload">>,
-    timer:sleep(timer:seconds(20)),
+    timer:sleep(timer:seconds(45)),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -145,7 +146,7 @@ aws_test(Config) ->
     test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
                                             <<"description">> => '_',
                                             <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => DeviceID,
+                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                             <<"frame_up">> => fun erlang:is_integer/1,
                                             <<"frame_down">> => fun erlang:is_integer/1,
                                             <<"payload_size">> => 0,

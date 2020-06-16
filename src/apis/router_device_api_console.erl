@@ -38,7 +38,9 @@
                 secret :: binary(),
                 token :: binary(),
                 ws :: pid(),
-                ws_endpoint :: binary()}).
+                ws_endpoint :: binary(),
+                db :: rocksdb:db_handle(),
+                cf :: rocksdb:cf_handle()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -177,7 +179,9 @@ init(Args) ->
     Pid = start_ws(WSEndpoint, Token),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     ok = token_insert(Endpoint, Token),
-    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid, ws_endpoint=WSEndpoint}}.
+    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid,
+                ws_endpoint=WSEndpoint, db=DB, cf=CF}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -187,13 +191,10 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({'EXIT', _Pid, normal}, #state{token=Token, ws_endpoint=WSEndpoint}=State) ->
-    lager:info("websocket connetion went down normally restarting"),
-    Pid = start_ws(WSEndpoint, Token),
-    {noreply, State#state{ws=Pid}};
-handle_info({'EXIT', _Pid, _Reason}, #state{token=Token, ws_endpoint=WSEndpoint}=State) ->
+handle_info({'EXIT', _Pid, _Reason}, #state{token=Token, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
     Pid = start_ws(WSEndpoint, Token),
+    ok = check_devices(DB, CF),
     {noreply, State#state{ws=Pid}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
@@ -217,17 +218,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                   DeviceIDs),
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
-    lager:info("got update for devices: ~p", [DeviceIDs]),
-    lists:foreach(
-      fun(DeviceID) ->
-              case router_devices_sup:lookup_device_worker(DeviceID) of
-                  {error, _Reason} ->
-                      lager:warning("got an update for unknown device ~p: ~p", [DeviceID, _Reason]);
-                  {ok, Pid} ->
-                      router_device_worker:device_update(Pid)
-              end
-      end,
-      DeviceIDs),
+    ok = update_devices(DeviceIDs),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
@@ -242,6 +233,26 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec update_devices([binary()]) -> ok.
+update_devices(DeviceIDs) ->
+    lager:info("got update for devices: ~p from WS", [DeviceIDs]),
+    lists:foreach(
+      fun(DeviceID) ->
+              case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
+                  {error, _Reason} ->
+                      lager:warning("failed to start worker for device ~p: ~p", [DeviceID, _Reason]);
+                  {ok, Pid} ->
+                      router_device_worker:device_update(Pid)
+              end
+      end,
+      DeviceIDs).
+
+-spec check_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> ok.
+check_devices(DB, CF) ->
+    lager:info("checking device in"),
+    DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],
+    update_devices(DeviceIDs).
 
 -spec start_ws(binary(), binary()) -> pid().
 start_ws(WSEndpoint, Token) ->

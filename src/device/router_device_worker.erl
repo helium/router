@@ -204,9 +204,14 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{device=Device0,
     case validate_frame(Packet0, PubKeyBin, Region, Device0) of
         {error, _Reason} ->
             {noreply, State};
-        {ok, Frame, Device1} ->
+        {ok, Frame, Device1, SendToChannels} ->
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
-            ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data),
+            case SendToChannels of
+                true ->
+                    ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
+                false ->
+                    ok
+            end,
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device1),
             FrameCache = #frame_cache{rssi=RSSI0,
@@ -524,7 +529,8 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
 %% previous packet sent
 %% @end
 %%%-------------------------------------------------------------------
--spec validate_frame(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(), router_device:device()) -> {ok, #frame{}, router_device:device()} | {error, any()}.
+-spec validate_frame(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(), router_device:device()) ->
+          {ok, #frame{}, router_device:device(), boolean()} | {error, any()}.
 validate_frame(Packet, PubKeyBin, Region, Device0) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -537,15 +543,30 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),
             Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-            lager:info("~s packet from ~s ~s with fopts ~p received by ~s mac_command_not_handled",
+            lager:info("~s packet from ~s ~s with fopts ~p received by ~s",
                        [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI),
                         lorawan_utils:binary_to_hex(AppEUI), lorawan_mac_commands:parse_fopts(Data), AName]),
-            Desc = <<"Packet with mac command not handled from AppEUI: ",
-                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr),
-            {error, mac_command_not_handled};
-        0 ->
+            %% If frame countain ACK=1 we should clear message from queue and go on next
+            Device1 = case ACK of
+                          0 ->
+                              router_device:fcnt(FCnt, Device0);
+                          1 ->
+                              case router_device:queue(Device0) of
+                                  %% Check if confirmed down link
+                                  [{true, _, _}|T] ->
+                                      DeviceUpdates = [{fcnt, FCnt},
+                                                       {queue, T},
+                                                       {fcntdown, router_device:fcntdown(Device0)+1}],
+                                      router_device:update(DeviceUpdates, Device0);
+                                  _ ->
+                                      lager:warning("Got ack when no confirmed downlinks in queue"),
+                                      router_device:fcnt(FCnt, Device0)
+                              end
+                      end,
+            Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
+                           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=undefined},
+            {ok, Frame, Device1, false};
+        0 when FOptsLen /= 0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                         [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
             Desc = <<"Packet with double fopts received from AppEUI: ",
@@ -578,7 +599,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
                       end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
-            {ok, Frame, Device1}
+            {ok, Frame, Device1, true}
     end.
 
 %%%-------------------------------------------------------------------

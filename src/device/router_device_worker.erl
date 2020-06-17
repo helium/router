@@ -532,13 +532,18 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    lager:debug("validating frame ~p from ~p", [FCnt, AName]),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),
             Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-            lager:info("~s packet from ~s ~s with fopts ~p received by ~s",
+            lager:info("~s packet from ~s ~s with fopts ~p received by ~s mac_command_not_handled",
                        [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI),
                         lorawan_utils:binary_to_hex(AppEUI), lorawan_mac_commands:parse_fopts(Data), AName]),
+            Desc = <<"Packet with mac command not handled from AppEUI: ",
+                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+            ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr),
             {error, mac_command_not_handled};
         0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",

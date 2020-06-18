@@ -538,7 +538,8 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    lager:debug("validating frame ~p from ~p", [FCnt, AName]),
+    TS = blockchain_helium_packet_v1:timestamp(Packet),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),

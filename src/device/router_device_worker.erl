@@ -566,6 +566,10 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
                       end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=undefined},
+            Desc = <<"Packet with empty fopts received from AppEUI: ",
+                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+            ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr),
             {ok, Frame, Device1, false};
         0 when FOptsLen /= 0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",

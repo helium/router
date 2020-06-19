@@ -10,12 +10,7 @@
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_event/2,
-         handle_call/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3]).
 
 -record(state, {channel :: router_channel:channel()}).
 
@@ -24,15 +19,17 @@
 %% ------------------------------------------------------------------
 init({[Channel, _Device], _}) ->
     lager:info("init with ~p", [Channel]),
-    {ok, #state{channel=Channel}}.
+    {ok, #state{channel = Channel}}.
 
-handle_event({data, Ref, _Data}, #state{channel=Channel}=State) ->
+handle_event({data, Ref, _Data}, #state{channel = Channel} = State) ->
     Pid = router_channel:controller(Channel),
-    Report = #{status => <<"no_channel">>,
-               description => <<"no channels configured">>,
-               id => router_channel:id(Channel),
-               name => router_channel:name(Channel),
-               reported_at => erlang:system_time(seconds)},
+    Report = #{
+        status => <<"no_channel">>,
+        description => <<"no channels configured">>,
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel),
+        reported_at => erlang:system_time(seconds)
+    },
     router_device_channels_worker:report_status(Pid, Ref, Report),
     {ok, State};
 handle_event(_Msg, State) ->

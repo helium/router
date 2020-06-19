@@ -10,20 +10,15 @@
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([start_link/1,
-         get/0]).
+-export([start_link/1, get/0]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
+
 -define(REG_NAME, router_v8_vm).
 
 -record(state, {vm :: pid()}).
@@ -45,7 +40,7 @@ init(_Args) ->
     lager:info("~p init with ~p", [?SERVER, _Args]),
     {ok, VM} = erlang_v8:start_vm(),
     true = erlang:register(?REG_NAME, VM),
-    {ok, #state{vm=VM}}.
+    {ok, #state{vm = VM}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -62,7 +57,7 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{vm=VM}=_State) ->
+terminate(_Reason, #state{vm = VM} = _State) ->
     _ = erlang:unregister(?REG_NAME),
     _ = erlang_v8:stop_vm(VM),
     ok.

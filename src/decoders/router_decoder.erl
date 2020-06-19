@@ -1,23 +1,18 @@
 -module(router_decoder).
 
--export([new/3,
-         id/1,
-         type/1,
-         args/1]).
+-export([new/3, id/1, type/1, args/1]).
 
--export([init_ets/0,
-         add/1, delete/1,
-         decode/3]).
+-export([init_ets/0, add/1, delete/1, decode/3]).
 
 -ifdef(TEST).
+
 -include_lib("eunit/include/eunit.hrl").
+
 -endif.
 
 -define(ETS, router_decoder_ets).
 
--record(decoder, {id :: binary(),
-                  type :: atom(),
-                  args :: map()}).
+-record(decoder, {id :: binary(), type :: atom(), args :: map()}).
 
 -type decoder() :: #decoder{}.
 
@@ -25,10 +20,10 @@
 
 -spec new(binary(), atom(), map()) -> decoder().
 new(ID, Type, Args) ->
-    #decoder{id=ID, type=Type, args=Args}.
+    #decoder{id = ID, type = Type, args = Args}.
 
 -spec id(decoder()) -> binary().
-id(#decoder{id=ID}) ->
+id(#decoder{id = ID}) ->
     ID.
 
 -spec type(decoder()) -> atom().
@@ -56,11 +51,11 @@ decode(ID, Payload, Port) ->
     case lookup(ID) of
         {error, not_found} ->
             {error, unknown_decoder};
-        {ok, #decoder{type=custom}=Decoder} ->
+        {ok, #decoder{type = custom} = Decoder} ->
             router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port);
-        {ok, #decoder{type=cayenne}=Decoder} ->
+        {ok, #decoder{type = cayenne} = Decoder} ->
             router_decoder_cayenne:decode(Decoder, Payload, Port);
-        {ok, #decoder{type=browan_object_locator}=Decoder} ->
+        {ok, #decoder{type = browan_object_locator} = Decoder} ->
             router_decoder_browan_object_locator:decode(Decoder, Payload, Port);
         {ok, _Decoder} ->
             {error, unhandled_decoder}
@@ -69,11 +64,10 @@ decode(ID, Payload, Port) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
 -spec add(atom(), decoder()) -> ok | {error, any()}.
 add(custom, Decoder) ->
     case router_decoder_custom_sup:add(Decoder) of
-        {error, _Reason}=Error -> Error;
+        {error, _Reason} = Error -> Error;
         {ok, _Pid} -> insert(Decoder)
     end;
 add(cayenne, Decoder) ->
@@ -102,7 +96,7 @@ insert(Decoder) ->
 -ifdef(TEST).
 
 new_test() ->
-    Decoder = #decoder{id= <<"id">>, type=custom, args= #{}},
+    Decoder = #decoder{id = <<"id">>, type = custom, args = #{}},
     ?assertEqual(Decoder, new(<<"id">>, custom, #{})).
 
 id_test() ->
@@ -129,6 +123,5 @@ insert_lookup_delete_test() ->
     ok = delete(ID),
     ?assertEqual({error, not_found}, lookup(ID)),
     true = ets:delete(?ETS).
-
 
 -endif.

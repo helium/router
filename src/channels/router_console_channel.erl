@@ -10,37 +10,33 @@
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_event/2,
-         handle_call/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(ETS, router_console_debug_ets).
 
--record(state, {channel :: router_channel:channel(),
-                device ::router:device()}).
+-record(state, {channel :: router_channel:channel(), device :: router:device()}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
     lager:info("init with ~p", [Channel]),
-    {ok, #state{channel=Channel, device=Device}}.
+    {ok, #state{channel = Channel, device = Device}}.
 
-handle_event({data, Ref, Data}, #state{channel=Channel, device=Device}=State) ->
+handle_event({data, Ref, Data}, #state{channel = Channel, device = Device} = State) ->
     case debug_lookup(router_device:id(Device)) of
         false ->
             ok;
         true ->
             Pid = router_channel:controller(Channel),
-            Report = #{status => <<"success">>,
-                       description => <<"console debug">>,
-                       id => router_channel:id(Channel),
-                       name => router_channel:name(Channel),
-                       reported_at => erlang:system_time(seconds),
-                       debug => #{req => #{body => router_channel:encode_data(Channel, Data)}}},
+            Report = #{
+                status => <<"success">>,
+                description => <<"console debug">>,
+                id => router_channel:id(Channel),
+                name => router_channel:name(Channel),
+                reported_at => erlang:system_time(seconds),
+                debug => #{req => #{body => router_channel:encode_data(Channel, Data)}}
+            },
             router_device_channels_worker:report_status(Pid, Ref, Report)
     end,
     {ok, State};
@@ -65,7 +61,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
 -spec debug_lookup(binary()) -> boolean().
 debug_lookup(DeviceID) ->
     case ets:lookup(?ETS, DeviceID) of

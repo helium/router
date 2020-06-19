@@ -538,7 +538,8 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
     DevEUI = router_device:dev_eui(Device0),
     AppEUI = router_device:app_eui(Device0),
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    lager:debug("validating frame ~p from ~p", [FCnt, AName]),
+    TS = blockchain_helium_packet_v1:timestamp(Packet),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
     case FPort of
         0 when FOptsLen == 0 ->
             NwkSKey = router_device:nwk_s_key(Device0),
@@ -565,6 +566,10 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
                       end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                            fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=undefined},
+            Desc = <<"Packet with empty fopts received from AppEUI: ",
+                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+            ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr),
             {ok, Frame, Device1, false};
         0 when FOptsLen /= 0 ->
             lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",

@@ -161,6 +161,12 @@ websocket_info(_Req, {downlink, Payload}, State) ->
 websocket_info(_Req, {device_update, Topic}, State) ->
     Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"device:all:refetch:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID]}),
     {reply, {text, Data}, State};
+websocket_info(_Req, {org_update, Topic}, State) ->
+    Payload = #{<<"id">> => ?CONSOLE_ORG_ID,
+                <<"dc_balance_nonce">> => 0,
+                <<"dc_balance">> => 0},
+    Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"organization:all:refill:dc_balance">>, Payload),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.

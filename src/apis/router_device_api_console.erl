@@ -40,7 +40,8 @@
                 ws :: pid(),
                 ws_endpoint :: binary(),
                 db :: rocksdb:db_handle(),
-                cf :: rocksdb:cf_handle()}).
+                cf :: rocksdb:cf_handle(),
+                dc_tracker :: pid()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -178,12 +179,13 @@ init(Args) ->
     WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
-    Pid = start_ws(WSEndpoint, Token),
-    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    WSPid = start_ws(WSEndpoint, Token),
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
-    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid,
-                ws_endpoint=WSEndpoint, db=DB, cf=CF}}.
+    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    DCTrackerPid = start_dc_tracker(),
+    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token,
+                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF, dc_tracker=DCTrackerPid}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -198,6 +200,10 @@ handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoin
     WSPid1 = start_ws(WSEndpoint, Token),
     ok = check_devices(DB, CF),
     {noreply, State#state{ws=WSPid1}};
+handle_info({'EXIT', DCTrackerPid0, _Reason}, #state{dc_tracker=DCTrackerPid0}=State) ->
+    lager:error("dc tracker went down ~p, restarting", [_Reason]),
+    DCTrackerPid1 = start_dc_tracker(),
+    {noreply, State#state{dc_tracker=DCTrackerPid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
     Pid ! close,
@@ -221,6 +227,12 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
     ok = update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
+handle_info({ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{<<"id">> := OrgID,
+                                                                                             <<"dc_balance_nonce">> := Nonce,
+                                                                                             <<"dc_balance">> := Balance}}, State) ->
+    lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
+    ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
@@ -283,6 +295,11 @@ start_ws(WSEndpoint, Token) ->
     {ok, Pid} = router_console_ws_handler:start_link(#{url => Url,
                                                        auto_join => [<<"device:all">>],
                                                        forward => self()}),
+    Pid.
+
+-spec start_dc_tracker() -> pid().
+start_dc_tracker() ->
+    {ok, Pid} = router_console_dc_tracker:start_link(#{}),
     Pid.
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.

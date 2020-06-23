@@ -191,11 +191,11 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({'EXIT', _Pid, _Reason}, #state{token=Token, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
+handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
-    Pid = start_ws(WSEndpoint, Token),
+    WSPid1 = start_ws(WSEndpoint, Token),
     ok = check_devices(DB, CF),
-    {noreply, State#state{ws=Pid}};
+    {noreply, State#state{ws=WSPid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
     Pid ! close,

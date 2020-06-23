@@ -162,7 +162,7 @@ no_channel_test(Config) ->
                                    <<"name">> => ?CONSOLE_DEVICE_NAME,
                                    <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
                                    <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS},
+                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS, <<"organization_id">> => ?CONSOLE_ORG_ID},
                                    <<"fcnt">> => 1,
                                    <<"reported_at">> => fun erlang:is_integer/1,
                                    <<"payload">> => <<>>,

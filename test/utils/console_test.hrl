@@ -65,6 +65,7 @@
                            <<"name">> => <<"label_name">>,
                            <<"organization_id">> => <<"label_organization_id">>}]).
 
+-define(CONSOLE_ORG_ID, <<"ORG_123">>).
 
 -define(DECODER, <<"
 function dewpoint(t, rh) {

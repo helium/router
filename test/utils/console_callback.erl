@@ -71,7 +71,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
              <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
              <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
              <<"channels">> => Channels,
-             <<"labels">> => ?CONSOLE_LABELS},
+             <<"labels">> => ?CONSOLE_LABELS,
+             <<"organization_id">> => ?CONSOLE_ORG_ID},
     case NotFound of
         true ->
             {404, [], <<"Not Found">>};

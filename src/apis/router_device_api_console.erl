@@ -217,8 +217,8 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                   end,
                   DeviceIDs),
     {noreply, State};
-handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, State) ->
-    ok = update_devices(DeviceIDs),
+handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
+    ok = update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
@@ -234,25 +234,46 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec update_devices([binary()]) -> ok.
-update_devices(DeviceIDs) ->
+-spec update_devices(rocksdb:db_handle(), rocksdb:cf_handle(), [binary()]) -> ok.
+update_devices(DB, CF, DeviceIDs) ->
     lager:info("got update for devices: ~p from WS", [DeviceIDs]),
     lists:foreach(
       fun(DeviceID) ->
-              case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
-                  {error, _Reason} ->
-                      lager:warning("failed to start worker for device ~p: ~p", [DeviceID, _Reason]);
+              case router_devices_sup:lookup_device_worker(DeviceID, #{}) of
+                  {error, not_found} ->
+                      lager:info("device worker not running for device ~p, updating DB record", [DeviceID]),
+                      update_device_record(DB, CF, DeviceID);
                   {ok, Pid} ->
                       router_device_worker:device_update(Pid)
               end
       end,
       DeviceIDs).
 
+-spec update_device_record(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> ok.
+update_device_record(DB, CF, DeviceID) ->
+    case ?MODULE:get_device(DeviceID) of
+        {error, _Reason} ->
+            lager:warning("failed to get device ~p ~p", [DeviceID, _Reason]);
+        {ok, APIDevice} ->
+            Device0 =
+                case router_device:get(DB, CF, DeviceID) of
+                    {ok, D} -> D;
+                    {error, _} -> router_device:new(DeviceID)
+                end,
+            DeviceUpdates = [{name, router_device:name(APIDevice)},
+                             {dev_eui, router_device:dev_eui(APIDevice)},
+                             {app_eui, router_device:app_eui(APIDevice)},
+                             {metadata, router_device:metadata(APIDevice)}],
+            Device = router_device:update(DeviceUpdates, Device0),
+            {ok, _} = router_device:save(DB, CF, Device),
+            ok
+    end.
+
 -spec check_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> ok.
 check_devices(DB, CF) ->
-    lager:info("checking device in"),
+    lager:info("checking all devices in DB"),
     DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],
-    update_devices(DeviceIDs).
+    update_devices(DB, CF, DeviceIDs).
 
 -spec start_ws(binary(), binary()) -> pid().
 start_ws(WSEndpoint, Token) ->

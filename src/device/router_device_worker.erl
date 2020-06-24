@@ -212,7 +212,17 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of
                 true ->
-                    ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
+                    #frame{data=Payload} = Frame,
+                    PayloadSize = erlang:byte_size(Payload),
+                    Metadata = router_device:metadata(Device1),
+                    OrgID = maps:get(organization_id, Metadata, undefined),
+                    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize) of
+                        true ->
+                            ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
+                        false ->
+                            %% TODO: Send a smaller report to console?
+                            lager:info("did not have enough dc to send data")
+                    end;
                 false ->
                     ok
             end,

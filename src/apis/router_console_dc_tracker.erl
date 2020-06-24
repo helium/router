@@ -6,7 +6,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         refill/3]).
+         refill/3,
+         has_enough_dc/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -19,6 +20,7 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
+-define(ETS, router_console_dc_tracker_ets).
 
 -record(state, {}).
 
@@ -29,16 +31,48 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
-
 -spec refill(OrgID :: binary(), Nonce :: non_neg_integer(), Balance :: non_neg_integer()) -> ok.
 refill(OrgID, Nonce, Balance) ->
-    gen_server:cast(?SERVER, {refill, OrgID, Nonce, Balance}).
+    case lookup(OrgID) of
+        {error, not_found} ->
+            insert(OrgID, Balance, Nonce);
+        {ok, OldBalance, _OldNonce} ->
+            insert(OrgID, Balance + OldBalance, Nonce)
+    end.
+
+-spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer()) -> boolean().
+has_enough_dc(OrgID, PayloadSize) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            true;
+        Chain ->
+            Ledger = blockchain:ledger(Chain),
+            case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+                {error, _Reason} ->
+                    lager:warning("failed to calculatem dc amount ~p", [_Reason]),
+                    true;
+                DCAmount ->
+                    case lookup(OrgID) of
+                        {error, not_found} -> false;
+                        {ok, Balance, Nonce} ->
+                            case Balance-DCAmount > 0 of
+                                false ->
+                                    false;
+                                true ->
+                                    ok = insert(OrgID, Balance-DCAmount, Nonce),
+                                    true
+                            end
+
+                    end
+            end
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    ets:new(?ETS, [public, named_table, set]),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -62,3 +96,13 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+lookup(OrgID) ->
+    case ets:lookup(?ETS, OrgID) of
+        [] -> {error, not_found};
+        [{OrgID, {Balance, Nonce}}] -> {ok, Balance, Nonce}
+    end.
+
+insert(OrgID, Balance, Nonce) ->
+    true = ets:insert(?ETS, {OrgID, {Balance, Nonce}}),
+    ok.

@@ -45,22 +45,22 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
+-spec default_devaddr() -> binary().
 default_devaddr() ->
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>).
 
+-spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->  {ok, binary()} | {error, any()}.
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
+-spec sort_devices([router_device:device()], binary(), libp2p_crypto:pubkey_bin()) -> [router_device:device()].
 sort_devices(Devices, DevAddr, PubKeyBin) ->
     Filtered = lists:filter(fun(D) -> filter_by_devaddr(D, DevAddr) end, Devices),
     Chain = blockchain_worker:blockchain(),
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _Reason} ->
-            case Filtered of
-                [] -> Devices;
-                _ -> Filtered
-            end;
+            Filtered;
         {ok, Index} ->
             case Filtered of
                 [] ->

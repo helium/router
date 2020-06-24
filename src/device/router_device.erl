@@ -82,11 +82,11 @@ app_s_key(Device) ->
 app_s_key(Key, Device) ->
     Device#device_v3{app_s_key=Key}.
 
--spec devaddr(device()) -> number() | undefined.
+-spec devaddr(device()) -> binary() | undefined.
 devaddr(Device) ->
     Device#device_v3.devaddr.
 
--spec devaddr(number(), device()) -> device().
+-spec devaddr(binary(), device()) -> device().
 devaddr(Devaddr, Device) ->
     Device#device_v3{devaddr=Devaddr}.
 

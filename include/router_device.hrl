@@ -4,7 +4,7 @@
                     app_eui :: binary() | undefined,
                     nwk_s_key :: binary() | undefined,
                     app_s_key :: binary() | undefined,
-                    devaddr :: number() | undefined,
+                    devaddr :: binary() | undefined,
                     join_nonce=0 :: non_neg_integer(),
                     fcnt=0 :: non_neg_integer(),
                     fcntdown=0 :: non_neg_integer(),

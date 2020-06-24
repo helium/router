@@ -57,7 +57,7 @@ allocate(Config) ->
 
     OUI1 = 1,
     {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8, 1, 0),
+    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
     #{secret := PrivKey} = Keys,
     SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
     SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn, SigFun),
@@ -94,7 +94,7 @@ route_packet(Config) ->
 
     OUI1 = 1,
     {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8, 1, 0),
+    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
     #{secret := PrivKey} = Keys,
     SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
     SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn, SigFun),

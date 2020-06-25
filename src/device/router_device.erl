@@ -262,10 +262,10 @@ deserialize(Binary) ->
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
 get(DB, CF) ->
-    [?MODULE:deserialize(Bin) || Bin <- rocks_fold(DB, CF)].
+    get_fold(DB, CF).
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, device()} | {error, any()}.
-get(DB, CF, DeviceID) ->
+get(DB, CF, DeviceID) when is_binary(DeviceID) ->
     case rocksdb:get(DB, CF, DeviceID, []) of
         {ok, BinDevice} -> {ok, ?MODULE:deserialize(BinDevice)};
         not_found -> {error, not_found};
@@ -288,22 +288,23 @@ delete(DB, CF, DeviceID) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle()) -> [binary()].
-rocks_fold(DB, CF) ->
+-spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
+get_fold(DB, CF) ->
     {ok, Itr} = rocksdb:iterator(DB, CF, []),
     First = rocksdb:iterator_move(Itr, first),
-    Acc = rocks_fold(DB, CF, Itr, First, []),
+    Acc = get_fold(DB, CF, Itr, First, []),
     rocksdb:iterator_close(Itr),
-    lists:reverse(Acc).
+    Acc.
 
--spec rocks_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [binary()].
-rocks_fold(DB, CF, Itr, {ok, _K, V}, Acc) ->
+-spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [device()].
+get_fold(DB, CF, Itr, {ok, _K, Bin}, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
-    rocks_fold(DB, CF, Itr, Next, [V|Acc]);
-rocks_fold(DB, CF, Itr, {ok, _}, Acc) ->
+    Device = ?MODULE:deserialize(Bin),
+    get_fold(DB, CF, Itr, Next, [Device|Acc]);
+get_fold(DB, CF, Itr, {ok, _}, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
-    rocks_fold(DB, CF, Itr, Next, Acc);
-rocks_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
+    get_fold(DB, CF, Itr, Next, Acc);
+get_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
     Acc.
 
 

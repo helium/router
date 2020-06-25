@@ -72,7 +72,7 @@ allocate(Config) ->
     ok = test_utils:wait_until(fun() ->
                                        State = sys:get_state(router_device_devaddr),
                                        erlang:element(2, State) =/= undefined andalso
-                                       erlang:element(4, State) =/= []
+                                           erlang:element(4, State) =/= []
                                end),
 
     DevAddrs = lists:foldl(fun(_I, Acc) ->

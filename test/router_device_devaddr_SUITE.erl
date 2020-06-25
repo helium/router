@@ -71,7 +71,8 @@ allocate(Config) ->
 
     ok = test_utils:wait_until(fun() ->
                                        State = sys:get_state(router_device_devaddr),
-                                       erlang:element(2, State) =/= undefined
+                                       erlang:element(2, State) =/= undefined andalso
+                                       erlang:element(4, State) =/= []
                                end),
 
     DevAddrs = lists:foldl(fun(_I, Acc) ->
@@ -79,8 +80,12 @@ allocate(Config) ->
                                    [DevAddr|Acc]
                            end,
                            [],
-                           lists:seq(1, 10)),
-    ?assertEqual(10, erlang:length(DevAddrs)),
+                           lists:seq(1, 16)),
+    ?assertEqual(16, erlang:length(DevAddrs)),
+
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    Expected = [<<(I-1):25/integer-unsigned-little, DevAddrPrefix:7/integer>> || I <- lists:seq(1, 8)],
+    ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(DevAddrs)),
     ok.
 
 route_packet(Config) ->

@@ -239,7 +239,7 @@ update_devices(DB, CF, DeviceIDs) ->
     lager:info("got update for devices: ~p from WS", [DeviceIDs]),
     lists:foreach(
       fun(DeviceID) ->
-              case router_devices_sup:lookup_device_worker(DeviceID, #{}) of
+              case router_devices_sup:lookup_device_worker(DeviceID) of
                   {error, not_found} ->
                       lager:info("device worker not running for device ~p, updating DB record", [DeviceID]),
                       update_device_record(DB, CF, DeviceID);

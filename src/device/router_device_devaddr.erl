@@ -17,7 +17,7 @@
 -export([start_link/1,
          default_devaddr/0,
          allocate/2,
-         sort_devices/3,
+         sort_and_filter_devices/3,
          pubkeybin_to_loc/2]).
 
 %% ------------------------------------------------------------------
@@ -54,8 +54,8 @@ default_devaddr() ->
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec sort_devices([router_device:device()], binary(), libp2p_crypto:pubkey_bin()) -> [router_device:device()].
-sort_devices(Devices, DevAddr, PubKeyBin) ->
+-spec sort_and_filter_devices([router_device:device()], binary(), libp2p_crypto:pubkey_bin()) -> [router_device:device()].
+sort_and_filter_devices(Devices, DevAddr, PubKeyBin) ->
     Filtered = lists:filter(fun(D) -> filter_by_devaddr(D, DevAddr) end, Devices),
     Chain = blockchain_worker:blockchain(),
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
@@ -177,10 +177,12 @@ next_subnet(Subnets, Nth) ->
         false -> {Nth+1, lists:nth(Nth+1, Subnets)}
     end.
 
+-spec filter_by_devaddr(router_device:device(), binary()) -> boolean().
 filter_by_devaddr(Device, DevAddr) ->
     router_device:devaddr(Device) == DevAddr orelse
         router_device:devaddr(Device) == default_devaddr().
 
+-spec sort_devices_fun(router_device:device(), router_device:device(), h3:index()) -> boolean().
 sort_devices_fun(DeviceA, DeviceB, Index) ->
     Chain = blockchain_worker:blockchain(),
     IndexA = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
@@ -191,23 +193,26 @@ sort_devices_fun(DeviceA, DeviceB, Index) ->
                  {error, _} -> undefined;
                  {ok, IB} -> IB
              end,
-    %% TODO: Maybe if resolution doest match we should get that index back to 12?
     case
         h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
         h3:get_resolution(IndexA) == h3:get_resolution(Index)
     of
         false ->
-            Index1 = index_to_res12(Index),
-            h3:grid_distance(index_to_res12(IndexA), Index1) > h3:grid_distance(index_to_res12(IndexB), Index1);
+            {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
+            h3:grid_distance(IndexA1, Index1) > h3:grid_distance(Indexb1, Index1);
         true ->
             h3:grid_distance(IndexA, Index) > h3:grid_distance(IndexB, Index)
     end.
 
-index_to_res12(Index) ->
-    case h3:get_resolution(Index) of
-        12 -> Index;
-        _ -> h3:from_geo(h3:to_geo(Index), 12)
-    end.
+-spec indexes_to_lowest_res(h3:index(), h3:index(), h3:index()) -> {h3:index(), h3:index(), h3:index()}.
+indexes_to_lowest_res(IndexA, IndexB, IndexC) ->
+    Resolutions = [h3:get_resolution(IndexA), h3:get_resolution(IndexB), h3:get_resolution(IndexC)],
+    LowestRes = lists:min(Resolutions),
+    {to_res(IndexA, LowestRes), to_res(IndexB, LowestRes), to_res(IndexC, LowestRes)}.
+
+-spec to_res(h3:index(), non_neg_integer()) -> h3:index().
+to_res(Index, Res) ->
+    h3:from_geo(h3:to_geo(Index), Res).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

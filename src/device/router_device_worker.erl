@@ -397,7 +397,7 @@ handle_packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF), DevAddr, PubKeyBin),
+    Devices = router_device_devaddr:sort_and_filter_devices(router_device:get(DB, CF), DevAddr, PubKeyBin),
     case get_device_by_mic(DB, CF, B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};

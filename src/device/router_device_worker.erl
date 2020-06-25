@@ -315,7 +315,7 @@ save_and_update(DB, CF, Pid, Device) ->
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, ID) ->
-    case router_device:get(DB, CF, ID) of
+    case router_device:get_by_id(DB, CF, ID) of
         {ok, D} -> D;
         _ -> router_device:new(ID)
     end.
@@ -396,9 +396,9 @@ handle_packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
-    %% TODO this should take devaddr into account
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    case get_device_by_mic(DB, CF, B0, MIC) of
+    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
+    case get_device_by_mic(DB, CF, B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};
         Device ->
@@ -410,6 +410,15 @@ find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
                     gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Region, Pid})
             end
     end.
+
+
+-spec filter_device_fun(binary()) -> function().
+filter_device_fun(DevAddr) ->
+    fun(Device) ->
+            router_device:devaddr(Device) == DevAddr orelse
+                router_device:devaddr(Device) == router_device_devaddr:default_devaddr()
+    end.
+
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -453,7 +462,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     {error, bad_nonce};
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                                   DevNonce:2/binary, _MIC:4/binary>>},
-            PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, _OldNonce) ->
+            PubKeyBin, Region, _OUI, APIDevice, AppKey, Device0, _OldNonce) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     NetID = <<"He2">>,
@@ -464,26 +473,13 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     AppSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
                                    lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
-    Chain = blockchain_worker:blockchain(),
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    DevAddr = try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-                  {ok, RoutingEntry} ->
-                      Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                      <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
-                      %% just allocate the first address in the first subnet for now
-                      %% TODO we should implement geographic aware aliasing here
-                      <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>;
-                  _Error ->
-                      %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
-                      %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
-              catch
-                  _:_ ->
-                      %% yolo all 1s address so we are likely to hit default_routers, this can probably die after we
-                      %% transition over to new routing
-                      application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>)
+    DevAddr = case router_device_devaddr:allocate(Device0, PubKeyBin) of
+                  {ok, D} ->
+                      D;
+                  {error, _Reason} ->
+                      lager:warning("failed to allocate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
+                      router_device_devaddr:default_devaddr()
               end,
-
     RxDelay = ?RX_DELAY,
     DLSettings = 0,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
@@ -516,8 +512,10 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                      {app_eui, AppEUI},
                      {app_s_key, AppSKey},
                      {nwk_s_key, NwkSKey},
+                     {devaddr, DevAddr},
                      {fcntdown, 0},
                      {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
+                     {location, PubKeyBin},
                      {metadata, router_device:metadata(APIDevice)}],
     Device1 = router_device:update(DeviceUpdates, Device0),
     {ok, Reply, Device1, DevNonce}.
@@ -550,18 +548,23 @@ validate_frame(Packet, PubKeyBin, Region, Device0) ->
             %% If frame countain ACK=1 we should clear message from queue and go on next
             Device1 = case ACK of
                           0 ->
-                              router_device:fcnt(FCnt, Device0);
+                              DeviceUpdates = [{fcnt, FCnt},
+                                               {location, PubKeyBin}],
+                              router_device:update(DeviceUpdates, Device0);
                           1 ->
                               case router_device:queue(Device0) of
                                   %% Check if confirmed down link
                                   [{true, _, _}|T] ->
                                       DeviceUpdates = [{fcnt, FCnt},
                                                        {queue, T},
+                                                       {location, PubKeyBin},
                                                        {fcntdown, router_device:fcntdown(Device0)+1}],
                                       router_device:update(DeviceUpdates, Device0);
                                   _ ->
                                       lager:warning("Got ack when no confirmed downlinks in queue"),
-                                      router_device:fcnt(FCnt, Device0)
+                                      DeviceUpdates = [{fcnt, FCnt},
+                                                       {location, PubKeyBin}],
+                                      router_device:update(DeviceUpdates, Device0)
                               end
                       end,
             Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
@@ -826,11 +829,10 @@ frame_to_packet_payload(Frame, Device) ->
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
 
--spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary()) -> router_device:device() | undefined.
-get_device_by_mic(DB, CF, Bin, MIC) ->
-    get_device_by_mic(DB, CF, Bin, MIC, router_device:get(DB, CF)).
 
--spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(), binary(), [router_device:device()]) -> router_device:device() | undefined.
+
+-spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(),
+                        binary(), [router_device:device()]) -> router_device:device() | undefined.
 get_device_by_mic(_DB, _CF, _Bin, _MIC, []) ->
     undefined;
 get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->

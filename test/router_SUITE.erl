@@ -96,7 +96,7 @@ dupes_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},
@@ -215,8 +215,8 @@ join_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    Swarm0 = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
-    Swarm1 = test_utils:start_swarm(BaseDir, join_test_swarm_1, 0),
+    {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+    {Swarm1, _} = test_utils:start_swarm(BaseDir, join_test_swarm_1, 0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm1),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(Swarm0,
@@ -274,7 +274,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
     ?assertEqual(router_device:app_s_key(Device0), AppSKey),
@@ -329,7 +329,7 @@ adr_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},

@@ -15,7 +15,8 @@
          frame_payload/6,
          frame_packet/5, frame_packet/6,
          deframe_packet/2, deframe_join_packet/3,
-         tmp_dir/0, tmp_dir/1]).
+         tmp_dir/0, tmp_dir/1,
+         wait_until/1, wait_until/3]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -59,12 +60,16 @@ init_per_testcase(TestCase, Config) ->
                 {port, 3000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
-    Swarm = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    #{public := PubKey, secret := PrivKey} = Keys,
+    {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},
      {base_dir, BaseDir},
-     {swarm, Swarm} |Config].
+     {swarm, Swarm},
+     {keys, Keys},
+     {consensus_member, ConsensusMembers} |Config].
 
 end_per_testcase(_TestCase, Config) ->
     libp2p_swarm:stop(proplists:get_value(swarm, Config)),
@@ -83,7 +88,8 @@ end_per_testcase(_TestCase, Config) ->
     ok.
 
 start_swarm(BaseDir, Name, Port) ->
-    #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
+    #{secret := PrivKey, public := PubKey} = Keys,
     Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
     SwarmOpts = [{base_dir, BaseDir ++ "/" ++ erlang:atom_to_list(Name) ++ "_data"},
                  {key, Key},
@@ -93,7 +99,7 @@ start_swarm(BaseDir, Name, Port) ->
     {ok, Swarm} = libp2p_swarm:start(Name, SwarmOpts),
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++  erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
-    Swarm.
+    {Swarm, Keys}.
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
@@ -291,7 +297,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
     frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, #{}).
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    DevAddr = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
+    DevAddr = maps:get(devaddr, Options, <<33554431:25/integer-unsigned-little, $H:7/integer>>),
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
     HeliumPacket = #packet_pb{
                       type=lorawan,
@@ -337,6 +343,21 @@ tmp_dir(SubDir) ->
     Path = filename:join(?BASE_TMP_DIR, SubDir),
     os:cmd("mkdir -p " ++ Path),
     create_tmp_dir(Path ++ "/" ++ ?BASE_TMP_DIR_TEMPLATE).
+
+wait_until(Fun) ->
+    wait_until(Fun, 100, 100).
+
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        true ->
+            ok;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until(Fun, Retry-1, Delay)
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

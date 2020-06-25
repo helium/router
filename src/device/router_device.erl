@@ -262,15 +262,17 @@ deserialize(Binary) ->
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
 get(DB, CF) ->
-    get_fold(DB, CF).
+    ?MODULE:get(DB, CF, fun(_) -> true end).
 
--spec get(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, device()} | {error, any()}.
+-spec get(rocksdb:db_handle(), rocksdb:cf_handle(), binary() | function()) -> {ok, device()} | {error, any()} | [device()].
 get(DB, CF, DeviceID) when is_binary(DeviceID) ->
     case rocksdb:get(DB, CF, DeviceID, []) of
         {ok, BinDevice} -> {ok, ?MODULE:deserialize(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error
-    end.
+    end;
+get(DB, CF, FilterFun) when is_function(FilterFun) ->
+    get_fold(DB, CF, FilterFun).
 
 -spec save(rocksdb:db_handle(), rocksdb:cf_handle(), device()) -> {ok, device()} | {error, any()}.
 save(DB, CF, Device) ->
@@ -288,23 +290,28 @@ delete(DB, CF, DeviceID) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
-get_fold(DB, CF) ->
+-spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle(), function()) -> [device()].
+get_fold(DB, CF, FilterFun) ->
     {ok, Itr} = rocksdb:iterator(DB, CF, []),
     First = rocksdb:iterator_move(Itr, first),
-    Acc = get_fold(DB, CF, Itr, First, []),
+    Acc = get_fold(DB, CF, Itr, First, FilterFun, []),
     rocksdb:iterator_close(Itr),
     Acc.
 
--spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), list()) -> [device()].
-get_fold(DB, CF, Itr, {ok, _K, Bin}, Acc) ->
+-spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle(), rocksdb:itr_handle(), any(), function(), list()) -> [device()].
+get_fold(DB, CF, Itr, {ok, _K, Bin}, FilterFun, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
     Device = ?MODULE:deserialize(Bin),
-    get_fold(DB, CF, Itr, Next, [Device|Acc]);
-get_fold(DB, CF, Itr, {ok, _}, Acc) ->
+    case FilterFun(Device) of
+        true ->
+            get_fold(DB, CF, Itr, Next, FilterFun, [Device|Acc]);
+        false ->
+            get_fold(DB, CF, Itr, Next, FilterFun, Acc)
+    end;
+get_fold(DB, CF, Itr, {ok, _}, FilterFun, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
-    get_fold(DB, CF, Itr, Next, Acc);
-get_fold(_DB, _CF, _Itr, {error, _}, Acc) ->
+    get_fold(DB, CF, Itr, Next, FilterFun, Acc);
+get_fold(_DB, _CF, _Itr, {error, _}, _FilterFun, Acc) ->
     Acc.
 
 

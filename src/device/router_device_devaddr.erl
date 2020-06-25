@@ -17,7 +17,7 @@
 -export([start_link/1,
          default_devaddr/0,
          allocate/2,
-         sort_and_filter_devices/3,
+         sort_devices/2,
          pubkeybin_to_loc/2]).
 
 %% ------------------------------------------------------------------
@@ -54,20 +54,14 @@ default_devaddr() ->
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec sort_and_filter_devices([router_device:device()], binary(), libp2p_crypto:pubkey_bin()) -> [router_device:device()].
-sort_and_filter_devices(Devices, DevAddr, PubKeyBin) ->
-    Filtered = lists:filter(fun(D) -> filter_by_devaddr(D, DevAddr) end, Devices),
+-spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) -> [router_device:device()].
+sort_devices(Devices, PubKeyBin) ->
     Chain = blockchain_worker:blockchain(),
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _Reason} ->
-            Filtered;
+            Devices;
         {ok, Index} ->
-            case Filtered of
-                [] ->
-                    lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Devices);
-                _ ->
-                    lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Filtered)
-            end
+            lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Devices)
     end.
 
 %% TODO: Maybe make this a ets table to avoid lookups all the time
@@ -101,6 +95,8 @@ init(Args) ->
     self() ! post_init,
     {ok, #state{oui=OUI}}.
 
+handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets=[]}=State) ->
+    {reply, {error, no_subnet}, State};
 handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _}=Error ->
@@ -176,11 +172,6 @@ next_subnet(Subnets, Nth) ->
         true -> {1, lists:nth(1, Subnets)};
         false -> {Nth+1, lists:nth(Nth+1, Subnets)}
     end.
-
--spec filter_by_devaddr(router_device:device(), binary()) -> boolean().
-filter_by_devaddr(Device, DevAddr) ->
-    router_device:devaddr(Device) == DevAddr orelse
-        router_device:devaddr(Device) == default_devaddr().
 
 -spec sort_devices_fun(router_device:device(), router_device:device(), h3:index()) -> boolean().
 sort_devices_fun(DeviceA, DeviceB, Index) ->

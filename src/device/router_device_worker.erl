@@ -397,7 +397,7 @@ handle_packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    Devices = router_device_devaddr:sort_and_filter_devices(router_device:get(DB, CF), DevAddr, PubKeyBin),
+    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
     case get_device_by_mic(DB, CF, B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};
@@ -410,6 +410,15 @@ find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
                     gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Region, Pid})
             end
     end.
+
+
+-spec filter_device_fun(binary()) -> function().
+filter_device_fun(DevAddr) ->
+    fun(Device) ->
+            router_device:devaddr(Device) == DevAddr orelse
+                router_device:devaddr(Device) == router_device_devaddr:default_devaddr()
+    end.
+
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -468,7 +477,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                   {ok, D} ->
                       D;
                   {error, _Reason} ->
-                      lager:error("failed to allicate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
+                      lager:warning("failed to allicate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
                       router_device_devaddr:default_devaddr()
               end,
     RxDelay = ?RX_DELAY,

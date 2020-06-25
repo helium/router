@@ -477,7 +477,7 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
                   {ok, D} ->
                       D;
                   {error, _Reason} ->
-                      lager:warning("failed to allicate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
+                      lager:warning("failed to allocate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
                       router_device_devaddr:default_devaddr()
               end,
     RxDelay = ?RX_DELAY,

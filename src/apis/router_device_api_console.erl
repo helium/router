@@ -256,7 +256,7 @@ update_device_record(DB, CF, DeviceID) ->
             lager:warning("failed to get device ~p ~p", [DeviceID, _Reason]);
         {ok, APIDevice} ->
             Device0 =
-                case router_device:get(DB, CF, DeviceID) of
+                case router_device:get_by_id(DB, CF, DeviceID) of
                     {ok, D} -> D;
                     {error, _} -> router_device:new(DeviceID)
                 end,

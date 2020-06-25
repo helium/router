@@ -159,7 +159,7 @@ route_packet(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
     DevAddr = router_device:devaddr(Device0),
 
     ?assert(DevAddr =/= undefined),

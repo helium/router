@@ -315,7 +315,7 @@ save_and_update(DB, CF, Pid, Device) ->
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, ID) ->
-    case router_device:get(DB, CF, ID) of
+    case router_device:get_by_id(DB, CF, ID) of
         {ok, D} -> D;
         _ -> router_device:new(ID)
     end.

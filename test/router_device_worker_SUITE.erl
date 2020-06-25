@@ -91,7 +91,7 @@ device_update_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     DeviceID = ?CONSOLE_DEVICE_ID,
-    ?assertMatch({ok, _}, router_device:get(DB, CF, DeviceID)),
+    ?assertMatch({ok, _}, router_device:get_by_id(DB, CF, DeviceID)),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {device_not_found, true}),
@@ -108,7 +108,7 @@ device_update_test(Config) ->
 
     timer:sleep(500),
     ?assertNot(erlang:is_process_alive(DeviceWorkerID)),
-    ?assertMatch({error, not_found}, router_device:get(DB, CF, DeviceID)),
+    ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
 
     ok.
 

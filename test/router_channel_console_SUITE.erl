@@ -96,7 +96,7 @@ console_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Send UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
     EncodedPayload = to_real_payload(<<"20 02 F8 00">>),

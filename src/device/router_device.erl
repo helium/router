@@ -26,7 +26,7 @@
          metadata/1, metadata/2,
          update/2,
          serialize/1, deserialize/1,
-         get/2, get/3, save/3, delete/3
+         get/2, get/3, get_by_id/3, save/3, delete/3
         ]).
 
 -type device() :: #device_v3{}.
@@ -264,15 +264,17 @@ deserialize(Binary) ->
 get(DB, CF) ->
     ?MODULE:get(DB, CF, fun(_) -> true end).
 
--spec get(rocksdb:db_handle(), rocksdb:cf_handle(), binary() | function()) -> {ok, device()} | {error, any()} | [device()].
-get(DB, CF, DeviceID) when is_binary(DeviceID) ->
+-spec get(rocksdb:db_handle(), rocksdb:cf_handle(),function()) -> [device()].
+get(DB, CF, FilterFun) when is_function(FilterFun) ->
+    get_fold(DB, CF, FilterFun).
+
+-spec get_by_id(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> {ok, device()} | {error, any()}.
+get_by_id(DB, CF, DeviceID) when is_binary(DeviceID) ->
     case rocksdb:get(DB, CF, DeviceID, []) of
         {ok, BinDevice} -> {ok, ?MODULE:deserialize(BinDevice)};
         not_found -> {error, not_found};
         Error -> Error
-    end;
-get(DB, CF, FilterFun) when is_function(FilterFun) ->
-    get_fold(DB, CF, FilterFun).
+    end.
 
 -spec save(rocksdb:db_handle(), rocksdb:cf_handle(), device()) -> {ok, device()} | {error, any()}.
 save(DB, CF, Device) ->
@@ -446,14 +448,14 @@ get_save_delete_test() ->
     DeviceID = <<"id">>,
     Keys = libp2p_crypto:generate_keys(ecc_compact),
     Device = keys(Keys, new(DeviceID)),
-    ?assertEqual({error, not_found}, get(DB, CF, DeviceID)),
+    ?assertEqual({error, not_found}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([], get(DB, CF)),
     ?assertEqual({ok, Device}, save(DB, CF, Device)),
-    ?assertEqual({ok, Device}, get(DB, CF, DeviceID)),
+    ?assertEqual({ok, Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([Device], get(DB, CF)),
-    ?assertEqual({error, not_found}, get(DB, CF, <<"unknown">>)),
+    ?assertEqual({error, not_found}, get_by_id(DB, CF, <<"unknown">>)),
     ?assertEqual(ok, delete(DB, CF, DeviceID)),
-    ?assertEqual({error, not_found}, get(DB, CF, DeviceID)),
+    ?assertEqual({error, not_found}, get_by_id(DB, CF, DeviceID)),
     gen_server:stop(Pid).
 
 upgrade_test() ->
@@ -469,17 +471,17 @@ upgrade_test() ->
 
     V0Device = #device{id=DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
-    ?assertEqual({ok, V3Device}, get(DB, CF, DeviceID)),
+    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([V3Device], get(DB, CF)),
 
     V1Device = #device_v1{id=DeviceID, key=Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V1Device), []),
-    ?assertEqual({ok, V3Device}, get(DB, CF, DeviceID)),
+    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([V3Device], get(DB, CF)),
 
     V2Device = #device_v1{id=DeviceID, key=Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V2Device), []),
-    ?assertEqual({ok, V3Device}, get(DB, CF, DeviceID)),
+    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([V3Device], get(DB, CF)),
 
     gen_server:stop(Pid),

@@ -96,7 +96,7 @@ dupes_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},
@@ -274,7 +274,7 @@ join_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
     ?assertEqual(router_device:app_s_key(Device0), AppSKey),
@@ -329,7 +329,7 @@ adr_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
     Msg0 = {false, 1, <<"somepayload">>},

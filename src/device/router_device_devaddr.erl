@@ -133,7 +133,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-
 handle_info(post_init, #state{chain=undefined, oui=OUI}=State) ->
     case blockchain_worker:blockchain() of
         undefined ->

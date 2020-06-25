@@ -93,7 +93,7 @@ http_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Send UNCONFIRMED_UP frame packet
     DownlinkPayload = <<"httpdownlink">>,
@@ -261,7 +261,7 @@ http_update_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 0)},

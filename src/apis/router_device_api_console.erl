@@ -120,7 +120,7 @@ report_status(Device, Map) ->
               Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
               Category = maps:get(category, Map),
               Channels = maps:get(channels, Map),
-              FrameUp = maps:get(fcount, Map, router_device:fcnt(Device)),
+              FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
               Body0 = #{category => Category,
                         description => maps:get(description, Map),
                         reported_at => maps:get(reported_at, Map),

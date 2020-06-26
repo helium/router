@@ -171,6 +171,7 @@ handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
                                          data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
     {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef),
+     lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
                           fcnt=FCnt,
@@ -179,7 +180,7 @@ handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
 %% Channel Handling
 %% ------------------------------------------------------------------
 handle_info({report_status_timeout, FCnt}, #state{device=Device, channels_resp_cache=Cache0}=State) ->
-    lager:debug("report_status_timeout ~p", [FCnt]),
+    lager:debug("report_status_timeout for ~p", [FCnt]),
     {Data, CachedReports} = maps:get(FCnt, Cache0),
     Payload = maps:get(payload, Data),
     ReportsMap = #{category => <<"up">>,

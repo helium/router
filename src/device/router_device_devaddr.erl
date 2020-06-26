@@ -61,7 +61,7 @@ sort_devices(Devices, PubKeyBin) ->
         {error, _Reason} ->
             Devices;
         {ok, Index} ->
-            lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index) end, Devices)
+            lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index, Chain) end, Devices)
     end.
 
 %% TODO: Maybe make this a ets table to avoid lookups all the time
@@ -172,9 +172,9 @@ next_subnet(Subnets, Nth) ->
         false -> {Nth+1, lists:nth(Nth+1, Subnets)}
     end.
 
--spec sort_devices_fun(router_device:device(), router_device:device(), h3:index()) -> boolean().
-sort_devices_fun(DeviceA, DeviceB, Index) ->
-    Chain = blockchain_worker:blockchain(),
+-spec sort_devices_fun(router_device:device(), router_device:device(),
+                       h3:index(), blockchain:blockchain()) -> boolean().
+sort_devices_fun(DeviceA, DeviceB, Index, Chain) ->
     IndexA = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
                  {error, _} -> undefined;
                  {ok, IA} -> IA

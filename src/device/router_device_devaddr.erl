@@ -183,15 +183,20 @@ sort_devices_fun(DeviceA, DeviceB, Index) ->
                  {error, _} -> undefined;
                  {ok, IB} -> IB
              end,
-    case
-        h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
-        h3:get_resolution(IndexA) == h3:get_resolution(Index)
-    of
-        false ->
-            {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
-            h3:grid_distance(IndexA1, Index1) > h3:grid_distance(Indexb1, Index1);
+    case IndexA == undefined orelse IndexB == undefined of
         true ->
-            h3:grid_distance(IndexA, Index) > h3:grid_distance(IndexB, Index)
+            false;
+        false ->
+            case
+                h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
+                h3:get_resolution(IndexA) == h3:get_resolution(Index)
+            of
+                false ->
+                    {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
+                    h3:grid_distance(IndexA1, Index1) > h3:grid_distance(Indexb1, Index1);
+                true ->
+                    h3:grid_distance(IndexA, Index) > h3:grid_distance(IndexB, Index)
+            end
     end.
 
 -spec indexes_to_lowest_res(h3:index(), h3:index(), h3:index()) -> {h3:index(), h3:index(), h3:index()}.

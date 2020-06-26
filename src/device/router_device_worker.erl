@@ -416,7 +416,7 @@ find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
 filter_device_fun(DevAddr) ->
     fun(Device) ->
             router_device:devaddr(Device) == DevAddr orelse
-                router_device:devaddr(Device) == router_device_devaddr:default_devaddr()
+                router_device_devaddr:default_devaddr() == DevAddr
     end.
 
 

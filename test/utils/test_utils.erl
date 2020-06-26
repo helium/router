@@ -103,7 +103,7 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _DB, _CF, _Device, _, _, _, Pid, _, _} = sys:get_state(WorkerPid),
+    {state, _Chain, _DB, _CF, _Device, _, _, _, Pid, _, _} = sys:get_state(WorkerPid),
     Pid.
 
 force_refresh_channels(DeviceID) ->

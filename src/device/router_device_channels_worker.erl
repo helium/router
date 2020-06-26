@@ -40,7 +40,8 @@
 -define(DATA_TIMEOUT, timer:seconds(1)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
--record(state, {event_mgr :: pid(),
+-record(state, {chain=blockchain:blockchain(),
+                event_mgr :: pid(),
                 device_worker :: pid(),
                 device :: router_device:device(),
                 channels = #{} :: map(),
@@ -103,12 +104,13 @@ handle_downlink(DeviceID, BinaryPayload) when is_binary(DeviceID) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    Blockchain = maps:get(blockchain, Args),
     DeviceWorker = maps:get(device_worker, Args),
     Device = maps:get(device, Args),
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    {ok, #state{event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=-1}}.
+    {ok, #state{chain=Blockchain, event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=-1}}.
 
 handle_call(state, _From, State) ->
     {reply, State, State};
@@ -167,10 +169,10 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 %% Data Handling
 %% ------------------------------------------------------------------
-handle_info({data_timeout, FCnt}, #state{event_mgr=EventMgrRef, device=Device,
+handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef, device=Device,
                                          data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
-    {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef),
+    {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
      lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
@@ -348,13 +350,15 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
             {error, payload_raw_not_found}
     end.
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(), pid()) -> {ok, map()}.
-send_to_channel(CachedData, Device, EventMgrRef) ->
+-spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(),
+                      pid() , blockchain:blockchain()) -> {ok, reference(), map()}.
+send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
     FoldFun =
         fun({PubKeyBin, Packet, _, Time}, Acc) ->
                 B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
                 {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
-                Freq =  Packet#packet_pb.frequency,
+                Freq = Packet#packet_pb.frequency,
+                {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
                 [#{id => erlang:list_to_binary(B58),
                    name => erlang:list_to_binary(HotspotName),
                    reported_at => Time,
@@ -364,7 +368,9 @@ send_to_channel(CachedData, Device, EventMgrRef) ->
                    spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
                    frequency => Freq,
                    %% TODO use correct regulatory domain here
-                   channel => lorawan_mac_region:f2uch('US915', Freq)}|Acc]
+                   channel => lorawan_mac_region:f2uch('US915', Freq),
+                   lat => Lat,
+                   long => Long}|Acc]
         end,
     [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),

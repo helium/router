@@ -12,7 +12,7 @@
 
 -export([start_link/0,
          add/3, delete/2, update/3,
-         handle_data/2,
+         handle_data/3,
          encode_data/2]).
 
 -ifdef(TEST).
@@ -110,11 +110,9 @@ update(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
     gen_event:call(Pid, Handler, {update, Channel, Device}).
 
--spec handle_data(pid(), map()) -> {ok, reference()}.
-handle_data(Pid, Data) ->
-    Ref = erlang:make_ref(),
-    ok = gen_event:notify(Pid, {data, Ref, Data}),
-    {ok, Ref}.
+-spec handle_data(pid(), map(), any()) -> ok.
+handle_data(Pid, Data, Ref) ->
+    ok = gen_event:notify(Pid, {data, Ref, Data}).
 
 -spec encode_data(channel(), map()) -> binary().
 encode_data(Channel, Map) ->

@@ -351,7 +351,7 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
     end.
 
 -spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(),
-                      pid() , blockchain:blockchain()) -> {ok, reference(), map()}.
+                      pid() , blockchain:blockchain()) -> {ok, map()}.
 send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
     FoldFun =
         fun({PubKeyBin, Packet, _, Time}, Acc) ->

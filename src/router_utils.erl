@@ -20,10 +20,15 @@ get_router_oui(Chain) ->
 get_hotspot_location(PubKeyBin, Blockchain) ->
     Ledger = blockchain:ledger(Blockchain),
     case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _} -> {unknown, unknown};
+        {error, _} ->
+            {unknown, unknown};
         {ok, Hotspot} ->
-            Loc = blockchain_ledger_gateway_v2:location(Hotspot),
-            h3:to_geo(Loc)
+            case blockchain_ledger_gateway_v2:location(Hotspot) of
+                undefined ->
+                    {unknown, unknown};
+                Loc ->
+                    h3:to_geo(Loc)
+            end
     end.
 
 to_bin(Bin) when is_binary(Bin) ->

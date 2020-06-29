@@ -212,7 +212,7 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of
                 true ->
-                    #frame{data=Payload} = Frame,
+                    #frame{data=Payload, devaddr=DevAddr} = Frame,
                     PayloadSize = erlang:byte_size(Payload),
                     Metadata = router_device:metadata(Device1),
                     OrgID = maps:get(organization_id, Metadata, undefined),
@@ -220,8 +220,8 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                         true ->
                             ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
                         false ->
-                            %% TODO: Send a smaller report to console?
-                            lager:info("did not have enough dc to send data")
+                            ok = report_status_no_dc(Device0, PubKeyBin, DevAddr),
+                            lager:debug("did not have enough dc to send data")
                     end;
                 false ->
                     ok
@@ -466,7 +466,8 @@ handle_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/bina
 handle_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device) ->
     {error, not_join_req}.
 
--spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), atom(), non_neg_integer(), router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
+-spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), atom(), non_neg_integer(), 
+                  router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, binary(), router_device:device(), binary()} | {error, any()}.
 handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
@@ -796,6 +797,29 @@ report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, #frame{de
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain).
+
+-spec report_status_no_dc(router_device:device(), libp2p_crypto:pubkey_bin(), any()) -> ok.
+report_status_no_dc(Device, PubKeyBin, DevAddr) ->
+    HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+    Report = #{category => up,
+               description => <<"Not enough DC">>,
+               reported_at => erlang:system_time(seconds),
+               payload => <<>>,
+               payload_size => 0,
+               port => 0,
+               devaddr => lorawan_utils:binary_to_hex(DevAddr),
+               hotspots => [#{id => erlang:list_to_binary(HotspotID),
+                              name => erlang:list_to_binary(HotspotName),
+                              reported_at => erlang:system_time(seconds),
+                              status => error,
+                              rssi => undefined,
+                              snr => undefined,
+                              spreading => undefined,
+                              frequency => undefined,
+                              channel => undefined}],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
 
 -spec report_status(atom(), binary(), router_device:device(), success | error,
                     libp2p_crypto:pubkey_bin(), atom(), blockchain_helium_packet_v1:packet(),

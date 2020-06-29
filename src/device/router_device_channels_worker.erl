@@ -173,7 +173,7 @@ handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef
                                          data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
     {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
-     lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
+    lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
                           fcnt=FCnt,

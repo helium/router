@@ -87,7 +87,9 @@ console_test(Config) ->
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"channel">> => fun erlang:is_number/1}],
+                                                                <<"channel">> => fun erlang:is_number/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -122,7 +124,9 @@ console_test(Config) ->
                                                                  <<"snr">> => 0.0,
                                                                  <<"spreading">> => <<"SF8BW125">>,
                                                                  <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"channel">> => fun erlang:is_number/1}],
+                                                                 <<"channel">> => fun erlang:is_number/1,
+                                                                 <<"lat">> => fun erlang:is_float/1, 
+                                                                 <<"long">> => fun erlang:is_float/1}],
                                             <<"channels">> => [#{<<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary>>,
                                                                  <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
                                                                  <<"reported_at">> => fun erlang:is_integer/1,

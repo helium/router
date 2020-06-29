@@ -150,7 +150,9 @@ route_packet(Config) ->
                                                                 <<"snr">> => 0.0,
                                                                 <<"spreading">> => <<"SF8BW125">>,
                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"channel">> => fun erlang:is_number/1}],
+                                                                <<"channel">> => fun erlang:is_number/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
     %% Waiting for reply from router to hotspot
@@ -190,7 +192,9 @@ route_packet(Config) ->
                                                         <<"snr">> => 0.0,
                                                         <<"spreading">> => <<"SF8BW125">>,
                                                         <<"frequency">> => fun erlang:is_float/1,
-                                                        <<"channel">> => fun erlang:is_number/1}]}),
+                                                        <<"channel">> => fun erlang:is_number/1,
+                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"long">> => fun erlang:is_float/1}]}),
 
     ok.
 

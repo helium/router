@@ -212,11 +212,11 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
             {noreply, State};
         {error, _Reason} ->
             {noreply, State};
-        {ok, Frame, Device1, SendToChannels} ->
+        {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of
                 true ->
-                    ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
+                    ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data, {Balance, Nonce});
                 false ->
                     ok
             end,
@@ -549,7 +549,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize) of
         false ->
             {error, not_enough_dc};
-        true ->
+        {true, Balance, Nonce} ->
             DevEUI = router_device:dev_eui(Device0),
             AppEUI = router_device:app_eui(Device0),
             {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -625,7 +625,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
                     ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr),
-                    {ok, Frame, Device1, false};
+                    {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                                 [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
@@ -659,7 +659,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                               end,
                     Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
                                    fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
-                    {ok, Frame, Device1, true}
+                    {ok, Frame, Device1, true, {Balance, Nonce}}
             end
     end.
 

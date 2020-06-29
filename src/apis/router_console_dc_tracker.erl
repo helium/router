@@ -40,27 +40,29 @@ refill(OrgID, Nonce, Balance) ->
             insert(OrgID, Balance + OldBalance, Nonce)
     end.
 
--spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer()) -> boolean().
+-spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer()) -> {true, non_neg_integer(), non_neg_integer()} | false.
 has_enough_dc(OrgID, PayloadSize) ->
     case blockchain_worker:blockchain() of
         undefined ->
-            true;
+            false;
         Chain ->
             Ledger = blockchain:ledger(Chain),
             case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
                 {error, _Reason} ->
                     lager:warning("failed to calculate dc amount ~p", [_Reason]),
-                    true;
+                    false;
                 DCAmount ->
                     case lookup(OrgID) of
-                        {error, not_found} -> false;
-                        {ok, Balance, Nonce} ->
-                            case Balance-DCAmount > 0 of
+                        {error, not_found} ->
+                                false;
+                        {ok, Balance0, Nonce} ->
+                            Balance1 =  Balance0-DCAmount,
+                            case Balance1 > 0 of
                                 false ->
                                     false;
                                 true ->
-                                    ok = insert(OrgID, Balance-DCAmount, Nonce),
-                                    true
+                                    ok = insert(OrgID, Balance1, Nonce),
+                                    {true, Balance1, Nonce}
                             end
 
                     end

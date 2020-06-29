@@ -16,7 +16,7 @@
 -export([start_link/1,
          handle_join/1,
          handle_device_update/2,
-         handle_data/3,
+         handle_data/4,
          report_status/3,
          handle_downlink/2,
          state/1]).
@@ -70,9 +70,10 @@ state(Pid) ->
 handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
--spec handle_data(pid(), router_device:device(), {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}) -> ok.
-handle_data(Pid, Device, Data) ->
-    gen_server:cast(Pid, {handle_data, Device, Data}).
+-spec handle_data(pid(), router_device:device(),
+                 {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
+handle_data(Pid, Device, Data, {Balance, Nonce}) ->
+    gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
 
 -spec report_status(pid(), reference(), map()) -> ok.
 report_status(Pid, Ref, Map) ->
@@ -122,7 +123,8 @@ handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {_Balance, _Nonce}},
+            #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1 =
         case FCnt =< CurrFCnt of

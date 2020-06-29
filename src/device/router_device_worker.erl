@@ -206,23 +206,17 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                                                              downlink_handled_at=DownlinkHandledAt,
                                                              channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
+        {error, not_enough_dc} ->
+            ok = report_status_no_dc(Device0),
+            lager:debug("did not have enough dc to send data"),
+            {noreply, State};
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1, SendToChannels} ->
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of
                 true ->
-                    #frame{data=Payload, devaddr=DevAddr} = Frame,
-                    PayloadSize = erlang:byte_size(Payload),
-                    Metadata = router_device:metadata(Device1),
-                    OrgID = maps:get(organization_id, Metadata, undefined),
-                    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize) of
-                        true ->
-                            ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
-                        false ->
-                            ok = report_status_no_dc(Device0, PubKeyBin, DevAddr),
-                            lager:debug("did not have enough dc to send data")
-                    end;
+                    ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data);
                 false ->
                     ok
             end,
@@ -549,35 +543,28 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
-    DevEUI = router_device:dev_eui(Device0),
-    AppEUI = router_device:app_eui(Device0),
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    TS = blockchain_helium_packet_v1:timestamp(Packet),
-    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
-    case FPort of
-        0 when FOptsLen == 0 ->
-            NwkSKey = router_device:nwk_s_key(Device0),
-            Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
-            lager:info("~s packet from ~s ~s with fopts ~p received by ~s",
-                       [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI),
-                        lorawan_utils:binary_to_hex(AppEUI), lorawan_mac_commands:parse_fopts(Data), AName]),
-            %% If frame countain ACK=1 we should clear message from queue and go on next
-            Device1 = case ACK of
-                          0 ->
-                              DeviceUpdates = [{fcnt, FCnt},
-                                               {location, PubKeyBin}],
-                              router_device:update(DeviceUpdates, Device0);
-                          1 ->
-                              case router_device:queue(Device0) of
-                                  %% Check if confirmed down link
-                                  [{true, _, _}|T] ->
-                                      DeviceUpdates = [{fcnt, FCnt},
-                                                       {queue, T},
-                                                       {location, PubKeyBin},
-                                                       {fcntdown, router_device:fcntdown(Device0)+1}],
-                                      router_device:update(DeviceUpdates, Device0);
-                                  _ ->
-                                      lager:warning("Got ack when no confirmed downlinks in queue"),
+    PayloadSize = erlang:byte_size(FRMPayload),
+    Metadata = router_device:metadata(Device0),
+    OrgID = maps:get(organization_id, Metadata, undefined),
+    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize) of
+        false ->
+            {error, not_enough_dc};
+        true ->
+            DevEUI = router_device:dev_eui(Device0),
+            AppEUI = router_device:app_eui(Device0),
+            {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+            TS = blockchain_helium_packet_v1:timestamp(Packet),
+            lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
+            case FPort of
+                0 when FOptsLen == 0 ->
+                    NwkSKey = router_device:nwk_s_key(Device0),
+                    Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)),
+                    lager:info("~s packet from ~s ~s with fopts ~p received by ~s",
+                               [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI),
+                                lorawan_utils:binary_to_hex(AppEUI), lorawan_mac_commands:parse_fopts(Data), AName]),
+                    %% If frame countain ACK=1 we should clear message from queue and go on next
+                    Device1 = case ACK of
+                                  0 ->
                                       DeviceUpdates = [{fcnt, FCnt},
                                                        {location, PubKeyBin}],
                                       router_device:update(DeviceUpdates, Device0)
@@ -616,14 +603,64 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                                                        {queue, T},
                                                        {fcntdown, router_device:fcntdown(Device0)+1}],
                                       router_device:update(DeviceUpdates, Device0);
-                                  _ ->
-                                      lager:warning("Got ack when no confirmed downlinks in queue"),
-                                      router_device:fcnt(FCnt, Device0)
-                              end
-                      end,
-            Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
-                           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
-            {ok, Frame, Device1, true}
+                                  1 ->
+                                      case router_device:queue(Device0) of
+                                          %% Check if confirmed down link
+                                          [{true, _, _}|T] ->
+                                              DeviceUpdates = [{fcnt, FCnt},
+                                                               {queue, T},
+                                                               {location, PubKeyBin},
+                                                               {fcntdown, router_device:fcntdown(Device0)+1}],
+                                              router_device:update(DeviceUpdates, Device0);
+                                          _ ->
+                                              lager:warning("Got ack when no confirmed downlinks in queue"),
+                                              DeviceUpdates = [{fcnt, FCnt},
+                                                               {location, PubKeyBin}],
+                                              router_device:update(DeviceUpdates, Device0)
+                                      end
+                              end,
+                    Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
+                                   fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=undefined},
+                    Desc = <<"Packet with empty fopts received from AppEUI: ",
+                             (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr),
+                    {ok, Frame, Device1, false};
+                0 when FOptsLen /= 0 ->
+                    lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
+                                [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
+                    Desc = <<"Packet with double fopts received from AppEUI: ",
+                             (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+                             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr),
+                    {error, double_fopts};
+                _N ->
+                    AppSKey = router_device:app_s_key(Device0),
+                    Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
+                    lager:info("~s packet from ~s ~s with ACK ~p fopts ~p fcnt ~p and data ~p received by ~s",
+                               [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
+                                ACK, lorawan_mac_commands:parse_fopts(FOpts), FCnt, Data, AName]),
+                    %% If frame countain ACK=1 we should clear message from queue and go on next
+                    Device1 = case ACK of
+                                  0 ->
+                                      router_device:fcnt(FCnt, Device0);
+                                  1 ->
+                                      case router_device:queue(Device0) of
+                                          %% Check if confirmed down link
+                                          [{true, _, _}|T] ->
+                                              DeviceUpdates = [{fcnt, FCnt},
+                                                               {queue, T},
+                                                               {fcntdown, router_device:fcntdown(Device0)+1}],
+                                              router_device:update(DeviceUpdates, Device0);
+                                          _ ->
+                                              lager:warning("Got ack when no confirmed downlinks in queue"),
+                                              router_device:fcnt(FCnt, Device0)
+                                      end
+                              end,
+                    Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
+                                   fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(FOpts), fport=FPort, data=Data},
+                    {ok, Frame, Device1, true}
+            end
     end.
 
 %%%-------------------------------------------------------------------
@@ -798,26 +835,16 @@ report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, #frame{de
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain).
 
--spec report_status_no_dc(router_device:device(), libp2p_crypto:pubkey_bin(), any()) -> ok.
-report_status_no_dc(Device, PubKeyBin, DevAddr) ->
-    HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+-spec report_status_no_dc(router_device:device()) -> ok.
+report_status_no_dc(Device) ->
     Report = #{category => up,
                description => <<"Not enough DC">>,
                reported_at => erlang:system_time(seconds),
                payload => <<>>,
                payload_size => 0,
                port => 0,
-               devaddr => lorawan_utils:binary_to_hex(DevAddr),
-               hotspots => [#{id => erlang:list_to_binary(HotspotID),
-                              name => erlang:list_to_binary(HotspotName),
-                              reported_at => erlang:system_time(seconds),
-                              status => error,
-                              rssi => undefined,
-                              snr => undefined,
-                              spreading => undefined,
-                              frequency => undefined,
-                              channel => undefined}],
+               devaddr => <<>>,
+               hotspots => [],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

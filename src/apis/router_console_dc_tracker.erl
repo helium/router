@@ -49,7 +49,7 @@ has_enough_dc(OrgID, PayloadSize) ->
             Ledger = blockchain:ledger(Chain),
             case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
                 {error, _Reason} ->
-                    lager:warning("failed to calculatem dc amount ~p", [_Reason]),
+                    lager:warning("failed to calculate dc amount ~p", [_Reason]),
                     true;
                 DCAmount ->
                     case lookup(OrgID) of

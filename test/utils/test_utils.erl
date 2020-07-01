@@ -60,9 +60,11 @@ init_per_testcase(TestCase, Config) ->
                 {port, 3000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
+
     {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
     #{public := PubKey, secret := PrivKey} = Keys,
     {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(5000, {PrivKey, PubKey}, true),
+
     [{app_key, AppKey},
      {ets, Tab},
      {elli, Pid},

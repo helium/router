@@ -47,6 +47,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
+                balance_cache = #{} :: map(),
                 fcnt :: integer(),
                 channels_resp_cache = #{} :: map()}).
 
@@ -123,10 +124,10 @@ handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {_Balance, _Nonce}},
-            #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {Balance, Nonce}=BN},
+            #state{data_cache=DataCache0, balance_cache=BalanceCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
-    DataCache1 =
+    DataCache1=
         case FCnt =< CurrFCnt of
             true ->
                 lager:debug("we received a late packet ~p from ~p: ~p", [{FCnt, CurrFCnt}, PubKeyBin, Packet]),
@@ -143,13 +144,29 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {_Bal
                                 maps:put(FCnt, CachedData1, DataCache0);
                             {_, #packet_pb{signal_strength=RSSI}, _, _} ->
                                 case Packet#packet_pb.signal_strength > RSSI of
-                                    true -> maps:put(FCnt, CachedData1, DataCache0);
-                                    false -> DataCache0
+                                    true ->
+                                        maps:put(FCnt, CachedData1, DataCache0);
+                                    false ->
+                                        DataCache0
                                 end
                         end
                 end
         end,
-    {noreply, State#state{device=Device, data_cache=DataCache1}};
+    BalanceCache1 =
+        case FCnt =< CurrFCnt of
+            true ->
+                BalanceCache0;
+            false ->
+                case maps:get(FCnt, BalanceCache0, undefined) of
+                    undefined ->
+                        maps:put(FCnt, BN, BalanceCache0);
+                    {B, N} when Balance < B orelse Nonce > N ->
+                        maps:put(FCnt, BN, BalanceCache0);
+                    _ ->
+                        BalanceCache0
+                end
+        end,
+    {noreply, State#state{device=Device, data_cache=DataCache1, balance_cache=BalanceCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker=DeviceWorker}=State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};

@@ -35,8 +35,10 @@ start_link(Args) ->
 refill(OrgID, Nonce, Balance) ->
     case lookup(OrgID) of
         {error, not_found} ->
+            lager:info("refiling ~p with ~p @ epoch ~p", [OrgID, Balance, Nonce]),
             insert(OrgID, Balance, Nonce);
         {ok, OldBalance, _OldNonce} ->
+            lager:info("refiling ~p with ~p @ epoch ~p (old: ~p)", [OrgID, Balance + OldBalance, Nonce, _OldNonce]),
             insert(OrgID, Balance + OldBalance, Nonce)
     end.
 

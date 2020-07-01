@@ -71,7 +71,7 @@ handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
 -spec handle_data(pid(), router_device:device(),
-                 {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
+                  {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
 handle_data(Pid, Device, Data, {Balance, Nonce}) ->
     gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
 

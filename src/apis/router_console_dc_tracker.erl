@@ -54,7 +54,7 @@ has_enough_dc(OrgID, PayloadSize) ->
                 DCAmount ->
                     case lookup(OrgID) of
                         {error, not_found} ->
-                                false;
+                            false;
                         {ok, Balance0, Nonce} ->
                             Balance1 =  Balance0-DCAmount,
                             case Balance1 > 0 of

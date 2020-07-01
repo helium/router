@@ -538,11 +538,18 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
 %% @end
 %%%-------------------------------------------------------------------
 -spec validate_frame(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
-                     router_device:device(), blockchain:blockchain()) -> {ok, #frame{}, router_device:device(), boolean()} | {error, any()}.
+                     router_device:device(), blockchain:blockchain()) ->
+          {ok, #frame{}, router_device:device(), boolean(), {non_neg_integer(), non_neg_integer()}} | {error, any()}.
 validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
       FOptsLen:4, FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
+    DevEUI = router_device:dev_eui(Device0),
+    AppEUI = router_device:app_eui(Device0),
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    TS = blockchain_helium_packet_v1:timestamp(Packet),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
+
     PayloadSize = erlang:byte_size(FRMPayload),
     Metadata = router_device:metadata(Device0),
     OrgID = maps:get(organization_id, Metadata, undefined),
@@ -550,11 +557,6 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
         false ->
             {error, not_enough_dc};
         {true, Balance, Nonce} ->
-            DevEUI = router_device:dev_eui(Device0),
-            AppEUI = router_device:app_eui(Device0),
-            {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-            TS = blockchain_helium_packet_v1:timestamp(Packet),
-            lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
             case FPort of
                 0 when FOptsLen == 0 ->
                     NwkSKey = router_device:nwk_s_key(Device0),
@@ -567,41 +569,6 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                                   0 ->
                                       DeviceUpdates = [{fcnt, FCnt},
                                                        {location, PubKeyBin}],
-                                      router_device:update(DeviceUpdates, Device0)
-                              end
-                      end,
-            Frame = #frame{mtype=MType, devaddr=DevAddr, adr=ADR, adrackreq=ADRACKReq, ack=ACK, rfu=RFU,
-                           fcnt=FCnt, fopts=lorawan_mac_commands:parse_fopts(Data), fport=FPort, data=undefined},
-            Desc = <<"Packet with empty fopts received from AppEUI: ",
-                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
-            {ok, Frame, Device1, false};
-        0 when FOptsLen /= 0 ->
-            lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
-                        [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
-            Desc = <<"Packet with double fopts received from AppEUI: ",
-                     (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                     (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-            ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
-            {error, double_fopts};
-        _N ->
-            AppSKey = router_device:app_s_key(Device0),
-            Data = lorawan_utils:reverse(lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)),
-            lager:info("~s packet from ~s ~s with ACK ~p fopts ~p fcnt ~p and data ~p received by ~s",
-                       [lorawan_utils:mtype(MType), lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
-                        ACK, lorawan_mac_commands:parse_fopts(FOpts), FCnt, Data, AName]),
-            %% If frame countain ACK=1 we should clear message from queue and go on next
-            Device1 = case ACK of
-                          0 ->
-                              router_device:fcnt(FCnt, Device0);
-                          1 ->
-                              case router_device:queue(Device0) of
-                                  %% Check if confirmed down link
-                                  [{true, _, _}|T] ->
-                                      DeviceUpdates = [{fcnt, FCnt},
-                                                       {queue, T},
-                                                       {fcntdown, router_device:fcntdown(Device0)+1}],
                                       router_device:update(DeviceUpdates, Device0);
                                   1 ->
                                       case router_device:queue(Device0) of
@@ -624,7 +591,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with empty fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr),
+                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
@@ -632,7 +599,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with double fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr),
+                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
                     {error, double_fopts};
                 _N ->
                     AppSKey = router_device:app_s_key(Device0),

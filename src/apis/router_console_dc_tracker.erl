@@ -2,6 +2,10 @@
 
 -behavior(gen_server).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -56,8 +60,8 @@ has_enough_dc(OrgID, PayloadSize, Chain) ->
                 {error, not_found} ->
                     false;
                 {ok, Balance0, Nonce} ->
-                    Balance1 =  Balance0-DCAmount,
-                    case Balance1 > 0 of
+                    Balance1 = Balance0-DCAmount,
+                    case Balance1 >= 0 of
                         false ->
                             false;
                         true ->
@@ -114,3 +118,55 @@ lookup(OrgID) ->
 insert(OrgID, Balance, Nonce) ->
     true = ets:insert(?ETS, {OrgID, {Balance, Nonce}}),
     ok.
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+
+refill_test() ->
+    _  = ets:new(?ETS, [public, named_table, set]),
+    OrgID = <<"ORG_ID">>,
+    Nonce = 1,
+    Balance = 100,
+    ?assertEqual({error, not_found}, lookup(OrgID)),
+    ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
+    ?assertEqual({ok, Balance, Nonce}, lookup(OrgID)),
+    ets:delete(?ETS),
+    ok.
+
+has_enough_dc_test() ->
+    _  = ets:new(?ETS, [public, named_table, set]),
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(_) -> undefined end),
+    meck:new(blockchain_utils, [passthrough]),
+    meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
+
+    OrgID = <<"ORG_ID">>,
+    Nonce = 1,
+    Balance = 2,
+    ?assertEqual(false, has_enough_dc(OrgID, 48, chain)),
+    ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
+    ?assertEqual({true, 0, 1}, has_enough_dc(OrgID, 48, chain)),
+    ?assertEqual(false, has_enough_dc(OrgID, 48, chain)),
+
+    ets:delete(?ETS),
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_utils)),
+    meck:unload(blockchain_utils),
+    ok.
+
+current_balance_test() ->
+    _  = ets:new(?ETS, [public, named_table, set]),
+    OrgID = <<"ORG_ID">>,
+    Nonce = 1,
+    Balance = 100,
+    ?assertEqual({0, 0}, current_balance(OrgID)),
+    ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
+    ?assertEqual({100, 1}, current_balance(OrgID)),
+    ets:delete(?ETS),
+    ok.
+
+
+-endif.

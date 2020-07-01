@@ -553,7 +553,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     PayloadSize = erlang:byte_size(FRMPayload),
     Metadata = router_device:metadata(Device0),
     OrgID = maps:get(organization_id, Metadata, undefined),
-    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize) of
+    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize, Blockchain) of
         false ->
             {error, not_enough_dc};
         {true, Balance, Nonce} ->

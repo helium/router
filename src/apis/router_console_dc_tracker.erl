@@ -7,7 +7,7 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          refill/3,
-         has_enough_dc/2,
+         has_enough_dc/3,
          current_balance/1]).
 
 %% ------------------------------------------------------------------
@@ -43,32 +43,28 @@ refill(OrgID, Nonce, Balance) ->
             insert(OrgID, Balance + OldBalance, Nonce)
     end.
 
--spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer()) -> {true, non_neg_integer(), non_neg_integer()} | false.
-has_enough_dc(OrgID, PayloadSize) ->
-    case blockchain_worker:blockchain() of
-        undefined ->
+-spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer(), Chain :: blockchain:blockchain()) ->
+    {true, non_neg_integer(), non_neg_integer()} | false.
+has_enough_dc(OrgID, PayloadSize, Chain) ->
+    Ledger = blockchain:ledger(Chain),
+    case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+        {error, _Reason} ->
+            lager:warning("failed to calculate dc amount ~p", [_Reason]),
             false;
-        Chain ->
-            Ledger = blockchain:ledger(Chain),
-            case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
-                {error, _Reason} ->
-                    lager:warning("failed to calculate dc amount ~p", [_Reason]),
+        DCAmount ->
+            case lookup(OrgID) of
+                {error, not_found} ->
                     false;
-                DCAmount ->
-                    case lookup(OrgID) of
-                        {error, not_found} ->
+                {ok, Balance0, Nonce} ->
+                    Balance1 =  Balance0-DCAmount,
+                    case Balance1 > 0 of
+                        false ->
                             false;
-                        {ok, Balance0, Nonce} ->
-                            Balance1 =  Balance0-DCAmount,
-                            case Balance1 > 0 of
-                                false ->
-                                    false;
-                                true ->
-                                    ok = insert(OrgID, Balance1, Nonce),
-                                    {true, Balance1, Nonce}
-                            end
-
+                        true ->
+                            ok = insert(OrgID, Balance1, Nonce),
+                            {true, Balance1, Nonce}
                     end
+
             end
     end.
 

@@ -7,7 +7,8 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          refill/3,
-         has_enough_dc/2]).
+         has_enough_dc/2,
+         current_balance/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -69,6 +70,13 @@ has_enough_dc(OrgID, PayloadSize) ->
 
                     end
             end
+    end.
+
+-spec current_balance(OrgID :: binary()) -> {non_neg_integer(), non_neg_integer()}.
+current_balance(OrgID) ->
+    case lookup(OrgID) of
+        {error, not_found} -> {0, 0};
+        {ok, Balance, Nonce} -> {Balance, Nonce}
     end.
 
 %% ------------------------------------------------------------------

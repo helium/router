@@ -189,12 +189,14 @@ handle_cast(_Msg, State) ->
 %% Data Handling
 %% ------------------------------------------------------------------
 handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef, device=Device,
-                                         data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
+                                         data_cache=DataCache0, balance_cache=BalanceCache0, channels_resp_cache=RespCache0}=State) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
-    {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
+    CachedDB = maps:get(FCnt, BalanceCache0),
+    {ok, Map} = send_to_channel(CachedData, CachedDB, Device, EventMgrRef, Blockchain),
     lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
+                          balance_cache=maps:remove(FCnt, BalanceCache0),
                           fcnt=FCnt,
                           channels_resp_cache=maps:put(FCnt, {Map, []}, RespCache0)}};
 %% ------------------------------------------------------------------
@@ -213,7 +215,8 @@ handle_info({report_status_timeout, FCnt}, #state{device=Device, channels_resp_c
                    devaddr => maps:get(devaddr, Data),
                    hotspots => maps:get(hotspots, Data),
                    channels => CachedReports,
-                   fcnt => maps:get(fcnt, Data)},
+                   fcnt => maps:get(fcnt, Data),
+                   dc => maps:get(dc, Data)},
     ok = router_device_api:report_status(Device, ReportsMap),
     {noreply, State#state{channels_resp_cache=maps:remove(FCnt, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
@@ -369,9 +372,9 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
             {error, payload_raw_not_found}
     end.
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(),
-                      pid() , blockchain:blockchain()) -> {ok, map()}.
-send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
+-spec send_to_channel([{string(), #packet_pb{}, #frame{}}], {non_neg_integer(), non_neg_integer()},
+                      router_device:device(), pid() , blockchain:blockchain()) -> {ok, map()}.
+send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) ->
     FoldFun =
         fun({PubKeyBin, Packet, _, Time}, Acc) ->
                 B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
@@ -402,7 +405,8 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
             payload => Data,
             port => Port,
             devaddr => lorawan_utils:binary_to_hex(DevAddr),
-            hotspots => lists:foldr(FoldFun, [], CachedData)},
+            hotspots => lists:foldr(FoldFun, [], CachedData),
+            dc => #{balance => Balance, nonce => Nonce}},
     ok = router_channel:handle_data(EventMgrRef, Map, FCnt),
     {ok, Map}.
 

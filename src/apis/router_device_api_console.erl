@@ -124,6 +124,15 @@ report_status(Device, Map) ->
               Category = maps:get(category, Map),
               Channels = maps:get(channels, Map),
               FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
+              DCMap = case maps:get(dc, Map, undefined) of
+                          undefined ->
+                              Metadata = router_device:metadata(Device),
+                              OrgID = maps:get(organization_id, Metadata, <<>>),
+                              {B, N} = router_console_dc_tracker:current_balance(OrgID),
+                              #{balance => B, nonce => N};
+                          BN ->
+                              BN
+                      end,
               Body0 = #{category => Category,
                         description => maps:get(description, Map),
                         reported_at => maps:get(reported_at, Map),
@@ -134,7 +143,8 @@ report_status(Device, Map) ->
                         port => maps:get(port, Map),
                         devaddr => maps:get(devaddr, Map),
                         hotspots => maps:get(hotspots, Map),
-                        channels => [maps:remove(debug, C) ||C <- Channels]},
+                        channels => [maps:remove(debug, C) ||C <- Channels],
+                        dc => DCMap},
               DebugLeft = debug_lookup(DeviceID),
               Body1 =
                   case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of

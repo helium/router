@@ -47,8 +47,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 dc_test(Config) ->
-    ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
-
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),

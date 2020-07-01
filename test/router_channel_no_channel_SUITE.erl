@@ -77,6 +77,7 @@ no_channel_test(Config) ->
                                            <<"payload_size">> => 0,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
+                                           <<"dc">> => fun erlang:is_map/1,
                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
                                                                 <<"reported_at">> => fun erlang:is_integer/1,
@@ -111,6 +112,7 @@ no_channel_test(Config) ->
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
+                                            <<"dc">> => fun erlang:is_map/1,
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -140,7 +142,7 @@ no_channel_test(Config) ->
                                    ?CONSOLE_DEVICE_ID,
                                    DeviceChannelsWorkerPid),
     NoChannelID = router_channel:id(NoChannel),
-    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{NoChannelID := NoChannel}, _, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
+    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{NoChannelID := NoChannel}, _, _, _, _, _}, sys:get_state(DeviceChannelsWorkerPid)),
 
     %% Console back to normal mode
     ets:insert(Tab, {no_channel, false}),
@@ -150,7 +152,7 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only HTTP channel now
     State0 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _, _}, State0),
+    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{?CONSOLE_HTTP_CHANNEL_ID := _}, _, _, _, _, _}, State0),
     ?assertEqual(1, maps:size(erlang:element(6, State0))),
 
     %% Send UNCONFIRMED_UP frame packet to check http channel is working
@@ -168,6 +170,7 @@ no_channel_test(Config) ->
                                    <<"payload">> => <<>>,
                                    <<"port">> => 1,
                                    <<"devaddr">> => '_',
+                                   <<"dc">> => fun erlang:is_map/1,
                                    <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                         <<"name">> => erlang:list_to_binary(HotspotName),
                                                         <<"reported_at">> => fun erlang:is_integer/1,
@@ -190,6 +193,7 @@ no_channel_test(Config) ->
                                             <<"payload_size">> => 0,
                                             <<"port">> => '_',
                                             <<"devaddr">> => '_',
+                                            <<"dc">> => fun erlang:is_map/1,
                                             <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                                                                  <<"name">> => erlang:list_to_binary(HotspotName),
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
@@ -218,7 +222,7 @@ no_channel_test(Config) ->
 
     %% Checking that device worker has only no_channel
     State1 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{NoChannelID := NoChannel}, _, _, _, _}, State1),
+    ?assertMatch({state, _Chain, _EvtMgr, _DeviceWorker, _Device, #{NoChannelID := NoChannel}, _, _, _, _, _}, State1),
     ?assertEqual(1, maps:size(erlang:element(6, State1))),
 
     ok.

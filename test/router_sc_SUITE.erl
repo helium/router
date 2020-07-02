@@ -450,7 +450,7 @@ no_dc_entry_test(Config) ->
     OUITxn = ct_rpc:call(PayerNode,
                          blockchain_txn_oui_v1,
                          new,
-                         [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, PayerPubkeyBin]),
+                         [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, 8, PayerPubkeyBin]),
     ct:pal("OUITxn: ~p", [OUITxn]),
     SignedOUITxn0 = ct_rpc:call(RouterNode,
                                 blockchain_txn_oui_v1,

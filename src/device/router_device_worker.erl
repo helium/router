@@ -206,10 +206,10 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                                                              downlink_handled_at=DownlinkHandledAt,
                                                              channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
-        {error, not_enough_dc} ->
+        {error, {not_enough_dc, Device1}} ->
             ok = report_status_no_dc(Device0),
             lager:debug("did not have enough dc to send data"),
-            {noreply, State};
+            {noreply, State#state{device=Device1}};
         {error, _Reason} ->
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
@@ -555,7 +555,16 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     OrgID = maps:get(organization_id, Metadata, undefined),
     case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize, Blockchain) of
         false ->
-            {error, not_enough_dc};
+            DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],
+            Device1 = router_device:update(DeviceUpdates, Device0),
+            case FPort of
+                0 when FOptsLen == 0 ->
+                    {error, {not_enough_dc, Device1}};
+                0 when FOptsLen /= 0 ->
+                    {error, {not_enough_dc, Device0}};
+                _N ->
+                    {error, {not_enough_dc, Device1}}
+            end;
         {true, Balance, Nonce} ->
             case FPort of
                 0 when FOptsLen == 0 ->

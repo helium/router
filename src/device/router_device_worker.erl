@@ -810,7 +810,7 @@ report_status_no_dc(Device) ->
                payload => <<>>,
                payload_size => 0,
                port => 0,
-               devaddr => <<>>,
+               devaddr => router_device:devaddr(Device),
                hotspots => [],
                channels => []},
     ok = router_device_api:report_status(Device, Report).

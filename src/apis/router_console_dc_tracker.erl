@@ -48,7 +48,7 @@ refill(OrgID, Nonce, Balance) ->
     end.
 
 -spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer(), Chain :: blockchain:blockchain()) ->
-    {true, non_neg_integer(), non_neg_integer()} | false.
+          {true, non_neg_integer(), non_neg_integer()} | false.
 has_enough_dc(OrgID, PayloadSize, Chain) ->
     Ledger = blockchain:ledger(Chain),
     case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of

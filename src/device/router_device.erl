@@ -212,7 +212,7 @@ deserialize(Binary) ->
                        app_eui=V2#device_v2.app_eui,
                        nwk_s_key=V2#device_v2.nwk_s_key,
                        app_s_key=V2#device_v2.app_s_key,
-                       devaddr=undefined,
+                       devaddr=router_device_devaddr:default_devaddr(),
                        join_nonce=V2#device_v2.join_nonce,
                        fcnt=V2#device_v2.fcnt,
                        fcntdown=V2#device_v2.fcntdown,

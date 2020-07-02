@@ -48,7 +48,17 @@ start_link(Args) ->
 -spec default_devaddr() -> binary().
 default_devaddr() ->
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    application:get_env(router, default_devaddr, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>).
+    DefaultDevaddr = <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
+    case application:get_env(router, default_devaddr) of
+        undefined ->
+            DefaultDevaddr;
+        {ok, Base64Str} ->
+            try base64:decode(Base64Str) of
+                Decoded -> Decoded
+            catch
+                _:_ -> DefaultDevaddr
+            end
+    end.
 
 -spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->  {ok, binary()} | {error, any()}.
 allocate(Device, PubKeyBin) ->

@@ -303,7 +303,7 @@ check_devices(DB, CF) ->
 start_ws(WSEndpoint, Token) ->
     Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
     {ok, Pid} = router_console_ws_handler:start_link(#{url => Url,
-                                                       auto_join => [<<"device:all">>],
+                                                       auto_join => [<<"device:all">>, <<"organization:all">>],
                                                        forward => self()}),
     Pid.
 

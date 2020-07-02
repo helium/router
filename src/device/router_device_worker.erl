@@ -813,7 +813,7 @@ report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, #frame{de
 
 -spec report_status_no_dc(router_device:device()) -> ok.
 report_status_no_dc(Device) ->
-    Report = #{category => up,
+    Report = #{category => packet_dropped,
                description => <<"Not enough DC">>,
                reported_at => erlang:system_time(seconds),
                payload => <<>>,

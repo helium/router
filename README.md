@@ -50,7 +50,7 @@
 
 ```
 {
-    "category": "up | down | activation | ack | channel_crash | channel_start_error",
+    "category": "up | down | activation | ack | packet_dropped | channel_crash | channel_start_error",
     "description": "any specific description ie.correcting channel mask, otherwise null",
     "reported_at": 123,
     "device_id": "device_uuid",

@@ -121,10 +121,10 @@ init_per_testcase(TestCase, Config0) ->
     true = miner_test:integrate_genesis_block(hd(ConsensusMiners), Routers),
 
     %% confirm we have a height of 1 on all miners
-    ok = miner_test:wait_for_gte(height_exactly, Miners, 1),
+    ok = miner_test:wait_for_gte(height, Miners, 1),
 
     %% confirm we have a height of 1 on routers
-    ok = miner_test:wait_for_gte(height_exactly, Routers, 1),
+    ok = miner_test:wait_for_gte(height, Routers, 1),
 
     miner_test_fake_radio_backplane ! go,
 
@@ -158,11 +158,19 @@ maintain_channels_test(Config) ->
                          blockchain_txn_oui_v1,
                          new,
                          [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, 8]),
-    ct:pal("OUITxn: ~p", [OUITxn]),
+
+    %% fees are not enabled on the chain, but lets calculate anyway in case they do get added later
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    TxnFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_fee, [OUITxn, RouterChain]),
+    StakingFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_staking_fee, [OUITxn, RouterChain]),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, TxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, StakingFee),
+    ct:pal("OUITxn: ~p", [OUITxn1]),
+
     SignedOUITxn = ct_rpc:call(RouterNode,
                                blockchain_txn_oui_v1,
                                sign,
-                               [OUITxn, RouterSigFun]),
+                               [OUITxn1, RouterSigFun]),
     ct:pal("SignedOUITxn: ~p", [SignedOUITxn]),
     ok = ct_rpc:call(RouterNode, blockchain_worker, submit_txn, [SignedOUITxn]),
 
@@ -175,7 +183,6 @@ maintain_channels_test(Config) ->
     ok = miner_test:wait_for_txn(Miners, CheckTxnOUI, timer:seconds(30)),
 
     %% check that the router sees that the oui counter is up-to-date
-    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
     RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
     {ok, 1} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
 
@@ -183,7 +190,6 @@ maintain_channels_test(Config) ->
     ct:pal("Before RouterState: ~p", [RouterState]),
 
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
@@ -195,7 +201,6 @@ maintain_channels_test(Config) ->
 
     %% Wait 200 blocks, for multiple sc open txns to have occured
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
                                          RouterChainHeight > 200
                                  end, 60, timer:seconds(5)),
@@ -203,7 +208,6 @@ maintain_channels_test(Config) ->
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          {ok, LedgerSCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
                                          {_, S} = hd(lists:sort(fun({_, S1}, {_, S2}) ->
@@ -223,6 +227,7 @@ handle_packets_test(Config) ->
     Routers = ?config(routers, Config),
 
     [RouterNode | _] = Routers,
+    ct:pal("Routernode is ~p", [RouterNode]),
 
     ClientPubkeyBins = [ct_rpc:call(Miner, blockchain_swarm, pubkey_bin, []) || Miner <- Miners],
 
@@ -244,7 +249,14 @@ handle_packets_test(Config) ->
                          blockchain_txn_oui_v1,
                          new,
                          [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, 8]),
-    ct:pal("OUITxn: ~p", [OUITxn]),
+    %% fees are not enabled on the chain, but lets calculate anyway in case they do get added later
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    TxnFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_fee, [OUITxn, RouterChain]),
+    StakingFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_staking_fee, [OUITxn, RouterChain]),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, TxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, StakingFee),
+    ct:pal("OUITxn: ~p", [OUITxn1]),
+
     SignedOUITxn = ct_rpc:call(RouterNode,
                                blockchain_txn_oui_v1,
                                sign,
@@ -265,7 +277,6 @@ handle_packets_test(Config) ->
     true = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
 
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
@@ -294,7 +305,7 @@ handle_packets_test(Config) ->
 
     DataPacket = test_utils:frame_payload(?CONFIRMED_UP, DevAddr, NetKey, AppKey, 1, #{body => <<1:8/integer, "hello">>}),
 
-    ok = miner_test_fake_radio_backplane:transmit(DataPacket, 902.300, 631210968910285823),
+    ok = miner_test_fake_radio_backplane:transmit(DataPacket, 903.300, 631210968910285823),
     ct:pal("transmitted packet ~p", [DataPacket]),
 
     miner_test_fake_radio_backplane:get_next_packet(),
@@ -303,20 +314,18 @@ handle_packets_test(Config) ->
         {fake_radio_backplane, ReplyPacket2} ->
             ct:pal("got downlink ~p", [ReplyPacket2])
     after
-        2000 ->
+        5000 ->
             ct:fail("no downlink")
     end,
 
 
     %% Wait 100 blocks
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
                                          RouterChainHeight > 100
                                  end, 60, timer:seconds(5)),
 
     %% Find all sc close txns
-    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
     RouterBlocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
 
     Txns = lists:map(fun({I, B}) ->
@@ -450,12 +459,19 @@ no_dc_entry_test(Config) ->
     OUITxn = ct_rpc:call(PayerNode,
                          blockchain_txn_oui_v1,
                          new,
-                         [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, PayerPubkeyBin]),
-    ct:pal("OUITxn: ~p", [OUITxn]),
+                         [OUI, RouterPubkeyBin, [RouterPubkeyBin], Filter, 8, PayerPubkeyBin]),
+    %% fees are not enabled on the chain, but lets calculate anyway in case they do get added later
+    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
+    TxnFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_fee, [OUITxn, RouterChain]),
+    StakingFee = ct_rpc:call(RouterNode, blockchain_txn_oui_v1, calculate_staking_fee, [OUITxn, RouterChain]),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, TxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, StakingFee),
+    ct:pal("OUITxn: ~p", [OUITxn1]),
+
     SignedOUITxn0 = ct_rpc:call(RouterNode,
                                 blockchain_txn_oui_v1,
                                 sign,
-                                [OUITxn, RouterSigFun]),
+                                [OUITxn1, RouterSigFun]),
 
     %% payer must also sign the oui txn
     SignedOUITxn = ct_rpc:call(PayerNode,
@@ -472,7 +488,6 @@ no_dc_entry_test(Config) ->
     ok = miner_test:wait_for_txn(Routers ++ Miners, CheckTxnOUI, timer:seconds(30)),
 
     %% check that the router sees that the oui counter is up-to-date
-    RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
     RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
     {ok, 1} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
 
@@ -480,7 +495,6 @@ no_dc_entry_test(Config) ->
     ct:pal("Before RouterState: ~p", [RouterState]),
 
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
@@ -492,7 +506,6 @@ no_dc_entry_test(Config) ->
 
     %% Wait 200 blocks, for multiple sc open txns to have occured
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
                                          RouterChainHeight > 200
                                  end, 60, timer:seconds(5)),
@@ -500,7 +513,6 @@ no_dc_entry_test(Config) ->
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4
     true = miner_test:wait_until(fun() ->
-                                         RouterChain = ct_rpc:call(RouterNode, blockchain_worker, blockchain, []),
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          {ok, LedgerSCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
                                          {_, S} = hd(lists:sort(fun({_, S1}, {_, S2}) ->

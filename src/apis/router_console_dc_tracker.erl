@@ -43,8 +43,8 @@ refill(OrgID, Nonce, Balance) ->
             lager:info("refiling ~p with ~p @ epoch ~p", [OrgID, Balance, Nonce]),
             insert(OrgID, Balance, Nonce);
         {ok, OldBalance, _OldNonce} ->
-            lager:info("refiling ~p with ~p @ epoch ~p (old: ~p)", [OrgID, Balance + OldBalance, Nonce, _OldNonce]),
-            insert(OrgID, Balance + OldBalance, Nonce)
+            lager:info("refiling ~p with ~p (old: ~p) @ epoch ~p (old: ~p)", [OrgID, Balance, OldBalance, Nonce, _OldNonce]),
+            insert(OrgID, Balance, Nonce)
     end.
 
 -spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer(), Chain :: blockchain:blockchain()) ->

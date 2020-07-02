@@ -38,7 +38,11 @@
             "lat" => 37.00001962582851,
             "long" => -120.9000053210367
         }
-    ]
+    ],
+    dc : {
+        balance: 3000,
+        nonce: 2
+    }
 }
 ```
 
@@ -81,7 +85,11 @@
             // ONLY ON DEBUG MODE
             "debug": {req: {}, res: {}}
         }
-    ]
+    ],
+    dc : {
+        balance: 3000,
+        nonce: 2
+    }
 }
 ```
 

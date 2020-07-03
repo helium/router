@@ -56,19 +56,20 @@ has_enough_dc(OrgID, PayloadSize, Chain) ->
             lager:warning("failed to calculate dc amount ~p", [_Reason]),
             false;
         DCAmount ->
-            case lookup(OrgID) of
-                {error, not_found} ->
+            {Balance0, Nonce} = 
+                case lookup(OrgID) of
+                    {error, not_found} ->
+                        fetch_and_save_org_balance(OrgID);
+                    {ok, B, N} ->
+                        {B, N}
+                end,
+            Balance1 = Balance0-DCAmount,
+            case Balance1 >= 0 andalso Nonce > 0 of
+                false ->
                     false;
-                {ok, Balance0, Nonce} ->
-                    Balance1 = Balance0-DCAmount,
-                    case Balance1 >= 0 of
-                        false ->
-                            false;
-                        true ->
-                            ok = insert(OrgID, Balance1, Nonce),
-                            {true, Balance1, Nonce}
-                    end
-
+                true ->
+                    ok = insert(OrgID, Balance1, Nonce),
+                    {true, Balance1, Nonce}
             end
     end.
 
@@ -109,12 +110,31 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+%% TODO: I need to do someting about this we are going to kill console if this is not cached somehow
+-spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.
+fetch_and_save_org_balance(OrgID) ->
+    case router_device_api_console:get_org(OrgID) of
+        {error, _} ->
+            {0, 0};
+        {ok, Map} ->
+            Balance = maps:get(<<"dc_balance">>, Map, 0),
+            case maps:get(<<"dc_balance_nonce">>, Map, 0) of
+                0 ->
+                    {0, 0};
+                Nonce ->
+                    ok = insert(OrgID, Balance, Nonce),
+                    {Balance, Nonce}
+            end
+    end.
+
+-spec lookup(binary()) -> {ok, non_neg_integer(), non_neg_integer()} | {error, not_found}.
 lookup(OrgID) ->
     case ets:lookup(?ETS, OrgID) of
         [] -> {error, not_found};
         [{OrgID, {Balance, Nonce}}] -> {ok, Balance, Nonce}
     end.
 
+-spec insert(binary(), non_neg_integer(), non_neg_integer()) -> ok.
 insert(OrgID, Balance, Nonce) ->
     true = ets:insert(?ETS, {OrgID, {Balance, Nonce}}),
     ok.
@@ -141,6 +161,8 @@ has_enough_dc_test() ->
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
     meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
+    meck:new(router_device_api_console, [passthrough]),
+    meck:expect(router_device_api_console, get_org, fun(_) -> {error, deal_with_it} end),
 
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
@@ -151,6 +173,8 @@ has_enough_dc_test() ->
     ?assertEqual(false, has_enough_dc(OrgID, 48, chain)),
 
     ets:delete(?ETS),
+    ?assert(meck:validate(router_device_api_console)),
+    meck:unload(router_device_api_console),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_utils)),

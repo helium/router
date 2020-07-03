@@ -15,7 +15,8 @@
          get_device/1, get_devices/2,
          get_channels/2,
          report_status/2,
-         get_downlink_url/2]).
+         get_downlink_url/2,
+         get_org/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -172,6 +173,23 @@ get_downlink_url(Channel, DeviceID) ->
             {Endpoint, _Token} = token_lookup(),
             ChannelID = router_channel:id(Channel),
             <<Endpoint/binary, "/api/v1/down/", ChannelID/binary, "/", DownlinkToken/binary, "/", DeviceID/binary>>
+    end.
+
+-spec get_org(binary()) -> {ok, map()} | {error, any()}.
+get_org(OrgID) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, " /api/router/organizations/", OrgID/binary>>,
+    lager:debug("get ~p", [Url]),
+    Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            lager:debug("Body for ~p ~p", [Url, Body]),
+            {ok, jsx:decode(Body, [return_maps])};
+        {ok, 404, _ResponseHeaders, _ResponseBody} ->
+            lager:debug("org ~p not found", [OrgID]),
+            {error, not_found};
+        _Other ->
+            {error, {get_org_failed, _Other}}
     end.
 
 start_link(Args) ->

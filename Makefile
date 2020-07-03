@@ -12,7 +12,7 @@ test: compile
 	$(REBAR) as test do xref, eunit, ct && $(REBAR) dialyzer
 
 ci:
-	$(REBAR) as test do xref, eunit, ct
+	$(REBAR) as test do eunit, ct
 
 typecheck:
 	$(REBAR) dialyzer

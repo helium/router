@@ -178,7 +178,7 @@ get_downlink_url(Channel, DeviceID) ->
 -spec get_org(binary()) -> {ok, map()} | {error, any()}.
 get_org(OrgID) ->
     {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, " /api/router/organizations/", OrgID/binary>>,
+    Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
     lager:debug("get ~p", [Url]),
     Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of

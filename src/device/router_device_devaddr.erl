@@ -203,9 +203,9 @@ sort_devices_fun(DeviceA, DeviceB, Index, Chain) ->
             of
                 false ->
                     {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
-                    h3:grid_distance(IndexA1, Index1) > h3:grid_distance(Indexb1, Index1);
+                    compare_distance(Index1, IndexA1, Indexb1);
                 true ->
-                    h3:grid_distance(IndexA, Index) > h3:grid_distance(IndexB, Index)
+                    compare_distance(Index, IndexA, IndexB)
             end
     end.
 
@@ -218,6 +218,14 @@ indexes_to_lowest_res(IndexA, IndexB, IndexC) ->
 -spec to_res(h3:index(), non_neg_integer()) -> h3:index().
 to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
+
+-spec compare_distance(h3:index(), h3:index(), h3:index()) -> boolean().
+compare_distance(Index1, Index2, Index3) ->
+    try  h3:grid_distance(Index2, Index1) > h3:grid_distance(Index3, Index1) of
+        Bool -> Bool
+    catch
+        _:_ -> false
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

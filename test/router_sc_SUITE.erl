@@ -305,7 +305,7 @@ handle_packets_test(Config) ->
 
     DataPacket = test_utils:frame_payload(?CONFIRMED_UP, DevAddr, NetKey, AppKey, 1, #{body => <<1:8/integer, "hello">>}),
 
-    ok = miner_test_fake_radio_backplane:transmit(DataPacket, 903.300, 631210968910285823),
+    ok = miner_test_fake_radio_backplane:transmit(DataPacket, 902.300, 631210968910285823),
     ct:pal("transmitted packet ~p", [DataPacket]),
 
     miner_test_fake_radio_backplane:get_next_packet(),

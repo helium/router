@@ -143,12 +143,34 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+
+handle_info({blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}}, #state{chain=Chain, oui=OUI}=State) ->
+    {ok, Block} = blockchain:get_block(BlockHash, Chain),
+    FilterFun = fun(T) ->
+                        case blockchain_txn:type(T) of
+                            blockchain_txn_oui_v1 ->
+                                blockchain_txn_oui_v1:oui(T) == OUI;
+                            blockchain_txn_routing_v1 ->
+                                blockchain_txn_routing_v1:oui(T) == OUI;
+                            _ ->
+                                false
+                        end
+                end,
+    %% check if there's any txns that affect our OUI
+    case blockchain_utils:find_txn(Block, FilterFun) of
+        [] ->
+            {noreply, State};
+        _ ->
+            Subnets = subnets(OUI, Chain),
+            {noreply, State#state{subnets=Subnets}}
+    end;
 handle_info(post_init, #state{chain=undefined, oui=OUI}=State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
+            ok = blockchain_event:add_handler(self()),
             Subnets = subnets(OUI, Chain),
             {noreply, State#state{chain=Chain, subnets=Subnets}}
     end;

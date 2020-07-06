@@ -109,6 +109,7 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
               %% give each node its own log directory
               LogRoot = LogDir ++ "_router_" ++ atom_to_list(Router),
               ct_rpc:call(Router, application, set_env, [lager, log_root, LogRoot]),
+              ct_rpc:call(Router, lager, set_loglevel, [{lager_file_backend, "log/console.log"}, debug]),
 
               %% set blockchain configuration
               #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ecc_compact),
@@ -133,8 +134,6 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
                                                           {secret, <<"yolo">>}]]),
 
               {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),
-
-              ct_rpc:call(Router, lager, set_loglevel, [{lager_file_backend, "log/console.log"}, debug]),
               ct:pal("Router: ~p, StartedApps: ~p", [Router, StartedApps])
       end,
       RouterKeys

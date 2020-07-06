@@ -58,9 +58,14 @@ allocate(Config) ->
     OUI1 = 1,
     {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
+    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+
     #{secret := PrivKey} = Keys,
     SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn, SigFun),
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
 
     ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
 
@@ -100,9 +105,14 @@ route_packet(Config) ->
     OUI1 = 1,
     {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
+    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+
     #{secret := PrivKey} = Keys,
     SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn, SigFun),
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
 
     ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
 
@@ -151,7 +161,7 @@ route_packet(Config) ->
                                                                 <<"spreading">> => <<"SF8BW125">>,
                                                                 <<"frequency">> => fun erlang:is_float/1,
                                                                 <<"channel">> => fun erlang:is_number/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"lat">> => fun erlang:is_float/1,
                                                                 <<"long">> => fun erlang:is_float/1}],
                                            <<"channels">> => []}),
 
@@ -193,7 +203,7 @@ route_packet(Config) ->
                                                         <<"spreading">> => <<"SF8BW125">>,
                                                         <<"frequency">> => fun erlang:is_float/1,
                                                         <<"channel">> => fun erlang:is_number/1,
-                                                        <<"lat">> => fun erlang:is_float/1, 
+                                                        <<"lat">> => fun erlang:is_float/1,
                                                         <<"long">> => fun erlang:is_float/1}]}),
 
     ok.

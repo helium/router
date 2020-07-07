@@ -19,7 +19,8 @@
 -export([start_link/1,
          handle_packet/2,
          queue_message/2,
-         device_update/1]).
+         device_update/1,
+         handle_offer/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -100,6 +101,10 @@ queue_message(Pid, Msg) ->
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
+%% placeholder handle offer function
+handle_offer(Offer, HandlerPid) ->
+    lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
+    ok.
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------

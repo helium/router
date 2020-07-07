@@ -177,20 +177,23 @@ get_downlink_url(Channel, DeviceID) ->
 
 -spec get_org(binary()) -> {ok, map()} | {error, any()}.
 get_org(OrgID) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
-    lager:debug("get ~p", [Url]),
-    Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            lager:debug("Body for ~p ~p", [Url, Body]),
-            {ok, jsx:decode(Body, [return_maps])};
-        {ok, 404, _ResponseHeaders, _ResponseBody} ->
-            lager:debug("org ~p not found", [OrgID]),
-            {error, not_found};
-        _Other ->
-            {error, {get_org_failed, _Other}}
-    end.
+    e2qc:cache(router_device_api_console_get_org, OrgID, 300,
+               fun() ->
+                       {Endpoint, Token} = token_lookup(),
+                       Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
+                       lager:debug("get ~p", [Url]),
+                       Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+                       case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+                           {ok, 200, _Headers, Body} ->
+                               lager:debug("Body for ~p ~p", [Url, Body]),
+                               {ok, jsx:decode(Body, [return_maps])};
+                           {ok, 404, _ResponseHeaders, _ResponseBody} ->
+                               lager:debug("org ~p not found", [OrgID]),
+                               {error, not_found};
+                           _Other ->
+                               {error, {get_org_failed, _Other}}
+                       end
+               end).
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).

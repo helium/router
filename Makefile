@@ -18,7 +18,7 @@ test: compile
 	$(REBAR) as test do xref, eunit, ct && $(REBAR) dialyzer
 
 ci:
-	$(REBAR) dialyzer && $(REBAR) as test do xref, eunit, ct || (mkdir -p artifacts; tar --exclude='./_build/test/lib' --exclude='./_build/test/plugins' -czf artifacts/$(CIBRANCH).tar.gz _build/test; false))
+	$(REBAR) do dialyzer && ($(REBAR) as test do xref,eunit,ct || (mkdir -p artifacts; tar --exclude='./_build/test/lib' --exclude='./_build/test/plugins' -czf artifacts/$(CIBRANCH).tar.gz _build/test; false))
 
 typecheck:
 	$(REBAR) dialyzer

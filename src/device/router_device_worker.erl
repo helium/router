@@ -102,6 +102,7 @@ device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
 %% placeholder handle offer function
+-spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
 handle_offer(Offer, HandlerPid) ->
     lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
     ok.

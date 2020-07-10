@@ -27,7 +27,7 @@
 -define(SERVER, ?MODULE).
 -define(ETS, router_console_dc_tracker_ets).
 
--record(state, {}).
+-record(state, {chain = undefined :: undefined | blockchain:blockchain()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -96,6 +96,8 @@ current_balance(OrgID) ->
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ets:new(?ETS, [public, named_table, set]),
+    ok = blockchain_event:add_handler(self()),
+    _ = erlang:send_after(500, self(), post_init),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -106,6 +108,37 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{chain=undefined}=State) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            {noreply, State#state{chain=Chain}}
+    end;
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->
+    {noreply, State};
+handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state{chain=Chain}=State) ->
+    case blockchain:get_block(BlockHash, Chain) of
+        {error, Reason} ->
+            lager:error("couldn't get block with hash: ~p, reason: ~p", [BlockHash, Reason]);
+        {ok, Block} ->
+            BurnTxns = lists:filter(fun txn_filter_fun/1, blockchain_block:transactions(Block)),
+            case BurnTxns of
+                [] ->
+                    lager:info("no valid txn burn found in block ~p", [BlockHash]);
+                Txns ->
+                    lists:foreach(
+                      fun(Txn) ->
+                              Memo = blockchain_txn_token_burn_v1:memo(Txn),
+                              HNTAmount = blockchain_txn_token_burn_v1:amount(Txn),
+                              {ok, DCAmount} = blockchain_ledger_v1:hnt_to_dc(HNTAmount, Ledger),
+                              ok = router_device_api_console:todo(Memo, DCAmount)
+                      end,
+                      Txns)
+            end
+    end,
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -125,6 +158,18 @@ enabled() ->
     case application:get_env(router, dc_tracker) of
         {ok, "enabled"} -> true;
         _ -> false
+    end.
+
+-spec txn_filter_fun(blockchain_txn:txn()) -> boolean().
+txn_filter_fun(Txn) ->
+    case blockchain_txn:type(Txn) == blockchain_txn_token_burn_v1 of
+        false ->
+            false;
+        true ->
+            Payee = blockchain_txn_token_burn_v1:payee(Txn),
+            Memo = blockchain_txn_token_burn_v1:memo(Txn),
+            PubkeyBin = blockchain_swarm:pubkey_bin(),
+            Payee == libp2p_crypto:bin_to_b58(PubkeyBin) andalso Memo =/= 0
     end.
 
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.

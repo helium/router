@@ -16,7 +16,8 @@
          get_channels/2,
          report_status/2,
          get_downlink_url/2,
-         get_org/1]).
+         get_org/1,
+         todo/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -194,6 +195,17 @@ get_org(OrgID) ->
                                {error, {get_org_failed, _Other}}
                        end
                end).
+
+-spec todo(non_neg_integer(), non_neg_integer()) -> ok.
+todo(Memo, DCAmount) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations/TODO">>,
+    Body = #{memo => Memo,
+             dc_amount => DCAmount},
+    lager:debug("post ~p to ~p", [Body, Url]),
+    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                 jsx:encode(Body), [with_body, {pool, ?POOL}]),
+    ok.
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).

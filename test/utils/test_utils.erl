@@ -42,6 +42,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
     ok = application:set_env(router, max_v8_context, 1),
+    ok = application:set_env(router, dc_tracker, "enabled"),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->

@@ -50,26 +50,36 @@ refill(OrgID, Nonce, Balance) ->
 -spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer(), Chain :: blockchain:blockchain()) ->
           {true, non_neg_integer(), non_neg_integer()} | false.
 has_enough_dc(OrgID, PayloadSize, Chain) ->
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
-        {error, _Reason} ->
-            lager:warning("failed to calculate dc amount ~p", [_Reason]),
-            false;
-        DCAmount ->
-            {Balance0, Nonce} = 
-                case lookup(OrgID) of
-                    {error, not_found} ->
-                        fetch_and_save_org_balance(OrgID);
-                    {ok, B, N} ->
-                        {B, N}
-                end,
-            Balance1 = Balance0-DCAmount,
-            case Balance1 >= 0 andalso Nonce > 0 of
-                false ->
+    case enabled() of
+        false ->
+            case lookup(OrgID) of
+                {error, not_found} ->
+                    fetch_and_save_org_balance(OrgID);
+                {ok, B, N} ->
+                    {B, N}
+            end;
+        true ->
+            Ledger = blockchain:ledger(Chain),
+            case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+                {error, _Reason} ->
+                    lager:warning("failed to calculate dc amount ~p", [_Reason]),
                     false;
-                true ->
-                    ok = insert(OrgID, Balance1, Nonce),
-                    {true, Balance1, Nonce}
+                DCAmount ->
+                    {Balance0, Nonce} = 
+                        case lookup(OrgID) of
+                            {error, not_found} ->
+                                fetch_and_save_org_balance(OrgID);
+                            {ok, B, N} ->
+                                {B, N}
+                        end,
+                    Balance1 = Balance0-DCAmount,
+                    case Balance1 >= 0 andalso Nonce > 0 of
+                        false ->
+                            false;
+                        true ->
+                            ok = insert(OrgID, Balance1, Nonce),
+                            {true, Balance1, Nonce}
+                    end
             end
     end.
 
@@ -110,7 +120,13 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-%% TODO: I need to do someting about this we are going to kill console if this is not cached somehow
+-spec enabled() -> boolean().
+enabled() ->
+    case application:get_env(router, dc_tracker) of
+        {ok, "enabled"} -> true;
+        _ -> false
+    end.
+
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.
 fetch_and_save_org_balance(OrgID) ->
     case router_device_api_console:get_org(OrgID) of
@@ -156,6 +172,7 @@ refill_test() ->
     ok.
 
 has_enough_dc_test() ->
+    ok = application:set_env(router, dc_tracker, "enabled"),
     _  = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),

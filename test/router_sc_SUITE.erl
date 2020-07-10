@@ -13,7 +13,10 @@
          end_per_suite/1,
          init_per_testcase/2,
          end_per_testcase/2,
-         all/0
+         all/0,
+         groups/0,
+         init_per_group/2,
+         end_per_group/2
         ]).
 
 -export([
@@ -29,16 +32,57 @@
 
 %% common test callbacks
 
-all() -> [
-          maintain_channels_test,
-          handle_packets_test,
-          default_routers_test,
-          no_oui_test,
-          no_dc_entry_test
-         ].
+groups() ->
+    [{sc_v1,
+      [],
+      test_cases()
+     },
+     {sc_v2,
+      [],
+      test_cases()
+     }].
+
+all() ->
+    [{group, sc_v1}, {group, sc_v2}].
+
+test_cases() ->
+    [
+        maintain_channels_test,
+        handle_packets_test,
+        default_routers_test,
+        no_oui_test,
+        no_dc_entry_test
+    ].
+
+init_per_group(sc_v1, Config) ->
+    %% This is only for configuration and checking purposes
+    [{sc_version, 1} | Config];
+init_per_group(sc_v2, Config) ->
+    SCVars = ?config(sc_vars, Config),
+    %% NOTE: SC V2 also needs to have an election for reward payout
+    SCV2Vars = maps:merge(SCVars,
+                          #{?sc_version => 2,
+                            ?sc_overcommit => 2,
+                            ?election_interval => 30
+                           }),
+    [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
+
+end_per_group(_, _Config) ->
+    ok.
 
 init_per_suite(Config) ->
-    Config.
+    %% init_per_suite is the FIRST thing that runs and is common for both groups
+
+    SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
+               ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
+               ?max_xor_filter_size => 1024*100,     %% Max xor filter size, set to 1024*100
+               ?max_xor_filter_num => 5,             %% Max number of xor filters, set to 5
+               ?max_subnet_size => 65536,            %% Max subnet size
+               ?min_subnet_size => 8,                %% Min subnet size
+               ?max_subnet_num => 20,                %% Max subnet num
+               ?dc_payload_size => 24,               %% DC payload size for calculating DCs
+               ?sc_grace_blocks => 5},               %% Grace period (in num of blocks) for state channels to get GCd
+    [{sc_vars, SCVars} | Config].
 
 end_per_suite(Config) ->
     Config.
@@ -80,16 +124,7 @@ init_per_testcase(TestCase, Config0) ->
     ct:pal("MinerModInfo: ~p", [MinerModInfo]),
     ?assert(lists:member({test_version, 0}, proplists:get_value(exports, MinerModInfo))),
 
-    SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
-               ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
-               ?max_xor_filter_size => 1024*100,     %% Max xor filter size, set to 1024*100
-               ?max_xor_filter_num => 5,             %% Max number of xor filters, set to 5
-               ?max_subnet_size => 65536,            %% Max subnet size
-               ?min_subnet_size => 8,                %% Min subnet size
-               ?max_subnet_num => 20,                %% Max subnet num
-               ?dc_payload_size => 24,
-               ?sc_grace_blocks => 5},               %% Grace period (in num of blocks) for state channels to get GCd
-
+    SCVars = ?config(sc_vars, Config),
     DefaultVars = #{?block_time => BlockTime,
                     %% rule out rewards
                     ?election_interval => infinity,

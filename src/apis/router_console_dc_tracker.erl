@@ -47,9 +47,9 @@ refill(OrgID, Nonce, Balance) ->
             insert(OrgID, Balance, Nonce)
     end.
 
--spec has_enough_dc(OrgID :: binary(), PayloadSize :: non_neg_integer(), Chain :: blockchain:blockchain()) ->
+-spec has_enough_dc(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
           {true, non_neg_integer(), non_neg_integer()} | false.
-has_enough_dc(OrgID, PayloadSize, Chain) ->
+has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
     case enabled() of
         false ->
             case lookup(OrgID) of
@@ -81,6 +81,18 @@ has_enough_dc(OrgID, PayloadSize, Chain) ->
                             {true, Balance1, Nonce}
                     end
             end
+    end;
+%% TODO: (this needs to be reviewed) During upgrade phase (going from no DC to DC) 
+%%       devices stored in router will not have an orgID this should force
+%%       a device refresh an allow the 1st packet to go threw
+has_enough_dc(Device, PayloadSize, Chain) ->
+    Metadata0 = router_device:metadata(Device),
+    case maps:get(organization_id, Metadata0, undefined) of
+        undefined ->
+            ok = router_device_worker:device_update(self()),
+            true;
+        OrgID ->
+            has_enough_dc(OrgID, PayloadSize, Chain)
     end.
 
 -spec current_balance(OrgID :: binary()) -> {non_neg_integer(), non_neg_integer()}.

@@ -549,11 +549,8 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
-
     PayloadSize = erlang:byte_size(FRMPayload),
-    Metadata = router_device:metadata(Device0),
-    OrgID = maps:get(organization_id, Metadata, undefined),
-    case router_console_dc_tracker:has_enough_dc(OrgID, PayloadSize, Blockchain) of
+    case router_console_dc_tracker:has_enough_dc(Device0, PayloadSize, Blockchain) of
         false ->
             DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],
             Device1 = router_device:update(DeviceUpdates, Device0),

@@ -10,6 +10,7 @@
          wait_report_device_status/1, wait_report_channel_status/1,
          wait_channel_data/1,
          wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
+         wait_organizations_burned/1,
          join_payload/2,
          join_packet/3, join_packet/4,
          frame_payload/6,
@@ -277,6 +278,26 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
+    end.
+
+wait_organizations_burned(Expected) ->
+    try
+        receive
+            {organizations_burned, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_organizations_burned failed ~p", [Reason])
+                end
+        after 1250 ->
+                ct:fail("wait_organizations_burned timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_organizations_burned stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_organizations_burned failed")
     end.
 
 join_packet(PubKeyBin, AppKey, DevNonce) ->

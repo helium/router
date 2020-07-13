@@ -1,10 +1,10 @@
--module(router_dc_tracking_SUITE).
+-module(router_console_dc_tracker_SUITE).
 
 -export([all/0,
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([dc_test/1]).
+-export([dc_test/1, burned_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -28,7 +28,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [dc_test].
+    [dc_test, burned_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -178,4 +178,37 @@ dc_test(Config) ->
                                                                  <<"reported_at">> => fun erlang:is_integer/1,
                                                                  <<"status">> => <<"success">>,
                                                                  <<"description">> => '_'}]}),
+    ok.
+
+burned_test(Config) ->
+    meck:new(blockchain_ledger_v1, [passthrough]),
+    meck:expect(blockchain_ledger_v1, current_oracle_price_list, fun(_) -> {ok, mocked} end),
+    meck:expect(blockchain_ledger_v1, hnt_to_dc, fun(_, _) -> {ok, 100} end),
+
+    Swarm = proplists:get_value(swarm, Config),
+    ConsensusMembers = proplists:get_value(consensus_member, Config),
+    Chain = blockchain_worker:blockchain(),
+
+    PayerPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    #{secret := PrivKey} = proplists:get_value(keys, Config),
+    PayerSigFun = libp2p_crypto:mk_sig_fun(PrivKey),
+
+    PayeePubKeyBin = blockchain_swarm:pubkey_bin(),
+    Memo = 123,
+    
+    BurnTxn0 = blockchain_txn_token_burn_v1:new(PayerPubKeyBin, PayeePubKeyBin, 1, 1),
+    BurnTxn1 = blockchain_txn_token_burn_v1:memo(BurnTxn0, Memo),
+    SignedBurnTxn = blockchain_txn_token_burn_v1:sign(BurnTxn1, PayerSigFun),
+
+    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedBurnTxn]),
+    _ = blockchain_gossip_handler:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+    
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+
+    test_utils:wait_organizations_burned(#{<<"memo">> => 123,
+                                           <<"amount">> => 100}),
+
+    ?assert(meck:validate(blockchain_ledger_v1)),
+    meck:unload(blockchain_ledger_v1),
+
     ok.

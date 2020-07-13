@@ -99,6 +99,16 @@ handle('POST', [<<"api">>, <<"router">>, <<"devices">>,
         _ -> Pid ! {report_channel_status, Data}
     end,
     {200, [], <<>>};
+handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
+    Body = elli_request:body(Req),
+    try jsx:decode(Body, [return_maps]) of
+        Map ->
+            Pid ! {organizations_burned,  Map},
+           {200, [], <<>>}
+    catch _:_ ->
+            {400, [], <<"bad_body">>}
+    end;
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
@@ -119,7 +129,7 @@ handle('POST', [<<"channel">>], Req, Args) ->
                     {200, [], Resp}
             end
     catch _:_ ->
-            {200, [], <<"success">>}
+            {400, [], <<"bad_body">>}
     end;
 handle('websocket', [<<"websocket">>], Req, Args) ->
     %% Upgrade to a websocket connection.

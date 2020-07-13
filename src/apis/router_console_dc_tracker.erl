@@ -145,7 +145,7 @@ handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state
                               Memo = blockchain_txn_token_burn_v1:memo(Txn),
                               HNTAmount = blockchain_txn_token_burn_v1:amount(Txn),
                               {ok, DCAmount} = blockchain_ledger_v1:hnt_to_dc(HNTAmount, Ledger),
-                              ok = router_device_api_console:todo(Memo, DCAmount)
+                              ok = router_device_api_console:organizations_burned(Memo, DCAmount)
                       end,
                       Txns)
             end
@@ -180,8 +180,7 @@ txn_filter_fun(Txn) ->
         true ->
             Payee = blockchain_txn_token_burn_v1:payee(Txn),
             Memo = blockchain_txn_token_burn_v1:memo(Txn),
-            PubkeyBin = blockchain_swarm:pubkey_bin(),
-            Payee == libp2p_crypto:bin_to_b58(PubkeyBin) andalso Memo =/= 0
+            Payee == blockchain_swarm:pubkey_bin() andalso Memo =/= 0
     end.
 
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.

@@ -206,7 +206,8 @@ burned_test(Config) ->
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     test_utils:wait_organizations_burned(#{<<"memo">> => 123,
-                                           <<"amount">> => 100}),
+                                           <<"hnt_amount">> => 1,
+                                           <<"dc_amount">> => 100}),
 
     ?assert(meck:validate(blockchain_ledger_v1)),
     meck:unload(blockchain_ledger_v1),

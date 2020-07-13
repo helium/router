@@ -145,7 +145,7 @@ handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state
                               Memo = blockchain_txn_token_burn_v1:memo(Txn),
                               HNTAmount = blockchain_txn_token_burn_v1:amount(Txn),
                               {ok, DCAmount} = blockchain_ledger_v1:hnt_to_dc(HNTAmount, Ledger),
-                              ok = router_device_api_console:organizations_burned(Memo, DCAmount)
+                              ok = router_device_api_console:organizations_burned(Memo, HNTAmount, DCAmount)
                       end,
                       Txns)
             end

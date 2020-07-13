@@ -17,7 +17,7 @@
          report_status/2,
          get_downlink_url/2,
          get_org/1,
-         organizations_burned/2]).
+         organizations_burned/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -196,12 +196,13 @@ get_org(OrgID) ->
                        end
                end).
 
--spec organizations_burned(non_neg_integer(), non_neg_integer()) -> ok.
-organizations_burned(Memo, DCAmount) ->
+-spec organizations_burned(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
+organizations_burned(Memo, HNTAmount, DCAmount) ->
     {Endpoint, Token} = token_lookup(),
     Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
     Body = #{memo => Memo,
-             amount => DCAmount},
+             hnt_amount => HNTAmount,
+             dc_amount => DCAmount},
     lager:debug("post ~p to ~p", [Body, Url]),
     hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                  jsx:encode(Body), [with_body, {pool, ?POOL}]),

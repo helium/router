@@ -29,11 +29,13 @@
 
 -define(SFLOCS, [631210968910285823, 631210968909003263, 631210968912894463, 631210968907949567]).
 -define(NYLOCS, [631243922668565503, 631243922671147007, 631243922895615999, 631243922665907711]).
+-define(get_mod_version(SCMOD, Version), list_to_atom(lists:concat([SCMOD, Version]))).
 
 %% common test callbacks
 
 groups() ->
-    [{sc_v1,
+    [
+    {sc_v1,
       [],
       test_cases()
      },
@@ -54,22 +56,6 @@ test_cases() ->
         no_dc_entry_test
     ].
 
-init_per_group(sc_v1, Config) ->
-    %% This is only for configuration and checking purposes
-    [{sc_version, 1} | Config];
-init_per_group(sc_v2, Config) ->
-    SCVars = ?config(sc_vars, Config),
-    %% NOTE: SC V2 also needs to have an election for reward payout
-    SCV2Vars = maps:merge(SCVars,
-                          #{?sc_version => 2,
-                            ?sc_overcommit => 2,
-                            ?election_interval => 30
-                           }),
-    [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
-
-end_per_group(_, _Config) ->
-    ok.
-
 init_per_suite(Config) ->
     %% init_per_suite is the FIRST thing that runs and is common for both groups
 
@@ -86,6 +72,19 @@ init_per_suite(Config) ->
 
 end_per_suite(Config) ->
     Config.
+
+init_per_group(sc_v1, Config) ->
+    %% This is only for configuration and checking purposes
+    [{sc_version, 1} | Config];
+init_per_group(sc_v2, Config) ->
+    SCVars = ?config(sc_vars, Config),
+    SCV2Vars = maps:merge(SCVars,
+                          #{?sc_version => 2
+                           }),
+    [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
+
+end_per_group(_, _Config) ->
+    ok.
 
 init_per_testcase(TestCase, Config0) ->
     application:ensure_all_started(lager),
@@ -174,7 +173,7 @@ end_per_testcase(_TestCase, Config) ->
 maintain_channels_test(Config) ->
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
-
+    SCVersion = ?config(sc_version, Config),
     [RouterNode | _] = Routers,
 
     %% setup
@@ -223,7 +222,6 @@ maintain_channels_test(Config) ->
 
     RouterState = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Before RouterState: ~p", [RouterState]),
-
     true = miner_test:wait_until(fun() ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
@@ -242,14 +240,15 @@ maintain_channels_test(Config) ->
 
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4
+    SCLedgerMod = ?get_mod_version(blockchain_ledger_state_channel_v, SCVersion),
     true = miner_test:wait_until(fun() ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          {ok, LedgerSCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
                                          {_, S} = hd(lists:sort(fun({_, S1}, {_, S2}) ->
-                                                                        blockchain_ledger_state_channel_v1:nonce(S1) >= blockchain_ledger_state_channel_v1:nonce(S2)
+                                                                        SCLedgerMod:nonce(S1) >= SCLedgerMod:nonce(S2)
                                                                 end,
                                                                 maps:to_list(LedgerSCs))),
-                                         blockchain_ledger_state_channel_v1:nonce(S) >= 4
+                                         SCLedgerMod:nonce(S) >= 4
                                  end, 60, timer:seconds(5)),
 
     RouterState3 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
@@ -361,6 +360,7 @@ handle_packets_test(Config) ->
                                  end, 60, timer:seconds(5)),
 
     %% Find all sc close txns
+
     RouterBlocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
 
     Txns = lists:map(fun({I, B}) ->
@@ -371,6 +371,8 @@ handle_packets_test(Config) ->
     SCCloseFiltered = lists:map(fun({I, Ts}) ->
                                         {I, lists:filter(fun(T) -> blockchain_txn:type(T) == blockchain_txn_state_channel_close_v1 end, Ts)}
                                 end, Txns),
+
+    ct:pal("SCCloseFiltered: ~p", [SCCloseFiltered]),
 
     SCCloses = lists:flatten(lists:foldl(fun({_I, List}, Acc) ->
                                                  case length(List) /= 0 of
@@ -472,6 +474,7 @@ no_oui_test(Config) ->
 no_dc_entry_test(Config) ->
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
+    SCVersion = ?config(sc_version, Config),
 
     [PayerNode | _] = Miners,
     {ok, PayerPubkey, PayerSigFun, _} = ct_rpc:call(PayerNode, blockchain_swarm, keys, []),
@@ -532,6 +535,7 @@ no_dc_entry_test(Config) ->
     true = miner_test:wait_until(fun() ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
+                                         ct:pal("MySCs: ~p", [MySCs]),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
                                          map_size(SCs) == 2 andalso map_size(MySCs) == 2
                                  end, 30, timer:seconds(1)),
@@ -547,14 +551,15 @@ no_dc_entry_test(Config) ->
 
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4
+    SCLedgerMod = ?get_mod_version(blockchain_ledger_state_channel_v, SCVersion),
     true = miner_test:wait_until(fun() ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          {ok, LedgerSCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
                                          {_, S} = hd(lists:sort(fun({_, S1}, {_, S2}) ->
-                                                                        blockchain_ledger_state_channel_v1:nonce(S1) >= blockchain_ledger_state_channel_v1:nonce(S2)
+                                                                        SCLedgerMod:nonce(S1) >= SCLedgerMod:nonce(S2)
                                                                 end,
                                                                 maps:to_list(LedgerSCs))),
-                                         blockchain_ledger_state_channel_v1:nonce(S) >= 4
+                                         SCLedgerMod:nonce(S) >= 4
                                  end, 60, timer:seconds(5)),
 
     RouterState3 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),

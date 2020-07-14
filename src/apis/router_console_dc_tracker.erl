@@ -91,7 +91,7 @@ has_enough_dc(Device, PayloadSize, Chain) ->
     case maps:get(organization_id, Metadata0, undefined) of
         undefined ->
             ok = router_device_worker:device_update(self()),
-            true;
+            {true, 0, 0};
         OrgID ->
             has_enough_dc(OrgID, PayloadSize, Chain)
     end.

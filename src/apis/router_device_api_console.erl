@@ -15,7 +15,9 @@
          get_device/1, get_devices/2,
          get_channels/2,
          report_status/2,
-         get_downlink_url/2]).
+         get_downlink_url/2,
+         get_org/1,
+         organizations_burned/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -40,7 +42,8 @@
                 ws :: pid(),
                 ws_endpoint :: binary(),
                 db :: rocksdb:db_handle(),
-                cf :: rocksdb:cf_handle()}).
+                cf :: rocksdb:cf_handle(),
+                dc_tracker :: pid()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -57,7 +60,8 @@ get_device(DeviceID) ->
             Name = kvc:path([<<"name">>], JSONDevice),
             DevEui = kvc:path([<<"dev_eui">>], JSONDevice),
             AppEui = kvc:path([<<"app_eui">>], JSONDevice),
-            Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+            Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice),
+                         organization_id => kvc:path([<<"organization_id">>], JSONDevice)},
             DeviceUpdates = [{name, Name},
                              {dev_eui, lorawan_utils:hex_to_binary(DevEui)},
                              {app_eui, lorawan_utils:hex_to_binary(AppEui)},
@@ -81,7 +85,8 @@ get_devices(DevEui, AppEui) ->
                                                    ID = kvc:path([<<"id">>], JSONDevice),
                                                    Name = kvc:path([<<"name">>], JSONDevice),
                                                    AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
-                                                   Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice)},
+                                                   Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice),
+                                                                organization_id => kvc:path([<<"organization_id">>], JSONDevice)},
                                                    DeviceUpdates = [{name, Name},
                                                                     {dev_eui, DevEui},
                                                                     {app_eui, AppEui},
@@ -121,6 +126,15 @@ report_status(Device, Map) ->
               Category = maps:get(category, Map),
               Channels = maps:get(channels, Map),
               FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
+              DCMap = case maps:get(dc, Map, undefined) of
+                          undefined ->
+                              Metadata = router_device:metadata(Device),
+                              OrgID = maps:get(organization_id, Metadata, <<>>),
+                              {B, N} = router_console_dc_tracker:current_balance(OrgID),
+                              #{balance => B, nonce => N};
+                          BN ->
+                              BN
+                      end,
               Body0 = #{category => Category,
                         description => maps:get(description, Map),
                         reported_at => maps:get(reported_at, Map),
@@ -131,7 +145,8 @@ report_status(Device, Map) ->
                         port => maps:get(port, Map),
                         devaddr => maps:get(devaddr, Map),
                         hotspots => maps:get(hotspots, Map),
-                        channels => [maps:remove(debug, C) ||C <- Channels]},
+                        channels => [maps:remove(debug, C) ||C <- Channels],
+                        dc => DCMap},
               DebugLeft = debug_lookup(DeviceID),
               Body1 =
                   case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of
@@ -161,6 +176,38 @@ get_downlink_url(Channel, DeviceID) ->
             <<Endpoint/binary, "/api/v1/down/", ChannelID/binary, "/", DownlinkToken/binary, "/", DeviceID/binary>>
     end.
 
+-spec get_org(binary()) -> {ok, map()} | {error, any()}.
+get_org(OrgID) ->
+    e2qc:cache(router_device_api_console_get_org, OrgID, 300,
+               fun() ->
+                       {Endpoint, Token} = token_lookup(),
+                       Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
+                       lager:debug("get ~p", [Url]),
+                       Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+                       case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+                           {ok, 200, _Headers, Body} ->
+                               lager:debug("Body for ~p ~p", [Url, Body]),
+                               {ok, jsx:decode(Body, [return_maps])};
+                           {ok, 404, _ResponseHeaders, _ResponseBody} ->
+                               lager:debug("org ~p not found", [OrgID]),
+                               {error, not_found};
+                           _Other ->
+                               {error, {get_org_failed, _Other}}
+                       end
+               end).
+
+-spec organizations_burned(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
+organizations_burned(Memo, HNTAmount, DCAmount) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
+    Body = #{memo => Memo,
+             hnt_amount => HNTAmount,
+             dc_amount => DCAmount},
+    lager:debug("post ~p to ~p", [Body, Url]),
+    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                 jsx:encode(Body), [with_body, {pool, ?POOL}]),
+    ok.
+
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
@@ -176,12 +223,13 @@ init(Args) ->
     WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
-    Pid = start_ws(WSEndpoint, Token),
-    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    WSPid = start_ws(WSEndpoint, Token),
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
-    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token, ws=Pid,
-                ws_endpoint=WSEndpoint, db=DB, cf=CF}}.
+    _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    DCTrackerPid = start_dc_tracker(),
+    {ok, #state{endpoint=Endpoint, secret=Secret, token=Token,
+                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF, dc_tracker=DCTrackerPid}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -196,6 +244,10 @@ handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoin
     WSPid1 = start_ws(WSEndpoint, Token),
     ok = check_devices(DB, CF),
     {noreply, State#state{ws=WSPid1}};
+handle_info({'EXIT', DCTrackerPid0, _Reason}, #state{dc_tracker=DCTrackerPid0}=State) ->
+    lager:error("dc tracker went down ~p, restarting", [_Reason]),
+    DCTrackerPid1 = start_dc_tracker(),
+    {noreply, State#state{dc_tracker=DCTrackerPid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
     Pid ! close,
@@ -219,6 +271,12 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
     ok = update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
+handle_info({ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{<<"id">> := OrgID,
+                                                                                             <<"dc_balance_nonce">> := Nonce,
+                                                                                             <<"dc_balance">> := Balance}}, State) ->
+    lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
+    ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
@@ -279,8 +337,13 @@ check_devices(DB, CF) ->
 start_ws(WSEndpoint, Token) ->
     Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
     {ok, Pid} = router_console_ws_handler:start_link(#{url => Url,
-                                                       auto_join => [<<"device:all">>],
+                                                       auto_join => [<<"device:all">>, <<"organization:all">>],
                                                        forward => self()}),
+    Pid.
+
+-spec start_dc_tracker() -> pid().
+start_dc_tracker() ->
+    {ok, Pid} = router_console_dc_tracker:start_link(#{}),
     Pid.
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.

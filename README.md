@@ -38,7 +38,11 @@
             "lat" => 37.00001962582851,
             "long" => -120.9000053210367
         }
-    ]
+    ],
+    dc : {
+        balance: 3000,
+        nonce: 2
+    }
 }
 ```
 
@@ -46,7 +50,7 @@
 
 ```
 {
-    "category": "up | down | activation | ack | channel_crash | channel_start_error",
+    "category": "up | down | activation | ack | packet_dropped | channel_crash | channel_start_error",
     "description": "any specific description ie.correcting channel mask, otherwise null",
     "reported_at": 123,
     "device_id": "device_uuid",
@@ -81,7 +85,11 @@
             // ONLY ON DEBUG MODE
             "debug": {req: {}, res: {}}
         }
-    ]
+    ],
+    dc : {
+        balance: 3000,
+        nonce: 2
+    }
 }
 ```
 

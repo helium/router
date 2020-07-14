@@ -195,14 +195,14 @@ burned_test(Config) ->
 
     PayeePubKeyBin = blockchain_swarm:pubkey_bin(),
     Memo = 123,
-    
+
     BurnTxn0 = blockchain_txn_token_burn_v1:new(PayerPubKeyBin, PayeePubKeyBin, 1, 1),
     BurnTxn1 = blockchain_txn_token_burn_v1:memo(BurnTxn0, Memo),
     SignedBurnTxn = blockchain_txn_token_burn_v1:sign(BurnTxn1, PayerSigFun),
 
     {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedBurnTxn]),
     _ = blockchain_gossip_handler:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
-    
+
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     test_utils:wait_organizations_burned(#{<<"memo">> => 123,

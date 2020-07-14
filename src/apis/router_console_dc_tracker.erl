@@ -54,9 +54,10 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
         false ->
             case lookup(OrgID) of
                 {error, not_found} ->
-                    fetch_and_save_org_balance(OrgID);
+                    {B, N} = fetch_and_save_org_balance(OrgID),
+                    {true, B, N};
                 {ok, B, N} ->
-                    {B, N}
+                    {true, B, N}
             end;
         true ->
             Ledger = blockchain:ledger(Chain),

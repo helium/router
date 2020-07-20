@@ -35,7 +35,7 @@
 
 groups() ->
     [
-    {sc_v1,
+     {sc_v1,
       [],
       test_cases()
      },
@@ -49,11 +49,11 @@ all() ->
 
 test_cases() ->
     [
-        maintain_channels_test,
-        handle_packets_test,
-        default_routers_test,
-        no_oui_test,
-        no_dc_entry_test
+     maintain_channels_test,
+     handle_packets_test,
+     default_routers_test,
+     no_oui_test,
+     no_dc_entry_test
     ].
 
 init_per_suite(Config) ->

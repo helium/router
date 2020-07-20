@@ -14,6 +14,7 @@
                                              ["[", date, " ", time, "] ", pid, " [", severity,"]",  {device_id, [" [", device_id, "]"], ""}, " [",
                                               {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"]}]}
                      ]}]},
+ {libp2p, [{max_tcp_connections, 10000}]},
  {blockchain, [{sc_packet_handler, router_device_worker}]},
  {router, [{port, 2154},
            {base_dir, "/var/data"},
@@ -22,6 +23,7 @@
            {oui, "${ROUTER_OUI}"},
            {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
            {seed_nodes, "${ROUTER_SEED_NODES}"},
+           {dc_tracker, "${ROUTER_DC_TRACKER}"},
            {router_device_api_module, router_device_api_console},
            {router_device_api_console, [{endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
                                         {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},

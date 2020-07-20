@@ -16,7 +16,7 @@
 -export([start_link/1,
          handle_join/1,
          handle_device_update/2,
-         handle_data/3,
+         handle_data/4,
          report_status/3,
          handle_downlink/2,
          state/1]).
@@ -47,6 +47,7 @@
                 channels = #{} :: map(),
                 channels_backoffs = #{} :: map(),
                 data_cache = #{} :: map(),
+                balance_cache = #{} :: map(),
                 fcnt :: integer(),
                 channels_resp_cache = #{} :: map()}).
 
@@ -70,9 +71,10 @@ state(Pid) ->
 handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
--spec handle_data(pid(), router_device:device(), {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}) -> ok.
-handle_data(Pid, Device, Data) ->
-    gen_server:cast(Pid, {handle_data, Device, Data}).
+-spec handle_data(pid(), router_device:device(),
+                  {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
+handle_data(Pid, Device, Data, {Balance, Nonce}) ->
+    gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
 
 -spec report_status(pid(), reference(), map()) -> ok.
 report_status(Pid, Ref, Map) ->
@@ -122,9 +124,10 @@ handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #state{data_cache=DataCache0, fcnt=CurrFCnt}=State) ->
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {Balance, Nonce}=BN},
+            #state{data_cache=DataCache0, balance_cache=BalanceCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
-    DataCache1 =
+    DataCache1=
         case FCnt =< CurrFCnt of
             true ->
                 lager:debug("we received a late packet ~p from ~p: ~p", [{FCnt, CurrFCnt}, PubKeyBin, Packet]),
@@ -141,13 +144,29 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data}, #sta
                                 maps:put(FCnt, CachedData1, DataCache0);
                             {_, #packet_pb{signal_strength=RSSI}, _, _} ->
                                 case Packet#packet_pb.signal_strength > RSSI of
-                                    true -> maps:put(FCnt, CachedData1, DataCache0);
-                                    false -> DataCache0
+                                    true ->
+                                        maps:put(FCnt, CachedData1, DataCache0);
+                                    false ->
+                                        DataCache0
                                 end
                         end
                 end
         end,
-    {noreply, State#state{device=Device, data_cache=DataCache1}};
+    BalanceCache1 =
+        case FCnt =< CurrFCnt of
+            true ->
+                BalanceCache0;
+            false ->
+                case maps:get(FCnt, BalanceCache0, undefined) of
+                    undefined ->
+                        maps:put(FCnt, BN, BalanceCache0);
+                    {B, N} when Balance < B orelse Nonce > N ->
+                        maps:put(FCnt, BN, BalanceCache0);
+                    _ ->
+                        BalanceCache0
+                end
+        end,
+    {noreply, State#state{device=Device, data_cache=DataCache1, balance_cache=BalanceCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker=DeviceWorker}=State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
@@ -170,12 +189,14 @@ handle_cast(_Msg, State) ->
 %% Data Handling
 %% ------------------------------------------------------------------
 handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef, device=Device,
-                                         data_cache=DataCache0, channels_resp_cache=RespCache0}=State) ->
+                                         data_cache=DataCache0, balance_cache=BalanceCache0, channels_resp_cache=RespCache0}=State) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
-    {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
+    CachedDB = maps:get(FCnt, BalanceCache0),
+    {ok, Map} = send_to_channel(CachedData, CachedDB, Device, EventMgrRef, Blockchain),
     lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
     {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
+                          balance_cache=maps:remove(FCnt, BalanceCache0),
                           fcnt=FCnt,
                           channels_resp_cache=maps:put(FCnt, {Map, []}, RespCache0)}};
 %% ------------------------------------------------------------------
@@ -194,7 +215,8 @@ handle_info({report_status_timeout, FCnt}, #state{device=Device, channels_resp_c
                    devaddr => maps:get(devaddr, Data),
                    hotspots => maps:get(hotspots, Data),
                    channels => CachedReports,
-                   fcnt => maps:get(fcnt, Data)},
+                   fcnt => maps:get(fcnt, Data),
+                   dc => maps:get(dc, Data)},
     ok = router_device_api:report_status(Device, ReportsMap),
     {noreply, State#state{channels_resp_cache=maps:remove(FCnt, Cache0)}};
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
@@ -350,9 +372,9 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
             {error, payload_raw_not_found}
     end.
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], router_device:device(),
-                      pid() , blockchain:blockchain()) -> {ok, map()}.
-send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
+-spec send_to_channel([{string(), #packet_pb{}, #frame{}}], {non_neg_integer(), non_neg_integer()},
+                      router_device:device(), pid() , blockchain:blockchain()) -> {ok, map()}.
+send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) ->
     FoldFun =
         fun({PubKeyBin, Packet, _, Time}, Acc) ->
                 B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
@@ -383,7 +405,8 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
             payload => Data,
             port => Port,
             devaddr => lorawan_utils:binary_to_hex(DevAddr),
-            hotspots => lists:foldr(FoldFun, [], CachedData)},
+            hotspots => lists:foldr(FoldFun, [], CachedData),
+            dc => #{balance => Balance, nonce => Nonce}},
     ok = router_channel:handle_data(EventMgrRef, Map, FCnt),
     {ok, Map}.
 

@@ -48,6 +48,7 @@
 -define(SERVER, ?MODULE).
 %% TODO: Configure via app env
 -define(EXPIRATION, 45).
+-define(SC_AMOUNT, 100). % budget 100 data credits
 
 -record(state, {
                 oui = undefined :: undefined | non_neg_integer(),
@@ -156,8 +157,9 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, Chain),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 2, Chain).
+    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, ?SC_AMOUNT, Chain),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 2, ?SC_AMOUNT, Chain).
 
 -spec open_next_state_channel(State :: state(), Ledger :: blockchain_ledger_v1:ledger()) -> ok.
 open_next_state_channel(#state{oui=OUI, chain=Chain}, Ledger) ->
@@ -169,19 +171,21 @@ open_next_state_channel(#state{oui=OUI, chain=Chain}, Ledger) ->
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Nonce = get_nonce(PubkeyBin, Ledger),
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, Chain).
+    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
                                   Nonce :: pos_integer(),
                                   OUI :: non_neg_integer(),
                                   Expiration :: pos_integer(),
+                                  Amount :: non_neg_integer(),
                                   Chain :: blockchain:blockchain()) -> ok.
-create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Chain) ->
+create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, Chain) ->
     %% Create and open a new state_channel
     %% With its expiration set to 2 * Expiration of the one with max nonce
     ID = crypto:strong_rand_bytes(32),
-    Txn = blockchain_txn_state_channel_open_v1:new(ID, PubkeyBin, Expiration, OUI, Nonce),
+    Txn = blockchain_txn_state_channel_open_v1:new(ID, PubkeyBin, Expiration, OUI, Nonce, Amount),
     Fee = blockchain_txn_state_channel_open_v1:calculate_fee(Txn, Chain),
     SignedTxn = blockchain_txn_state_channel_open_v1:sign(
                   blockchain_txn_state_channel_open_v1:fee(Txn, Fee),  SigFun),

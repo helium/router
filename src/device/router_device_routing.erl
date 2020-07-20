@@ -8,26 +8,55 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include("lorawan_vars.hrl").
 
--export([offer/2, packet/4]).
+-export([handle_offer/2,
+         handle_packet/2]).
 
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
--spec offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
-offer(Offer, Pid) ->
+-spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+handle_offer(Offer, HandlerPid) ->
+    lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
     %% TODO: Replace this with getter
     case blockchain_state_channel_offer_v1:routing(Offer) of
         #routing_information_pb{data={eui, _}} ->
-            _ = join_offer(Offer, Pid);
+            _ = join_offer(Offer, HandlerPid);
         #routing_information_pb{data={devaddr, _}} ->
-            _ = packet_offer(Offer, Pid)
+            _ = packet_offer(Offer, HandlerPid)
     end.
+
+-spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+                    libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
+handle_packet(SCPacket, Pid) when is_pid(Pid) ->
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    Region = blockchain_state_channel_packet_v1:region(SCPacket),
+    case packet(Packet, PubkeyBin, Region, Pid) of
+        {error, _Reason}=E ->
+            lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
+            E;
+        ok ->
+            ok
+    end;
+handle_packet(Packet, PubKeyBin) ->
+    %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
+    case packet(Packet, PubKeyBin, 'US915', self()) of
+        {error, _Reason}=E ->
+            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
+            E;
+        ok ->
+            ok
+    end.
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
 
 %%%-------------------------------------------------------------------
 %% @doc
 %% Route packet_pb and figures out if JOIN_REQ or frame packet
 %% @end
 %%%-------------------------------------------------------------------
--spec packet(blockchain_helium_packet_v1:packet(), string(), atom(), pid()) -> ok | {error, any()}.
+-spec packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(), pid()) -> ok | {error, any()}.
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                              _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
@@ -40,7 +69,7 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, De
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    gen_server:cast(WorkerPid, {join, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid})
+                    router_device_worker:handle_join(WorkerPid, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid)
             end;
         {error, api_not_found} ->
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
@@ -97,10 +126,6 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
 packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
-%% ------------------------------------------------------------------
-%% Internal Function Definitions
-%% ------------------------------------------------------------------
-
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
 join_offer(_Offer, _Pid) ->
     ok.
@@ -121,7 +146,7 @@ find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Region, Pid})
+                    router_device_worker:handle_frame(WorkerPid, Packet, PubKeyBin, Region, Pid)
             end
     end.
 

@@ -15,7 +15,7 @@
                                               {module, ""}, {function, [":", function], ""}, {line, [":", line], ""}, "] ", message, "\n"]}]}
                      ]}]},
  {libp2p, [{max_tcp_connections, 10000}]},
- {blockchain, [{sc_packet_handler, router_device_worker}]},
+ {blockchain, [{sc_packet_handler, router_device_routing}]},
  {router, [{port, 2154},
            {base_dir, "/var/data"},
            {max_connections, 250},

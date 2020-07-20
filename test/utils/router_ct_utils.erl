@@ -120,7 +120,7 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
               ct_rpc:call(Router, application, set_env, [blockchain, seed_nodes, SeedNodes]),
               ct_rpc:call(Router, application, set_env, [blockchain, key, Key]),
               ct_rpc:call(Router, application, set_env, [blockchain, sc_client_handler, router_sc_client_handler]),
-              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, router_device_worker]),
+              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, router_device_routing]),
 
               %% Set router configuration
               ct_rpc:call(Router, application, set_env, [router, base_dir, RouterBaseDir]),

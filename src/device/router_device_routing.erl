@@ -1,0 +1,168 @@
+%%%-------------------------------------------------------------------
+%% @doc
+%% == Router Device Routing ==
+%% @end
+%%%-------------------------------------------------------------------
+-module(router_device_routing).
+
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+-include("lorawan_vars.hrl").
+
+-export([offer/2, packet/4]).
+
+-define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+
+-spec offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+offer(Offer, Pid) ->
+    %% TODO: Replace this with getter
+    case blockchain_state_channel_offer_v1:routing(Offer) of
+        #routing_information_pb{data={eui, _}} ->
+            _ = join_offer(Offer, Pid);
+        #routing_information_pb{data={devaddr, _}} ->
+            _ = packet_offer(Offer, Pid)
+    end.
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% Route packet_pb and figures out if JOIN_REQ or frame packet
+%% @end
+%%%-------------------------------------------------------------------
+-spec packet(blockchain_helium_packet_v1:packet(), string(), atom(), pid()) -> ok | {error, any()}.
+packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
+                             _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
+    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
+    case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
+        {ok, APIDevice, AppKey} ->
+            DeviceID = router_device:id(APIDevice),
+            case maybe_start_worker(DeviceID) of
+                {error, _Reason}=Error ->
+                    Error;
+                {ok, WorkerPid} ->
+                    gen_server:cast(WorkerPid, {join, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid})
+            end;
+        {error, api_not_found} ->
+            lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
+                                                            lorawan_utils:binary_to_hex(AppEUI),
+                                                            AName]),
+            {error, undefined_app_key};
+        {error, _Reason} ->
+            lager:debug("Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
+                        [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]),
+            {error, bad_mic}
+    end;
+packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
+                             _ACK:1, _RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer,
+                             _FOpts:FOptsLen/binary, PayloadAndMIC/binary>> =Payload}=Packet, PubKeyBin, Region, Pid) ->
+    Msg = binary:part(Payload, {0, erlang:byte_size(Payload) -4}),
+    MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    case DevAddr of
+        <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
+            Chain = blockchain_worker:blockchain(),
+            OUI = case application:get_env(router, oui, undefined) of
+                      undefined -> undefined;
+                      OUI0 when is_list(OUI0) ->
+                          list_to_integer(OUI0);
+                      OUI0 ->
+                          OUI0
+                  end,
+            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                {ok, RoutingEntry} ->
+                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                    case lists:any(fun(Subnet) ->
+                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+                                           AddrBase >= Base andalso AddrBase < Base + Size
+                                   end, Subnets) of
+                        true ->
+                            %% ok device is in one of our subnets
+                            find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
+                        false ->
+                            {error, {unknown_device, DevAddr}}
+                    end;
+                _ ->
+                    %% no subnets
+                    find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+            catch
+                _:_ ->
+                    %% no subnets
+                    find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+            end;
+        _ ->
+            %% wrong devaddr prefix
+            {error, {unknown_device, DevAddr}}
+    end;
+packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
+    {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
+
+-spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+join_offer(_Offer, _Pid) ->
+    ok.
+
+-spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+packet_offer(_Offer, _Pid) ->
+    ok.
+
+find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
+    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
+    case get_device_by_mic(DB, CF, B0, MIC, Devices) of
+        undefined ->
+            {error, {unknown_device, DevAddr}};
+        Device ->
+            DeviceID = router_device:id(Device),
+            case maybe_start_worker(DeviceID) of
+                {error, _Reason}=Error ->
+                    Error;
+                {ok, WorkerPid} ->
+                    gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Region, Pid})
+            end
+    end.
+
+-spec filter_device_fun(binary()) -> function().
+filter_device_fun(DevAddr) ->
+    fun(Device) ->
+            router_device:devaddr(Device) == DevAddr orelse
+                router_device_devaddr:default_devaddr() == DevAddr
+    end.
+
+-spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(),
+                        binary(), [router_device:device()]) -> router_device:device() | undefined.
+get_device_by_mic(_DB, _CF, _Bin, _MIC, []) ->
+    undefined;
+get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
+    case router_device:nwk_s_key(Device) of
+        undefined ->
+            DeviceID = router_device:id(Device),
+            lager:warning("device ~p did not have a nwk_s_key, deleting", [DeviceID]),
+            ok = router_device:delete(DB, CF, DeviceID),
+            get_device_by_mic(DB, CF, Bin, MIC, Devices);
+        NwkSKey ->
+            try
+                case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
+                    MIC ->
+                        Device;
+                    _ ->
+                        get_device_by_mic(DB, CF, Bin, MIC, Devices)
+                end
+            catch _:_ ->
+                    lager:warning("skipping invalid device ~p", [Device]),
+                    get_device_by_mic(DB, CF, Bin, MIC, Devices)
+            end
+    end.
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% Maybe start a router device worker
+%% @end
+%%%-------------------------------------------------------------------
+-spec maybe_start_worker(binary()) -> {ok, pid()} | {error, any()}.
+maybe_start_worker(DeviceID) ->
+    WorkerID = router_devices_sup:id(DeviceID),
+    router_devices_sup:maybe_start_worker(WorkerID, #{}).

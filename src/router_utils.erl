@@ -2,7 +2,8 @@
 
 -export([get_router_oui/1,
          get_hotspot_location/2,
-         to_bin/1]).
+         to_bin/1,
+         b0/4]).
 
 -spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
 get_router_oui(Chain) ->
@@ -37,6 +38,10 @@ to_bin(List) when is_list(List) ->
     erlang:list_to_binary(List);
 to_bin(_) ->
     <<>>.
+
+-spec b0(integer(), binary(), integer(), integer()) -> binary().
+b0(Dir, DevAddr, FCnt, Len) ->
+    <<16#49, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

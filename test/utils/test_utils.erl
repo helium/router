@@ -353,7 +353,7 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Data = lorawan_utils:reverse(lorawan_utils:cipher(Body, AppSessionKey, MType band 1, DevAddr, FCnt)),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
                  FOptsLen:4, FCnt:16/little-unsigned-integer, FOptsBin:FOptsLen/binary, Port:8/integer, Data/binary>>,
-    B0 = b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
+    B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
     <<Payload0/binary, MIC:4/binary>>.
 
@@ -389,9 +389,6 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
-b0(Dir, DevAddr, FCnt, Len) ->
-    <<16#49, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
 
 -spec match_map(map(), any()) -> true | {false, term()}.
 match_map(Expected, Got) when is_map(Got) ->

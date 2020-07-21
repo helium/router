@@ -1,4 +1,4 @@
--module(router_device_api_console_SUITE).
+-module(router_console_device_api_SUITE).
 
 -export([all/0,
          init_per_testcase/2,

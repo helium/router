@@ -3,7 +3,7 @@
 %% == Router Device Channels Worker ==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_device_api_console).
+-module(router_console_device_api).
 
 -behavior(gen_server).
 -behavior(router_device_api_behavior).
@@ -30,11 +30,10 @@
          code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(POOL, router_device_api_console_pool).
+-define(POOL, router_console_device_api_pool).
 -define(ETS, router_console_debug_ets).
 -define(TOKEN_CACHE_TIME, timer:minutes(10)).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
-
 
 -record(state, {endpoint :: binary(),
                 secret :: binary(),
@@ -42,8 +41,7 @@
                 ws :: pid(),
                 ws_endpoint :: binary(),
                 db :: rocksdb:db_handle(),
-                cf :: rocksdb:cf_handle(),
-                dc_tracker :: pid()}).
+                cf :: rocksdb:cf_handle()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -71,7 +69,7 @@ get_device(DeviceID) ->
 
 -spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 get_devices(DevEui, AppEui) ->
-    e2qc:cache(router_device_api_console_get_devices, {DevEui, AppEui}, 10,
+    e2qc:cache(router_console_device_api_get_devices, {DevEui, AppEui}, 10,
                fun() ->
                        {Endpoint, Token} = token_lookup(),
                        Url = <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=", (lorawan_utils:binary_to_hex(DevEui))/binary,
@@ -178,7 +176,7 @@ get_downlink_url(Channel, DeviceID) ->
 
 -spec get_org(binary()) -> {ok, map()} | {error, any()}.
 get_org(OrgID) ->
-    e2qc:cache(router_device_api_console_get_org, OrgID, 300,
+    e2qc:cache(router_console_device_api_get_org, OrgID, 300,
                fun() ->
                        {Endpoint, Token} = token_lookup(),
                        Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
@@ -227,9 +225,8 @@ init(Args) ->
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    DCTrackerPid = start_dc_tracker(),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token,
-                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF, dc_tracker=DCTrackerPid}}.
+                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -244,10 +241,6 @@ handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoin
     WSPid1 = start_ws(WSEndpoint, Token),
     ok = check_devices(DB, CF),
     {noreply, State#state{ws=WSPid1}};
-handle_info({'EXIT', DCTrackerPid0, _Reason}, #state{dc_tracker=DCTrackerPid0}=State) ->
-    lager:error("dc tracker went down ~p, restarting", [_Reason]),
-    DCTrackerPid1 = start_dc_tracker(),
-    {noreply, State#state{dc_tracker=DCTrackerPid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
     Token = get_token(Endpoint, Secret),
     Pid ! close,
@@ -339,11 +332,6 @@ start_ws(WSEndpoint, Token) ->
     {ok, Pid} = router_console_ws_handler:start_link(#{url => Url,
                                                        auto_join => [<<"device:all">>, <<"organization:all">>],
                                                        forward => self()}),
-    Pid.
-
--spec start_dc_tracker() -> pid().
-start_dc_tracker() ->
-    {ok, Pid} = router_console_dc_tracker:start_link(#{}),
     Pid.
 
 -spec convert_channel(router_device:device(), pid(), map()) -> false | {true, router_channel:channel()}.

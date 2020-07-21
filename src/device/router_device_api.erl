@@ -3,6 +3,7 @@
 -export([module/0,
          get_device/1,
          get_device/4,
+         get_devices/2,
          get_channels/2,
          report_status/2,
          get_downlink_url/2]).
@@ -25,6 +26,14 @@ get_device(DevEui, AppEui, Msg, MIC) ->
     case Mod:get_devices(DevEui, AppEui) of
         [] -> {error, api_not_found};
         KeysAndDevices -> find_device(Msg, MIC, KeysAndDevices)
+    end.
+
+-spec get_devices(binary(), binary()) -> {ok, [router_device:device()]} | {error, any()}.
+get_devices(DevEui, AppEui) ->
+    Mod = ?MODULE:module(),
+    case Mod:get_devices(DevEui, AppEui) of
+        [] -> {error, api_not_found};
+        KeysAndDevices -> {ok, [Device || {_, Device} <- KeysAndDevices]}
     end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) -> [router_channel:channel()].

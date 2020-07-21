@@ -13,15 +13,15 @@
 
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
--spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+-spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
     lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
     %% TODO: Replace this with getter
     case blockchain_state_channel_offer_v1:routing(Offer) of
         #routing_information_pb{data={eui, _}} ->
-            _ = join_offer(Offer, HandlerPid);
+            join_offer(Offer, HandlerPid);
         #routing_information_pb{data={devaddr, _}} ->
-            _ = packet_offer(Offer, HandlerPid)
+            packet_offer(Offer, HandlerPid)
     end.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -126,13 +126,58 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
 packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
--spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
-join_offer(_Offer, _Pid) ->
-    ok.
+-spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {errro, any()}.
+join_offer(Offer, _Pid) ->
+    #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} = blockchain_state_channel_offer_v1:routing(Offer),
+    AppEUI1 = <<AppEUI0:8/binary>>,
+    DevEUI1 = <<DevEUI0:8/binary>>,
+    %% TODO: wihtout the MIC I cannot find a specific device
+    case router_device_api:get_devices(DevEUI1, AppEUI1) of
+        {error, _Reason} ->
+            lager:debug("did not find any device matching ~p/~p", [DevEUI1, AppEUI1]),
+            {error, unknown_device};
+        {ok, _Devices} ->
+            lager:debug("found ~p devices matching ~p/~p", [erlang:length(_Devices), DevEUI1, AppEUI1]),
+            ok
+    end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
-packet_offer(_Offer, _Pid) ->
-    ok.
+packet_offer(Offer, _Pid) ->
+    #routing_information_pb{data={devaddr, DevAddr}} =blockchain_state_channel_offer_v1:routing(Offer),
+    case <<DevAddr:32/binary>> of
+        <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
+            Chain = blockchain_worker:blockchain(),
+            OUI = case application:get_env(router, oui, undefined) of
+                      undefined -> undefined;
+                      OUI0 when is_list(OUI0) ->
+                          list_to_integer(OUI0);
+                      OUI0 ->
+                          OUI0
+                  end,
+            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                {ok, RoutingEntry} ->
+                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                    case lists:any(fun(Subnet) ->
+                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+                                           AddrBase >= Base andalso AddrBase < Base + Size
+                                   end, Subnets) of
+                        true ->
+                            %% ok device is in one of our subnets
+                            ok;
+                        false ->
+                            {error, not_in_subnet}
+                    end;
+                _ ->
+                    {error, no_subnet}
+            catch
+                _:_ ->
+                    {error, no_subnet}
+            end;
+        _ ->
+            %% wrong devaddr prefix
+            {error, unknown_device}
+    end.
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),

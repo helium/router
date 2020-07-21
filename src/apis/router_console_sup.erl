@@ -24,18 +24,12 @@
 %%====================================================================
 %% API functions
 %%====================================================================
-
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 %%====================================================================
 %% Supervisor callbacks
 %%====================================================================
-
-%% Child :: #{id => Id, start => {M, F, A}}
-%% Optional keys are restart, shutdown, type, modules.
-%% Before OTP 18 tuples must be used to specify a child. e.g.
-%% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
     DeviceAPIModule = router_device_api:module(),
     DeviceAPIData = maps:from_list(application:get_env(router, DeviceAPIModule, [])),

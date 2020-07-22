@@ -30,6 +30,7 @@
 -record(state, {id :: binary(),
                 vm :: pid(),
                 context :: pid(),
+                function :: binary(),
                 timer :: reference()}).
 
 %% ------------------------------------------------------------------
@@ -50,16 +51,21 @@ init(Args) ->
     ID = maps:get(id, Args),
     VM = maps:get(vm, Args),
     Function = maps:get(function, Args),
-    {ok, Context} = erlang_v8:create_context(VM),
-    {ok, _} = erlang_v8:eval(VM, Context, Function),
+    Context = init_context(VM, Function),
     TimerRef = erlang:send_after(?TIMER, self(), timeout),
-    {ok, #state{id=ID, vm=VM, context=Context, timer=TimerRef}}.
+    {ok, #state{id=ID, vm=VM, context=Context, function=Function, timer=TimerRef}}.
 
-handle_call({decode, Payload, Port}, _From, #state{vm=VM, context=Context, timer=TimerRef0}=State) ->
+handle_call({decode, Payload, Port}, _From, #state{vm=VM, context=Context0, function=Function, timer=TimerRef0}=State) ->
     _ = erlang:cancel_timer(TimerRef0),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-    Reply = erlang_v8:call(VM, Context, <<"Decoder">>, [Payload, Port], ?MAX_EXECUTION),
-    {reply, Reply, State#state{timer=TimerRef1}};
+    case erlang_v8:call(VM, Context0, <<"Decoder">>, [Payload, Port], ?MAX_EXECUTION) of
+        {error, invalid_context} ->
+            Reply = {error, function_crashed},
+            Context1 = init_context(VM, Function),
+            {reply, Reply, State#state{context=Context1, timer=TimerRef1}};
+        Reply ->
+            {reply, Reply, State#state{timer=TimerRef1}}
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -79,11 +85,17 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{id=ID, vm=VM, context=Context}=_State) ->
-    ok = erlang_v8:destroy_context(VM, Context),
+    catch erlang_v8:destroy_context(VM, Context),
     ok = router_decoder_custom_sup:delete(ID),
-    lager:info("context ~p down", [ID]),
+    lager:info("context ~p went down: ~p", [ID, _Reason]),
     ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec init_context(pid(), binary()) -> any().
+init_context(VM, Function) ->
+    {ok, Context} = erlang_v8:create_context(VM),
+    {ok, _} = erlang_v8:eval(VM, Context, Function),
+    Context.

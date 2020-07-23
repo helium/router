@@ -8,10 +8,17 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include("lorawan_vars.hrl").
 
--export([handle_offer/2,
+-export([init/0,
+         handle_offer/2,
          handle_packet/2]).
 
+-define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+
+-spec init() -> ok.
+init() ->
+    ets:new(?ETS, [public, named_table, set]),
+    ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
@@ -126,12 +133,12 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
 packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
--spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {errro, any()}.
+-spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 join_offer(Offer, _Pid) ->
+    %% TODO: Replace this with getter
     #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} = blockchain_state_channel_offer_v1:routing(Offer),
-    AppEUI1 = <<AppEUI0:8/binary>>,
-    DevEUI1 = <<DevEUI0:8/binary>>,
-    %% TODO: wihtout the MIC I cannot find a specific device
+    DevEUI1 = to_bin(DevEUI0),
+    AppEUI1 = to_bin(AppEUI0),
     case router_device_api:get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
             lager:debug("did not find any device matching ~p/~p", [DevEUI1, AppEUI1]),
@@ -141,10 +148,35 @@ join_offer(Offer, _Pid) ->
             ok
     end.
 
--spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok.
+-spec to_bin(undefined | non_neg_integer()) -> binary().
+to_bin(undefined) -> <<>>;
+to_bin(EUI) -> <<EUI:8/integer-unsigned-little>>.
+
+-spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, _Pid) ->
-    #routing_information_pb{data={devaddr, DevAddr}} =blockchain_state_channel_offer_v1:routing(Offer),
-    case <<DevAddr:32/binary>> of
+    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
+    PacketHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    case lookup(DevAddr, PacketHash) of
+        {ok, _} ->
+            {error, already_got_packet};
+        {error, not_found} ->
+            ok = insert(DevAddr, PacketHash, PubKeyBin),
+            ok = expire_packet(DevAddr, PacketHash),
+            router_devaddr(DevAddr)
+    end.
+
+-spec expire_packet(non_neg_integer(), binary()) -> ok.
+expire_packet(DevAddr, PacketHash) ->
+    erlang:spawn(fun() ->
+                         ok = timer:sleep(timer:seconds(1)),
+                         ok = delete(DevAddr, PacketHash)
+                 end),
+    ok.
+
+-spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
+router_devaddr(DevAddr) ->
+    case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = blockchain_worker:blockchain(),
             OUI = case application:get_env(router, oui, undefined) of
@@ -236,3 +268,23 @@ get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
 maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
+
+-spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
+lookup(DevAddr, PacketHash) ->
+    Key = {DevAddr, PacketHash},
+    case ets:lookup(?ETS, Key) of
+        [] -> {error, not_found};
+        [{Key, Value}] -> {ok, Value}
+    end.
+
+-spec insert(non_neg_integer(), binary(), libp2p_crypto:pubkey_bin()) -> ok.
+insert(DevAddr, PacketHash, PubKeyBin) ->
+    Key = {DevAddr, PacketHash},
+    true = ets:insert(?ETS, {Key, PubKeyBin}),
+    ok.
+
+-spec delete(non_neg_integer(), binary()) -> ok.
+delete(DevAddr, PacketHash) ->
+    Key = {DevAddr, PacketHash},
+    true = ets:delete(?ETS, Key),
+    ok.

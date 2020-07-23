@@ -86,8 +86,10 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
         {error, _}=Error ->
             Error;
         {ok, Hotspot} ->
-            Index = blockchain_ledger_gateway_v2:location(Hotspot),
-            {ok, Index}
+            case blockchain_ledger_gateway_v2:location(Hotspot) of
+                undefined -> {error, undef_index};
+                Index -> {ok, Index}
+            end
     end.
 
 %% ------------------------------------------------------------------

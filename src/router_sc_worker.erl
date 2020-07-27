@@ -107,10 +107,18 @@ handle_info(post_init, #state{chain=undefined}=State) ->
                 undefined ->
                     {noreply, State#state{chain=Chain}};
                 OUI ->
-                    %% We have a chain and an oui on chain, set is_active to true
-                    {noreply, State#state{chain=Chain, oui=OUI, is_active=true}}
+                    %% We have a chain and an oui on chain
+                    %% Only activate if we're on sc_version=2
+                    case blockchain:config(sc_version, blockchain:ledger(Chain)) of
+                        {ok, 2} ->
+                            {noreply, State#state{chain=Chain, oui=OUI, is_active=true}};
+                        _ ->
+                            {noreply, State#state{chain=Chain, oui=OUI}}
+                    end
             end
     end;
+handle_info({blockchain_event, {new_chain, NC}}, State) ->
+    {noreply, State#state{chain=NC}};
 handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->
     %% Got block without a chain, wut?
     erlang:send_after(500, self(), post_init),
@@ -122,8 +130,13 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
             %% stay inactive
             {noreply, State};
         OUI ->
-            %% activate
-            {noreply, State#state{oui=OUI, is_active=true}}
+            %% Only activate if we're on sc_version=2
+            case blockchain:config(sc_version, blockchain:ledger(Chain)) of
+                {ok, 2} ->
+                    {noreply, State#state{oui=OUI, is_active=true}};
+                _ ->
+                    {noreply, State#state{oui=OUI}}
+            end
     end;
 handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=0, is_active=true}=State) ->
     lager:info("active_count = 0, initializing two state_channels"),

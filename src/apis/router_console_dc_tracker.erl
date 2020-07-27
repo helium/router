@@ -139,7 +139,7 @@ handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state
             BurnTxns = lists:filter(fun txn_filter_fun/1, blockchain_block:transactions(Block)),
             case BurnTxns of
                 [] ->
-                    lager:info("no valid txn burn found in block ~p", [BlockHash]);
+                    lager:info("no burn txn found in block ~p", [BlockHash]);
                 Txns ->
                     lists:foreach(
                       fun(Txn) ->

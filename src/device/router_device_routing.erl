@@ -8,6 +8,10 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include("lorawan_vars.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -export([init/0,
          handle_offer/2,
          handle_packet/2]).
@@ -291,3 +295,41 @@ delete(DevAddr, PacketHash) ->
     Key = {DevAddr, PacketHash},
     true = ets:delete(?ETS, Key),
     ok.
+
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+
+handle_offer_test() ->
+    ok = init(),
+
+    meck:new(router_device_api, [passthrough]),
+    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, []} end),
+
+    JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+    JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+
+    ?assert(meck:validate(router_device_api)),
+    meck:unload(router_device_api),
+
+    DevAddr = 16#deadbeef,
+    meck:new(router_device_devaddr, [passthrough]),
+    meck:expect(router_device_devaddr, default_devaddr, fun() -> <<DevAddr:32/integer-unsigned-little>> end),
+
+    Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload">>),
+    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(Offer, self())),
+    ?assertEqual({ok, <<"hotspot">>}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
+    ok = timer:sleep(1002),
+    ?assertEqual({error, not_found}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
+
+    ?assert(meck:validate(router_device_devaddr)),
+    meck:unload(router_device_devaddr),
+
+    ets:delete(?ETS),
+    ok.
+
+-endif.

@@ -176,7 +176,10 @@ expire_packet(DevAddr, PacketHash) ->
 
 -spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
 router_devaddr(DevAddr) ->
+    DefaultDevAddr = router_device_devaddr:default_devaddr(),
     case <<DevAddr:32/integer-unsigned-little>> of
+        DefaultDevAddr ->
+            ok;
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = blockchain_worker:blockchain(),
             OUI = case application:get_env(router, oui, undefined) of

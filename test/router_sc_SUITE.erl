@@ -79,7 +79,8 @@ init_per_group(sc_v1, Config) ->
 init_per_group(sc_v2, Config) ->
     SCVars = ?config(sc_vars, Config),
     SCV2Vars = maps:merge(SCVars,
-                          #{?sc_version => 2
+                          #{?sc_version => 2,
+                            ?sc_overcommit => 2
                            }),
     [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
 
@@ -235,8 +236,8 @@ maintain_channels_test(Config) ->
     %% Wait 200 blocks, for multiple sc open txns to have occured
     true = miner_test:wait_until(fun() ->
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
-                                         RouterChainHeight > 200
-                                 end, 60, timer:seconds(5)),
+                                         RouterChainHeight > 450
+                                 end, 300, timer:seconds(30)),
 
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4

@@ -176,16 +176,20 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
 
 -spec open_next_state_channel(State :: state(), Ledger :: blockchain_ledger_v1:ledger()) -> ok.
 open_next_state_channel(#state{oui=OUI, chain=Chain}, Ledger) ->
-    ActiveSCExpiration = active_sc_expiration(),
-    {ok, ChainHeight} = blockchain:height(Chain),
-    %% Since this can only be called when we already have active_count set to 1
-    %% We set the next SC expiration to the difference between current chain height and active expiration + default expiration
-    NextExpiration = abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION,
-    PubkeyBin = blockchain_swarm:pubkey_bin(),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
-    Nonce = get_nonce(PubkeyBin, Ledger),
-    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain).
+    case active_sc_expiration() of
+        {error, no_active_sc} ->
+            ok;
+        {ok, ActiveSCExpiration} ->
+            {ok, ChainHeight} = blockchain:height(Chain),
+            %% Since this can only be called when we already have active_count set to 1
+            %% We set the next SC expiration to the difference between current chain height and active expiration + default expiration
+            NextExpiration = abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION,
+            PubkeyBin = blockchain_swarm:pubkey_bin(),
+            {ok, _, SigFun, _} = blockchain_swarm:keys(),
+            Nonce = get_nonce(PubkeyBin, Ledger),
+            %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
+            create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain)
+    end.
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
@@ -221,12 +225,16 @@ get_nonce(PubkeyBin, Ledger) ->
             blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
     end.
 
--spec active_sc_expiration() -> pos_integer().
+-spec active_sc_expiration() -> {error, no_active_sc} | {ok, pos_integer()}.
 active_sc_expiration() ->
-    ActiveSCID = blockchain_state_channels_server:active_sc_id(),
-    SCs = blockchain_state_channels_server:state_channels(),
-    {ActiveSC, _} = maps:get(ActiveSCID, SCs),
-    blockchain_state_channel_v1:expire_at_block(ActiveSC).
+    case blockchain_state_channels_server:active_sc_id() of
+        undefined ->
+            {error, no_active_sc};
+        ActiveSCID ->
+            SCs = blockchain_state_channels_server:state_channels(),
+            {ActiveSC, _} = maps:get(ActiveSCID, SCs),
+            {ok, blockchain_state_channel_v1:expire_at_block(ActiveSC)}
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

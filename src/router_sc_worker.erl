@@ -105,7 +105,7 @@ handle_info(post_init, #state{chain=undefined}=State) ->
                         {ok, 2} ->
                             {noreply, State#state{chain=Chain, oui=OUI, is_active=true}};
                         _ ->
-                            {noreply, State#state{chain=Chain, oui=OUI}}
+                            {noreply, State#state{chain=Chain, oui=OUI, is_active=false}}
                     end
             end
     end;
@@ -127,7 +127,7 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
                 {ok, 2} ->
                     {noreply, State#state{oui=OUI, is_active=true}};
                 _ ->
-                    {noreply, State#state{oui=OUI}}
+                    {noreply, State#state{oui=OUI, is_active=false}}
             end
     end;
 

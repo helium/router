@@ -80,7 +80,9 @@ init_per_group(sc_v2, Config) ->
     SCVars = ?config(sc_vars, Config),
     SCV2Vars = maps:merge(SCVars,
                           #{?sc_version => 2,
-                            ?sc_overcommit => 2
+                            ?sc_overcommit => 2,
+                            %% SC GC won't trigger without election
+                            ?election_interval => 30
                            }),
     [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
 
@@ -238,6 +240,14 @@ maintain_channels_test(Config) ->
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
                                          RouterChainHeight > 450
                                  end, 300, timer:seconds(30)),
+
+    Blocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
+    %% ct:pal("Blocks: ~p", [Blocks]),
+    Txns = lists:sort(lists:foldl(fun({_, B}, Acc) ->
+                                          Ts = blockchain_block:transactions(B),
+                                          lists:flatten([{blockchain_block:height(B), Ts} | Acc])
+                                  end, [], maps:to_list(Blocks))),
+    ct:pal("Txns: ~p", [Txns]),
 
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4

@@ -478,7 +478,6 @@ no_oui_test(Config) ->
     {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
     %% Check that router_sc_worker is inactive
     false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
-    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     %% Wait for 50 blocks
     ok = miner_test:wait_for_gte(height, Miners, 50),
@@ -487,7 +486,6 @@ no_oui_test(Config) ->
     %% Same checks again
     {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
     false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
-    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     ok.
 

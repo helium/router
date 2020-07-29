@@ -403,21 +403,25 @@ handle_packets_test(Config) ->
 
     ct:pal("SCCloses: ~p", [SCCloses]),
 
-    Summary = hd(lists:flatten(lists:foldl(fun(SCCloseTxn, Acc) ->
-                                                   SC = blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn),
-                                                   Summaries = blockchain_state_channel_v1:summaries(SC),
-                                                   [Summaries | Acc]
-                                           end,
-                                           [],
-                                           SCCloses))),
+    Summaries = lists:flatten(
+                  lists:foldl(
+                    fun(SCCloseTxn, Acc) ->
+                            SC = blockchain_txn_state_channel_close_v1:state_channel(SCCloseTxn),
+                            Summaries = blockchain_state_channel_v1:summaries(SC),
+                            [Summaries | Acc]
+                    end, [], SCCloses)),
 
-    ct:pal("Summary: ~p", [Summary]),
+    ct:pal("Summaries: ~p", [Summaries]),
 
-    2 = blockchain_state_channel_summary_v1:num_packets(Summary),
-    2 = blockchain_state_channel_summary_v1:num_dcs(Summary),
-    true = lists:member(blockchain_state_channel_summary_v1:client_pubkeybin(Summary), ClientPubkeyBins),
+    %% Check that atleast one client has both the packets
+    lists:any(fun(Summary) ->
+                      2 == blockchain_state_channel_summary_v1:num_packets(Summary) andalso
+                      2 == blockchain_state_channel_summary_v1:num_dcs(Summary) andalso
+                      true == lists:member(blockchain_state_channel_summary_v1:client_pubkeybin(Summary), ClientPubkeyBins)
+              end, Summaries),
 
     ok.
+
 
 default_routers_test(Config) ->
     Miners = ?config(miners, Config),

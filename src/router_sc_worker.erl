@@ -137,23 +137,23 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
             end
     end;
 
-%% handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-%%             #state{is_active=true, chain=Chain}=State) ->
-%%     case get_active_count(Chain) of
-%%         0 ->
-%%             %% initialize with two channels
-%%             lager:info("active_count = 0, opening two state channels"),
-%%             ok = init_state_channels(State);
-%%         1 ->
-%%             %% open next state channel
-%%             lager:info("active_count = 1, opening next state channel"),
-%%             ok = open_next_state_channel(State);
-%%         2 ->
-%%             %% don't do anything
-%%             lager:info("active_count = 2, standing by..."),
-%%             ok
-%%     end,
-%%     {noreply, State};
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+            #state{is_active=true, chain=Chain}=State) ->
+    case get_active_count(Chain) of
+        0 ->
+            %% initialize with two channels
+            lager:info("active_count = 0, opening two state channels"),
+            ok = init_state_channels(State);
+        1 ->
+            %% open next state channel
+            lager:info("active_count = 1, opening next state channel"),
+            ok = open_next_state_channel(State);
+        2 ->
+            %% don't do anything
+            lager:info("active_count = 2, standing by..."),
+            ok
+    end,
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

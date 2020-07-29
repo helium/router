@@ -157,7 +157,7 @@ join_offer(Offer, _Pid) ->
 
 -spec to_bin(undefined | non_neg_integer()) -> binary().
 to_bin(undefined) -> <<>>;
-to_bin(EUI) -> <<EUI:8/integer-unsigned-little>>.
+to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, _Pid) ->

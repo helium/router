@@ -26,18 +26,20 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
     %% TODO: Replace this with getter
-    case blockchain_state_channel_offer_v1:routing(Offer) of
-        #routing_information_pb{data={eui, _}} ->
-            join_offer(Offer, HandlerPid);
-        #routing_information_pb{data={devaddr, _}} ->
-            packet_offer(Offer, HandlerPid)
-    end.
+    Resp = case blockchain_state_channel_offer_v1:routing(Offer) of
+               #routing_information_pb{data={eui, _}} ->
+                   join_offer(Offer, HandlerPid);
+               #routing_information_pb{data={devaddr, _}} ->
+                   packet_offer(Offer, HandlerPid)
+           end,
+    lager:debug("offer (~p): ~p, HandlerPid: ~p", [Resp, Offer, HandlerPid]),
+    Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, Pid) when is_pid(Pid) ->
+    lager:debug("Packet: ~p, HandlerPid: ~p", [SCPacket, Pid]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),

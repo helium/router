@@ -107,15 +107,15 @@ init_per_testcase(TestCase, Config0) ->
     Balance = 5000,
 
     {InitialDCTxns, InitialPaymentTransactions} =
-    case TestCase of
-        no_dc_entry_test ->
-            %% Dont give the router any dcs or hnt
-            {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
-             [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses]};
-        _ ->
-            {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
-             [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses]}
-    end,
+        case TestCase of
+            no_dc_entry_test ->
+                %% Dont give the router any dcs or hnt
+                {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
+                 [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses]};
+            _ ->
+                {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
+                 [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses]}
+        end,
 
     Locations = ?SFLOCS ++ ?NYLOCS,
     AddressesWithLocations = lists:zip(Addresses, lists:sublist(Locations, length(Addresses))),

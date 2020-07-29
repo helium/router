@@ -25,8 +25,7 @@
 %% ------------------------------------------------------------------
 -export([
          start_link/1,
-         is_active/0,
-         active_count/0
+         is_active/0
         ]).
 
 %% ------------------------------------------------------------------
@@ -41,6 +40,12 @@
          code_change/3
         ]).
 
+-export([
+         init_state_channels/1,
+         open_next_state_channel/1,
+         get_active_count/1
+        ]).
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -53,8 +58,7 @@
 -record(state, {
                 oui = undefined :: undefined | non_neg_integer(),
                 chain = undefined :: undefined | blockchain:blockchain(),
-                is_active = false :: boolean(),
-                active_count = 0 :: 0 | 1 | 2
+                is_active = false :: boolean()
                }).
 
 -type state() :: #state{}.
@@ -69,10 +73,6 @@ start_link(Args) ->
 is_active() ->
     gen_server:call(?SERVER, is_active).
 
--spec active_count() -> 0 | 1 | 2.
-active_count() ->
-    gen_server:call(?SERVER, active_count).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -82,12 +82,10 @@ init(Args) ->
     ok = router_handler:add_stream_handler(blockchain_swarm:swarm()),
     ok = blockchain_event:add_handler(self()),
     erlang:send_after(500, self(), post_init),
-    {ok, #state{active_count=get_active_count()}}.
+    {ok, #state{}}.
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
-handle_call(active_count, _From, State) ->
-    {reply, State#state.active_count, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -113,7 +111,7 @@ handle_info(post_init, #state{chain=undefined}=State) ->
                         {ok, 2} ->
                             {noreply, State#state{chain=Chain, oui=OUI, is_active=true}};
                         _ ->
-                            {noreply, State#state{chain=Chain, oui=OUI}}
+                            {noreply, State#state{chain=Chain, oui=OUI, is_active=false}}
                     end
             end
     end;
@@ -135,21 +133,27 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
                 {ok, 2} ->
                     {noreply, State#state{oui=OUI, is_active=true}};
                 _ ->
-                    {noreply, State#state{oui=OUI}}
+                    {noreply, State#state{oui=OUI, is_active=false}}
             end
     end;
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=0, is_active=true}=State) ->
-    lager:info("active_count = 0, initializing two state_channels"),
-    ok = init_state_channels(State),
-    {noreply, State#state{active_count=get_active_count()}};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, Ledger}}, #state{active_count=1, is_active=true}=State) ->
-    lager:info("active_count = 1, opening next state_channel"),
-    ok = open_next_state_channel(State, Ledger),
-    {noreply, State#state{active_count=get_active_count()}};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{active_count=2, is_active=true}=State) ->
-    %% Don't do anything
-    lager:info("active_count = 2, standing by"),
-    {noreply, State#state{active_count=get_active_count()}};
+
+handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+            #state{is_active=true, chain=Chain}=State) ->
+    case get_active_count(Chain) of
+        0 ->
+            %% initialize with two channels
+            lager:info("active_count = 0, opening two state channels"),
+            ok = init_state_channels(State);
+        1 ->
+            %% open next state channel
+            lager:info("active_count = 1, opening next state channel"),
+            ok = open_next_state_channel(State);
+        2 ->
+            %% don't do anything
+            lager:info("active_count = 2, standing by..."),
+            ok
+    end,
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -172,24 +176,26 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, ?SC_AMOUNT, Chain),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 2, ?SC_AMOUNT, Chain).
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 3, ?SC_AMOUNT, Chain).
 
--spec open_next_state_channel(State :: state(), Ledger :: blockchain_ledger_v1:ledger()) -> ok.
-open_next_state_channel(#state{oui=OUI, chain=Chain}, Ledger) ->
-    case active_sc_expiration() of
-        {error, no_active_sc} ->
-            ok;
-        {ok, ActiveSCExpiration} ->
-            {ok, ChainHeight} = blockchain:height(Chain),
-            %% Since this can only be called when we already have active_count set to 1
-            %% We set the next SC expiration to the difference between current chain height and active expiration + default expiration
-            NextExpiration = abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION,
-            PubkeyBin = blockchain_swarm:pubkey_bin(),
-            {ok, _, SigFun, _} = blockchain_swarm:keys(),
-            Nonce = get_nonce(PubkeyBin, Ledger),
-            %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-            create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain)
-    end.
+-spec open_next_state_channel(State :: state()) -> ok.
+open_next_state_channel(#state{oui=OUI, chain=Chain}=State) ->
+    Ledger = blockchain:ledger(Chain),
+    {ok, ChainHeight} = blockchain:height(Chain),
+    NextExpiration = case active_sc_expiration() of
+                         {error, no_active_sc} ->
+                             abs(previous_sc_expiration(State) - ChainHeight) + ?EXPIRATION * 3;
+                         {ok, ActiveSCExpiration} ->
+                             %% We set the next SC expiration to the difference between current chain height and active
+                             %% expiration + default expiration * 2
+                             abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION * 3
+                     end,
+
+    PubkeyBin = blockchain_swarm:pubkey_bin(),
+    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+    Nonce = get_nonce(PubkeyBin, Ledger),
+    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
@@ -209,11 +215,14 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     lager:info("Opening state channel for router: ~p, oui: ~p, nonce: ~p", [?TO_B58(PubkeyBin), OUI, Nonce]),
     blockchain_worker:submit_txn(SignedTxn).
 
--spec get_active_count() -> non_neg_integer().
-get_active_count() ->
-    %% only get the open ones
-    Filter = fun(_SCID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
-    map_size(maps:filter(Filter, blockchain_state_channels_server:state_channels())).
+-spec get_active_count(Chain :: blockchain:blockchain()) -> non_neg_integer().
+get_active_count(Chain) ->
+    Ledger = blockchain:ledger(Chain),
+    Owner = blockchain_swarm:pubkey_bin(),
+    {ok, LedgerSCMap} = blockchain_ledger_v1:find_scs_by_owner(Owner, Ledger),
+    X = maps:size(LedgerSCMap),
+    lager:info("LedgerSCCount: ~p, LedgerSCMap: ~p", [X, LedgerSCMap]),
+    X.
 
 -spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                 Ledger :: blockchain_ledger_v1:ledger()) -> non_neg_integer().
@@ -225,6 +234,16 @@ get_nonce(PubkeyBin, Ledger) ->
             blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
     end.
 
+-spec previous_sc_expiration(State :: state()) -> pos_integer().
+previous_sc_expiration(#state{chain=Chain}) ->
+    Ledger = blockchain:ledger(Chain),
+    Owner = blockchain_swarm:pubkey_bin(),
+    {ok, LedgerSCMap} = blockchain_ledger_v1:find_scs_by_owner(Owner, Ledger),
+    LedgerSCMod = get_ledger_sc_mod(Ledger),
+    SortFun = fun(SC1, SC2) -> LedgerSCMod:nonce(SC1) >= LedgerSCMod:nonce(SC2) end,
+    LastLedgerSC = hd(lists:sort(SortFun, maps:values(LedgerSCMap))),
+    blockchain_ledger_state_channel_v2:expire_at_block(LastLedgerSC).
+
 -spec active_sc_expiration() -> {error, no_active_sc} | {ok, pos_integer()}.
 active_sc_expiration() ->
     case blockchain_state_channels_server:active_sc_id() of
@@ -234,6 +253,16 @@ active_sc_expiration() ->
             SCs = blockchain_state_channels_server:state_channels(),
             {ActiveSC, _} = maps:get(ActiveSCID, SCs),
             {ok, blockchain_state_channel_v1:expire_at_block(ActiveSC)}
+    end.
+
+-spec get_ledger_sc_mod(Ledger :: blockchain_ledger_v1:ledger()) -> blockchain_ledger_state_channel_v2 |
+          blockchain_ledger_state_channel_v1.
+get_ledger_sc_mod(Ledger) ->
+    case blockchain:config(sc_version, Ledger) of
+        {ok, 2} ->
+            blockchain_ledger_state_channel_v2;
+        _ ->
+            blockchain_ledger_state_channel_v1
     end.
 
 %% ------------------------------------------------------------------

@@ -37,17 +37,25 @@ groups() ->
     [
      {sc_v1,
       [],
-      test_cases()
+      sc_v1_test_cases()
      },
      {sc_v2,
       [],
-      test_cases()
+      sc_v2_test_cases()
      }].
 
 all() ->
     [{group, sc_v1}, {group, sc_v2}].
 
-test_cases() ->
+sc_v1_test_cases() ->
+    [
+     maintain_channels_test,
+     handle_packets_test,
+     default_routers_test,
+     no_oui_test
+    ].
+
+sc_v2_test_cases() ->
     [
      maintain_channels_test,
      handle_packets_test,
@@ -80,7 +88,9 @@ init_per_group(sc_v2, Config) ->
     SCVars = ?config(sc_vars, Config),
     SCV2Vars = maps:merge(SCVars,
                           #{?sc_version => 2,
-                            ?sc_overcommit => 2
+                            ?sc_overcommit => 2,
+                            %% SC GC won't trigger without election
+                            ?election_interval => 30
                            }),
     [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
 
@@ -95,15 +105,17 @@ init_per_testcase(TestCase, Config0) ->
     Addresses = ?config(miner_pubkey_bins, Config),
     RouterAddresses = ?config(router_pubkey_bins, Config),
     Balance = 5000,
-    InitialPaymentTransactions = [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
 
-    InitialDCTxns = case TestCase of
-                        no_dc_entry_test ->
-                            %% Dont give the router any dcs
-                            [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses];
-                        _ ->
-                            [blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses]
-                    end,
+    {InitialDCTxns, InitialPaymentTransactions} =
+        case TestCase of
+            no_dc_entry_test ->
+                %% Dont give the router any dcs or hnt
+                {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses],
+                 [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses]};
+            _ ->
+                {[blockchain_txn_dc_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses],
+                 [ blockchain_txn_coinbase_v1:new(Addr, Balance) || Addr <- Addresses ++ RouterAddresses]}
+        end,
 
     Locations = ?SFLOCS ++ ?NYLOCS,
     AddressesWithLocations = lists:zip(Addresses, lists:sublist(Locations, length(Addresses))),
@@ -233,11 +245,18 @@ maintain_channels_test(Config) ->
     RouterState2 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Mid RouterState: ~p", [RouterState2]),
 
-    %% Wait 200 blocks, for multiple sc open txns to have occured
+    %% Wait 450 blocks, for multiple sc open txns to have occured
     true = miner_test:wait_until(fun() ->
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
                                          RouterChainHeight > 450
                                  end, 300, timer:seconds(30)),
+
+    Blocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),
+    Txns = lists:sort(lists:foldl(fun({_, B}, Acc) ->
+                                          Ts = blockchain_block:transactions(B),
+                                          lists:flatten([{blockchain_block:height(B), Ts} | Acc])
+                                  end, [], maps:to_list(Blocks))),
+    ct:pal("Txns: ~p", [Txns]),
 
     %% Since we've set the default expiration = 45 in router_sc_worker
     %% at the very minimum, we should be at nonce = 4
@@ -459,7 +478,6 @@ no_oui_test(Config) ->
     {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
     %% Check that router_sc_worker is inactive
     false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
-    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     %% Wait for 50 blocks
     ok = miner_test:wait_for_gte(height, Miners, 50),
@@ -468,14 +486,12 @@ no_oui_test(Config) ->
     %% Same checks again
     {ok, 0} = ct_rpc:call(RouterNode, blockchain_ledger_v1, get_oui_counter, [RouterLedger]),
     false = ct_rpc:call(RouterNode, router_sc_worker, is_active, []),
-    0 = ct_rpc:call(RouterNode, router_sc_worker, active_count, []),
 
     ok.
 
 no_dc_entry_test(Config) ->
     Miners = ?config(miners, Config),
     Routers = ?config(routers, Config),
-    SCVersion = ?config(sc_version, Config),
 
     [PayerNode | _] = Miners,
     {ok, PayerPubkey, PayerSigFun, _} = ct_rpc:call(PayerNode, blockchain_swarm, keys, []),
@@ -533,37 +549,19 @@ no_dc_entry_test(Config) ->
     RouterState = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
     ct:pal("Before RouterState: ~p", [RouterState]),
 
+    %% Wait 100 blocks
+    true = miner_test:wait_until(fun() ->
+                                         {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
+                                         RouterChainHeight >= 100
+                                 end, 60, timer:seconds(5)),
+
+    %% Check that there are no state channels opened
     true = miner_test:wait_until(fun() ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
                                          ct:pal("MySCs: ~p", [MySCs]),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
-                                         map_size(SCs) == 2 andalso map_size(MySCs) == 2
+                                         map_size(SCs) == 0 andalso map_size(MySCs) == 0
                                  end, 30, timer:seconds(1)),
-
-    RouterState2 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
-    ct:pal("Mid RouterState: ~p", [RouterState2]),
-
-    %% Wait 200 blocks, for multiple sc open txns to have occured
-    true = miner_test:wait_until(fun() ->
-                                         {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
-                                         RouterChainHeight > 200
-                                 end, 60, timer:seconds(5)),
-
-    %% Since we've set the default expiration = 45 in router_sc_worker
-    %% at the very minimum, we should be at nonce = 4
-    SCLedgerMod = ?get_mod_version(blockchain_ledger_state_channel_v, SCVersion),
-    true = miner_test:wait_until(fun() ->
-                                         RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
-                                         {ok, LedgerSCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
-                                         {_, S} = hd(lists:sort(fun({_, S1}, {_, S2}) ->
-                                                                        SCLedgerMod:nonce(S1) >= SCLedgerMod:nonce(S2)
-                                                                end,
-                                                                maps:to_list(LedgerSCs))),
-                                         SCLedgerMod:nonce(S) >= 4
-                                 end, 60, timer:seconds(5)),
-
-    RouterState3 = ct_rpc:call(RouterNode, sys, get_state, [router_sc_worker]),
-    ct:pal("Final RouterState: ~p", [RouterState3]),
 
     ok.

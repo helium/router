@@ -24,6 +24,7 @@
            {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
            {seed_nodes, "${ROUTER_SEED_NODES}"},
            {dc_tracker, "${ROUTER_DC_TRACKER}"},
+           {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
            {router_device_api_module, router_console_device_api},
            {router_console_device_api, [{endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
                                         {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},

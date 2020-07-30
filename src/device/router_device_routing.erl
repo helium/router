@@ -26,18 +26,20 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    lager:info("Offer: ~p, HandlerPid: ~p", [Offer, HandlerPid]),
     %% TODO: Replace this with getter
-    case blockchain_state_channel_offer_v1:routing(Offer) of
-        #routing_information_pb{data={eui, _}} ->
-            join_offer(Offer, HandlerPid);
-        #routing_information_pb{data={devaddr, _}} ->
-            packet_offer(Offer, HandlerPid)
-    end.
+    Resp = case blockchain_state_channel_offer_v1:routing(Offer) of
+               #routing_information_pb{data={eui, _}} ->
+                   join_offer(Offer, HandlerPid);
+               #routing_information_pb{data={devaddr, _}} ->
+                   packet_offer(Offer, HandlerPid)
+           end,
+    lager:debug("offer (~p): ~p, HandlerPid: ~p", [Resp, Offer, HandlerPid]),
+    Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, Pid) when is_pid(Pid) ->
+    lager:debug("Packet: ~p, HandlerPid: ~p", [SCPacket, Pid]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
@@ -145,8 +147,9 @@ join_offer(Offer, _Pid) ->
     AppEUI1 = to_bin(AppEUI0),
     case router_device_api:get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
-            lager:debug("did not find any device matching ~p/~p", [DevEUI1, AppEUI1]),
-            {error, unknown_device};
+            lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
+            %% {error, unknown_device};
+            ok;
         {ok, _Devices} ->
             lager:debug("found ~p devices matching ~p/~p", [erlang:length(_Devices), DevEUI1, AppEUI1]),
             ok
@@ -154,7 +157,7 @@ join_offer(Offer, _Pid) ->
 
 -spec to_bin(undefined | non_neg_integer()) -> binary().
 to_bin(undefined) -> <<>>;
-to_bin(EUI) -> <<EUI:8/integer-unsigned-little>>.
+to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, _Pid) ->
@@ -167,7 +170,8 @@ packet_offer(Offer, _Pid) ->
         {error, not_found} ->
             ok = insert(DevAddr, PacketHash, PubKeyBin),
             ok = expire_packet(DevAddr, PacketHash),
-            router_devaddr(DevAddr)
+            %% router_devaddr(DevAddr),
+            ok
     end.
 
 -spec expire_packet(non_neg_integer(), binary()) -> ok.
@@ -178,45 +182,43 @@ expire_packet(DevAddr, PacketHash) ->
                  end),
     ok.
 
--spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
-router_devaddr(DevAddr) ->
-    DefaultDevAddr = router_device_devaddr:default_devaddr(),
-    case <<DevAddr:32/integer-unsigned-little>> of
-        DefaultDevAddr ->
-            ok;
-        <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
-            Chain = blockchain_worker:blockchain(),
-            OUI = case application:get_env(router, oui, undefined) of
-                      undefined -> undefined;
-                      OUI0 when is_list(OUI0) ->
-                          list_to_integer(OUI0);
-                      OUI0 ->
-                          OUI0
-                  end,
-            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-                {ok, RoutingEntry} ->
-                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                    case lists:any(fun(Subnet) ->
-                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
-                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
-                                           AddrBase >= Base andalso AddrBase < Base + Size
-                                   end, Subnets) of
-                        true ->
-                            %% ok device is in one of our subnets
-                            ok;
-                        false ->
-                            {error, not_in_subnet}
-                    end;
-                _ ->
-                    {error, no_subnet}
-            catch
-                _:_ ->
-                    {error, no_subnet}
-            end;
-        _ ->
-            %% wrong devaddr prefix
-            {error, unknown_device}
-    end.
+%% -spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
+%% router_devaddr(DevAddr) ->
+%%     DefaultDevAddr = router_device_devaddr:default_devaddr(),
+%%     case <<DevAddr:32/integer-unsigned-little>> of
+%%         DefaultDevAddr ->
+%%             ok;
+%%         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
+%%             Chain = blockchain_worker:blockchain(),
+%%             OUI = case application:get_env(router, oui, undefined) of
+%%                       undefined -> undefined;
+%%                       OUI0 when is_list(OUI0) ->
+%%                           list_to_integer(OUI0);
+%%                       OUI0 ->
+%%                           OUI0
+%%                   end,
+%%             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+%%                 {ok, RoutingEntry} ->
+%%                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+%%                     case lists:any(fun(Subnet) ->
+%%                                            <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+%%                                            Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+%%                                            AddrBase >= Base andalso AddrBase < Base + Size
+%%                                    end, Subnets) of
+%%                         true ->
+%%                             ok;
+%%                         false ->
+%%                             {error, not_in_subnet}
+%%                     end;
+%%                 _ ->
+%%                     {error, no_subnet}
+%%             catch
+%%                 _:_ ->
+%%                     {error, no_subnet}
+%%             end;
+%%         _ ->
+%%             {error, unknown_device}
+%%     end.
 
 find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),

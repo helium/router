@@ -175,8 +175,8 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, ?SC_AMOUNT, Chain),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 3, ?SC_AMOUNT, Chain).
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, get_sc_amount(), Chain),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 3, get_sc_amount(), Chain).
 
 -spec open_next_state_channel(State :: state()) -> ok.
 open_next_state_channel(#state{oui=OUI, chain=Chain}=State) ->
@@ -195,7 +195,7 @@ open_next_state_channel(#state{oui=OUI, chain=Chain}=State) ->
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, ?SC_AMOUNT, Chain).
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, get_sc_amount(), Chain).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
@@ -263,6 +263,13 @@ get_ledger_sc_mod(Ledger) ->
             blockchain_ledger_state_channel_v2;
         _ ->
             blockchain_ledger_state_channel_v1
+    end.
+
+-spec get_sc_amount() -> pos_integer().
+get_sc_amount() ->
+    case application:get_env(router, sc_open_dc_amount, ?SC_AMOUNT) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        Amount -> Amount
     end.
 
 %% ------------------------------------------------------------------

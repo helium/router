@@ -166,7 +166,7 @@ packet_offer(Offer, _Pid) ->
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
     case lookup(DevAddr, PacketHash) of
         {ok, _} ->
-            {error, already_got_packet};
+            {error, already_got_offer};
         {error, not_found} ->
             ok = insert(DevAddr, PacketHash, PubKeyBin),
             ok = expire_packet(DevAddr, PacketHash),

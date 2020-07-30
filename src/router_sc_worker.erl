@@ -268,6 +268,7 @@ get_ledger_sc_mod(Ledger) ->
 -spec get_sc_amount() -> pos_integer().
 get_sc_amount() ->
     case application:get_env(router, sc_open_dc_amount, ?SC_AMOUNT) of
+        [] -> ?SC_AMOUNT;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         Amount -> Amount
     end.

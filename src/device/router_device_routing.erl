@@ -33,7 +33,9 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    lager:debug("offer (~p): ~p, HandlerPid: ~p", [Resp, Offer, HandlerPid]),
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),

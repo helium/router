@@ -146,13 +146,16 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
 handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
     lager:warning("got join packet when oui=undefined, standing by..."),
     {noreply, State0};
-handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
+handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{chain=Chain, db=DB, cf=CF, device=Device0, join_cache=Cache0,
                                                                                join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
                                                                                channels_worker=ChannelsWorker}=State0) ->
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
-    case handle_join_(Packet0, PubKeyBin, Region, OUI, APIDevice, AppKey, Device0) of
+    case validate_join(Packet0, PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, Chain) of
+        {error, not_enough_dc} ->
+            lager:debug("did not have enough dc to pay for join"),
+            {noreply, State0};
         {error, _Reason} ->
             {noreply, State0};
         {ok, Reply, Device1, JoinNonce} ->
@@ -316,27 +319,34 @@ get_device(DB, CF, ID) ->
         _ -> router_device:new(ID)
     end.
 
+-spec validate_join(blockchain_helium_packet_v1:packet(),
+                    libp2p_crypto:pubkey_to_bin(),
+                    atom(),
+                    non_neg_integer(),
+                    router_device:device(),
+                    binary(),
+                    router_device:device(),
+                    blockchain:blockchain()) ->
+          {ok, Reply::binary(), Device::router_device:device(), DevAddr::binary()} | {error, any()}.
+validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
+                                    _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
+              PubKeyBin, Region, OUI, APIDevice, AppKey, Device, Blockchain) when MType == ?JOIN_REQ ->
+    PayloadSize = erlang:byte_size(Payload),
+    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Blockchain) of
+        false ->
+            {error, not_enough_dc};
+        {true, _Balance, _Nonce} ->
+            handle_join_(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device))
+    end;
+validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, _Blockchain) ->
+    {error, not_join_req}.
+
 %%%-------------------------------------------------------------------
 %% @doc
 %% Handle join request, dedup multiple if needed, report statsus
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join_(blockchain_helium_packet_v1:packet(),
-                   libp2p_crypto:pubkey_to_bin(),
-                   atom(),
-                   non_neg_integer(),
-                   router_device:device(),
-                   binary(),
-                   router_device:device()) ->
-          {ok, Reply::binary(), Device::router_device:device(), DevAddr::binary()} | {error, any()}.
-handle_join_(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
-                                   _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>}=Packet,
-             PubKeyBin, Region, OUI, APIDevice, AppKey, Device) when MType == ?JOIN_REQ ->
-    handle_join_(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device));
-handle_join_(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device) ->
-    {error, not_join_req}.
-
 -spec handle_join_(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), atom(), non_neg_integer(), 
                    router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
           {ok, binary(), router_device:device(), binary()} | {error, any()}.

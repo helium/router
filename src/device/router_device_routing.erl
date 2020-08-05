@@ -18,6 +18,11 @@
 
 -define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+-define(ETS_FUN(Hash), [{{Hash,'$1','$2'},
+                         [{'<','$2','$1'}],
+                         [{{Hash,'$1',{'+','$2',1}}}]}]).
+-define(BUY_JOIN_MAX, 5).
+-define(BUY_JOIN_TIMEOUT, timer:seconds(2)).
 
 -spec init() -> ok.
 init() ->
@@ -145,21 +150,23 @@ packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
 join_offer(Offer, _Pid) ->
     %% TODO: Replace this with getter
     #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} = blockchain_state_channel_offer_v1:routing(Offer),
-    DevEUI1 = to_bin(DevEUI0),
-    AppEUI1 = to_bin(AppEUI0),
+    DevEUI1 = eui_to_bin(DevEUI0),
+    AppEUI1 = eui_to_bin(AppEUI0),
     case router_device_api:get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
             lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
-            %% {error, unknown_device};
-            ok;
-        {ok, _Devices} ->
-            lager:debug("found ~p devices matching ~p/~p", [erlang:length(_Devices), DevEUI1, AppEUI1]),
-            ok
+            {error, unknown_device};
+        {ok, Devices} ->
+            lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
+            case maybe_buy_join_offer(Offer) of
+                false -> {error, already_got_join};
+                true -> ok
+            end
     end.
 
--spec to_bin(undefined | non_neg_integer()) -> binary().
-to_bin(undefined) -> <<>>;
-to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
+-spec eui_to_bin(undefined | non_neg_integer()) -> binary().
+eui_to_bin(undefined) -> <<>>;
+eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, _Pid) ->
@@ -271,6 +278,23 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
+-spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer()) -> boolean().
+maybe_buy_join_offer(Offer) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    case ets:insert_new(?ETS, {PHash, 0, 0}) of
+        true ->
+            erlang:spawn(fun() ->
+                                 ok = timer:sleep(?BUY_JOIN_TIMEOUT),
+                                 true = ets:delete(?ETS, PHash)
+                         end),
+            ets:insert(?ETS, {PHash, ?BUY_JOIN_MAX, 1});
+        false ->
+            case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
+                0 -> false;
+                1 -> true
+            end
+    end.
+
 -spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
 lookup(DevAddr, PacketHash) ->
     Key = term_to_binary({DevAddr, PacketHash}),
@@ -297,7 +321,7 @@ insert(DevAddr, PacketHash, PubKeyBin) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-handle_offer_test() ->
+handle_join_offer_test() ->
     ok = init(),
 
     meck:new(router_device_api, [passthrough]),
@@ -305,10 +329,27 @@ handle_offer_test() ->
 
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
+
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, already_got_join}, handle_offer(JoinOffer, self())),
+
+    ok = timer:sleep(?BUY_JOIN_TIMEOUT + 5),
+
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
+
+    ets:delete(?ETS),
+    ok.
+
+
+handle_packet_offer_test() ->
+    ok = init(),
 
     DevAddr = 16#deadbeef,
     meck:new(router_device_devaddr, [passthrough]),

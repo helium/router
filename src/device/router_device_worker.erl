@@ -153,10 +153,8 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{c
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
     case validate_join(Packet0, PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, Chain) of
-        {error, not_enough_dc} ->
-            lager:debug("did not have enough dc to pay for join"),
-            {noreply, State0};
         {error, _Reason} ->
+            lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State0};
         {ok, Reply, Device1, JoinNonce} ->
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
@@ -326,8 +324,7 @@ get_device(DB, CF, ID) ->
                     router_device:device(),
                     binary(),
                     router_device:device(),
-                    blockchain:blockchain()) ->
-          {ok, Reply::binary(), Device::router_device:device(), DevAddr::binary()} | {error, any()}.
+                    blockchain:blockchain()) -> {ok, binary(), router_device:device(), binary()} | {error, any()}.
 validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
                                     _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
               PubKeyBin, Region, OUI, APIDevice, AppKey, Device, Blockchain) when MType == ?JOIN_REQ ->
@@ -335,7 +332,7 @@ validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/bi
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Blockchain) of
         false ->
             {error, not_enough_dc};
-        {true, _Balance, _Nonce} ->
+        {true, _, _} ->
             handle_join_(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device))
     end;
 validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, _Blockchain) ->

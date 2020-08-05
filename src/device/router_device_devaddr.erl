@@ -110,33 +110,32 @@ init(Args) ->
 handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets=[]}=State) ->
     {reply, {error, no_subnet}, State};
 handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
-    case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
-        {error, _}=Error ->
-            {reply, Error, State};
-        {ok, Index} ->
-            Parent = h3:to_geo(h3:parent(Index, 1)),
-            {NthSubnet, DevaddrBase} =
-                case maps:get(Parent, Used, undefined) of
-                    undefined ->
-                        <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
-                        {1, Base};
-                    {Nth, LastBase} ->
-                        Subnet = lists:nth(Nth, Subnets),
-                        <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
-                        Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
-                        case LastBase+1 >= Base+Max of
-                            true ->
-                                {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
-                                <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> = NextSubnet,
-                                {NextNth, NextBase};
-                            false ->
-                                {Nth, LastBase+1} 
-                        end
-                end,
-            DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-            Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
-            {reply, Reply, State#state{devaddr_used=maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}}
-    end;
+    Index = case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
+        {error, _} -> h3:from_geo({0.0, 0.0}, 12);
+        {ok, IA} -> IA
+    end,
+    Parent = h3:to_geo(h3:parent(Index, 1)),
+    {NthSubnet, DevaddrBase} =
+        case maps:get(Parent, Used, undefined) of
+            undefined ->
+                <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
+                {1, Base};
+            {Nth, LastBase} ->
+                Subnet = lists:nth(Nth, Subnets),
+                <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
+                case LastBase+1 >= Base+Max of
+                    true ->
+                        {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
+                        <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> = NextSubnet,
+                        {NextNth, NextBase};
+                    false ->
+                        {Nth, LastBase+1} 
+                end
+        end,
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
+    {reply, Reply, State#state{devaddr_used=maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

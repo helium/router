@@ -46,11 +46,12 @@ handle_offer(Offer, HandlerPid) ->
                     pos_integer(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
-    lager:debug("Packet: ~p, HandlerPid: ~p", [SCPacket, Pid]),
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-    PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
-    case packet(Packet, PacketTime, PubkeyBin, Region, Pid) of
+    case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
         {error, _Reason}=E ->
             lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
             E;

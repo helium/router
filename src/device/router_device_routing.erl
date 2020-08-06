@@ -362,6 +362,10 @@ handle_join_offer_test() ->
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ?assert(meck:validate(router_console_dc_tracker)),
+    meck:unload(router_console_dc_tracker),
 
     ets:delete(?ETS),
     ok.
@@ -370,11 +374,22 @@ handle_join_offer_test() ->
 handle_packet_offer_test() ->
     ok = init(),
 
-    DevAddr = 16#deadbeef,
-    meck:new(router_device_devaddr, [passthrough]),
-    meck:expect(router_device_devaddr, default_devaddr, fun() -> <<DevAddr:32/integer-unsigned-little>> end),
+    Subnet = <<0,0,0,127,255,0>>,
+    <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = Subnet,
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    DevAddr = <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
 
-    Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload">>),
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(_) -> ledger end),
+    meck:new(blockchain_ledger_v1, [passthrough]),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
+    meck:new(blockchain_ledger_routing_v1, [passthrough]),
+    meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
+
+    <<PacketDevAddr:32/integer-unsigned-little>> = DevAddr,
+    Packet = blockchain_helium_packet_v1:new({devaddr, PacketDevAddr}, <<"payload">>),
     Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
     ?assertEqual(ok, handle_offer(Offer, self())),
     ?assertEqual({ok, <<"hotspot">>}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),

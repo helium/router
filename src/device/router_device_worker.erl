@@ -194,9 +194,9 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                                                              downlink_handled_at=DownlinkHandledAt,
                                                              channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
-        {error, {not_enough_dc, Device1}} ->
+        {error, {not_enough_dc, _Reason, Device1}} ->
             ok = report_status_no_dc(Device0),
-            lager:debug("did not have enough dc to send data"),
+            lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             {noreply, State#state{device=Device1}};
         {error, _Reason} ->
             {noreply, State};
@@ -329,10 +329,10 @@ validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/bi
                                     _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
               PubKeyBin, Region, OUI, APIDevice, AppKey, Device, Blockchain) when MType == ?JOIN_REQ ->
     PayloadSize = erlang:byte_size(Payload),
-    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Blockchain) of
-        false ->
-            {error, not_enough_dc};
-        {true, _, _} ->
+    case router_console_dc_tracker:charge(Device, PayloadSize, Blockchain) of
+        {error, _}=Error ->
+            Error;
+        {ok, _, _} ->
             handle_join_(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device))
     end;
 validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, _Blockchain) ->
@@ -434,19 +434,19 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
     PayloadSize = erlang:byte_size(FRMPayload),
-    case router_console_dc_tracker:has_enough_dc(Device0, PayloadSize, Blockchain) of
-        false ->
+    case router_console_dc_tracker:charge(Device0, PayloadSize, Blockchain) of
+        {error, Reason} ->
             DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],
             Device1 = router_device:update(DeviceUpdates, Device0),
             case FPort of
                 0 when FOptsLen == 0 ->
-                    {error, {not_enough_dc, Device1}};
+                    {error, {not_enough_dc, Reason, Device1}};
                 0 when FOptsLen /= 0 ->
-                    {error, {not_enough_dc, Device0}};
+                    {error, {not_enough_dc, Reason, Device0}};
                 _N ->
-                    {error, {not_enough_dc, Device1}}
+                    {error, {not_enough_dc, Reason, Device1}}
             end;
-        {true, Balance, Nonce} ->
+        {ok, Balance, Nonce} ->
             case FPort of
                 0 when FOptsLen == 0 ->
                     NwkSKey = router_device:nwk_s_key(Device0),

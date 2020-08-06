@@ -12,6 +12,7 @@
 -export([start_link/1,
          refill/3,
          has_enough_dc/3,
+         charge/3,
          current_balance/1]).
 
 %% ------------------------------------------------------------------
@@ -48,23 +49,23 @@ refill(OrgID, Nonce, Balance) ->
     end.
 
 -spec has_enough_dc(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
-          {true, non_neg_integer(), non_neg_integer()} | false.
+          {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
 has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
     case enabled() of
         false ->
             case lookup(OrgID) of
                 {error, not_found} ->
                     {B, N} = fetch_and_save_org_balance(OrgID),
-                    {true, B, N};
+                    {ok, OrgID, B, N};
                 {ok, B, N} ->
-                    {true, B, N}
+                    {ok, OrgID, B, N}
             end;
         true ->
             Ledger = blockchain:ledger(Chain),
             case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
                 {error, _Reason} ->
                     lager:warning("failed to calculate dc amount ~p", [_Reason]),
-                    false;
+                    {error, failed_calculate_dc};
                 DCAmount ->
                     {Balance0, Nonce} = 
                         case lookup(OrgID) of
@@ -74,26 +75,37 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
                                 {B, N}
                         end,
                     Balance1 = Balance0-DCAmount,
-                    case Balance1 >= 0 andalso Nonce > 0 of
-                        false ->
-                            false;
-                        true ->
-                            ok = insert(OrgID, Balance1, Nonce),
-                            {true, Balance1, Nonce}
+                    case {Balance1 >= 0, Nonce > 0} of
+                        {false, _} ->
+                            {error, {not_enough_dc, Balance0, DCAmount}};
+                        {_, false} ->
+                            {error, bad_nonce};
+                        {true, true} ->
+                            {ok, OrgID, Balance1, Nonce}
                     end
             end
     end;
-%% TODO: (this needs to be reviewed) During upgrade phase (going from no DC to DC) 
-%%       devices stored in router will not have an orgID this should force
-%%       a device refresh an allow the 1st packet to go threw
 has_enough_dc(Device, PayloadSize, Chain) ->
     Metadata0 = router_device:metadata(Device),
     case maps:get(organization_id, Metadata0, undefined) of
         undefined ->
             ok = router_device_worker:device_update(self()),
-            {true, 0, 0};
+            {ok, undefined, 0, 0};
         OrgID ->
             has_enough_dc(OrgID, PayloadSize, Chain)
+    end.
+
+-spec charge(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
+          {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
+charge(Device, PayloadSize, Chain) ->
+    case ?MODULE:has_enough_dc(Device, PayloadSize, Chain) of
+        {error, _Reason}=Error ->
+            Error;
+        {ok, _OrgID, _Balance, 0} ->
+            {ok, _Balance, 0};
+        {ok, OrgID, Balance, Nonce} ->
+            ok = insert(OrgID, Balance, Nonce),
+            {ok, Balance, Nonce}
     end.
 
 -spec current_balance(OrgID :: binary()) -> {non_neg_integer(), non_neg_integer()}.
@@ -243,10 +255,38 @@ has_enough_dc_test() ->
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 2,
-    ?assertEqual(false, has_enough_dc(OrgID, 48, chain)),
+    PayloadSize = 48,
+    ?assertEqual({error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize, chain)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
-    ?assertEqual({true, 0, 1}, has_enough_dc(OrgID, 48, chain)),
-    ?assertEqual(false, has_enough_dc(OrgID, 48, chain)),
+    ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize, chain)),
+
+    ets:delete(?ETS),
+    ?assert(meck:validate(router_console_device_api)),
+    meck:unload(router_console_device_api),
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_utils)),
+    meck:unload(blockchain_utils),
+    ok.
+
+charge_test() ->
+    ok = application:set_env(router, dc_tracker, "enabled"),
+    _  = ets:new(?ETS, [public, named_table, set]),
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(_) -> undefined end),
+    meck:new(blockchain_utils, [passthrough]),
+    meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
+    meck:new(router_console_device_api, [passthrough]),
+    meck:expect(router_console_device_api, get_org, fun(_) -> {error, deal_with_it} end),
+
+    OrgID = <<"ORG_ID">>,
+    Nonce = 1,
+    Balance = 2,
+    PayloadSize = 48,
+    ?assertEqual({error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize, chain)),
+    ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
+    ?assertEqual({ok, 0, 1}, charge(OrgID, PayloadSize, chain)),
+    ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize, chain)),
 
     ets:delete(?ETS),
     ?assert(meck:validate(router_console_device_api)),

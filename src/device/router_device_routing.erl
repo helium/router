@@ -158,10 +158,7 @@ join_offer(Offer, _Pid) ->
             {error, unknown_device};
         {ok, Devices} ->
             lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
-            case maybe_buy_join_offer(Offer) of
-                false -> {error, already_got_join};
-                true -> ok
-            end
+            maybe_buy_join_offer(Offer, Devices)
     end.
 
 -spec eui_to_bin(undefined | non_neg_integer()) -> binary().
@@ -278,21 +275,39 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer()) -> boolean().
-maybe_buy_join_offer(Offer) ->
-    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    case ets:insert_new(?ETS, {PHash, 0, 0}) of
-        true ->
-            erlang:spawn(fun() ->
-                                 ok = timer:sleep(?BUY_JOIN_TIMEOUT),
-                                 true = ets:delete(?ETS, PHash)
-                         end),
-            ets:insert(?ETS, {PHash, ?BUY_JOIN_MAX, 1});
-        false ->
-            case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
-                0 -> false;
-                1 -> true
+-spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), [router_device:device()]) -> ok | {error, any()}.
+maybe_buy_join_offer(Offer, Devices) ->
+    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+    case check_devices_balance(PayloadSize, Devices) of
+        {error, _Reason}=Error ->
+            Error;
+        ok ->
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case ets:insert_new(?ETS, {PHash, 0, 0}) of
+                true ->
+                    erlang:spawn(fun() ->
+                                         ok = timer:sleep(?BUY_JOIN_TIMEOUT),
+                                         true = ets:delete(?ETS, PHash)
+                                 end),
+                    true = ets:insert(?ETS, {PHash, ?BUY_JOIN_MAX, 1}),
+                    ok;
+                false ->
+                    case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
+                        0 -> {error, already_got_join};
+                        1 -> ok
+                    end
             end
+    end.
+
+%% TODO: This function is not very optimized...
+-spec check_devices_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
+check_devices_balance(PayloadSize, Devices) ->
+    Chain = blockchain_worker:blockchain(),
+    %% TODO: We should not be picking the first device
+    [Device|_] = Devices,
+    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+        {error, _Reason}=Error -> Error;
+        {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
 
 -spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
@@ -325,7 +340,11 @@ handle_join_offer_test() ->
     ok = init(),
 
     meck:new(router_device_api, [passthrough]),
-    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, []} end),
+    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [device]} end),
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(router_console_dc_tracker, [passthrough]),
+    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
 
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),

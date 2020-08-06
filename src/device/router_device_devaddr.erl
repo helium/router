@@ -111,9 +111,9 @@ handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets=[]}=State) ->
     {reply, {error, no_subnet}, State};
 handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
     Index = case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
-        {error, _} -> h3:from_geo({0.0, 0.0}, 12);
-        {ok, IA} -> IA
-    end,
+                {error, _} -> h3:from_geo({0.0, 0.0}, 12);
+                {ok, IA} -> IA
+            end,
     Parent = h3:to_geo(h3:parent(Index, 1)),
     {NthSubnet, DevaddrBase} =
         case maps:get(Parent, Used, undefined) of

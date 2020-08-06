@@ -197,10 +197,16 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
         {error, {not_enough_dc, _Reason, Device1}} ->
             ok = report_status_no_dc(Device0),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
+            _ = router_device_routing:deny_more(Packet0),
             {noreply, State#state{device=Device1}};
         {error, _Reason} ->
+            _ = router_device_routing:deny_more(Packet0),
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
+            case router_device:queue(Device1) of
+                [] -> router_device_routing:deny_more(Packet0);
+                _ -> router_device_routing:accept_more(Packet0, 3)
+            end,
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of
                 true ->
@@ -278,7 +284,7 @@ handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device
                  region=Region} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
-    case handle_frame(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) of
+    case handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
@@ -528,25 +534,25 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
 %% @end
 %%%-------------------------------------------------------------------
 
--spec handle_frame(blockchain_helium_packet_v1:packet(),
-                   libp2p_crypto:pubkey_bin(),
-                   atom(),
-                   router_device:device(),
-                   #frame{},
-                   pos_integer(),
-                   blockchain:blockchain()) -> noop | {ok, router_device:device()} | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) ->
-    handle_frame(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain, router_device:queue(Device)).
+-spec handle_frame_timeout(blockchain_helium_packet_v1:packet(),
+                           libp2p_crypto:pubkey_bin(),
+                           atom(),
+                           router_device:device(),
+                           #frame{},
+                           pos_integer(),
+                           blockchain:blockchain()) -> noop | {ok, router_device:device()} | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
+handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) ->
+    handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain, router_device:queue(Device)).
 
--spec handle_frame(blockchain_helium_packet_v1:packet(),
-                   libp2p_crypto:pubkey_bin(),
-                   atom(),
-                   router_device:device(),
-                   #frame{},
-                   pos_integer(),
-                   blockchain:blockchain(),
-                   list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
+-spec handle_frame_timeout(blockchain_helium_packet_v1:packet(),
+                           libp2p_crypto:pubkey_bin(),
+                           atom(),
+                           router_device:device(),
+                           #frame{},
+                           pos_integer(),
+                           blockchain:blockchain(),
+                           list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
+handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -581,7 +587,7 @@ handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) 
         _ ->
             noop
     end;
-handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
+handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
     ACK = mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),

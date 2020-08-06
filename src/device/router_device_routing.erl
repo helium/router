@@ -201,7 +201,7 @@ packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
 
 -spec eui_to_bin(undefined | non_neg_integer()) -> binary().
 eui_to_bin(undefined) -> <<>>;
-eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
+eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
 -spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
 router_devaddr(DevAddr) ->

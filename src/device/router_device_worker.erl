@@ -39,11 +39,10 @@
 
 -record(join_cache, {rssi :: float(),
                      reply :: binary(),
-                     packet_rcvd :: blockchain_helium_packet_v1:packet(),
+                     packet_selected :: {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()},
+                     packets = [] :: [{blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()}],
                      device :: router_device:device(),
-                     pid :: pid(),
-                     pubkey_bin :: libp2p_crypto:pubkey_bin(),
-                     region :: atom()}).
+                     pid :: pid()}).
 
 -record(frame_cache, {rssi :: float(),
                       count = 1 :: pos_integer(),
@@ -157,33 +156,32 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{c
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State0};
         {ok, Reply, Device1, JoinNonce} ->
-            RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
+            NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined when JoinNonceHandledAt == JoinNonce ->
                     %% late packet
                     {noreply, State0};
                 undefined ->
-                    JoinCache = #join_cache{rssi=RSSI0,
+                    JoinCache = #join_cache{rssi=NewRSSI,
                                             reply=Reply,
-                                            packet_rcvd=Packet0,
+                                            packet_selected={Packet0, PubKeyBin, Region},
                                             device=Device1,
-                                            pid=Pid,
-                                            pubkey_bin=PubKeyBin,
-                                            region=Region},
+                                            pid=Pid},
                     Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
                     State1 = State0#state{device=Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
-                #join_cache{rssi=RSSI1, pid=Pid2}=JoinCache1 ->
-                    case RSSI0 > RSSI1 of
+                #join_cache{rssi=OldRSSI, packet_selected={OldPacket, _, _}, packets=Packets, pid=OldPid}=JoinCache1 ->
+                    case NewRSSI > OldRSSI of
                         false ->
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
-                            {noreply, State0};
+                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packets=[{Packet0, PubKeyBin, Region}|Packets]}, Cache0),
+                            {noreply, State0#state{join_cache=Cache1}};
                         true ->
-                            catch blockchain_state_channel_handler:send_response(Pid2, blockchain_state_channel_response_v1:new(true)),
-                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packet_rcvd=Packet0, rssi=RSSI0, pid=Pid,
-                                                                               pubkey_bin=PubKeyBin, region=Region}, Cache0),
+                            catch blockchain_state_channel_handler:send_response(OldPid, blockchain_state_channel_response_v1:new(true)),
+                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{rssi=NewRSSI, packet_selected={Packet0, PubKeyBin, Region},
+                                                                               packets=lists:keydelete(OldPacket, 1, Packets), pid=Pid}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}}
                     end
             end
@@ -250,27 +248,21 @@ handle_cast(_Msg, State) ->
 handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
                                               channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
     #join_cache{reply=Reply,
-                packet_rcvd=PacketRcvd,
+                packet_selected=PacketSelected,
+                packets=Packets,
                 device=Device0,
-                pid=Pid,
-                pubkey_bin=PubKeyBin,
-                region=Region} = maps:get(JoinNonce, Cache0),
-
+                pid=Pid} = maps:get(JoinNonce, Cache0),
+    {Packet, _, Region} = PacketSelected,
     #txq{time = TxTime,
          datr = TxDataRate,
          freq = TxFreq} = lorawan_mac_region:join1_window(Region, 0,
-                                                          packet_to_rxq(PacketRcvd)),
-
-    Packet = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
-    catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, Packet)),
+                                                          packet_to_rxq(Packet)),
+    DownlinkPacket = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
+    catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-    DevEUI = router_device:dev_eui(Device0),
-    AppEUI = router_device:app_eui(Device0),
-    Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    ok = report_status(activation, Desc, Device1, success, PubKeyBin, Region, PacketRcvd, 0, <<>>, Blockchain),
+    ok = report_join_status(Device1, PacketSelected, Packets, Blockchain),
     Cache1 = maps:remove(JoinNonce, Cache0),
     {noreply, State#state{device=Device1, join_cache=Cache1}};
 handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
@@ -709,6 +701,45 @@ report_status_no_dc(Device) ->
                port => 0,
                devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
                hotspots => [],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
+
+report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Blockchain) ->
+    DevEUI = router_device:dev_eui(Device),
+    AppEUI = router_device:app_eui(Device),
+    DevAddr = router_device:devaddr(Device),
+    Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+
+    Hostspots = lists:foldl(
+                  fun({Packet, PubKeyBin, Region}, Acc) ->
+                          HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
+                          {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
+                          Freq = blockchain_helium_packet_v1:frequency(Packet),
+                          {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
+                          [#{id => erlang:list_to_binary(HotspotID),
+                             name => erlang:list_to_binary(HotspotName),
+                             reported_at => erlang:system_time(seconds),
+                             status => success,
+                             selected => PubKeyBin == PubKeyBinSelected,
+                             rssi => blockchain_helium_packet_v1:signal_strength(Packet),
+                             snr => blockchain_helium_packet_v1:snr(Packet),
+                             spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+                             frequency => Freq,
+                             channel => lorawan_mac_region:f2uch(Region, Freq),
+                             lat => Lat,
+                             long => Long}|Acc]
+                  end,
+                  [],
+                  [PacketSelected|Packets]),
+    Report = #{category => activation,
+               description => Desc,
+               reported_at => erlang:system_time(seconds),
+               payload => <<>>,
+               payload_size => 0,
+               port => 0,
+               devaddr => lorawan_utils:binary_to_hex(DevAddr),
+               hotspots => Hostspots,
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

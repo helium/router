@@ -159,9 +159,10 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined when JoinNonceHandledAt == JoinNonce ->
-                    %% late packet
+                    lager:debug("got a late join: ~p (old: ~p)", [JoinNonce, JoinNonceHandledAt]),
                     {noreply, State0};
                 undefined ->
+                    lager:debug("got a first join: ~p", [JoinNonce]),
                     JoinCache = #join_cache{rssi=NewRSSI,
                                             reply=Reply,
                                             packet_selected={Packet0, PubKeyBin, Region},
@@ -172,16 +173,19 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(max(0, ?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
-                #join_cache{rssi=OldRSSI, packet_selected={OldPacket, _, _}, packets=Packets, pid=OldPid}=JoinCache1 ->
+                #join_cache{rssi=OldRSSI, packet_selected={OldPacket, _, _}=OldSelected, packets=OldPackets, pid=OldPid}=JoinCache1 ->
                     case NewRSSI > OldRSSI of
                         false ->
+                            lager:debug("got a another join for ~p with worst RSSI ~p", [JoinNonce, {NewRSSI, OldRSSI}]),
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
-                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packets=[{Packet0, PubKeyBin, Region}|Packets]}, Cache0),
+                            Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packets=[{Packet0, PubKeyBin, Region}|OldPackets]}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}};
                         true ->
+                            lager:debug("got a another join for ~p with better RSSI ~p", [JoinNonce, {NewRSSI, OldRSSI}]),
                             catch blockchain_state_channel_handler:send_response(OldPid, blockchain_state_channel_response_v1:new(true)),
+                            NewPackets = [OldSelected|lists:keydelete(OldPacket, 1, OldPackets)],
                             Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{rssi=NewRSSI, packet_selected={Packet0, PubKeyBin, Region},
-                                                                               packets=lists:keydelete(OldPacket, 1, Packets), pid=Pid}, Cache0),
+                                                                               packets=NewPackets, pid=Pid}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}}
                     end
             end
@@ -254,6 +258,9 @@ handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
                 device=Device0,
                 pid=Pid} = maps:get(JoinNonce, Cache0),
     {Packet, _, Region} = PacketSelected,
+    lager:debug("join timeout for ~p / selected ~p out of ~p", [JoinNonce,
+                                                                lager:pr(Packet, blockchain_helium_packet_v1),
+                                                                erlang:length(Packets) + 1]),
     #txq{time = TxTime,
          datr = TxDataRate,
          freq = TxFreq} = lorawan_mac_region:join1_window(Region, 0,

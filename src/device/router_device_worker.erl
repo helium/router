@@ -638,8 +638,9 @@ were_channels_corrected(Frame, 'US915') ->
     case lists:keyfind(link_adr_ans, 1, FOpts0) of
         {link_adr_ans, 1, 1, 1} ->
             true;
-        {link_adr_ans, 1, 1, 0} ->
-            lager:info("device rejected channel adjustment"),
+        {link_adr_ans, TxPowerACK, DataRateACK, ChannelMaskACK} ->
+            %% consider any answer good enough, if the device wants to reject things, nothing we can so
+            lager:info("device rejected ADR: TxPower: ~p DataRate: ~p, Channel Mask: ~p", [TxPowerACK == 1, DataRateACK == 1, ChannelMaskACK == 1]),
             %% XXX we should get this to report_status somehow, but it's a bit tricky right now
             true;
         _ ->

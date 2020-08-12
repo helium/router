@@ -51,8 +51,7 @@
 -endif.
 
 -define(SERVER, ?MODULE).
-%% TODO: Configure via app env
--define(EXPIRATION, 45).
+-define(SC_EXPIRATION, 25).
 -define(SC_AMOUNT, 100). % budget 100 data credits
 
 -record(state, {
@@ -176,21 +175,22 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
-                                     ?EXPIRATION, get_sc_amount(), Chain),
+                                     get_sc_expiration_interval(), get_sc_amount(), Chain),
     ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI,
-                                     ?EXPIRATION * 3, get_sc_amount(), Chain).
+                                     get_sc_expiration_interval() * 2, get_sc_amount(), Chain).
 
 -spec open_next_state_channel(State :: state()) -> ok.
-open_next_state_channel(#state{oui=OUI, chain=Chain}=State) ->
+open_next_state_channel(#state{oui=OUI, chain=Chain}) ->
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
     NextExpiration = case active_sc_expiration() of
                          {error, no_active_sc} ->
-                             abs(previous_sc_expiration(State) - ChainHeight) + ?EXPIRATION * 3;
+                             %% Just set it to expiration_interval
+                             get_sc_expiration_interval();
                          {ok, ActiveSCExpiration} ->
                              %% We set the next SC expiration to the difference between current chain height and active
-                             %% expiration + default expiration * 2
-                             abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION * 3
+                             %% plus the expiration_interval
+                             abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
                      end,
 
     PubkeyBin = blockchain_swarm:pubkey_bin(),
@@ -268,6 +268,13 @@ get_sc_amount() ->
     case application:get_env(router, sc_open_dc_amount, ?SC_AMOUNT) of
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         Amount -> Amount
+    end.
+
+-spec get_sc_expiration_interval() -> pos_integer().
+get_sc_expiration_interval() ->
+    case application:get_env(router, sc_expiration_interval, ?SC_EXPIRATION) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
     end.
 
 %% ------------------------------------------------------------------

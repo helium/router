@@ -10,7 +10,7 @@
 %%      ** If there is no active_count, initialize two state channels
 %%      ** If active_count = 1, figure out next nonce and fire off next state_channel
 %%      with expiration set to twice the current max nonce state channel
-%%      ** If active_count = 2, stand by
+%%      ** If active_count > 1, stand by
 %%
 %% @end
 %%%-------------------------------------------------------------------
@@ -43,7 +43,7 @@
 -export([
          init_state_channels/1,
          open_next_state_channel/1,
-         get_active_count/1
+         get_active_count/0
         ]).
 
 -ifdef(TEST).
@@ -51,8 +51,7 @@
 -endif.
 
 -define(SERVER, ?MODULE).
-%% TODO: Configure via app env
--define(EXPIRATION, 45).
+-define(SC_EXPIRATION, 25).
 -define(SC_AMOUNT, 100). % budget 100 data credits
 
 -record(state, {
@@ -138,8 +137,8 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
     end;
 
 handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-            #state{is_active=true, chain=Chain}=State) ->
-    case get_active_count(Chain) of
+            #state{is_active=true}=State) ->
+    case get_active_count() of
         0 ->
             %% initialize with two channels
             lager:info("active_count = 0, opening two state channels"),
@@ -148,9 +147,9 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
             %% open next state channel
             lager:info("active_count = 1, opening next state channel"),
             ok = open_next_state_channel(State);
-        2 ->
+        Other ->
             %% don't do anything
-            lager:info("active_count = 2, standing by..."),
+            lager:info("active_count = ~p, standing by...", [Other]),
             ok
     end,
     {noreply, State};
@@ -175,27 +174,31 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, ?EXPIRATION, get_sc_amount(), Chain),
-    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI, ?EXPIRATION * 3, get_sc_amount(), Chain).
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
+                                     get_sc_expiration_interval(), get_sc_amount(), Chain),
+    ok = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI,
+                                     get_sc_expiration_interval() * 2, get_sc_amount(), Chain).
 
 -spec open_next_state_channel(State :: state()) -> ok.
-open_next_state_channel(#state{oui=OUI, chain=Chain}=State) ->
+open_next_state_channel(#state{oui=OUI, chain=Chain}) ->
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
     NextExpiration = case active_sc_expiration() of
                          {error, no_active_sc} ->
-                             abs(previous_sc_expiration(State) - ChainHeight) + ?EXPIRATION * 3;
+                             %% Just set it to expiration_interval
+                             get_sc_expiration_interval();
                          {ok, ActiveSCExpiration} ->
                              %% We set the next SC expiration to the difference between current chain height and active
-                             %% expiration + default expiration * 2
-                             abs(ActiveSCExpiration - ChainHeight) + ?EXPIRATION * 3
+                             %% plus the expiration_interval
+                             abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
                      end,
 
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI, NextExpiration, get_sc_amount(), Chain).
+    create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
+                                NextExpiration, get_sc_amount(), Chain).
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                                   SigFun :: libp2p_crypto:sig_fun(),
@@ -215,14 +218,9 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     lager:info("Opening state channel for router: ~p, oui: ~p, nonce: ~p", [?TO_B58(PubkeyBin), OUI, Nonce]),
     blockchain_worker:submit_txn(SignedTxn).
 
--spec get_active_count(Chain :: blockchain:blockchain()) -> non_neg_integer().
-get_active_count(Chain) ->
-    Ledger = blockchain:ledger(Chain),
-    Owner = blockchain_swarm:pubkey_bin(),
-    {ok, LedgerSCMap} = blockchain_ledger_v1:find_scs_by_owner(Owner, Ledger),
-    X = maps:size(LedgerSCMap),
-    lager:info("LedgerSCCount: ~p, LedgerSCMap: ~p", [X, LedgerSCMap]),
-    X.
+-spec get_active_count() -> non_neg_integer().
+get_active_count() ->
+    blockchain_state_channels_server:get_active_sc_count().
 
 -spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin(),
                 Ledger :: blockchain_ledger_v1:ledger()) -> non_neg_integer().
@@ -270,6 +268,13 @@ get_sc_amount() ->
     case application:get_env(router, sc_open_dc_amount, ?SC_AMOUNT) of
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         Amount -> Amount
+    end.
+
+-spec get_sc_expiration_interval() -> pos_integer().
+get_sc_expiration_interval() ->
+    case application:get_env(router, sc_expiration_interval, ?SC_EXPIRATION) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
     end.
 
 %% ------------------------------------------------------------------

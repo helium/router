@@ -204,21 +204,25 @@ handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef
 %% ------------------------------------------------------------------
 handle_info({report_status_timeout, FCnt}, #state{device=Device, channels_resp_cache=Cache0}=State) ->
     lager:debug("report_status_timeout for ~p", [FCnt]),
-    {Data, CachedReports} = maps:get(FCnt, Cache0),
-    Payload = maps:get(payload, Data),
-    ReportsMap = #{category => <<"up">>,
-                   description => <<"Channels report">>,
-                   reported_at => erlang:system_time(seconds),
-                   payload => base64:encode(Payload),
-                   payload_size => erlang:byte_size(Payload),
-                   port => maps:get(port, Data),
-                   devaddr => maps:get(devaddr, Data),
-                   hotspots => maps:get(hotspots, Data),
-                   channels => CachedReports,
-                   fcnt => maps:get(fcnt, Data),
-                   dc => maps:get(dc, Data)},
-    ok = router_device_api:report_status(Device, ReportsMap),
-    {noreply, State#state{channels_resp_cache=maps:remove(FCnt, Cache0)}};
+    case maps:get(FCnt, Cache0, undefined) of
+        undefined ->
+            {noreply, State};
+        {Data, CachedReports} ->
+            Payload = maps:get(payload, Data),
+            ReportsMap = #{category => <<"up">>,
+                           description => <<"Channels report">>,
+                           reported_at => erlang:system_time(seconds),
+                           payload => base64:encode(Payload),
+                           payload_size => erlang:byte_size(Payload),
+                           port => maps:get(port, Data),
+                           devaddr => maps:get(devaddr, Data),
+                           hotspots => maps:get(hotspots, Data),
+                           channels => CachedReports,
+                           fcnt => maps:get(fcnt, Data),
+                           dc => maps:get(dc, Data)},
+            ok = router_device_api:report_status(Device, ReportsMap),
+            {noreply, State#state{channels_resp_cache=maps:remove(FCnt, Cache0)}}
+    end;
 handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
     APIChannels = lists:foldl(
                     fun(Channel, Acc) ->

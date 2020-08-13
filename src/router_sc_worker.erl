@@ -232,16 +232,6 @@ get_nonce(PubkeyBin, Ledger) ->
             blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
     end.
 
--spec previous_sc_expiration(State :: state()) -> pos_integer().
-previous_sc_expiration(#state{chain=Chain}) ->
-    Ledger = blockchain:ledger(Chain),
-    Owner = blockchain_swarm:pubkey_bin(),
-    {ok, LedgerSCMap} = blockchain_ledger_v1:find_scs_by_owner(Owner, Ledger),
-    LedgerSCMod = get_ledger_sc_mod(Ledger),
-    SortFun = fun(SC1, SC2) -> LedgerSCMod:nonce(SC1) >= LedgerSCMod:nonce(SC2) end,
-    LastLedgerSC = hd(lists:sort(SortFun, maps:values(LedgerSCMap))),
-    blockchain_ledger_state_channel_v2:expire_at_block(LastLedgerSC).
-
 -spec active_sc_expiration() -> {error, no_active_sc} | {ok, pos_integer()}.
 active_sc_expiration() ->
     case blockchain_state_channels_server:active_sc_id() of
@@ -251,16 +241,6 @@ active_sc_expiration() ->
             SCs = blockchain_state_channels_server:state_channels(),
             {ActiveSC, _} = maps:get(ActiveSCID, SCs),
             {ok, blockchain_state_channel_v1:expire_at_block(ActiveSC)}
-    end.
-
--spec get_ledger_sc_mod(Ledger :: blockchain_ledger_v1:ledger()) -> blockchain_ledger_state_channel_v2 |
-          blockchain_ledger_state_channel_v1.
-get_ledger_sc_mod(Ledger) ->
-    case blockchain:config(sc_version, Ledger) of
-        {ok, 2} ->
-            blockchain_ledger_state_channel_v2;
-        _ ->
-            blockchain_ledger_state_channel_v1
     end.
 
 -spec get_sc_amount() -> pos_integer().

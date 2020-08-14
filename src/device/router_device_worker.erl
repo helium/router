@@ -176,7 +176,7 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{c
                 #join_cache{rssi=OldRSSI, packet_selected={OldPacket, _, _}=OldSelected, packets=OldPackets, pid=OldPid}=JoinCache1 ->
                     case NewRSSI > OldRSSI of
                         false ->
-                            lager:debug("got a another join for ~p with worst RSSI ~p", [JoinNonce, {NewRSSI, OldRSSI}]),
+                            lager:debug("got another join for ~p with worst RSSI ~p", [JoinNonce, {NewRSSI, OldRSSI}]),
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
                             Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packets=[{Packet0, PubKeyBin, Region}|OldPackets]}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}};

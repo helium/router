@@ -37,9 +37,9 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-                                                %PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                %lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
+    lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -47,7 +47,7 @@ handle_offer(Offer, HandlerPid) ->
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
     lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
@@ -134,7 +134,7 @@ packet_offer(Offer, Pid) ->
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                              _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PacketTime, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
     case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->

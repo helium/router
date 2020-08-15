@@ -244,9 +244,10 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({hnt_burn, Body}, #state{db=DB, pending_burns=P, inflight=I}=State) ->
     Uuid = uuid_v4(),
-    NewP = maps:put(Uuid, Body#{request_id => Uuid}, P),
+    ReqBody = Body#{request_id => Uuid},
+    NewP = maps:put(Uuid, ReqBody, P),
     ok = store_pending_burns(DB, NewP),
-    Pid = spawn_pending_burn(Uuid, Body),
+    Pid = spawn_pending_burn(Uuid, ReqBody),
     {noreply, State#state{pending_burns=NewP, inflight=[ {Uuid, Pid} | I ]}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

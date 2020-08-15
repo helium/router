@@ -111,6 +111,8 @@ packet_offer(Offer, Pid) ->
             router_devaddr(DevAddr);
         false ->
             case ets:lookup(?ETS, PHash) of
+                [] ->
+                    {error, too_late};
                 [{PHash, _Max, -1}] ->
                     {error, already_got_packet};
                 [{PHash, 0, 0}] ->

@@ -26,7 +26,7 @@
 
 -spec init() -> ok.
 init() ->
-    ets:new(?ETS, [public, named_table, set]),
+    ets:new(?ETS, [public, named_table, set, {read_concurrency, true}, {write_concurrency, true}]),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -100,27 +100,29 @@ join_offer(Offer, _Pid) ->
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, Pid) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    case ets:insert_new(?ETS, {PHash, 0, 0}) of
+    Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    Key = {Routing, PHash},
+    case ets:insert_new(?ETS, {Key, 0, 0}) of
         true ->
             erlang:spawn(fun() ->
                                  %% TODO: This timer is kind of random
                                  ok = timer:sleep(timer:minutes(1)),
-                                 true = ets:delete(?ETS, PHash)
+                                 true = ets:delete(?ETS, Key)
                          end),
             #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
             router_devaddr(DevAddr);
         false ->
-            case ets:lookup(?ETS, PHash) of
+            case ets:lookup(?ETS, Key) of
                 [] ->
                     {error, too_late};
-                [{PHash, _Max, -1}] ->
+                [{Key, _Max, -1}] ->
                     {error, already_got_packet};
-                [{PHash, 0, 0}] ->
+                [{Key, 0, 0}] ->
                     %% TODO: Find something better than sleeping maybe?
                     timer:sleep(25),
                     packet_offer(Offer, Pid);
-                [{PHash, _Max, _Curr}] ->
-                    case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
+                [{Key, _Max, _Curr}] ->
+                    case ets:select_replace(?ETS, ?ETS_FUN(Key)) of
                         0 -> {error, already_got_enough_packet};
                         1 -> ok
                     end

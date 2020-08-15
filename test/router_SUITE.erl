@@ -288,7 +288,7 @@ join_test(Config) ->
                                                                 <<"channel">> => fun erlang:is_number/1,
                                                                 <<"lat">> => <<"unknown">>, 
                                                                 <<"long">> => <<"unknown">>},
-                                                             #{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                                                              #{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                                                                 <<"name">> => erlang:list_to_binary(HotspotName1),
                                                                 <<"reported_at">> => fun erlang:is_integer/1,
                                                                 <<"status">> => <<"success">>,

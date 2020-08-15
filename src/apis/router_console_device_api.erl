@@ -518,28 +518,28 @@ load_pending_burns(DB) ->
                                 Inflight :: [ inflight() ] ) -> [ inflight() ].
 garbage_collect_inflight(P, I) ->
     Garbage = lists:foldl(fun({Uuid, Pid}=E, Acc) ->
-                      case maps:is_key(Uuid, P) of
-                          true ->
-                              %% if the uuid is in the map, it means
-                              %% the request is:
-                              %%   - in flight, or,
-                              %%   - a failure that we missed removing
-                              %%     and needs to be retried.
-                              case is_process_alive(Pid) of
-                                  %% if the process is alive,
-                                  %% it's inflight, so don't
-                                  %% garbage collect it
-                                  true -> Acc;
-                                  %% the pid isn't alive - it's a failure
-                                  %% and we should re-attempt it
-                                  false -> [ E | Acc ]
-                              end;
-                          false ->
-                              %% not in the map, this is a success
-                              %% but somehow we missed removing it
-                              [ E | Acc ]
-                      end
-              end, [], I),
+                                  case maps:is_key(Uuid, P) of
+                                      true ->
+                                          %% if the uuid is in the map, it means
+                                          %% the request is:
+                                          %%   - in flight, or,
+                                          %%   - a failure that we missed removing
+                                          %%     and needs to be retried.
+                                          case is_process_alive(Pid) of
+                                              %% if the process is alive,
+                                              %% it's inflight, so don't
+                                              %% garbage collect it
+                                              true -> Acc;
+                                              %% the pid isn't alive - it's a failure
+                                              %% and we should re-attempt it
+                                              false -> [ E | Acc ]
+                                          end;
+                                      false ->
+                                          %% not in the map, this is a success
+                                          %% but somehow we missed removing it
+                                          [ E | Acc ]
+                                  end
+                          end, [], I),
     I -- Garbage.
 
 -spec maybe_spawn_pending_burns( Pending :: pending(),
@@ -573,10 +573,12 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
     Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
     lager:debug("post ~p to ~p", [Body, Url]),
     case hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                 jsx:encode(Body), [with_body, {pool, ?POOL}]) of
-        {ok, RC, _Headers, _Reply} when RC >= 200 andalso RC =< 299 ->
+                      jsx:encode(Body), [with_body, {pool, ?POOL}]) of
+        {ok, 204, _Headers, _Reply} ->
+            lager:debug("Burn notification successful"),
             ReplyPid ! {hnt_burn, success, Uuid};
-        _Other ->
+        Other ->
+            lager:debug("Burn notification failed", [Other]),
             timer:sleep(Delay),
             %% fibonacci delay timer
             do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay+Next, Retries - 1)

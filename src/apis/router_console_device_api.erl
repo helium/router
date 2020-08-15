@@ -266,7 +266,7 @@ handle_info(?TICK, #state{db=DB, pending_burns=P, inflight=I}=State) ->
     NewInflight = maybe_spawn_pending_burns(P, GCI),
     ok = store_pending_burns(DB, P),
     Tref = schedule_next_tick(),
-    {noreply, State#state{inflight=NewInflight, tref=Tref}};
+    {noreply, State#state{inflight=GCI ++ NewInflight, tref=Tref}};
 handle_info({hnt_burn, success, Uuid}, #state{pending_burns=P, inflight=I}=State) ->
     {noreply, State#state{pending_burns=maps:remove(Uuid, P), inflight=lists:keydelete(Uuid, 1, I)}};
 handle_info({hnt_burn, fail, Uuid}, #state{inflight=I}=State) ->

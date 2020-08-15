@@ -106,7 +106,7 @@ packet_offer(Offer, Pid) ->
         true ->
             erlang:spawn(fun() ->
                                  %% TODO: This timer is kind of random
-                                 ok = timer:sleep(timer:minutes(1)),
+                                 ok = timer:sleep(timer:seconds(1)),
                                  true = ets:delete(?ETS, Key)
                          end),
             #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
@@ -309,16 +309,17 @@ maybe_buy_join_offer(Offer, Devices) ->
             Error;
         ok ->
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case ets:insert_new(?ETS, {PHash, 0, 0}) of
+            Routing = blockchain_state_channel_offer_v1:routing(Offer),
+            Key = {Routing, PHash},
+            case ets:insert_new(?ETS, {Key, 0, 0}) of
                 true ->
                     erlang:spawn(fun() ->
                                          ok = timer:sleep(?BUY_JOIN_TIMEOUT),
-                                         true = ets:delete(?ETS, PHash)
+                                         true = ets:delete(?ETS, Key)
                                  end),
-                    true = ets:insert(?ETS, {PHash, ?BUY_JOIN_MAX, 1}),
-                    ok;
+                    true = ets:insert(?ETS, {Key, ?BUY_JOIN_MAX, 1}), ok;
                 false ->
-                    case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
+                    case ets:select_replace(?ETS, ?ETS_FUN(Key)) of
                         0 -> {error, already_got_join};
                         1 -> ok
                     end

@@ -565,7 +565,7 @@ spawn_pending_burn(Uuid, Body) ->
                         Body :: request_body(),
                         Delay :: pos_integer(),
                         Next :: pos_integer(),
-                        Retries :: non_neg_integer()) -> ok.
+                        Retries :: non_neg_integer()) -> {hnt_burn, success|fail, uuid_v4()}.
 do_hnt_burn_post(Uuid, ReplyPid, _Body, _Delay, _Next, 0) ->
     ReplyPid ! {hnt_burn, fail, Uuid};
 do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->

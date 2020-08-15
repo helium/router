@@ -231,7 +231,7 @@ init(Args) ->
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    P = load_pending_burns(DB),
+    {ok, P} = load_pending_burns(DB),
     Inflight = maybe_spawn_pending_burns(P, []),
     Tref = schedule_next_tick(),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token,
@@ -313,7 +313,8 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{db=DB, pending_burns=P}) ->
+    ok = store_pending_burns(DB, P),
     ok.
 
 %% ------------------------------------------------------------------
@@ -561,7 +562,7 @@ spawn_pending_burn(Uuid, Body) ->
 
 -spec do_hnt_burn_post( Uuid :: uuid_v4(),
                         ReplyPid :: pid(),
-                        Body :: maps:map(),
+                        Body :: request_body(),
                         Delay :: pos_integer(),
                         Next :: pos_integer(),
                         Retries :: non_neg_integer()) -> ok.

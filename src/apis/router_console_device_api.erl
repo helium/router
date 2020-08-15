@@ -561,7 +561,7 @@ spawn_pending_burn(Uuid, Body) ->
 
 -spec do_hnt_burn_post( Uuid :: uuid_v4(),
                         ReplyPid :: pid(),
-                        Body :: maps:map(),
+                        Body :: request_body(),
                         Delay :: pos_integer(),
                         Next :: pos_integer(),
                         Retries :: non_neg_integer()) -> ok.

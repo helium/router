@@ -542,8 +542,8 @@ handle_frame(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) 
     ACK = mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
-    lager:info("downlink with no queue, ACK ~p, Fopts ~p and channels corrected ~p -> ~p", [ACK, FOpts, ChannelCorrection, WereChannelsCorrected]),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Region, Device0, Frame, Count),
+    lager:info("downlink with no queue, ACK ~p, Fopts ~p and channels corrected ~p -> ~p", [ACK, FOpts1, ChannelCorrection, WereChannelsCorrected]),
     case ACK of
         _ when ACK == 1 orelse FOpts1 /= [] ->
             ConfirmedDown = false,

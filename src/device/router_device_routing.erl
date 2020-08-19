@@ -32,9 +32,9 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-    %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    %lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
+                                                %PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                %lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -280,9 +280,9 @@ lookup(DevAddr, PacketHash) ->
 
 -spec bin_to_val(binary()) -> term().
 bin_to_val(<<1, V/binary>>) ->
- V;
+    V;
 bin_to_val(<<2, V/binary>>) ->
- binary_to_term(V).
+    binary_to_term(V).
 
 -spec insert(non_neg_integer(), binary(), libp2p_crypto:pubkey_bin()) -> ok.
 insert(DevAddr, PacketHash, PubKeyBin) ->

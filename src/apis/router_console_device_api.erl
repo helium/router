@@ -269,6 +269,8 @@ handle_info(?TICK, #state{db=DB, pending_burns=P, inflight=I}=State) ->
     {noreply, State#state{inflight=GCI ++ NewInflight, tref=Tref}};
 handle_info({hnt_burn, success, Uuid}, #state{pending_burns=P, inflight=I}=State) ->
     {noreply, State#state{pending_burns=maps:remove(Uuid, P), inflight=lists:keydelete(Uuid, 1, I)}};
+handle_info({hnt_burn, drop, Uuid}, #state{pending_burns=P, inflight=I}=State) ->
+    {noreply, State#state{pending_burns=maps:remove(Uuid, P), inflight=lists:keydelete(Uuid, 1, I)}};
 handle_info({hnt_burn, fail, Uuid}, #state{inflight=I}=State) ->
     {noreply, State#state{inflight=lists:keydelete(Uuid, 1, I)}};
 handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
@@ -577,6 +579,9 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
         {ok, 204, _Headers, _Reply} ->
             lager:debug("Burn notification successful"),
             ReplyPid ! {hnt_burn, success, Uuid};
+        {ok, 404, _Headers, _Reply} ->
+            lager:debug("Memo not found in console database; drop"),
+            ReplyPid ! {hnt_burn, drop, Uuid};
         Other ->
             lager:debug("Burn notification failed", [Other]),
             timer:sleep(Delay),

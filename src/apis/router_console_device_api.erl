@@ -33,7 +33,15 @@
 -define(POOL, router_console_device_api_pool).
 -define(ETS, router_console_debug_ets).
 -define(TOKEN_CACHE_TIME, timer:minutes(10)).
+-define(TICK_INTERVAL, 1000).
+-define(TICK, '__router_console_device_api_tick').
+-define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
+
+-type uuid_v4() :: binary().
+-type request_body() :: maps:map().
+-type pending() :: #{ uuid_v4() => request_body() }.
+-type inflight() :: { uuid_v4(), pid() }.
 
 -record(state, {endpoint :: binary(),
                 secret :: binary(),
@@ -41,7 +49,10 @@
                 ws :: pid(),
                 ws_endpoint :: binary(),
                 db :: rocksdb:db_handle(),
-                cf :: rocksdb:cf_handle()}).
+                cf :: rocksdb:cf_handle(),
+                pending_burns = #{} :: pending(),
+                inflight = [] :: [ inflight() ],
+                tref :: reference()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -196,15 +207,10 @@ get_org(OrgID) ->
 
 -spec organizations_burned(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
 organizations_burned(Memo, HNTAmount, DCAmount) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
     Body = #{memo => Memo,
              hnt_amount => HNTAmount,
              dc_amount => DCAmount},
-    lager:debug("post ~p to ~p", [Body, Url]),
-    hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                 jsx:encode(Body), [with_body, {pool, ?POOL}]),
-    ok.
+    gen_server:cast(?SERVER, {hnt_burn, Body}).
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
@@ -225,17 +231,48 @@ init(Args) ->
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
+    {ok, P} = load_pending_burns(DB),
+    Inflight = maybe_spawn_pending_burns(P, []),
+    Tref = schedule_next_tick(),
     {ok, #state{endpoint=Endpoint, secret=Secret, token=Token,
-                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF}}.
+                ws=WSPid, ws_endpoint=WSEndpoint, db=DB, cf=CF,
+                pending_burns=P, tref=Tref, inflight=Inflight}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({hnt_burn, Body}, #state{db=DB, pending_burns=P, inflight=I}=State) ->
+    Uuid = uuid_v4(),
+    ReqBody = Body#{request_id => Uuid},
+    NewP = maps:put(Uuid, ReqBody, P),
+    ok = store_pending_burns(DB, NewP),
+    Pid = spawn_pending_burn(Uuid, ReqBody),
+    {noreply, State#state{pending_burns=NewP, inflight=[ {Uuid, Pid} | I ]}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(?TICK, #state{db=DB, pending_burns=P, inflight=I}=State) ->
+    %% there is a race condition between spawning HTTP requests and possible
+    %% success/fail replies from the http process. It's possible that a
+    %% success or failure message could hit our gen_server before the
+    %% gen_server's inflight state has been updated.
+    %%
+    %% Every TICK we will garbage collect the inflight list to make sure we
+    %% retry things that should be retried and remove successes we missed due
+    %% to the race.
+    GCI = garbage_collect_inflight(P, I),
+    NewInflight = maybe_spawn_pending_burns(P, GCI),
+    ok = store_pending_burns(DB, P),
+    Tref = schedule_next_tick(),
+    {noreply, State#state{inflight=GCI ++ NewInflight, tref=Tref}};
+handle_info({hnt_burn, success, Uuid}, #state{pending_burns=P, inflight=I}=State) ->
+    {noreply, State#state{pending_burns=maps:remove(Uuid, P), inflight=lists:keydelete(Uuid, 1, I)}};
+handle_info({hnt_burn, drop, Uuid}, #state{pending_burns=P, inflight=I}=State) ->
+    {noreply, State#state{pending_burns=maps:remove(Uuid, P), inflight=lists:keydelete(Uuid, 1, I)}};
+handle_info({hnt_burn, fail, Uuid}, #state{inflight=I}=State) ->
+    {noreply, State#state{inflight=lists:keydelete(Uuid, 1, I)}};
 handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
     WSPid1 = start_ws(WSEndpoint, Token),
@@ -278,7 +315,8 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{db=DB, pending_burns=P}) ->
+    ok = store_pending_burns(DB, P),
     ok.
 
 %% ------------------------------------------------------------------
@@ -459,3 +497,103 @@ debug_insert(DeviceID, Limit) ->
 debug_delete(DeviceID) ->
     true = ets:delete(?ETS, DeviceID),
     ok.
+
+-spec schedule_next_tick() -> reference().
+schedule_next_tick() ->
+    erlang:send_after(?TICK_INTERVAL, self(), ?TICK).
+
+-spec store_pending_burns( DB :: rocksdb:db_handle(),
+                           Pending :: pending() ) -> ok | {error, term()}.
+store_pending_burns(DB, Pending) ->
+    Bin = term_to_binary(Pending),
+    rocksdb:put(DB, ?PENDING_KEY, Bin, []).
+
+-spec load_pending_burns( DB :: rocksdb:db_handle() ) -> {ok, pending()}.
+load_pending_burns(DB) ->
+    case rocksdb:get(DB, ?PENDING_KEY, []) of
+        {ok, Bin} -> {ok, binary_to_term(Bin)};
+        not_found -> {ok, #{}};
+        Error -> Error
+    end.
+
+-spec garbage_collect_inflight( Pending :: pending(),
+                                Inflight :: [ inflight() ] ) -> [ inflight() ].
+garbage_collect_inflight(P, I) ->
+    Garbage = lists:foldl(fun({Uuid, Pid}=E, Acc) ->
+                                  case maps:is_key(Uuid, P) of
+                                      true ->
+                                          %% if the uuid is in the map, it means
+                                          %% the request is:
+                                          %%   - in flight, or,
+                                          %%   - a failure that we missed removing
+                                          %%     and needs to be retried.
+                                          case is_process_alive(Pid) of
+                                              %% if the process is alive,
+                                              %% it's inflight, so don't
+                                              %% garbage collect it
+                                              true -> Acc;
+                                              %% the pid isn't alive - it's a failure
+                                              %% and we should re-attempt it
+                                              false -> [ E | Acc ]
+                                          end;
+                                      false ->
+                                          %% not in the map, this is a success
+                                          %% but somehow we missed removing it
+                                          [ E | Acc ]
+                                  end
+                          end, [], I),
+    I -- Garbage.
+
+-spec maybe_spawn_pending_burns( Pending :: pending(),
+                                 Inflight :: [ inflight() ] ) -> [ inflight() ].
+maybe_spawn_pending_burns(P, []) when map_size(P) == 0 -> [];
+maybe_spawn_pending_burns(P, I) ->
+    maps:fold(fun(Uuid, Body, Acc) ->
+                      Pid = spawn_pending_burn(Uuid, Body),
+                      [ {Uuid, Pid} | Acc ]
+              end, [], maps:without(
+                         [ Uuid || {Uuid, _} <- I], P)).
+
+-spec spawn_pending_burn( Uuid :: uuid_v4(),
+                          Body :: maps:map() ) -> pid().
+spawn_pending_burn(Uuid, Body) ->
+    Self = self(),
+    spawn(fun() ->
+                  do_hnt_burn_post(Uuid, Self, Body, 5, 8, 5)
+          end).
+
+-spec do_hnt_burn_post( Uuid :: uuid_v4(),
+                        ReplyPid :: pid(),
+                        Body :: request_body(),
+                        Delay :: pos_integer(),
+                        Next :: pos_integer(),
+                        Retries :: non_neg_integer()) -> {hnt_burn, success|fail, uuid_v4()}.
+do_hnt_burn_post(Uuid, ReplyPid, _Body, _Delay, _Next, 0) ->
+    ReplyPid ! {hnt_burn, fail, Uuid};
+do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
+    lager:debug("post ~p to ~p", [Body, Url]),
+    case hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                      jsx:encode(Body), [with_body, {pool, ?POOL}]) of
+        {ok, 204, _Headers, _Reply} ->
+            lager:debug("Burn notification successful"),
+            ReplyPid ! {hnt_burn, success, Uuid};
+        {ok, 404, _Headers, _Reply} ->
+            lager:debug("Memo not found in console database; drop"),
+            ReplyPid ! {hnt_burn, drop, Uuid};
+        Other ->
+            lager:debug("Burn notification failed", [Other]),
+            timer:sleep(Delay),
+            %% fibonacci delay timer
+            do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay+Next, Retries - 1)
+    end.
+
+%% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
+%% MIT License
+-spec uuid_v4() -> uuid_v4().
+uuid_v4() ->
+    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
+    Str = io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
+                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]),
+    list_to_binary(Str).

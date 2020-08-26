@@ -21,7 +21,6 @@
 
 -spec init() -> ok.
 init() ->
-    ets:new(?ETS, [public, named_table, set]),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -33,9 +32,9 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-    lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
+                                                %PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                %lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -171,18 +170,9 @@ packet_offer(Offer, _Pid) ->
             {error, already_got_packet};
         {error, not_found} ->
             ok = insert(DevAddr, PacketHash, PubKeyBin),
-            ok = expire_packet(DevAddr, PacketHash),
             %% router_devaddr(DevAddr),
             ok
     end.
-
--spec expire_packet(non_neg_integer(), binary()) -> ok.
-expire_packet(DevAddr, PacketHash) ->
-    erlang:spawn(fun() ->
-                         ok = timer:sleep(timer:seconds(1)),
-                         ok = delete(DevAddr, PacketHash)
-                 end),
-    ok.
 
 %% -spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
 %% router_devaddr(DevAddr) ->
@@ -282,22 +272,22 @@ maybe_start_worker(DeviceID) ->
 
 -spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
 lookup(DevAddr, PacketHash) ->
-    Key = {DevAddr, PacketHash},
-    case ets:lookup(?ETS, Key) of
-        [] -> {error, not_found};
-        [{Key, Value}] -> {ok, Value}
+    Key = term_to_binary({DevAddr, PacketHash}),
+    case e2qc_nif:get(?ETS, Key) of
+        notfound -> {error, not_found};
+        ValBin -> {ok, bin_to_val(ValBin)}
     end.
+
+-spec bin_to_val(binary()) -> term().
+bin_to_val(<<1, V/binary>>) ->
+    V;
+bin_to_val(<<2, V/binary>>) ->
+    binary_to_term(V).
 
 -spec insert(non_neg_integer(), binary(), libp2p_crypto:pubkey_bin()) -> ok.
 insert(DevAddr, PacketHash, PubKeyBin) ->
     Key = {DevAddr, PacketHash},
-    true = ets:insert(?ETS, {Key, PubKeyBin}),
-    ok.
-
--spec delete(non_neg_integer(), binary()) -> ok.
-delete(DevAddr, PacketHash) ->
-    Key = {DevAddr, PacketHash},
-    true = ets:delete(?ETS, Key),
+    e2qc:cache(?ETS, Key, 1, fun() -> PubKeyBin end),
     ok.
 
 
@@ -327,13 +317,14 @@ handle_offer_test() ->
     Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
     ?assertEqual(ok, handle_offer(Offer, self())),
     ?assertEqual({ok, <<"hotspot">>}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
-    ok = timer:sleep(1002),
+    %% the cache'a timing is a bit loose
+    ok = timer:sleep(1800),
     ?assertEqual({error, not_found}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
 
     ?assert(meck:validate(router_device_devaddr)),
     meck:unload(router_device_devaddr),
 
-    ets:delete(?ETS),
+    e2qc:teardown(?ETS),
     ok.
 
 -endif.

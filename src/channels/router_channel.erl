@@ -116,11 +116,11 @@ handle_data(Pid, Data, Ref) ->
 
 -spec encode_data(channel(), map()) -> binary().
 encode_data(Channel, Map) ->
-    encode_data_(?MODULE:decoder(Channel), Map).
+    encode_data(?MODULE:decoder(Channel), Map, ?MODULE:device_id(Channel)).
 
-encode_data_(undefined, #{payload := Payload}=Map) ->
+encode_data(undefined, #{payload := Payload}=Map, _DeviceID) ->
     jsx:encode(maps:put(payload, base64:encode(Payload), Map));
-encode_data_(Decoder, #{payload := Payload, port := Port}=Map) ->
+encode_data(Decoder, #{payload := Payload, port := Port}=Map, DeviceID) ->
     DecoderID = router_decoder:id(Decoder),
     Updates = case router_decoder:decode(DecoderID, Payload, Port) of
                   {ok, DecodedPayload} ->
@@ -128,7 +128,7 @@ encode_data_(Decoder, #{payload := Payload, port := Port}=Map) ->
                                      payload => DecodedPayload},
                         payload => base64:encode(Payload)};
                   {error, Reason} ->
-                      lager:warning("~p failed to decode payload ~p: ~p", [DecoderID, Payload, Reason]),
+                      lager:warning("~p failed to decode payload ~p/~p: ~p for device ~p", [DecoderID, Payload, Port, Reason, DeviceID]),
                       #{decoded => #{status => error,
                                      error => Reason},
                         payload => base64:encode(Payload)}

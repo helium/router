@@ -97,7 +97,7 @@ handle_downlink(DeviceID, BinaryPayload) when is_binary(DeviceID) ->
                 {ok, Msg} ->
                     router_device_worker:queue_message(Pid, Msg);
                 {error, _Reason} ->
-                    lager:info("could not parse json downlink message ~p", [_Reason])
+                    lager:info("could not parse json downlink message ~p for ~p", [_Reason, DeviceID])
             end
     end.
 
@@ -348,7 +348,7 @@ downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
         JSON -> downlink_decode(JSON)
     catch
         _:_ ->
-            {error, failed_to_decode_json}
+            {error, {failed_to_decode_json, BinaryPayload}}
     end;
 downlink_decode(MapPayload) when is_map(MapPayload) ->
     case maps:find(<<"payload_raw">>, MapPayload) of

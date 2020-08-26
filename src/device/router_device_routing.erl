@@ -99,28 +99,33 @@ join_offer(Offer, _Pid) ->
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 packet_offer(Offer, Pid) ->
-    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    case ets:insert_new(?ETS, {PHash, 0, 0}) of
-        true ->
-            erlang:spawn(fun() ->
-                                 %% TODO: This timer is kind of random
-                                 ok = timer:sleep(timer:minutes(1)),
-                                 true = ets:delete(?ETS, PHash)
-                         end),
-            #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
-            router_devaddr(DevAddr);
-        false ->
-            case ets:lookup(?ETS, PHash) of
-                [{PHash, _Max, -1}] ->
-                    {error, already_got_packet};
-                [{PHash, 0, 0}] ->
-                    %% TODO: Find something better than sleeping maybe?
-                    timer:sleep(25),
-                    packet_offer(Offer, Pid);
-                [{PHash, _Max, _Curr}] ->
-                    case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
-                        0 -> {error, already_got_enough_packet};
-                        1 -> ok
+    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
+    case valid_devaddr(DevAddr) of
+        {error, _}=Error ->
+            Error;
+        ok ->
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case ets:insert_new(?ETS, {PHash, 0, 0}) of
+                true ->
+                    erlang:spawn(fun() ->
+                                         %% TODO: This timer is kind of random
+                                         ok = timer:sleep(timer:minutes(1)),
+                                         true = ets:delete(?ETS, PHash)
+                                 end),
+                    ok;
+                false ->
+                    case ets:lookup(?ETS, PHash) of
+                        [{PHash, _Max, -1}] ->
+                            {error, already_got_packet};
+                        [{PHash, 0, 0}] ->
+                            %% TODO: Find something better than sleeping maybe?
+                            timer:sleep(25),
+                            packet_offer(Offer, Pid);
+                        [{PHash, _Max, _Curr}] ->
+                            case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
+                                0 -> {error, already_got_enough_packet};
+                                1 -> ok
+                            end
                     end
             end
     end.
@@ -204,8 +209,8 @@ packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
 eui_to_bin(undefined) -> <<>>;
 eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
--spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
-router_devaddr(DevAddr) ->
+-spec valid_devaddr(non_neg_integer()) -> ok | {error, any()}.
+valid_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = blockchain_worker:blockchain(),

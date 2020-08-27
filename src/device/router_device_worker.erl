@@ -172,7 +172,7 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
                     Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
                     State1 = State0#state{device=Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-                    _ = erlang:send_after(?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime), self(), {join_timeout, JoinNonce}),
+                    _ = erlang:send_after(max(0, ?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
                 #join_cache{rssi=RSSI1, pid=Pid2}=JoinCache1 ->
                     case RSSI0 > RSSI1 of
@@ -221,7 +221,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                     {noreply, State};
                 undefined ->
 
-                    _ = erlang:send_after(?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime), self(), {frame_timeout, FCnt}),
+                    _ = erlang:send_after(max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {frame_timeout, FCnt}),
                     Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
                 #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->

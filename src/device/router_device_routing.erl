@@ -18,10 +18,23 @@
 
 -define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+-define(BF_JOIN, bloom_join_key).
+-define(BF_PACKET, bloom_packet_key).
+%% These numbers need to be reviewed
+-define(BF_UNIQ_CLIENTS_MAX, 10000).
+-define(BF_FILTERS_MAX, 5).
+-define(BF_ROTATE_AFTER, 500).
+-define(BF_FALSE_POS_RATE, 1.0e-6).
 
 -spec init() -> ok.
 init() ->
     ets:new(?ETS, [public, named_table, set]),
+    {ok, BloomJoinRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
+                                                     ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
+    true = ets:insert(?ETS, {?BF_JOIN, BloomJoinRef}),
+    {ok, BloomPacketRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
+                                                       ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
+    true = ets:insert(?ETS, {?BF_PACKET, BloomPacketRef}),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -95,7 +108,9 @@ maybe_buy_join_offer(Offer, Devices) ->
         {error, _Reason}=Error ->
             Error;
         ok ->
-            _PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            BFRef = lookup_bf(?BF_JOIN),
+            _ = check_phash(BFRef, 5, PHash),
             ok
     end.
 
@@ -107,7 +122,6 @@ packet_offer(Offer, _Pid) ->
             Error;
         ok ->
             _PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            %% ets:lookup(?ETS, PHash) 
             ok
     end.
 
@@ -145,6 +159,32 @@ validate_devaddr(DevAddr) ->
         _ ->
             {error, unknown_device}
     end.
+
+-spec eui_to_bin(undefined | non_neg_integer()) -> binary().
+eui_to_bin(undefined) -> <<>>;
+eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
+
+-spec check_phash(reference(), non_neg_integer(), binary()) -> {ok, non_neg_integer()} | not_found.
+check_phash(BFRef, Max, PHash) ->
+    lists:foldl(
+      fun(_I, {ok, _}=OK) ->
+              OK;
+         (I, not_found) ->
+              case bloom:check(BFRef, {PHash, I}) of
+                  true ->
+                      not_found;
+                  false ->
+                      {ok, I}
+              end
+      end,
+      not_found,
+      lists:seq(0, Max)
+     ).
+
+-spec lookup_bf(atom()) -> reference().
+lookup_bf(Key) ->
+    [{Key, Ref}] = ets:lookup(?ETS, Key),
+    Ref.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -366,10 +406,6 @@ check_devices_balance(PayloadSize, Devices) ->
         {error, _Reason}=Error -> Error;
         {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
-
--spec eui_to_bin(undefined | non_neg_integer()) -> binary().
-eui_to_bin(undefined) -> <<>>;
-eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

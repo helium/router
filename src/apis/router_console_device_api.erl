@@ -32,7 +32,7 @@
 -define(SERVER, ?MODULE).
 -define(POOL, router_console_device_api_pool).
 -define(ETS, router_console_debug_ets).
--define(TOKEN_CACHE_TIME, timer:minutes(10)).
+-define(TOKEN_CACHE_TIME, timer:hours(23)).
 -define(TICK_INTERVAL, 1000).
 -define(TICK, '__router_console_device_api_tick').
 -define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
@@ -278,9 +278,8 @@ handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoin
     WSPid1 = start_ws(WSEndpoint, Token),
     ok = check_devices(DB, CF),
     {noreply, State#state{ws=WSPid1}};
-handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret, ws=Pid}=State) ->
+handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
-    Pid ! close,
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     ok = token_insert(Endpoint, Token),
     {noreply, State#state{token=Token}};
@@ -325,18 +324,22 @@ terminate(_Reason, #state{db=DB, pending_burns=P}) ->
 
 -spec update_devices(rocksdb:db_handle(), rocksdb:cf_handle(), [binary()]) -> ok.
 update_devices(DB, CF, DeviceIDs) ->
-    lager:info("got update for devices: ~p from WS", [DeviceIDs]),
-    lists:foreach(
-      fun(DeviceID) ->
-              case router_devices_sup:lookup_device_worker(DeviceID) of
-                  {error, not_found} ->
-                      lager:info("device worker not running for device ~p, updating DB record", [DeviceID]),
-                      update_device_record(DB, CF, DeviceID);
-                  {ok, Pid} ->
-                      router_device_worker:device_update(Pid)
-              end
-      end,
-      DeviceIDs).
+    erlang:spawn(
+      fun() ->
+              lager:info("got update for devices: ~p from WS", [DeviceIDs]),
+              lists:foreach(
+                fun(DeviceID) ->
+                        case router_devices_sup:lookup_device_worker(DeviceID) of
+                            {error, not_found} ->
+                                lager:info("device worker not running for device ~p, updating DB record", [DeviceID]),
+                                update_device_record(DB, CF, DeviceID);
+                            {ok, Pid} ->
+                                router_device_worker:device_update(Pid)
+                        end
+                end,
+                DeviceIDs)
+      end).
+
 
 -spec update_device_record(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> ok.
 update_device_record(DB, CF, DeviceID) ->

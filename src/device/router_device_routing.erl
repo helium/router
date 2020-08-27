@@ -18,29 +18,20 @@
 
 -define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
--define(ETS_FUN(Hash), [{{Hash,'$1','$2'},
-                         [{'<','$2','$1'}],
-                         [{{Hash,'$1',{'+','$2',1}}}]}]).
--define(BUY_JOIN_MAX, 5).
--define(BUY_JOIN_TIMEOUT, timer:seconds(2)).
 
 -spec init() -> ok.
 init() ->
+    ets:new(?ETS, [public, named_table, set]),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    %% TODO: Replace this with getter
-    Resp = case blockchain_state_channel_offer_v1:routing(Offer) of
-               #routing_information_pb{data={eui, _}} ->
-                   join_offer(Offer, HandlerPid);
-               #routing_information_pb{data={devaddr, _}} ->
-                   packet_offer(Offer, HandlerPid)
-           end,
-    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
-    lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
-    Resp.
+    case blockchain_state_channel_offer_v1:routing(Offer) of
+        #routing_information_pb{data={eui, _}} ->
+            join_offer(Offer, HandlerPid);
+        #routing_information_pb{data={devaddr, _}} ->
+            packet_offer(Offer, HandlerPid)
+    end.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
@@ -68,14 +59,14 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok
     end.
 
-deny_more(Packet) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    true = ets:insert(?ETS, {PHash, 0, -1}),
+deny_more(_Packet) ->
+    %% PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    %% true = ets:insert(?ETS, {PHash, 0, -1}),
     ok.
 
-accept_more(Packet, N) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    true = ets:insert(?ETS, {PHash, N, 1}),
+accept_more(_Packet, _N) ->
+    %% PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    %% true = ets:insert(?ETS, {PHash, N, 1}),
     ok.
 
 %% ------------------------------------------------------------------
@@ -97,37 +88,62 @@ join_offer(Offer, _Pid) ->
             maybe_buy_join_offer(Offer, Devices)
     end.
 
+-spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), [router_device:device()]) -> ok | {error, any()}.
+maybe_buy_join_offer(Offer, Devices) ->
+    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+    case check_devices_balance(PayloadSize, Devices) of
+        {error, _Reason}=Error ->
+            Error;
+        ok ->
+            _PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            ok
+    end.
+
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-packet_offer(Offer, Pid) ->
+packet_offer(Offer, _Pid) ->
     #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
-    case valid_devaddr(DevAddr) of
+    case validate_devaddr(DevAddr) of
         {error, _}=Error ->
             Error;
         ok ->
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case ets:insert_new(?ETS, {PHash, 0, 0}) of
-                true ->
-                    erlang:spawn(fun() ->
-                                         %% TODO: This timer is kind of random
-                                         ok = timer:sleep(timer:minutes(1)),
-                                         true = ets:delete(?ETS, PHash)
-                                 end),
-                    ok;
-                false ->
-                    case ets:lookup(?ETS, PHash) of
-                        [{PHash, _Max, -1}] ->
-                            {error, already_got_packet};
-                        [{PHash, 0, 0}] ->
-                            %% TODO: Find something better than sleeping maybe?
-                            timer:sleep(25),
-                            packet_offer(Offer, Pid);
-                        [{PHash, _Max, _Curr}] ->
-                            case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
-                                0 -> {error, already_got_enough_packet};
-                                1 -> ok
-                            end
-                    end
-            end
+            _PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            %% ets:lookup(?ETS, PHash) 
+            ok
+    end.
+
+-spec validate_devaddr(non_neg_integer()) -> ok | {error, any()}.
+validate_devaddr(DevAddr) ->
+    case <<DevAddr:32/integer-unsigned-little>> of
+        <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
+            Chain = blockchain_worker:blockchain(),
+            OUI = case application:get_env(router, oui, undefined) of
+                      undefined -> undefined;
+                      OUI0 when is_list(OUI0) ->
+                          list_to_integer(OUI0);
+                      OUI0 ->
+                          OUI0
+                  end,
+            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                {ok, RoutingEntry} ->
+                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                    case lists:any(fun(Subnet) ->
+                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+                                           AddrBase >= Base andalso AddrBase < Base + Size
+                                   end, Subnets) of
+                        true ->
+                            ok;
+                        false ->
+                            {error, not_in_subnet}
+                    end;
+                _ ->
+                    {error, no_subnet}
+            catch
+                _:_ ->
+                    {error, no_subnet}
+            end;
+        _ ->
+            {error, unknown_device}
     end.
 
 %%%-------------------------------------------------------------------
@@ -340,30 +356,6 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), [router_device:device()]) -> ok | {error, any()}.
-maybe_buy_join_offer(Offer, Devices) ->
-    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    case check_devices_balance(PayloadSize, Devices) of
-        {error, _Reason}=Error ->
-            Error;
-        ok ->
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case ets:insert_new(?ETS, {PHash, 0, 0}) of
-                true ->
-                    erlang:spawn(fun() ->
-                                         ok = timer:sleep(?BUY_JOIN_TIMEOUT),
-                                         true = ets:delete(?ETS, PHash)
-                                 end),
-                    true = ets:insert(?ETS, {PHash, ?BUY_JOIN_MAX, 1}),
-                    ok;
-                false ->
-                    case ets:select_replace(?ETS, ?ETS_FUN(PHash)) of
-                        0 -> {error, already_got_join};
-                        1 -> ok
-                    end
-            end
-    end.
-
 %% TODO: This function is not very optimized...
 -spec check_devices_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
 check_devices_balance(PayloadSize, Devices) ->
@@ -375,26 +367,9 @@ check_devices_balance(PayloadSize, Devices) ->
         {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
 
--spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
-lookup(DevAddr, PacketHash) ->
-    Key = term_to_binary({DevAddr, PacketHash}),
-    case e2qc_nif:get(?ETS, Key) of
-        notfound -> {error, not_found};
-        ValBin -> {ok, bin_to_val(ValBin)}
-    end.
-
--spec bin_to_val(binary()) -> term().
-bin_to_val(<<1, V/binary>>) ->
-    V;
-bin_to_val(<<2, V/binary>>) ->
-    binary_to_term(V).
-
--spec insert(non_neg_integer(), binary(), libp2p_crypto:pubkey_bin()) -> ok.
-insert(DevAddr, PacketHash, PubKeyBin) ->
-    Key = {DevAddr, PacketHash},
-    e2qc:cache(?ETS, Key, 1, fun() -> PubKeyBin end),
-    ok.
-
+-spec eui_to_bin(undefined | non_neg_integer()) -> binary().
+eui_to_bin(undefined) -> <<>>;
+eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

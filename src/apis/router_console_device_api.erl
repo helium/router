@@ -276,7 +276,7 @@ handle_info({hnt_burn, fail, Uuid}, #state{inflight=I}=State) ->
 handle_info({'EXIT', WSPid0, _Reason}, #state{token=Token, ws=WSPid0, ws_endpoint=WSEndpoint, db=DB, cf=CF}=State) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
     WSPid1 = start_ws(WSEndpoint, Token),
-    ok = check_devices(DB, CF),
+    check_devices(DB, CF),
     {noreply, State#state{ws=WSPid1}};
 handle_info(refresh_token, #state{endpoint=Endpoint, secret=Secret}=State) ->
     Token = get_token(Endpoint, Secret),
@@ -299,7 +299,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                   DeviceIDs),
     {noreply, State};
 handle_info({ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
-    ok = update_devices(DB, CF, DeviceIDs),
+    update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info({ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{<<"id">> := OrgID,
                                                                                              <<"dc_balance_nonce">> := Nonce,
@@ -322,7 +322,7 @@ terminate(_Reason, #state{db=DB, pending_burns=P}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec update_devices(rocksdb:db_handle(), rocksdb:cf_handle(), [binary()]) -> ok.
+-spec update_devices(rocksdb:db_handle(), rocksdb:cf_handle(), [binary()]) -> pid().
 update_devices(DB, CF, DeviceIDs) ->
     erlang:spawn(
       fun() ->
@@ -361,7 +361,7 @@ update_device_record(DB, CF, DeviceID) ->
             ok
     end.
 
--spec check_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> ok.
+-spec check_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> pid().
 check_devices(DB, CF) ->
     lager:info("checking all devices in DB"),
     DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],

@@ -17,8 +17,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         handle_join/7,
-         handle_frame/5,
+         handle_join/8,
+         handle_frame/6,
          queue_message/2,
          device_update/1]).
 
@@ -70,14 +70,14 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec handle_join(pid(), blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
+-spec handle_join(pid(), blockchain_helium_packet_v1:packet(), pos_integer(), libp2p_crypto:pubkey_bin(), atom(),
                   router_device:device(), binary(), pid()) -> ok.
-handle_join(WorkerPid, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
-    gen_server:cast(WorkerPid, {join, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid}).
+handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
+    gen_server:cast(WorkerPid, {join, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid}).
 
--spec handle_frame(pid(), blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(), pid()) -> ok.
-handle_frame(WorkerPid, Packet, PubKeyBin, Region, Pid) ->
-    gen_server:cast(WorkerPid, {frame, Packet, PubKeyBin, Region, Pid}).
+-spec handle_frame(pid(), blockchain_helium_packet_v1:packet(), pos_integer(), libp2p_crypto:pubkey_bin(), atom(), pid()) -> ok.
+handle_frame(WorkerPid, Packet, PacketTime, PubKeyBin, Region, Pid) ->
+    gen_server:cast(WorkerPid, {frame, Packet, PacketTime, PubKeyBin, Region, Pid}).
 
 -spec queue_message(pid(), {boolean(), integer(), binary()}) -> ok.
 queue_message(Pid, Msg) ->
@@ -146,9 +146,9 @@ handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, 
 handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
     lager:warning("got join packet when oui=undefined, standing by..."),
     {noreply, State0};
-handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
-                                                                               join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
-                                                                               channels_worker=ChannelsWorker}=State0) ->
+handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{db=DB, cf=CF, device=Device0, join_cache=Cache0,
+                                                                                           join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
+                                                                                           channels_worker=ChannelsWorker}=State0) ->
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
@@ -172,7 +172,7 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{d
                     Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
                     State1 = State0#state{device=Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-                    _ = erlang:send_after(?JOIN_DELAY, self(), {join_timeout, JoinNonce}),
+                    _ = erlang:send_after(?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime), self(), {join_timeout, JoinNonce}),
                     {noreply, State1#state{join_cache=Cache1, join_nonce_handled_at=JoinNonce, downlink_handled_at= -1}};
                 #join_cache{rssi=RSSI1, pid=Pid2}=JoinCache1 ->
                     case RSSI0 > RSSI1 of
@@ -187,11 +187,11 @@ handle_cast({join, Packet0, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{d
                     end
             end
     end;
-handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
-                                                             device=Device0,
-                                                             frame_cache=Cache0,
-                                                             downlink_handled_at=DownlinkHandledAt,
-                                                             channels_worker=ChannelsWorker}=State) ->
+handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
+                                                                         device=Device0,
+                                                                         frame_cache=Cache0,
+                                                                         downlink_handled_at=DownlinkHandledAt,
+                                                                         channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
         {error, {not_enough_dc, Device1}} ->
             ok = report_status_no_dc(Device0),
@@ -220,7 +220,8 @@ handle_cast({frame, Packet0, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                     %% late packet
                     {noreply, State};
                 undefined ->
-                    _ = erlang:send_after(?REPLY_DELAY, self(), {frame_timeout, FCnt}),
+
+                    _ = erlang:send_after(?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime), self(), {frame_timeout, FCnt}),
                     Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
                 #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->

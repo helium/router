@@ -70,7 +70,7 @@ handle_data(server, Data, State) ->
         {error, _Reason} ->
             lager:debug("failed to transmit data ~p", [_Reason]);
         {ok, #packet_pb{type=lorawan}=Packet0, PubKeyBin} ->
-            router_device_routing:handle_packet(Packet0, PubKeyBin);
+            router_device_routing:handle_packet(Packet0, erlang:system_time(millisecond), PubKeyBin);
         {ok, #packet_pb{type=_Type}=_Packet, PubKeyBin} ->
             {ok, _AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
             lager:error("unknown packet type ~p coming from ~p: ~p", [_Type, _AName, _Packet])

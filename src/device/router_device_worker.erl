@@ -207,7 +207,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
             case router_device:queue(Device1) of
                 [] -> router_device_routing:deny_more(Packet0);
-                _ -> router_device_routing:accept_more(Packet0, 3)
+                _ -> router_device_routing:accept_more(Packet0)
             end,
             Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
             case SendToChannels of

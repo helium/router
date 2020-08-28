@@ -14,7 +14,7 @@
 
 -export([init/0,
          handle_offer/2, handle_packet/3,
-         deny_more/1, accept_more/2]).
+         deny_more/1, accept_more/1]).
 
 -define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
@@ -25,6 +25,8 @@
 -define(BF_FILTERS_MAX, 5).
 -define(BF_ROTATE_AFTER, 500).
 -define(BF_FALSE_POS_RATE, 1.0e-6).
+-define(JOIN_MAX, 5).
+-define(PACKET_MAX, 3).
 
 -spec init() -> ok.
 init() ->
@@ -72,14 +74,16 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok
     end.
 
-deny_more(_Packet) ->
-    %% PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    %% true = ets:insert(?ETS, {PHash, 0, -1}),
+deny_more(Packet) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    BFRef = lookup_bf(?BF_PACKET),
+    _ = bloom:set(BFRef, {PHash, -1}),
     ok.
 
-accept_more(_Packet, _N) ->
-    %% PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    %% true = ets:insert(?ETS, {PHash, N, 1}),
+accept_more(Packet) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    BFRef = lookup_bf(?BF_PACKET),
+    _ = bloom:set(BFRef, {PHash, 1}),
     ok.
 
 %% ------------------------------------------------------------------
@@ -110,19 +114,47 @@ maybe_buy_join_offer(Offer, Devices) ->
         ok ->
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             BFRef = lookup_bf(?BF_JOIN),
-            _ = check_phash(BFRef, 5, PHash),
-            ok
+            case check_phash(BFRef, 1, ?JOIN_MAX, PHash) of
+                not_found ->
+                    _ = bloom:set(BFRef, {PHash, 1}),
+                    ok;
+                ?JOIN_MAX ->
+                    {error, got_max_joins};
+                 N when N < ?JOIN_MAX ->
+                    _ = bloom:set(BFRef, {PHash, N+1}),
+                    ok
+            end
     end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-packet_offer(Offer, _Pid) ->
+packet_offer(Offer, Pid) ->
     #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
     case validate_devaddr(DevAddr) of
         {error, _}=Error ->
             Error;
         ok ->
-            _PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            ok
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            BFRef = lookup_bf(?BF_PACKET),
+            case bloom:check(BFRef, {PHash, -1}) of
+                true ->
+                    {error, got_enough_packets};
+                false ->
+                    Max = ?PACKET_MAX,
+                    case check_phash(BFRef, 0, Max, PHash) of
+                        not_found ->
+                            _ = bloom:set(BFRef, {PHash, 0}),
+                            ok;
+                        0 ->
+                            %% TODO: Find something better than sleeping maybe?
+                            timer:sleep(25),
+                            packet_offer(Offer, Pid);
+                        Max ->
+                            {error, got_max_packets};
+                        N when N < Max ->
+                            _ = bloom:set(BFRef, {PHash, N+1}),
+                            ok
+                    end
+            end
     end.
 
 -spec validate_devaddr(non_neg_integer()) -> ok | {error, any()}.
@@ -164,22 +196,20 @@ validate_devaddr(DevAddr) ->
 eui_to_bin(undefined) -> <<>>;
 eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
--spec check_phash(reference(), non_neg_integer(), binary()) -> {ok, non_neg_integer()} | not_found.
-check_phash(BFRef, Max, PHash) ->
-    lists:foldl(
-      fun(_I, {ok, _}=OK) ->
-              OK;
-         (I, not_found) ->
-              case bloom:check(BFRef, {PHash, I}) of
-                  true ->
-                      not_found;
-                  false ->
-                      {ok, I}
-              end
-      end,
-      not_found,
-      lists:seq(0, Max)
-     ).
+-spec check_phash(reference(), integer(), integer(), binary()) -> integer() | not_found.
+check_phash(BFRef, Start, End, PHash) when End > Start ->
+    check_phash(BFRef, Start, End, PHash, not_found).
+
+-spec check_phash(reference(), integer(), integer(), binary(), integer() | not_found) -> integer() | not_found.
+check_phash(_BFRef, Start, Curr, _PHash, Acc) when Start > Curr ->
+    Acc;
+check_phash(BFRef, Start, Curr, PHash, Acc) ->
+    case bloom:check(BFRef, {PHash, Curr}) of
+        false ->
+            check_phash(BFRef, Start, Curr-1, PHash, Acc);
+        true ->
+            Curr
+    end.
 
 -spec lookup_bf(atom()) -> reference().
 lookup_bf(Key) ->
@@ -412,6 +442,26 @@ check_devices_balance(PayloadSize, Devices) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+check_phash_test() ->
+    ok = init(),
+    BFRef = lookup_bf(?BF_PACKET),
+    Start = 0,
+    End = 2,
+    PHash = <<"PHASH">>,
+
+    ?assertEqual(not_found, check_phash(BFRef, Start, End, PHash)),
+    _ = bloom:set(BFRef, {PHash, 0}),
+    ?assertEqual(0, check_phash(BFRef, Start, End, PHash)),
+    _ = bloom:set(BFRef, {PHash, 1}),
+    ?assertEqual(1, check_phash(BFRef, Start, End, PHash)),
+    _ = bloom:set(BFRef, {PHash, 2}),
+    ?assertEqual(2, check_phash(BFRef, Start, End, PHash)),
+    _ = bloom:set(BFRef, {PHash, 3}),
+    ?assertEqual(2, check_phash(BFRef, Start, End, PHash)),
+
+    ets:delete(?ETS),
+    ok.
+
 handle_join_offer_test() ->
     ok = init(),
 
@@ -430,11 +480,8 @@ handle_join_offer_test() ->
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, already_got_join}, handle_offer(JoinOffer, self())),
-
-    ok = timer:sleep(?BUY_JOIN_TIMEOUT + 5),
-
-    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_joins}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_joins}, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
@@ -442,7 +489,6 @@ handle_join_offer_test() ->
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
-
     ets:delete(?ETS),
     ok.
 
@@ -464,19 +510,31 @@ handle_packet_offer_test() ->
     meck:new(blockchain_ledger_routing_v1, [passthrough]),
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
 
-    <<PacketDevAddr:32/integer-unsigned-little>> = DevAddr,
-    Packet = blockchain_helium_packet_v1:new({devaddr, PacketDevAddr}, <<"payload">>),
-    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
-    ?assertEqual(ok, handle_offer(Offer, self())),
-    ?assertEqual({ok, <<"hotspot">>}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
-    %% the cache'a timing is a bit loose
-    ok = timer:sleep(1800),
-    ?assertEqual({error, not_found}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
+    Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
+    Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(Offer0, self())),
+    ok = ?MODULE:deny_more(Packet0),
+    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
+    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
 
-    ?assert(meck:validate(router_device_devaddr)),
-    meck:unload(router_device_devaddr),
+    Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
+    Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ok = ?MODULE:accept_more(Packet1),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
 
-    e2qc:teardown(?ETS),
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_ledger_v1)),
+    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(blockchain_ledger_routing_v1)),
+    meck:unload(blockchain_ledger_routing_v1),
+    ets:delete(?ETS),
     ok.
 
 -endif.

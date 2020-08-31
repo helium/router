@@ -53,7 +53,7 @@ handle_offer(Offer, HandlerPid) ->
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
+    AName = blockchain_utils:addr2name(PubKeyBin),
     lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
@@ -120,7 +120,7 @@ maybe_buy_join_offer(Offer, Devices) ->
                     ok;
                 ?JOIN_MAX ->
                     {error, got_max_joins};
-                 N when N < ?JOIN_MAX ->
+                N when N < ?JOIN_MAX ->
                     _ = bloom:set(BFRef, {PHash, N+1}),
                     ok
             end
@@ -225,7 +225,7 @@ lookup_bf(Key) ->
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                              _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PacketTime, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    {ok, AName} = blockchain_utils:addr2name(PubKeyBin),
+    AName = blockchain_utils:addr2name(PubKeyBin),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
     case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->

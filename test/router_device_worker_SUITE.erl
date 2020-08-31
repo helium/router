@@ -71,7 +71,7 @@ device_update_test(Config) ->
                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
                                            <<"frame_up">> => 0,
                                            <<"frame_down">> => 0,
-                                           <<"payload_size">> => 0,
+                                           <<"payload_size">> => fun erlang:is_integer/1,
                                            <<"port">> => '_',
                                            <<"devaddr">> => '_',
                                            <<"dc">> => fun erlang:is_map/1,

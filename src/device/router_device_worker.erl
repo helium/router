@@ -747,7 +747,7 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
                payload_size => 0,
                port => 0,
                devaddr => lorawan_utils:binary_to_hex(DevAddr),
-               hotspots => Hostspots,
+               hotspots => Hotspots,
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

@@ -14,7 +14,7 @@
 
 -export([init/0,
          handle_offer/2,
-         handle_packet/2]).
+         handle_packet/3]).
 
 -define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
@@ -38,22 +38,23 @@ handle_offer(Offer, HandlerPid) ->
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+                    pos_integer(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
-handle_packet(SCPacket, Pid) when is_pid(Pid) ->
+handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     lager:debug("Packet: ~p, HandlerPid: ~p", [SCPacket, Pid]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
-    case packet(Packet, PubkeyBin, Region, Pid) of
+    case packet(Packet, PacketTime, PubkeyBin, Region, Pid) of
         {error, _Reason}=E ->
             lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
             E;
         ok ->
             ok
     end;
-handle_packet(Packet, PubKeyBin) ->
+handle_packet(Packet, PacketTime, PubKeyBin) ->
     %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
-    case packet(Packet, PubKeyBin, 'US915', self()) of
+    case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
         {error, _Reason}=E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
             E;
@@ -70,9 +71,9 @@ handle_packet(Packet, PubKeyBin) ->
 %% Route packet_pb and figures out if JOIN_REQ or frame packet
 %% @end
 %%%-------------------------------------------------------------------
--spec packet(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(), pid()) -> ok | {error, any()}.
+-spec packet(blockchain_helium_packet_v1:packet(), pos_integer(), libp2p_crypto:pubkey_bin(), atom(), pid()) -> ok | {error, any()}.
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
-                             _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
+                             _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PacketTime, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
@@ -83,7 +84,7 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, De
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    router_device_worker:handle_join(WorkerPid, Packet, PubKeyBin, Region, APIDevice, AppKey, Pid)
+                    router_device_worker:handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid)
             end;
         {error, api_not_found} ->
             lager:debug("no key for ~p ~p received by ~s", [lorawan_utils:binary_to_hex(DevEUI),
@@ -97,7 +98,7 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, De
     end;
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
                              _ACK:1, _RFU:1, FOptsLen:4, FCnt:16/little-unsigned-integer,
-                             _FOpts:FOptsLen/binary, PayloadAndMIC/binary>> =Payload}=Packet, PubKeyBin, Region, Pid) ->
+                             _FOpts:FOptsLen/binary, PayloadAndMIC/binary>> =Payload}=Packet, PacketTime, PubKeyBin, Region, Pid) ->
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) -4}),
     MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
@@ -121,23 +122,23 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
                                    end, Subnets) of
                         true ->
                             %% ok device is in one of our subnets
-                            find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
+                            find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC);
                         false ->
                             {error, {unknown_device, DevAddr}}
                     end;
                 _ ->
                     %% no subnets
-                    find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+                    find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
             catch
                 _:_ ->
                     %% no subnets
-                    find_device(Packet, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
+                    find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, <<(router_utils:b0(MType band 1, <<DevAddr:4/binary>>, FCnt, erlang:byte_size(Msg)))/binary, Msg/binary>>, MIC)
             end;
         _ ->
             %% wrong devaddr prefix
             {error, {unknown_device, DevAddr}}
     end;
-packet(#packet_pb{payload=Payload}, AName, _Region, _Pid) ->
+packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -212,7 +213,7 @@ packet_offer(Offer, _Pid) ->
 %%             {error, unknown_device}
 %%     end.
 
-find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
+find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
     Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
     case get_device_by_mic(DB, CF, B0, MIC, Devices) of
@@ -224,7 +225,7 @@ find_device(Packet, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
                 {error, _Reason}=Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    router_device_worker:handle_frame(WorkerPid, Packet, PubKeyBin, Region, Pid)
+                    router_device_worker:handle_frame(WorkerPid, Packet, PacketTime, PubKeyBin, Region, Pid)
             end
     end.
 

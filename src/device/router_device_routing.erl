@@ -145,8 +145,10 @@ packet_offer(Offer, Pid) ->
                             _ = bloom:set(BFRef, {PHash, 0}),
                             ok;
                         0 ->
-                            %% TODO: Find something better than sleeping maybe?
-                            timer:sleep(25),
+                            %% Here we are "waiting" for the first packet to come back from the device worker
+                            %% to see if there is something in the queue (to popentially then take multiple packets).
+                            %% So we are just pushing that packet back until we got our resp.
+                            timer:sleep(25), %% TODO: Find something better than sleeping maybe?
                             packet_offer(Offer, Pid);
                         Max ->
                             {error, got_max_packets};

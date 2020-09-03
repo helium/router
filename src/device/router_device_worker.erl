@@ -719,7 +719,7 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
     Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
 
-    Hostspots = lists:foldl(
+    Hotspots = lists:foldl(
                   fun({Packet, PubKeyBin, Region}, Acc) ->
                           HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
                           {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),

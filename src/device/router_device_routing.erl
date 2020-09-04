@@ -19,15 +19,13 @@
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
 -define(BF_ETS, router_device_routing_bf_ets).
--define(BF_JOIN, bloom_join_key).
--define(BF_PACKET, bloom_packet_key).
+-define(BF_KEY, bloom_key).
 %% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
 -define(BF_UNIQ_CLIENTS_MAX, 10000).
 -define(BF_FALSE_POS_RATE, 1.0e-6).
 -define(BF_BITMAP_SIZE, 300000).
 -define(BF_FILTERS_MAX, 14).
 -define(BF_ROTATE_AFTER, 1000).
-
 
 -define(JOIN_MAX, 5).
 -define(PACKET_MAX, 3).
@@ -44,10 +42,7 @@ init() ->
     ets:new(?BF_ETS, [public, named_table, set]),
     {ok, BloomJoinRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
                                              ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
-    true = ets:insert(?BF_ETS, {?BF_JOIN, BloomJoinRef}),
-    {ok, BloomPacketRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
-                                               ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
-    true = ets:insert(?BF_ETS, {?BF_PACKET, BloomPacketRef}),
+    true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -133,12 +128,13 @@ maybe_buy_join_offer(Offer, _Pid, Devices) ->
         {error, _Reason}=Error ->
             Error;
         ok ->
-            BFRef = lookup_bf(?BF_JOIN),
+            BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
                 true ->
-                    maybe_multi_buy(Offer, ?JOIN_MAX, 10);
+                    maybe_multi_buy(Offer, 10);
                 false ->
+                    true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
                     ok
             end
     end.
@@ -150,11 +146,11 @@ packet_offer(Offer, _Pid) ->
         {error, _}=Error ->
             Error;
         ok ->
-            BFRef = lookup_bf(?BF_PACKET),
+            BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
                 true ->
-                    maybe_multi_buy(Offer, 0, 10);
+                    maybe_multi_buy(Offer, 10);
                 false ->
                     ok
             end
@@ -195,22 +191,18 @@ validate_devaddr(DevAddr) ->
             {error, unknown_device}
     end.
 
--spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer(), non_neg_integer()) -> ok | {error, any()}.
-%% Handle a false positive
-maybe_multi_buy(_Offer, 0, 0) -> 
-    ok;
+-spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) -> ok | {error, any()}.
 %% Handle an issue with worker (so we dont stay lin a loop)
-maybe_multi_buy(_Offer, _Max, 0) ->
+maybe_multi_buy(_Offer, 0) ->
     {error, too_many_attempt};
-maybe_multi_buy(Offer, Max, Attempts) ->
+maybe_multi_buy(Offer, Attempts) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    _ = ets:insert_new(?MB_ETS, {PHash, Max, 1}),
     case ets:lookup(?MB_ETS, PHash) of
+        [] ->
+            timer:sleep(25),
+            maybe_multi_buy(Offer, Attempts-1);
         [{PHash, 0, -1}] ->
             {error, got_enough_packets};
-        [{PHash, 0, _Curr}] ->
-            timer:sleep(25),
-            maybe_multi_buy(Offer, Max, Attempts-1);
         [{PHash, Max, Curr}] when Max == Curr ->
             {error, got_max_packets};
         [{PHash, _Max, _Curr}] ->
@@ -393,7 +385,6 @@ false_positive_test() ->
           lists:seq(0, 500)
          ),
     Failures = length(L),
-    ?debugFmt("false positives ~p", [Failures]),
     ?assert(Failures < 10),
     ok.
 

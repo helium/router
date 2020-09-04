@@ -21,6 +21,7 @@
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_JOIN, bloom_join_key).
 -define(BF_PACKET, bloom_packet_key).
+-define(BF_BITMAP_SIZE, 10000).
 -define(BF_UNIQ_CLIENTS_MAX, 10000).
 -define(BF_FILTERS_MAX, 3).
 -define(BF_ROTATE_AFTER, 1000).
@@ -39,11 +40,11 @@
 init() ->
     ets:new(?MB_ETS, [public, named_table, set]),
     ets:new(?BF_ETS, [public, named_table, set]),
-    {ok, BloomJoinRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
-                                                     ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
+    {ok, BloomJoinRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
+                                             ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
     true = ets:insert(?BF_ETS, {?BF_JOIN, BloomJoinRef}),
-    {ok, BloomPacketRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
-                                                       ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
+    {ok, BloomPacketRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
+                                               ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
     true = ets:insert(?BF_ETS, {?BF_PACKET, BloomPacketRef}),
     ok.
 
@@ -56,7 +57,7 @@ handle_offer(Offer, HandlerPid) ->
                            {packet_offer(Offer, HandlerPid), DevAddr}
                    end,
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    lager:debug("resp to offer ~p from ~p phash", [Resp, From, PHash]),
+    lager:debug("resp to offer ~p from ~p phash ~p", [Resp, From, PHash]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -196,6 +197,10 @@ validate_devaddr(DevAddr) ->
     end.
 
 -spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer(), non_neg_integer()) -> ok | {error, any()}.
+%% Handle a false positive
+maybe_multi_buy(_Offer, 0, 0) -> 
+    ok;
+%% Handle an issue with worker (so we dont stay lin a loop)
 maybe_multi_buy(_Offer, _Max, 0) ->
     {error, too_many_attempt};
 maybe_multi_buy(Offer, Max, Attempts) ->
@@ -373,6 +378,24 @@ check_devices_balance(PayloadSize, Devices) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
+
+false_positive_test() ->
+    {ok, BFRef} = bloom:new_forgetful(10000, 10000, 3, 1000),
+    L = lists:foldl(
+          fun(I, Acc) ->
+                  K = crypto:strong_rand_bytes(32),
+                  case bloom:set(BFRef, K) of
+                      true -> [I|Acc];
+                      false -> Acc
+                  end
+          end,
+          [],
+          lists:seq(0, 500)
+         ),
+    Failures = length(L),
+    ?debugFmt("false positives ~p", [Failures]),
+    ?assert(Failures < 10),
+    ok.
 
 handle_join_offer_test() ->
     ok = init(),

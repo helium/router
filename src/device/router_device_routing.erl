@@ -53,10 +53,10 @@ init() ->
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
     case blockchain_state_channel_offer_v1:routing(Offer) of
-        #routing_information_pb{data={eui, EUI}} ->
-            {join_offer(Offer, HandlerPid), EUI};
-        #routing_information_pb{data={devaddr, DevAddr}} ->
-            {packet_offer(Offer, HandlerPid), DevAddr}
+        #routing_information_pb{data={eui, _EUI}} ->
+            join_offer(Offer, HandlerPid);
+        #routing_information_pb{data={devaddr, _DevAddr}} ->
+            packet_offer(Offer, HandlerPid)
     end.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),

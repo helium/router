@@ -55,7 +55,8 @@ handle_offer(Offer, HandlerPid) ->
                        #routing_information_pb{data={devaddr, DevAddr}} ->
                            {packet_offer(Offer, HandlerPid), DevAddr}
                    end,
-    lager:debug("resp to offer ~p from ~p", [Resp, From]),
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    lager:debug("resp to offer ~p from ~p phash", [Resp, From, PHash]),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),

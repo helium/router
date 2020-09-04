@@ -16,27 +16,35 @@
          handle_offer/2, handle_packet/3,
          deny_more/1, accept_more/1]).
 
--define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+
+-define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_JOIN, bloom_join_key).
 -define(BF_PACKET, bloom_packet_key).
-%% These numbers need to be reviewed
 -define(BF_UNIQ_CLIENTS_MAX, 10000).
--define(BF_FILTERS_MAX, 5).
--define(BF_ROTATE_AFTER, 500).
+-define(BF_FILTERS_MAX, 3).
+-define(BF_ROTATE_AFTER, 1000).
 -define(BF_FALSE_POS_RATE, 1.0e-6).
+
 -define(JOIN_MAX, 5).
 -define(PACKET_MAX, 3).
 
+%% Multi Buy
+-define(MB_ETS, router_device_routing_mb_ets).
+-define(MB_FUN(Hash), [{{Hash,'$1','$2'},
+                        [{'<','$2','$1'}],
+                        [{{Hash,'$1',{'+','$2',1}}}]}]).
+
 -spec init() -> ok.
 init() ->
-    ets:new(?ETS, [public, named_table, set]),
+    ets:new(?MB_ETS, [public, named_table, set]),
+    ets:new(?BF_ETS, [public, named_table, set]),
     {ok, BloomJoinRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
                                                      ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
-    true = ets:insert(?ETS, {?BF_JOIN, BloomJoinRef}),
+    true = ets:insert(?BF_ETS, {?BF_JOIN, BloomJoinRef}),
     {ok, BloomPacketRef} = bloom:new_forgetful_optimal(?BF_UNIQ_CLIENTS_MAX, ?BF_FILTERS_MAX,
                                                        ?BF_ROTATE_AFTER, ?BF_FALSE_POS_RATE),
-    true = ets:insert(?ETS, {?BF_PACKET, BloomPacketRef}),
+    true = ets:insert(?BF_ETS, {?BF_PACKET, BloomPacketRef}),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -74,17 +82,27 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok
     end.
 
+-spec deny_more(blockchain_helium_packet_v1:packet()) -> ok.
 deny_more(Packet) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    BFRef = lookup_bf(?BF_PACKET),
-    _ = bloom:set(BFRef, {PHash, -1}),
-    ok.
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, 0, -1}] ->
+            ok;
+        _ ->
+            true = ets:insert(?MB_ETS, {PHash, 0, -1}),
+            ok
+    end.
 
+-spec accept_more(blockchain_helium_packet_v1:packet()) -> ok.
 accept_more(Packet) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    BFRef = lookup_bf(?BF_PACKET),
-    _ = bloom:set(BFRef, {PHash, 1}),
-    ok.
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, ?PACKET_MAX, _}] ->
+            ok;
+        _ ->
+            true = ets:insert(?MB_ETS, {PHash, ?PACKET_MAX, 1}),
+            ok
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -102,26 +120,22 @@ join_offer(Offer, _Pid) ->
             {error, unknown_device};
         {ok, Devices} ->
             lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
-            maybe_buy_join_offer(Offer, Devices)
+            maybe_buy_join_offer(Offer, _Pid, Devices)
     end.
 
--spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), [router_device:device()]) -> ok | {error, any()}.
-maybe_buy_join_offer(Offer, Devices) ->
+-spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), pid(), [router_device:device()]) -> ok | {error, any()}.
+maybe_buy_join_offer(Offer, Pid, Devices) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
     case check_devices_balance(PayloadSize, Devices) of
         {error, _Reason}=Error ->
             Error;
         ok ->
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             BFRef = lookup_bf(?BF_JOIN),
-            case check_phash(BFRef, 1, ?JOIN_MAX, PHash) of
-                not_found ->
-                    _ = bloom:set(BFRef, {PHash, 1}),
-                    ok;
-                ?JOIN_MAX ->
-                    {error, got_max_joins};
-                N when N < ?JOIN_MAX ->
-                    _ = bloom:set(BFRef, {PHash, N+1}),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case bloom:set(BFRef, PHash) of
+                true ->
+                    maybe_multi_buy(Offer, Pid, ?JOIN_MAX);
+                false ->
                     ok
             end
     end.
@@ -133,29 +147,13 @@ packet_offer(Offer, Pid) ->
         {error, _}=Error ->
             Error;
         ok ->
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             BFRef = lookup_bf(?BF_PACKET),
-            case bloom:check(BFRef, {PHash, -1}) of
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case bloom:set(BFRef, PHash) of
                 true ->
-                    {error, got_enough_packets};
+                    maybe_multi_buy(Offer, Pid, 0);
                 false ->
-                    Max = ?PACKET_MAX,
-                    case check_phash(BFRef, 0, Max, PHash) of
-                        not_found ->
-                            _ = bloom:set(BFRef, {PHash, 0}),
-                            ok;
-                        0 ->
-                            %% Here we are "waiting" for the first packet to come back from the device worker
-                            %% to see if there is something in the queue (to popentially then take multiple packets).
-                            %% So we are just pushing that packet back until we got our resp.
-                            timer:sleep(25), %% TODO: Find something better than sleeping maybe?
-                            packet_offer(Offer, Pid);
-                        Max ->
-                            {error, got_max_packets};
-                        N when N < Max ->
-                            _ = bloom:set(BFRef, {PHash, N+1}),
-                            ok
-                    end
+                    ok
             end
     end.
 
@@ -194,28 +192,32 @@ validate_devaddr(DevAddr) ->
             {error, unknown_device}
     end.
 
+-spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), pid(), non_neg_integer()) -> ok | {error, any()}.
+maybe_multi_buy(Offer, _Pid, Max) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    _ = ets:insert_new(?MB_ETS, {PHash, Max, 1}),
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, 0, -1}] ->
+            {error, got_enough_packets};
+        [{PHash, 0, _Curr}] ->
+            timer:sleep(25),
+            maybe_multi_buy(Offer, _Pid, Max);
+        [{PHash, Max, Curr}] when Max == Curr ->
+            {error, got_max_packets};
+        [{PHash, _Max, _Curr}] ->
+            case ets:select_replace(?MB_ETS, ?MB_FUN(PHash)) of
+                0 -> {error, got_max_packets};
+                1 -> ok
+            end
+    end.
+
 -spec eui_to_bin(undefined | non_neg_integer()) -> binary().
 eui_to_bin(undefined) -> <<>>;
 eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
--spec check_phash(reference(), integer(), integer(), binary()) -> integer() | not_found.
-check_phash(BFRef, Start, End, PHash) when End > Start ->
-    check_phash(BFRef, Start, End, PHash, not_found).
-
--spec check_phash(reference(), integer(), integer(), binary(), integer() | not_found) -> integer() | not_found.
-check_phash(_BFRef, Start, Curr, _PHash, Acc) when Start > Curr ->
-    Acc;
-check_phash(BFRef, Start, Curr, PHash, Acc) ->
-    case bloom:check(BFRef, {PHash, Curr}) of
-        false ->
-            check_phash(BFRef, Start, Curr-1, PHash, Acc);
-        true ->
-            Curr
-    end.
-
 -spec lookup_bf(atom()) -> reference().
 lookup_bf(Key) ->
-    [{Key, Ref}] = ets:lookup(?ETS, Key),
+    [{Key, Ref}] = ets:lookup(?BF_ETS, Key),
     Ref.
 
 %%%-------------------------------------------------------------------
@@ -367,26 +369,6 @@ check_devices_balance(PayloadSize, Devices) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-check_phash_test() ->
-    ok = init(),
-    BFRef = lookup_bf(?BF_PACKET),
-    Start = 0,
-    End = 2,
-    PHash = <<"PHASH">>,
-
-    ?assertEqual(not_found, check_phash(BFRef, Start, End, PHash)),
-    _ = bloom:set(BFRef, {PHash, 0}),
-    ?assertEqual(0, check_phash(BFRef, Start, End, PHash)),
-    _ = bloom:set(BFRef, {PHash, 1}),
-    ?assertEqual(1, check_phash(BFRef, Start, End, PHash)),
-    _ = bloom:set(BFRef, {PHash, 2}),
-    ?assertEqual(2, check_phash(BFRef, Start, End, PHash)),
-    _ = bloom:set(BFRef, {PHash, 3}),
-    ?assertEqual(2, check_phash(BFRef, Start, End, PHash)),
-
-    ets:delete(?ETS),
-    ok.
-
 handle_join_offer_test() ->
     ok = init(),
 
@@ -405,8 +387,8 @@ handle_join_offer_test() ->
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, got_max_joins}, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, got_max_joins}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
@@ -414,7 +396,8 @@ handle_join_offer_test() ->
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
-    ets:delete(?ETS),
+    ets:delete(?BF_ETS),
+    ets:delete(?MB_ETS),
     ok.
 
 
@@ -459,7 +442,8 @@ handle_packet_offer_test() ->
     meck:unload(blockchain_ledger_v1),
     ?assert(meck:validate(blockchain_ledger_routing_v1)),
     meck:unload(blockchain_ledger_routing_v1),
-    ets:delete(?ETS),
+    ets:delete(?BF_ETS),
+    ets:delete(?MB_ETS),
     ok.
 
 -endif.

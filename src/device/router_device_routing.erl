@@ -13,39 +13,57 @@
 -endif.
 
 -export([init/0,
-         handle_offer/2,
-         handle_packet/3]).
+         handle_offer/2, handle_packet/3,
+         deny_more/1, accept_more/1]).
 
--define(ETS, router_devices_routing_ets).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+
+-define(BF_ETS, router_device_routing_bf_ets).
+-define(BF_KEY, bloom_key).
+%% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
+-define(BF_UNIQ_CLIENTS_MAX, 10000).
+-define(BF_FALSE_POS_RATE, 1.0e-6).
+-define(BF_BITMAP_SIZE, 300000).
+-define(BF_FILTERS_MAX, 14).
+-define(BF_ROTATE_AFTER, 1000).
+
+-define(JOIN_MAX, 5).
+-define(PACKET_MAX, 3).
+
+%% Multi Buy
+-define(MB_ETS, router_device_routing_mb_ets).
+-define(MB_FUN(Hash), [{{Hash,'$1','$2'},
+                        [{'<','$2','$1'}],
+                        [{{Hash,'$1',{'+','$2',1}}}]}]).
 
 -spec init() -> ok.
 init() ->
+    ets:new(?MB_ETS, [public, named_table, set]),
+    ets:new(?BF_ETS, [public, named_table, set]),
+    {ok, BloomJoinRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
+                                             ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
+    true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    %% TODO: Replace this with getter
-    Resp = case blockchain_state_channel_offer_v1:routing(Offer) of
-               #routing_information_pb{data={eui, _}} ->
-                   join_offer(Offer, HandlerPid);
-               #routing_information_pb{data={devaddr, _}} ->
-                   packet_offer(Offer, HandlerPid)
-           end,
-                                                %PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-                                                %{ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                %lager:debug("offer (~p): ~p, from: ~p", [Resp, Offer, AName]),
-    Resp.
+    case blockchain_state_channel_offer_v1:routing(Offer) of
+        #routing_information_pb{data={eui, _EUI}} ->
+            join_offer(Offer, HandlerPid);
+        #routing_information_pb{data={devaddr, _DevAddr}} ->
+            packet_offer(Offer, HandlerPid)
+    end.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
-    lager:debug("Packet: ~p, HandlerPid: ~p", [SCPacket, Pid]),
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    AName = blockchain_utils:addr2name(PubKeyBin),
+    lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-    PubkeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
-    case packet(Packet, PacketTime, PubkeyBin, Region, Pid) of
+    case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
         {error, _Reason}=E ->
             lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
             E;
@@ -62,9 +80,146 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok
     end.
 
+-spec deny_more(blockchain_helium_packet_v1:packet()) -> ok.
+deny_more(Packet) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, 0, -1}] ->
+            ok;
+        _ ->
+            true = ets:insert(?MB_ETS, {PHash, 0, -1}),
+            ok
+    end.
+
+-spec accept_more(blockchain_helium_packet_v1:packet()) -> ok.
+accept_more(Packet) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, ?PACKET_MAX, _}] ->
+            ok;
+        _ ->
+            true = ets:insert(?MB_ETS, {PHash, ?PACKET_MAX, 1}),
+            ok
+    end.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
+join_offer(Offer, _Pid) ->
+    %% TODO: Replace this with getter
+    #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} = blockchain_state_channel_offer_v1:routing(Offer),
+    DevEUI1 = eui_to_bin(DevEUI0),
+    AppEUI1 = eui_to_bin(AppEUI0),
+    case router_device_api:get_devices(DevEUI1, AppEUI1) of
+        {error, _Reason} ->
+            lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
+            {error, unknown_device};
+        {ok, Devices} ->
+            lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
+            maybe_buy_join_offer(Offer, _Pid, Devices)
+    end.
+
+-spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), pid(), [router_device:device()]) -> ok | {error, any()}.
+maybe_buy_join_offer(Offer, _Pid, Devices) ->
+    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+    case check_devices_balance(PayloadSize, Devices) of
+        {error, _Reason}=Error ->
+            Error;
+        ok ->
+            BFRef = lookup_bf(?BF_KEY),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case bloom:set(BFRef, PHash) of
+                true ->
+                    maybe_multi_buy(Offer, 10);
+                false ->
+                    true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
+                    ok
+            end
+    end.
+
+-spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
+packet_offer(Offer, _Pid) ->
+    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
+    case validate_devaddr(DevAddr) of
+        {error, _}=Error ->
+            Error;
+        ok ->
+            BFRef = lookup_bf(?BF_KEY),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case bloom:set(BFRef, PHash) of
+                true ->
+                    maybe_multi_buy(Offer, 10);
+                false ->
+                    ok
+            end
+    end.
+
+-spec validate_devaddr(non_neg_integer()) -> ok | {error, any()}.
+validate_devaddr(DevAddr) ->
+    case <<DevAddr:32/integer-unsigned-little>> of
+        <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
+            Chain = blockchain_worker:blockchain(),
+            OUI = case application:get_env(router, oui, undefined) of
+                      undefined -> undefined;
+                      OUI0 when is_list(OUI0) ->
+                          list_to_integer(OUI0);
+                      OUI0 ->
+                          OUI0
+                  end,
+            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+                {ok, RoutingEntry} ->
+                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
+                    case lists:any(fun(Subnet) ->
+                                           <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
+                                           Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
+                                           AddrBase >= Base andalso AddrBase < Base + Size
+                                   end, Subnets) of
+                        true ->
+                            ok;
+                        false ->
+                            {error, not_in_subnet}
+                    end;
+                _ ->
+                    {error, no_subnet}
+            catch
+                _:_ ->
+                    {error, no_subnet}
+            end;
+        _ ->
+            {error, unknown_device}
+    end.
+
+-spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) -> ok | {error, any()}.
+%% Handle an issue with worker (so we dont stay lin a loop)
+maybe_multi_buy(_Offer, 0) ->
+    {error, too_many_attempt};
+maybe_multi_buy(Offer, Attempts) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    case ets:lookup(?MB_ETS, PHash) of
+        [] ->
+            timer:sleep(25),
+            maybe_multi_buy(Offer, Attempts-1);
+        [{PHash, 0, -1}] ->
+            {error, got_enough_packets};
+        [{PHash, Max, Curr}] when Max == Curr ->
+            {error, got_max_packets};
+        [{PHash, _Max, _Curr}] ->
+            case ets:select_replace(?MB_ETS, ?MB_FUN(PHash)) of
+                0 -> {error, got_max_packets};
+                1 -> ok
+            end
+    end.
+
+-spec eui_to_bin(undefined | non_neg_integer()) -> binary().
+eui_to_bin(undefined) -> <<>>;
+eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
+
+-spec lookup_bf(atom()) -> reference().
+lookup_bf(Key) ->
+    [{Key, Ref}] = ets:lookup(?BF_ETS, Key),
+    Ref.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -75,7 +230,7 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
 packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
                              _DevNonce:2/binary, MIC:4/binary>> = Payload}=Packet, PacketTime, PubKeyBin, Region, Pid) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    {ok, AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+    AName = blockchain_utils:addr2name(PubKeyBin),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload)-4}),
     case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->
@@ -141,78 +296,6 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
 packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
--spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-join_offer(Offer, _Pid) ->
-    %% TODO: Replace this with getter
-    #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} = blockchain_state_channel_offer_v1:routing(Offer),
-    DevEUI1 = to_bin(DevEUI0),
-    AppEUI1 = to_bin(AppEUI0),
-    case router_device_api:get_devices(DevEUI1, AppEUI1) of
-        {error, _Reason} ->
-            lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
-            %% {error, unknown_device};
-            ok;
-        {ok, _Devices} ->
-            lager:debug("found ~p devices matching ~p/~p", [erlang:length(_Devices), DevEUI1, AppEUI1]),
-            ok
-    end.
-
--spec to_bin(undefined | non_neg_integer()) -> binary().
-to_bin(undefined) -> <<>>;
-to_bin(EUI) -> <<EUI:64/integer-unsigned-little>>.
-
--spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-packet_offer(Offer, _Pid) ->
-    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
-    PacketHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-    case lookup(DevAddr, PacketHash) of
-        {ok, _} ->
-            {error, already_got_packet};
-        {error, not_found} ->
-            ok = insert(DevAddr, PacketHash, PubKeyBin),
-            %% router_devaddr(DevAddr),
-            ok
-    end.
-
-%% -spec router_devaddr(non_neg_integer()) -> ok | {error, any()}.
-%% router_devaddr(DevAddr) ->
-%%     DefaultDevAddr = router_device_devaddr:default_devaddr(),
-%%     case <<DevAddr:32/integer-unsigned-little>> of
-%%         DefaultDevAddr ->
-%%             ok;
-%%         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
-%%             Chain = blockchain_worker:blockchain(),
-%%             OUI = case application:get_env(router, oui, undefined) of
-%%                       undefined -> undefined;
-%%                       OUI0 when is_list(OUI0) ->
-%%                           list_to_integer(OUI0);
-%%                       OUI0 ->
-%%                           OUI0
-%%                   end,
-%%             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-%%                 {ok, RoutingEntry} ->
-%%                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-%%                     case lists:any(fun(Subnet) ->
-%%                                            <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
-%%                                            Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
-%%                                            AddrBase >= Base andalso AddrBase < Base + Size
-%%                                    end, Subnets) of
-%%                         true ->
-%%                             ok;
-%%                         false ->
-%%                             {error, not_in_subnet}
-%%                     end;
-%%                 _ ->
-%%                     {error, no_subnet}
-%%             catch
-%%                 _:_ ->
-%%                     {error, no_subnet}
-%%             end;
-%%         _ ->
-%%             {error, unknown_device}
-%%     end.
-
 find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
     Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
@@ -271,61 +354,115 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec lookup(non_neg_integer(), binary()) -> {ok, libp2p_crypto:pubkey_bin()} | {error, not_found}.
-lookup(DevAddr, PacketHash) ->
-    Key = term_to_binary({DevAddr, PacketHash}),
-    case e2qc_nif:get(?ETS, Key) of
-        notfound -> {error, not_found};
-        ValBin -> {ok, bin_to_val(ValBin)}
+%% TODO: This function is not very optimized...
+-spec check_devices_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
+check_devices_balance(PayloadSize, Devices) ->
+    Chain = blockchain_worker:blockchain(),
+    %% TODO: We should not be picking the first device
+    [Device|_] = Devices,
+    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+        {error, _Reason}=Error -> Error;
+        {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
-
--spec bin_to_val(binary()) -> term().
-bin_to_val(<<1, V/binary>>) ->
-    V;
-bin_to_val(<<2, V/binary>>) ->
-    binary_to_term(V).
-
--spec insert(non_neg_integer(), binary(), libp2p_crypto:pubkey_bin()) -> ok.
-insert(DevAddr, PacketHash, PubKeyBin) ->
-    Key = {DevAddr, PacketHash},
-    e2qc:cache(?ETS, Key, 1, fun() -> PubKeyBin end),
-    ok.
-
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-handle_offer_test() ->
+false_positive_test() ->
+    {ok, BFRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
+                                      ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
+    L = lists:foldl(
+          fun(I, Acc) ->
+                  K = crypto:strong_rand_bytes(32),
+                  case bloom:set(BFRef, K) of
+                      true -> [I|Acc];
+                      false -> Acc
+                  end
+          end,
+          [],
+          lists:seq(0, 500)
+         ),
+    Failures = length(L),
+    ?assert(Failures < 10),
+    ok.
+
+handle_join_offer_test() ->
     ok = init(),
 
     meck:new(router_device_api, [passthrough]),
-    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, []} end),
+    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [device]} end),
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(router_console_dc_tracker, [passthrough]),
+    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
 
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
+
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual(ok, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ?assert(meck:validate(router_console_dc_tracker)),
+    meck:unload(router_console_dc_tracker),
+    ets:delete(?BF_ETS),
+    ets:delete(?MB_ETS),
+    ok.
 
-    DevAddr = 16#deadbeef,
-    meck:new(router_device_devaddr, [passthrough]),
-    meck:expect(router_device_devaddr, default_devaddr, fun() -> <<DevAddr:32/integer-unsigned-little>> end),
 
-    Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload">>),
-    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
-    ?assertEqual(ok, handle_offer(Offer, self())),
-    ?assertEqual({ok, <<"hotspot">>}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
-    %% the cache'a timing is a bit loose
-    ok = timer:sleep(1800),
-    ?assertEqual({error, not_found}, lookup(DevAddr, blockchain_state_channel_offer_v1:packet_hash(Offer))),
+handle_packet_offer_test() ->
+    ok = init(),
 
-    ?assert(meck:validate(router_device_devaddr)),
-    meck:unload(router_device_devaddr),
+    Subnet = <<0,0,0,127,255,0>>,
+    <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = Subnet,
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    <<DevAddr:32/integer-unsigned-little>> = <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
 
-    e2qc:teardown(?ETS),
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(_) -> ledger end),
+    meck:new(blockchain_ledger_v1, [passthrough]),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
+    meck:new(blockchain_ledger_routing_v1, [passthrough]),
+    meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
+
+    Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
+    Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(Offer0, self())),
+    ok = ?MODULE:deny_more(Packet0),
+    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
+    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
+
+    Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
+    Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ok = ?MODULE:accept_more(Packet1),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ?assertEqual(ok, handle_offer(Offer1, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
+    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_ledger_v1)),
+    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(blockchain_ledger_routing_v1)),
+    meck:unload(blockchain_ledger_routing_v1),
+    ets:delete(?BF_ETS),
+    ets:delete(?MB_ETS),
     ok.
 
 -endif.

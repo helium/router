@@ -66,6 +66,8 @@
             "name": "hotspot name",
             "reported_at": 123,
             "status": "success | error",
+            // ONLY when category=activation (if true it means that we selected that hotspot for the join req/resp)
+            "selected" true | false,
             "rssi": -30,
             "snr": 0.2,
             "spreading": "SF9BW125",

@@ -21,11 +21,13 @@
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_JOIN, bloom_join_key).
 -define(BF_PACKET, bloom_packet_key).
--define(BF_BITMAP_SIZE, 10000).
+%% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
 -define(BF_UNIQ_CLIENTS_MAX, 10000).
--define(BF_FILTERS_MAX, 3).
--define(BF_ROTATE_AFTER, 1000).
 -define(BF_FALSE_POS_RATE, 1.0e-6).
+-define(BF_BITMAP_SIZE, 300000).
+-define(BF_FILTERS_MAX, 14).
+-define(BF_ROTATE_AFTER, 1000).
+
 
 -define(JOIN_MAX, 5).
 -define(PACKET_MAX, 3).
@@ -50,15 +52,12 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    {Resp, From} = case blockchain_state_channel_offer_v1:routing(Offer) of
-                       #routing_information_pb{data={eui, EUI}} ->
-                           {join_offer(Offer, HandlerPid), EUI};
-                       #routing_information_pb{data={devaddr, DevAddr}} ->
-                           {packet_offer(Offer, HandlerPid), DevAddr}
-                   end,
-    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    lager:debug("resp to offer ~p from ~p phash ~p", [Resp, From, PHash]),
-    Resp.
+    case blockchain_state_channel_offer_v1:routing(Offer) of
+        #routing_information_pb{data={eui, EUI}} ->
+            {join_offer(Offer, HandlerPid), EUI};
+        #routing_information_pb{data={devaddr, DevAddr}} ->
+            {packet_offer(Offer, HandlerPid), DevAddr}
+    end.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
@@ -380,7 +379,8 @@ check_devices_balance(PayloadSize, Devices) ->
 -ifdef(TEST).
 
 false_positive_test() ->
-    {ok, BFRef} = bloom:new_forgetful(10000, 10000, 3, 1000),
+    {ok, BFRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
+                                      ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
     L = lists:foldl(
           fun(I, Acc) ->
                   K = crypto:strong_rand_bytes(32),

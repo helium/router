@@ -49,12 +49,14 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    case blockchain_state_channel_offer_v1:routing(Offer) of
-        #routing_information_pb{data={eui, _}} ->
-            join_offer(Offer, HandlerPid);
-        #routing_information_pb{data={devaddr, _}} ->
-            packet_offer(Offer, HandlerPid)
-    end.
+    {Resp, From} = case blockchain_state_channel_offer_v1:routing(Offer) of
+                       #routing_information_pb{data={eui, EUI}} ->
+                           {join_offer(Offer, HandlerPid), EUI};
+                       #routing_information_pb{data={devaddr, DevAddr}} ->
+                           {packet_offer(Offer, HandlerPid), DevAddr}
+                   end,
+    lager:debug("resp to offer ~p from ~p", [Resp, From]),
+    Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
@@ -124,7 +126,7 @@ join_offer(Offer, _Pid) ->
     end.
 
 -spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), pid(), [router_device:device()]) -> ok | {error, any()}.
-maybe_buy_join_offer(Offer, Pid, Devices) ->
+maybe_buy_join_offer(Offer, _Pid, Devices) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
     case check_devices_balance(PayloadSize, Devices) of
         {error, _Reason}=Error ->
@@ -134,14 +136,14 @@ maybe_buy_join_offer(Offer, Pid, Devices) ->
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
                 true ->
-                    maybe_multi_buy(Offer, Pid, ?JOIN_MAX);
+                    maybe_multi_buy(Offer, ?JOIN_MAX, 10);
                 false ->
                     ok
             end
     end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-packet_offer(Offer, Pid) ->
+packet_offer(Offer, _Pid) ->
     #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
     case validate_devaddr(DevAddr) of
         {error, _}=Error ->
@@ -151,7 +153,7 @@ packet_offer(Offer, Pid) ->
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
                 true ->
-                    maybe_multi_buy(Offer, Pid, 0);
+                    maybe_multi_buy(Offer, 0, 10);
                 false ->
                     ok
             end
@@ -192,8 +194,10 @@ validate_devaddr(DevAddr) ->
             {error, unknown_device}
     end.
 
--spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), pid(), non_neg_integer()) -> ok | {error, any()}.
-maybe_multi_buy(Offer, _Pid, Max) ->
+-spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer(), non_neg_integer()) -> ok | {error, any()}.
+maybe_multi_buy(_Offer, _Max, 0) ->
+    {error, too_many_attempt};
+maybe_multi_buy(Offer, Max, Attempts) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     _ = ets:insert_new(?MB_ETS, {PHash, Max, 1}),
     case ets:lookup(?MB_ETS, PHash) of
@@ -201,7 +205,7 @@ maybe_multi_buy(Offer, _Pid, Max) ->
             {error, got_enough_packets};
         [{PHash, 0, _Curr}] ->
             timer:sleep(25),
-            maybe_multi_buy(Offer, _Pid, Max);
+            maybe_multi_buy(Offer, Max, Attempts-1);
         [{PHash, Max, Curr}] when Max == Curr ->
             {error, got_max_packets};
         [{PHash, _Max, _Curr}] ->

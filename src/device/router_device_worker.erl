@@ -487,7 +487,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with empty fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
+                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
@@ -495,7 +495,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with double fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, 0, DevAddr, Blockchain),
+                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
                     {error, double_fopts};
                 _N ->
                     AppSKey = router_device:app_s_key(Device0),
@@ -573,7 +573,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, Frame, Blockchain),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, undefined, Frame, Blockchain),
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1};
@@ -611,14 +611,14 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, Frame, Blockchain),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
             {send, Device1, Packet1};
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, Frame, Blockchain),
+            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
             {send, Device1, Packet1}
     end.
 
@@ -673,31 +673,31 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
 -spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(), atom(),
                           router_device:device(), blockchain_helium_packet_v1:packet(),
-                          #frame{}, blockchain:blockchain()) -> ok.
-report_frame_status(0, false, 0, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
+                          binary() | undefined, #frame{}, blockchain:blockchain()) -> ok.
+report_frame_status(0, false, 0, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr, Blockchain);
-report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, FPort, DevAddr, Blockchain);
+report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, FPort, DevAddr, Blockchain);
-report_frame_status(1, true, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}, Blockchain) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, FPort, DevAddr, Blockchain);
+report_frame_status(1, true, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain);
-report_frame_status(1, false, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}, Blockchain) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
+report_frame_status(1, false, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain);
-report_frame_status(_, true, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}, Blockchain) ->
+    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
+report_frame_status(_, true, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain);
-report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, #frame{devaddr=DevAddr}, Blockchain) ->
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
+report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain).
+    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain).
 
 -spec report_status_no_dc(router_device:device()) -> ok.
 report_status_no_dc(Device) ->
@@ -753,13 +753,16 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
 
 -spec report_status(atom(), binary(), router_device:device(), success | error,
                     libp2p_crypto:pubkey_bin(), atom(), blockchain_helium_packet_v1:packet(),
-                    any(), any(), blockchain:blockchain()) -> ok.
-report_status(Category, Desc, Device, Status, PubKeyBin, Region, Packet, Port, DevAddr, Blockchain) ->
+                    binary() | undefined, any(), any(), blockchain:blockchain()) -> ok.
+report_status(Category, Desc, Device, Status, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain) ->
     HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
     {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
-    Payload = blockchain_helium_packet_v1:payload(Packet),
+    Payload = case ReplyPayload of
+                  undefined -> blockchain_helium_packet_v1:payload(Packet);
+                  _ -> ReplyPayload
+              end,
     Report = #{category => Category,
                description => Desc,
                reported_at => erlang:system_time(seconds),

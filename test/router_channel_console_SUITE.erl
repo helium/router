@@ -50,7 +50,7 @@ end_per_testcase(TestCase, Config) ->
 console_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     true = ets:insert(Tab, {channel_type, console}),
-    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 1}),
+    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 2}),
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),

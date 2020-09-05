@@ -176,16 +176,17 @@ debug_test(Config) ->
     %% We ignore the channel correction  and down messages
     ok = test_utils:ignore_messages(),
 
-    %% Making sure debug is on for our device and at 9 now
-    ?assertEqual([{?CONSOLE_DEVICE_ID, 9}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
+    %% Making sure debug is on for our device and at 8 now (1 downlink in the mix)
+    ?assertEqual([{?CONSOLE_DEVICE_ID, 8}], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
 
+    %% only sending half cause we are still trying to downlink
     lists:foreach(
       fun(I) ->
               Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
                                                       router_device:app_s_key(Device0), I)},
               timer:sleep(100)
       end,
-      lists:seq(1, 9)),
+      lists:seq(1, 4)),
 
     lists:foreach(
       fun(I) ->
@@ -252,7 +253,7 @@ debug_test(Config) ->
                                                                                                   <<"code">> => 200,
                                                                                                   <<"headers">> => '_'}}}]})
       end,
-      lists:seq(1, 9)),
+      lists:seq(1, 4)),
 
     ?assertEqual([], ets:lookup(router_console_debug_ets, ?CONSOLE_DEVICE_ID)),
 

@@ -158,7 +158,7 @@ report_status(Device, Map) ->
                         dc => DCMap},
               DebugLeft = debug_lookup(DeviceID),
               Body1 =
-                  case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>]) of
+                  case DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>, down]) of
                       false ->
                           Body0;
                       true ->

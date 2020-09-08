@@ -101,10 +101,12 @@ get_devices(DevEui, AppEui) ->
                                                    AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
                                                    Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice),
                                                                 organization_id => kvc:path([<<"organization_id">>], JSONDevice)},
+                                                   IsActive = kvc:path([<<"is_active">>], JSONDevice),
                                                    DeviceUpdates = [{name, Name},
                                                                     {dev_eui, DevEui},
                                                                     {app_eui, AppEui},
-                                                                    {metadata, Metadata}],
+                                                                    {metadata, Metadata},
+                                                                    {is_active, IsActive}],
                                                    {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
                                            end,
                                            jsx:decode(Body, [return_maps])),

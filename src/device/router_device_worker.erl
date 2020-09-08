@@ -20,7 +20,8 @@
          handle_join/8,
          handle_frame/6,
          queue_message/2,
-         device_update/1]).
+         device_update/1,
+         is_active/1, is_active/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -62,7 +63,8 @@
                 oui :: undefined | non_neg_integer(),
                 channels_worker :: pid(),
                 join_cache = #{} :: #{integer() => #join_cache{}},
-                frame_cache = #{} :: #{integer() => #frame_cache{}}}).
+                frame_cache = #{} :: #{integer() => #frame_cache{}},
+                is_active = true ::boolean()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -87,6 +89,14 @@ queue_message(Pid, Msg) ->
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
+-spec is_active(Pid :: pid()) -> boolean().
+is_active(Pid) ->
+    gen_server:call(Pid, is_active).
+
+-spec is_active(Pid :: pid(), boolean()) -> ok.
+is_active(Pid, IsActive) ->
+    gen_server:cast(Pid, {is_active, IsActive}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -104,13 +114,17 @@ init(Args) ->
                   OUI0
           end,
     Device = get_device(DB, CF, ID),
+    IsActive = router_device:is_active(Device),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{blockchain => Blockchain,
                                                    device_worker => self(),
                                                    device => Device}),
     lager:md([{device_id, router_device:id(Device)}]),
-    {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device, oui=OUI, channels_worker=Pid}}.
+    {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
+                oui=OUI, channels_worker=Pid, is_active=IsActive}}.
 
+handle_call(is_active, _From, #state{is_active=IsActive}=State) ->
+    {reply, IsActive, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -128,13 +142,15 @@ handle_cast(device_update, #state{db=DB, cf=CF, device=Device0, channels_worker=
         {ok, APIDevice} ->
             lager:info("device updated"),
             ChannelsWorker ! refresh_channels,
+            IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [{name, router_device:name(APIDevice)},
                              {dev_eui, router_device:dev_eui(APIDevice)},
                              {app_eui, router_device:app_eui(APIDevice)},
-                             {metadata, router_device:metadata(APIDevice)}],
+                             {metadata, router_device:metadata(APIDevice)},
+                             {is_active, IsActive}],
             Device1 = router_device:update(DeviceUpdates, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            {noreply, State#state{device=Device1}}
+            {noreply, State#state{device=Device1, is_active=IsActive}}
     end;
 handle_cast({queue_message, {_Type, Port, Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
                                                                 channels_worker=ChannelsWorker}=State) ->
@@ -198,6 +214,11 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
                     end
             end
     end;
+handle_cast({frame, Packet, _PacketTime, _PubKeyBin, _Region, _Pid}, #state{device=Device,
+                                                                            is_active=false}=State) ->
+    _ = router_device_routing:deny_more(Packet),
+    ok = report_status_inactive(Device),
+    {noreply, State};
 handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                                                                          device=Device0,
                                                                          frame_cache=Cache0,
@@ -724,6 +745,19 @@ report_status_max_size(Device, Payload, Port) ->
 report_status_no_dc(Device) ->
     Report = #{category => packet_dropped,
                description => <<"Not enough DC">>,
+               reported_at => erlang:system_time(seconds),
+               payload => <<>>,
+               payload_size => 0,
+               port => 0,
+               devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+               hotspots => [],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
+
+-spec report_status_inactive(router_device:device()) -> ok.
+report_status_inactive(Device) ->
+    Report = #{category => packet_dropped,
+               description => <<"Transmission has been paused. Contact your administrator">>,
                reported_at => erlang:system_time(seconds),
                payload => <<>>,
                payload_size => 0,

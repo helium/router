@@ -47,12 +47,15 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    case blockchain_state_channel_offer_v1:routing(Offer) of
-        #routing_information_pb{data={eui, _EUI}} ->
-            join_offer(Offer, HandlerPid);
-        #routing_information_pb{data={devaddr, _DevAddr}} ->
-            packet_offer(Offer, HandlerPid)
-    end.
+    Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    Resp = case Routing of
+               #routing_information_pb{data={eui, _EUI}} ->
+                   join_offer(Offer, HandlerPid);
+               #routing_information_pb{data={devaddr, _DevAddr}} ->
+                   packet_offer(Offer, HandlerPid)
+           end,
+    ok = handle_offer_metrics(Routing, Resp),
+    Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
@@ -66,8 +69,10 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
         {error, _Reason}=E ->
             lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
+            ok = handle_packet_metrics(Packet, E),
             E;
         ok ->
+            ok = handle_packet_metrics(Packet, ok),
             ok
     end;
 handle_packet(Packet, PacketTime, PubKeyBin) ->
@@ -75,8 +80,10 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
         {error, _Reason}=E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
+            ok = handle_packet_metrics(Packet, E),
             E;
         ok ->
+            ok = handle_packet_metrics(Packet, ok),
             ok
     end.
 
@@ -364,6 +371,27 @@ check_devices_balance(PayloadSize, Devices) ->
         {error, _Reason}=Error -> Error;
         {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
+
+-spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
+    ok = router_metrics:offer_join_accpeted_inc();
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, _}) ->
+    ok = router_metrics:offer_join_rejected_inc();
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok) ->
+    ok = router_metrics:offer_packet_accpeted_inc();
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, _}) ->
+    ok = router_metrics:offer_packet_rejected_inc().
+
+
+-spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.
+handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, ok) when MType == ?JOIN_REQ ->
+    ok = router_metrics:join_accpeted_inc();
+handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, {error, _}) when MType == ?JOIN_REQ  ->
+    ok = router_metrics:join_rejected_inc();
+handle_packet_metrics(_Packet, ok) ->
+    ok = router_metrics:packet_accpeted_inc();
+handle_packet_metrics(_Packet, {error, _}) ->
+    ok = router_metrics:packet_rejected_inc().
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

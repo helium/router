@@ -34,6 +34,13 @@
                                 type => worker,
                                 modules => [I]}).
 
+-define(WORKER(I, Mod, Args, Mods), #{id => I,
+                                      start => {Mod, start_link, Args},
+                                      restart => permanent,
+                                      shutdown => 5000,
+                                      type => worker,
+                                      modules => Mods}).
+
 -define(FLAGS, #{strategy => rest_for_one,
                  intensity => 1,
                  period => 5}).
@@ -85,6 +92,9 @@ init([]) ->
                       {update_dir, application:get_env(router, update_dir, undefined)}],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
+    ElliOpts = [{callback, router_metrics},
+                {callback_args, #{}},
+                {port, 3000}],
     {ok, {?FLAGS, [?SUP(blockchain_sup, [BlockchainOpts]),
                    ?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
@@ -92,7 +102,9 @@ init([]) ->
                    ?SUP(router_console_sup, []),
                    ?WORKER(router_v8, [#{}]),
                    ?WORKER(router_device_devaddr, [#{}]),
-                   ?SUP(router_decoder_custom_sup, [])]}}.
+                   ?SUP(router_decoder_custom_sup, []),
+                   ?WORKER(router_metrics, elli, ElliOpts, [elli])
+                  ]}}.
 
 %%====================================================================
 %% Internal functions

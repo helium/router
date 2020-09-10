@@ -384,9 +384,11 @@ handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, _}) ->
 
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.
-handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, ok) when MType == ?JOIN_REQ ->
+handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
+                                            _DevNonce:2/binary, _MIC:4/binary>>}, ok) when MType == ?JOIN_REQ ->
     ok = router_metrics:packet_inc(join, accepted);
-handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, {error, _}) when MType == ?JOIN_REQ  ->
+handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
+                                            _DevNonce:2/binary, _MIC:4/binary>>}, {error, _}) when MType == ?JOIN_REQ  ->
     ok = router_metrics:packet_inc(join, rejected);
 handle_packet_metrics(_Packet, ok) ->
     ok = router_metrics:packet_inc(packet, accepted);
@@ -425,6 +427,8 @@ handle_join_offer_test() ->
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
+    meck:new(router_metrics, [passthrough]),
+    meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
 
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
@@ -443,6 +447,8 @@ handle_join_offer_test() ->
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
+    ?assert(meck:validate(router_metrics)),
+    meck:unload(router_metrics),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ok.
@@ -464,6 +470,9 @@ handle_packet_offer_test() ->
     meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
     meck:new(blockchain_ledger_routing_v1, [passthrough]),
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
+    meck:new(router_metrics, [passthrough]),
+    meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
+    meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
 
     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
@@ -489,6 +498,8 @@ handle_packet_offer_test() ->
     meck:unload(blockchain_ledger_v1),
     ?assert(meck:validate(blockchain_ledger_routing_v1)),
     meck:unload(blockchain_ledger_routing_v1),
+    ?assert(meck:validate(router_metrics)),
+    meck:unload(router_metrics),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ok.

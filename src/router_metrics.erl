@@ -52,9 +52,10 @@ packet_inc(Type, Status) when (Type == join orelse Type == packet)
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    Port = maps:get(port, Args, 3000),
     ElliOpts = [{callback, router_metrics_handler},
                 {callback_args, #{}},
-                {port, 3000}],
+                {port, Port}],
     {ok, _Pid} = elli:start_link(ElliOpts),
     lists:foreach(
       fun({counter, Name, Labels, Help}) ->

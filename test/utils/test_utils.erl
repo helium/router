@@ -59,7 +59,7 @@ init_per_testcase(TestCase, Config) ->
     ElliOpts = [{callback, console_callback},
                 {callback_args, #{forward => self(), ets => Tab,
                                   app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
-                {port, 3000}],
+                {port, 4000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
 

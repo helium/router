@@ -85,6 +85,7 @@ init([]) ->
                       {update_dir, application:get_env(router, update_dir, undefined)}],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
+    MetricsOpts = #{port => application:get_env(router, metrics_port, 3000)},
     {ok, {?FLAGS, [?SUP(blockchain_sup, [BlockchainOpts]),
                    ?WORKER(router_db, [DBOpts]),
                    ?SUP(router_devices_sup, []),
@@ -93,7 +94,7 @@ init([]) ->
                    ?WORKER(router_v8, [#{}]),
                    ?WORKER(router_device_devaddr, [#{}]),
                    ?SUP(router_decoder_custom_sup, []),
-                   ?WORKER(router_metrics, [#{}])
+                   ?WORKER(router_metrics, [MetricsOpts])
                   ]}}.
 
 %%====================================================================

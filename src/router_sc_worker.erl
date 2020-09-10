@@ -215,9 +215,9 @@ init_state_channels(#state{oui=OUI, chain=Chain}) ->
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     Id0 = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
-                                     get_sc_expiration_interval(), get_sc_amount(), Chain),
+                                      get_sc_expiration_interval(), get_sc_amount(), Chain),
     Id1 = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI,
-                                     get_sc_expiration_interval() * 2, get_sc_amount(), Chain),
+                                      get_sc_expiration_interval() * 2, get_sc_amount(), Chain),
     {ok, Id0, Id1}.
 
 -spec open_next_state_channel(State :: state()) -> {ok, blockchain_txn_state_channel_open_v1:id()}.
@@ -239,7 +239,7 @@ open_next_state_channel(#state{oui=OUI, chain=Chain}) ->
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     Id = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
-                                NextExpiration, get_sc_amount(), Chain),
+                                     NextExpiration, get_sc_amount(), Chain),
     {ok, Id}.
 
 -spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
@@ -249,7 +249,7 @@ open_next_state_channel(#state{oui=OUI, chain=Chain}) ->
                                   Expiration :: pos_integer(),
                                   Amount :: non_neg_integer(),
                                   Chain :: blockchain:blockchain()) ->
-    blockchain_txn_state_channel_open_v1:id().
+          blockchain_txn_state_channel_open_v1:id().
 create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, Chain) ->
     %% Create and open a new state_channel
     %% With its expiration set to 2 * Expiration of the one with max nonce
@@ -303,7 +303,7 @@ get_sc_expiration_interval() ->
 
 -spec handle_sc_result(ok|{error, rejected|invalid},
                        blockchain_txn_state_channel_open_v1:id()) ->
-    {sc_open_success|sc_open_failure, blockchain_txn_state_channel_open_v1:id()}.
+          {sc_open_success|sc_open_failure, blockchain_txn_state_channel_open_v1:id()}.
 handle_sc_result(ok, Id) ->
     ?SERVER ! {sc_open_success, Id};
 handle_sc_result(_Error, Id) ->

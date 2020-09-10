@@ -20,3 +20,4 @@ log/
 data/
 src/pb/
 .env
+prometheus.yml

@@ -374,24 +374,24 @@ check_devices_balance(PayloadSize, Devices) ->
 
 -spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
-    ok = router_metrics:offer_join_accpeted_inc();
+    ok = router_metrics:offer_inc(join, accepted);
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, _}) ->
-    ok = router_metrics:offer_join_rejected_inc();
+    ok = router_metrics:offer_inc(join, rejected);
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok) ->
-    ok = router_metrics:offer_packet_accpeted_inc();
+    ok = router_metrics:offer_inc(packet, accepted);
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, _}) ->
-    ok = router_metrics:offer_packet_rejected_inc().
+    ok = router_metrics:offer_inc(packet, rejected).
 
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, ok) when MType == ?JOIN_REQ ->
-    ok = router_metrics:join_accpeted_inc();
+    ok = router_metrics:packet_inc(join, accepted);
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _/binary>>}, {error, _}) when MType == ?JOIN_REQ  ->
-    ok = router_metrics:join_rejected_inc();
+    ok = router_metrics:packet_inc(join, rejected);
 handle_packet_metrics(_Packet, ok) ->
-    ok = router_metrics:packet_accpeted_inc();
+    ok = router_metrics:packet_inc(packet, accepted);
 handle_packet_metrics(_Packet, {error, _}) ->
-    ok = router_metrics:packet_rejected_inc().
+    ok = router_metrics:packet_inc(packet, rejected).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

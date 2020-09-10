@@ -14,5 +14,6 @@ services:
   prometheus:
       image: prom/prometheus
       container_name: helium_prometheus
+      network_mode: host
       volumes:
           - ./prometheus.yml:/etc/prometheus/prometheus.yml

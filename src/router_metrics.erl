@@ -59,9 +59,9 @@ init(Args) ->
     {ok, _Pid} = elli:start_link(ElliOpts),
     lists:foreach(
       fun({counter, Name, Labels, Help}) ->
-              ok = prometheus_counter:new([{name, Name},
-                                           {help, Help},
-                                           {labels, Labels}])
+              _ = prometheus_counter:declare([{name, Name},
+                                              {help, Help},
+                                              {labels, Labels}])
       end,
       ?METRICS),
     {ok, #state{}}.

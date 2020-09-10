@@ -1,4 +1,4 @@
--define(CONSOLE_IP_PORT, <<"127.0.0.1:4000">>).
+-define(CONSOLE_IP_PORT, <<"127.0.0.1:3000">>).
 -define(CONSOLE_URL, <<"http://", ?CONSOLE_IP_PORT/binary>>).
 -define(CONSOLE_WS_URL, <<"ws://", ?CONSOLE_IP_PORT/binary, "/websocket">>).
 

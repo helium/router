@@ -44,6 +44,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, console_secret, <<"secret">>),
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
+    ok = application:set_env(router, metrics_port, 4000),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->
@@ -59,7 +60,7 @@ init_per_testcase(TestCase, Config) ->
     ElliOpts = [{callback, console_callback},
                 {callback_args, #{forward => self(), ets => Tab,
                                   app_key => AppKey, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
-                {port, 4000}],
+                {port, 3000}],
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
 

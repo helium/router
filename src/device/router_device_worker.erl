@@ -36,6 +36,7 @@
 -define(SERVER, ?MODULE).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+-define(MAX_DOWNLINK_SIZE, 242).
 
 -record(join_cache, {rssi :: float(),
                      reply :: binary(),
@@ -135,13 +136,20 @@ handle_cast(device_update, #state{db=DB, cf=CF, device=Device0, channels_worker=
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device=Device1}}
     end;
-handle_cast({queue_message, {_Type, _Port, _Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
-                                                                  channels_worker=ChannelsWorker}=State) ->
-    Q = router_device:queue(Device0),
-    Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
-    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-    lager:debug("queue downlink message"),
-    {noreply, State#state{device=Device1}};
+handle_cast({queue_message, {_Type, Port, Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
+                                                                channels_worker=ChannelsWorker}=State) ->
+    case erlang:byte_size(Payload) of
+        Size when Size > ?MAX_DOWNLINK_SIZE ->
+            lager:debug("failed to queue downlink message, too big"),
+            ok = report_status_max_size(Device0, Payload, Port),
+            {noreply, State};
+        _ ->
+            Q = router_device:queue(Device0),
+            Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            lager:debug("queue downlink message"),
+            {noreply, State#state{device=Device1}}
+    end;
 handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
     lager:warning("got join packet when oui=undefined, standing by..."),
     {noreply, State0};
@@ -698,6 +706,19 @@ report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, ReplyPayl
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
     ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain).
+
+-spec report_status_max_size(router_device:device(), binary(), non_neg_integer()) -> ok.
+report_status_max_size(Device, Payload, Port) ->
+    Report = #{category => packet_dropped,
+               description => <<"Packet request exceeds maximum 242 bytes">>,
+               reported_at => erlang:system_time(seconds),
+               payload => base64:encode(Payload),
+               payload_size => erlang:byte_size(Payload),
+               port => Port,
+               devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+               hotspots => [],
+               channels => []},
+    ok = router_device_api:report_status(Device, Report).
 
 -spec report_status_no_dc(router_device:device()) -> ok.
 report_status_no_dc(Device) ->

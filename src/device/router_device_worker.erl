@@ -36,6 +36,7 @@
 -define(SERVER, ?MODULE).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
+-define(MAX_DOWNLINK_SIZE, 242).
 
 -record(join_cache, {rssi :: float(),
                      reply :: binary(),
@@ -139,7 +140,7 @@ handle_cast(device_update, #state{db=DB, cf=CF, device=Device0, channels_worker=
 handle_cast({queue_message, {_Type, Port, Payload}=Msg}, #state{db=DB, cf=CF, device=Device0,
                                                                 channels_worker=ChannelsWorker}=State) ->
     case erlang:byte_size(Payload) of
-        Size when Size > 242 ->
+        Size when Size > ?MAX_DOWNLINK_SIZE ->
             lager:debug("failed to queue downlink message, too big"),
             ok = report_status_max_size(Device0, Payload, Port),
             {noreply, State};

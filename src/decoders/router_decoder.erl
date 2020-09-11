@@ -56,7 +56,7 @@ decode(ID, Payload, Port) ->
     try decode_(ID, Payload, Port) of
         Return -> Return
     catch _Class:_Reason:_Stacktrace ->
-            lager:error("decoder ~p crashed: ~p (~p) stacktrace ~p~n", [{ID, _Reason, Payload, _Stacktrace}]),
+            lager:error("decoder ~p crashed: ~p (~p) stacktrace ~p", [ID, _Reason, Payload, _Stacktrace]),
             {error, decoder_crashed}
     end.
 

@@ -42,7 +42,7 @@
   1},
  {<<"erlang_v8">>,
   {git,"https://github.com/Vagabond/erlang_v8.git",
-       {ref,"dc6ec423f84601d0d1ae2d1dc39e3cb6fe06cd50"}},
+       {ref,"601145a18add79488ddc21e8eefa238ed36fec5a"}},
   0},
  {<<"exor_filter">>,
   {git,"https://github.com/Vagabond/exor_filter",

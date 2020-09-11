@@ -68,7 +68,7 @@ decoder_inc(Type, Status) when Status == ok orelse Status == error ->
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
-    ok = prometheus_histogram:observe(?DECODED, [Type, Status], Time).
+    ok = prometheus_histogram:observe(?DECODED_TIME, [Type, Status], Time).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

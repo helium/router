@@ -21,12 +21,21 @@
 
 -define(SERVER, ?MODULE).
 
+-define(METRICS_TICK_INTERVAL, timer:seconds(10)).
+-define(METRICS_TICK, '__router_metrics_tick').
+
 -define(BASE, "router_").
 -define(OFFER, ?BASE ++ "device_routing_offer").
 -define(PACKET, ?BASE ++ "device_routing_packet").
+-define(DC, ?BASE ++ "dc_balance").
+-define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
+-define(SC_ACTIVE, ?BASE ++ "state_channel_active").
 
 -define(METRICS, [{counter, ?OFFER, [type, status], "Offer count"},
-                  {counter, ?PACKET, [type, status], "Packet count"}]).
+                  {counter, ?PACKET, [type, status], "Packet count"},
+                  {gauge, ?DC, [], "DC balance"},
+                  {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
+                  {gauge, ?SC_ACTIVE, [id], "Active State Channel"}]).
 
 -record(state, {}).
 
@@ -61,9 +70,14 @@ init(Args) ->
       fun({counter, Name, Labels, Help}) ->
               _ = prometheus_counter:declare([{name, Name},
                                               {help, Help},
-                                              {labels, Labels}])
+                                              {labels, Labels}]);
+         ({gauge, Name, Labels, Help}) ->
+              _ = prometheus_gauge:declare([{name, Name},
+                                            {help, Help},
+                                            {labels, Labels}])
       end,
       ?METRICS),
+    _ = schedule_next_tick(),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -74,6 +88,14 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(?METRICS_TICK, State) ->
+    erlang:spawn(
+      fun() ->
+              ok = record_dc_balance(),
+              ok = record_state_channels()
+      end),
+    _ = schedule_next_tick(),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -88,3 +110,30 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec record_dc_balance() -> ok.
+record_dc_balance() ->
+    Ledger = blockchain:ledger(blockchain_worker:blockchain()),
+    Owner = blockchain_swarm:pubkey_bin(),
+    case blockchain_ledger_v1:find_dc_entry(Owner, Ledger) of
+        {error, _} ->
+            ok;
+        {ok, Entry} ->
+            Balance = blockchain_ledger_data_credits_entry_v1:balance(Entry),
+            _ = prometheus_gauge:set(?DC, Balance),
+            ok
+    end.
+
+-spec record_state_channels() -> ok.
+record_state_channels() ->
+    ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
+    _ = prometheus_gauge:set(?SC_ACTIVE_COUNT, ActiveSCCount),
+    ActiveSC = blockchain_state_channels_server:active_sc(),
+    ID = base64url:encode(blockchain_state_channel_v1:id(ActiveSC)),
+    TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
+    DCLeft = blockchain_state_channel_v1:total_dcs(ActiveSC)-TotalDC,
+    _ = prometheus_gauge:set(?SC_ACTIVE, [ID], DCLeft),
+    ok.
+
+-spec schedule_next_tick() -> reference().
+schedule_next_tick() ->
+    erlang:send_after(?METRICS_TICK_INTERVAL, self(), ?METRICS_TICK).

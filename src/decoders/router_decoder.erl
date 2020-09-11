@@ -62,18 +62,29 @@ decode(ID, Payload, Port) ->
 
 -spec decode_(binary(), binary(), integer()) -> {ok, any()} | {error, any()}.
 decode_(ID, Payload, Port) ->
-    case lookup(ID) of
-        {error, not_found} ->
-            {error, unknown_decoder};
-        {ok, #decoder{type=custom}=Decoder} ->
-            router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port);
-        {ok, #decoder{type=cayenne}=Decoder} ->
-            router_decoder_cayenne:decode(Decoder, Payload, Port);
-        {ok, #decoder{type=browan_object_locator}=Decoder} ->
-            router_decoder_browan_object_locator:decode(Decoder, Payload, Port);
-        {ok, _Decoder} ->
-            {error, unhandled_decoder}
-    end.
+    Start = erlang:system_time(millisecond),
+    {Type, Resp} =
+        case lookup(ID) of
+            {error, not_found} ->
+                {unknown_decoder, {error, unknown_decoder}};
+            {ok, #decoder{type=custom}=Decoder} ->
+                {custom, router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port)};
+            {ok, #decoder{type=cayenne}=Decoder} ->
+                {cayenne, router_decoder_cayenne:decode(Decoder, Payload, Port)};
+            {ok, #decoder{type=browan_object_locator}=Decoder} ->
+                {browan_object_locator, router_decoder_browan_object_locator:decode(Decoder, Payload, Port)};
+            {ok, _Decoder} ->
+                {unhandled_decoder, {error, unhandled_decoder}}
+        end,
+    End = erlang:system_time(millisecond),
+    Status =
+        case Resp of
+            {ok, _} -> ok;
+            {error, _} -> error
+        end,
+    ok = router_metrics:decoder_inc(Type, Status),
+    ok = router_metrics:decoder_observe(Type, Status, End-Start),
+    Resp.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

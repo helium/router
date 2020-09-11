@@ -82,7 +82,6 @@ decode_(ID, Payload, Port) ->
             {ok, _} -> ok;
             {error, _} -> error
         end,
-    ok = router_metrics:decoder_inc(Type, Status),
     ok = router_metrics:decoder_observe(Type, Status, End-Start),
     Resp.
 

@@ -37,7 +37,7 @@
                   {counter, ?PACKET, [type, status], "Packet count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
-                  {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
+                  {gauge, ?SC_ACTIVE, [id], "Active State Channel balance"},
                   {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]}]).
 
 -record(state, {}).
@@ -142,7 +142,8 @@ record_state_channels() ->
     ActiveSC = blockchain_state_channels_server:active_sc(),
     TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
     DCLeft = blockchain_state_channel_v1:amount(ActiveSC)-TotalDC,
-    _ = prometheus_gauge:set(?SC_ACTIVE, DCLeft),
+    ID = base64url:encode(blockchain_state_channel_v1:id(ActiveSC)),
+    _ = prometheus_gauge:set(?SC_ACTIVE, [ID], DCLeft),
     ok.
 
 -spec schedule_next_tick() -> reference().

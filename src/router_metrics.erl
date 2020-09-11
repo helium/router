@@ -35,7 +35,7 @@
                   {counter, ?PACKET, [type, status], "Packet count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
-                  {gauge, ?SC_ACTIVE, [id], "Active State Channel"}]).
+                  {gauge, ?SC_ACTIVE, [id], "Active State Channel balance"}]).
 
 -record(state, {}).
 
@@ -130,7 +130,7 @@ record_state_channels() ->
     ActiveSC = blockchain_state_channels_server:active_sc(),
     ID = base64url:encode(blockchain_state_channel_v1:id(ActiveSC)),
     TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
-    DCLeft = blockchain_state_channel_v1:total_dcs(ActiveSC)-TotalDC,
+    DCLeft = blockchain_state_channel_v1:amount(ActiveSC)-TotalDC,
     _ = prometheus_gauge:set(?SC_ACTIVE, [ID], DCLeft),
     ok.
 

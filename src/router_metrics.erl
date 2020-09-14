@@ -8,7 +8,8 @@
 -export([start_link/1,
          offer_inc/2,
          packet_inc/2,
-         decoder_observe/3]).
+         decoder_observe/3,
+         console_api_observe/3]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -40,7 +41,7 @@
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
                   {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
                   {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?CONSOLE_API_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]}]).
+                  {histogram, ?CONSOLE_API_TIME, [type, status], "Decoder decoded duration", [100, 250, 500, 1000]}]).
 
 -record(state, {}).
 
@@ -64,6 +65,10 @@ packet_inc(Type, Status) when (Type == join orelse Type == packet)
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
     ok = prometheus_histogram:observe(?DECODED_TIME, [Type, Status], Time).
+
+-spec console_api_observe(atom(), atom(), non_neg_integer()) -> ok.
+console_api_observe(Type, Status, Time) ->
+    ok = prometheus_histogram:observe(?CONSOLE_API_TIME, [Type, Status], Time).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

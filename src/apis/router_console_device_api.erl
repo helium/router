@@ -87,8 +87,11 @@ get_devices(DevEui, AppEui) ->
                                "&app_eui=", (lorawan_utils:binary_to_hex(AppEui))/binary>>,
                        lager:debug("get ~p", [Url]),
                        Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+                       Start = erlang:system_time(millisecond),
                        case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
                            {ok, 200, _Headers, Body} ->
+                               End = erlang:system_time(millisecond),
+                               ok = router_metrics:console_api_observe(get_devices, ok, End-Start),
                                Devices = lists:map(
                                            fun(JSONDevice) ->
                                                    ID = kvc:path([<<"id">>], JSONDevice),
@@ -105,6 +108,8 @@ get_devices(DevEui, AppEui) ->
                                            jsx:decode(Body, [return_maps])),
                                Devices;
                            _Other ->
+                               End = erlang:system_time(millisecond),
+                               ok = router_metrics:console_api_observe(get_devices, error, End-Start),
                                []
                        end
                end).
@@ -170,8 +175,16 @@ report_status(Device, Map) ->
                           maps:put(channels, Channels, B0)
                   end,
               lager:debug("post ~p to ~p", [Body1, Url]),
-              hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                           jsx:encode(Body1), [with_body, {pool, ?POOL}])
+              Start = erlang:system_time(millisecond),
+              case hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                                jsx:encode(Body1), [with_body, {pool, ?POOL}]) of
+                  {ok, 200, _Headers, _Body} ->
+                      End = erlang:system_time(millisecond),
+                      ok = router_metrics:console_api_observe(report_status, ok, End-Start);
+                  _ ->
+                      End = erlang:system_time(millisecond),
+                      ok = router_metrics:console_api_observe(report_status, error, End-Start)
+              end
       end),
     ok.
 
@@ -193,14 +206,21 @@ get_org(OrgID) ->
                        Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
                        lager:debug("get ~p", [Url]),
                        Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+                       Start = erlang:system_time(millisecond),
                        case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
                            {ok, 200, _Headers, Body} ->
+                               End = erlang:system_time(millisecond),
+                               ok = router_metrics:console_api_observe(get_org, ok, End-Start),
                                lager:debug("Body for ~p ~p", [Url, Body]),
                                {ok, jsx:decode(Body, [return_maps])};
                            {ok, 404, _ResponseHeaders, _ResponseBody} ->
                                lager:debug("org ~p not found", [OrgID]),
+                               End = erlang:system_time(millisecond),
+                               ok = router_metrics:console_api_observe(get_org, not_found, End-Start),
                                {error, not_found};
                            _Other ->
+                               End = erlang:system_time(millisecond),
+                               ok = router_metrics:console_api_observe(get_org, error, End-Start),
                                {error, {get_org_failed, _Other}}
                        end
                end).
@@ -448,11 +468,18 @@ convert_decoder(JSONChannel) ->
 
 -spec get_token(binary(), binary()) -> binary().
 get_token(Endpoint, Secret) ->
+    Start = erlang:system_time(millisecond),
     case hackney:post(<<Endpoint/binary, "/api/router/sessions">>, [?HEADER_JSON],
                       jsx:encode(#{secret => Secret}) , [with_body, {pool, ?POOL}]) of
         {ok, 201, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_token, ok, End-Start),
             #{<<"jwt">> := Token} = jsx:decode(Body, [return_maps]),
-            Token
+            Token;
+        _ ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_token, error, End-Start),
+            erlang:throw(get_token)
     end.
 
 -spec get_device_(binary(), binary(), router_device:device()) -> {ok, map()} | {error, any()}.
@@ -461,14 +488,21 @@ get_device_(Endpoint, Token, Device) ->
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
     lager:debug("get ~p", [Url]),
     Opts = [with_body, {pool, ?POOL}, {connect_timeout, timer:seconds(2)}, {recv_timeout, timer:seconds(2)}],
+    Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_device, ok, End-Start),
             lager:debug("Body for ~p ~p", [Url, Body]),
             {ok, jsx:decode(Body, [return_maps])};
         {ok, 404, _ResponseHeaders, _ResponseBody} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_device, not_found, End-Start),
             lager:debug("device ~p not found", [DeviceId]),
             {error, not_found};
         _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_device, error, End-Start),
             {error, {get_device_failed, _Other}}
     end.
 
@@ -577,15 +611,22 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
     {Endpoint, Token} = token_lookup(),
     Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
     lager:debug("post ~p to ~p", [Body, Url]),
+    Start = erlang:system_time(millisecond),
     case hackney:post(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                       jsx:encode(Body), [with_body, {pool, ?POOL}]) of
         {ok, 204, _Headers, _Reply} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(org_burn, ok, End-Start),
             lager:debug("Burn notification successful"),
             ReplyPid ! {hnt_burn, success, Uuid};
         {ok, 404, _Headers, _Reply} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(org_burn, not_found, End-Start),
             lager:debug("Memo not found in console database; drop"),
             ReplyPid ! {hnt_burn, drop, Uuid};
         Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(org_burn, error, End-Start),
             lager:debug("Burn notification failed", [Other]),
             timer:sleep(Delay),
             %% fibonacci delay timer

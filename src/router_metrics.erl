@@ -32,13 +32,15 @@
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
 -define(SC_ACTIVE, ?BASE ++ "state_channel_active").
 -define(DECODED_TIME, ?BASE ++ "decoder_decoded_duration").
+-define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
 
 -define(METRICS, [{counter, ?OFFER, [type, status], "Offer count"},
                   {counter, ?PACKET, [type, status], "Packet count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
-                  {gauge, ?SC_ACTIVE, [id], "Active State Channel balance"},
-                  {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]}]).
+                  {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
+                  {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?CONSOLE_API_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]}]).
 
 -record(state, {}).
 
@@ -142,8 +144,7 @@ record_state_channels() ->
     ActiveSC = blockchain_state_channels_server:active_sc(),
     TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
     DCLeft = blockchain_state_channel_v1:amount(ActiveSC)-TotalDC,
-    ID = base64url:encode(blockchain_state_channel_v1:id(ActiveSC)),
-    _ = prometheus_gauge:set(?SC_ACTIVE, [ID], DCLeft),
+    _ = prometheus_gauge:set(?SC_ACTIVE, [], DCLeft),
     ok.
 
 -spec schedule_next_tick() -> reference().

@@ -41,7 +41,7 @@
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
                   {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
                   {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?CONSOLE_API_TIME, [type, status], "Decoder decoded duration", [100, 250, 500, 1000]}]).
+                  {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]}]).
 
 -record(state, {}).
 

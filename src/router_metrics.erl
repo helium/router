@@ -8,6 +8,7 @@
 -export([start_link/1,
          offer_inc/2,
          packet_inc/2,
+         downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3]).
 
@@ -29,6 +30,7 @@
 -define(BASE, "router_").
 -define(OFFER, ?BASE ++ "device_routing_offer").
 -define(PACKET, ?BASE ++ "device_routing_packet").
+-define(DOWNLINK, ?BASE ++ "device_downlink_packet").
 -define(DC, ?BASE ++ "dc_balance").
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
 -define(SC_ACTIVE, ?BASE ++ "state_channel_active").
@@ -37,6 +39,7 @@
 
 -define(METRICS, [{counter, ?OFFER, [type, status], "Offer count"},
                   {counter, ?PACKET, [type, status], "Packet count"},
+                  {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
                   {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
@@ -61,6 +64,10 @@ offer_inc(Type, Status) when (Type == join orelse Type == packet)
 packet_inc(Type, Status) when (Type == join orelse Type == packet)
                               andalso (Status == accepted orelse Status == rejected) ->
     ok = prometheus_counter:inc(?PACKET, [Type, Status]).
+
+-spec downlink_inc(atom(), ok | error) -> ok.
+downlink_inc(Type, Status) ->
+    ok = prometheus_counter:inc(?DOWNLINK, [Type, Status]).
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->

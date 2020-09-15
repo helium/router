@@ -314,7 +314,7 @@ handle_info({ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
                                                                                 <<"payload">> := BinaryPayload}}, State) ->
     lager:info("sending downlink ~p for devices ~p", [BinaryPayload, DeviceIDs]),
     lists:foreach(fun(DeviceID) ->
-                          ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload)
+                          ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, console_ws)
                   end,
                   DeviceIDs),
     {noreply, State};

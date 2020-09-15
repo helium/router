@@ -73,7 +73,7 @@ handle_call(_Msg, State) ->
 
 handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connection=Conn, channel=Channel}=State) ->
     Controller = router_channel:controller(Channel),
-    router_device_channels_worker:handle_downlink(Controller, Payload),
+    router_device_channels_worker:handle_downlink(Controller, Payload, aws),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),

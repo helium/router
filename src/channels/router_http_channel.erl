@@ -93,7 +93,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
                                             status => success,
                                             description => <<"Connection established">>});
                   {ok, StatusCode, ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
-                      router_device_channels_worker:handle_downlink(Pid, ResponseBody),
+                      router_device_channels_worker:handle_downlink(Pid, ResponseBody, http),
                       maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{code => StatusCode,
                                                                                   headers => ResponseHeaders,
                                                                                   body => ResponseBody}}),

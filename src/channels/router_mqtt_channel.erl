@@ -92,7 +92,7 @@ handle_call(_Msg, State) ->
 
 handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connection=Pid, channel=Channel}=State) ->
     Controller = router_channel:controller(Channel),
-    router_device_channels_worker:handle_downlink(Controller, Payload),
+    router_device_channels_worker:handle_downlink(Controller, Payload, mqtt),
     {ok, State};
 handle_info({Conn, ping}, #state{connection=Conn}=State) ->
     _ = ping(Conn),

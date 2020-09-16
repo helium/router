@@ -412,7 +412,7 @@ send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) -
             fcnt => FCnt,
             reported_at => Time,
             payload => Data,
-            port => Port,
+            port => case Port of undefined -> 0; _ -> Port end,
             devaddr => lorawan_utils:binary_to_hex(DevAddr),
             hotspots => lists:foldr(FoldFun, [], CachedData),
             dc => #{balance => Balance, nonce => Nonce}},

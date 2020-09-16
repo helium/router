@@ -208,7 +208,8 @@ burned_test(Config) ->
 
     test_utils:wait_organizations_burned(#{<<"memo">> => 123,
                                            <<"hnt_amount">> => 1,
-                                           <<"dc_amount">> => 100}),
+                                           <<"dc_amount">> => 100,
+                                           <<"request_id">> => fun erlang:is_binary/1}),
 
     ?assert(meck:validate(blockchain_ledger_v1)),
     meck:unload(blockchain_ledger_v1),

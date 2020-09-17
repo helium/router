@@ -289,7 +289,7 @@ inactive_test(Config) ->
     ets:insert(Tab, {is_active, true}),
     WSPid ! {is_active, true},
 
-        %% Send UNCONFIRMED_UP frame packet
+    %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
                                             router_device:app_s_key(Device0), 2)},
 

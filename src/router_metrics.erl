@@ -153,10 +153,14 @@ record_dc_balance() ->
 record_state_channels() ->
     ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
     _ = prometheus_gauge:set(?SC_ACTIVE_COUNT, ActiveSCCount),
-    ActiveSC = blockchain_state_channels_server:active_sc(),
-    TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
-    DCLeft = blockchain_state_channel_v1:amount(ActiveSC)-TotalDC,
-    _ = prometheus_gauge:set(?SC_ACTIVE, [], DCLeft),
+    case blockchain_state_channels_server:active_sc() of
+        undefined ->
+            _ = prometheus_gauge:set(?SC_ACTIVE, [], 0);
+        ActiveSC ->
+            TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
+            DCLeft = blockchain_state_channel_v1:amount(ActiveSC)-TotalDC,
+            _ = prometheus_gauge:set(?SC_ACTIVE, [], DCLeft)
+    end,
     ok.
 
 -spec schedule_next_tick() -> reference().

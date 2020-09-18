@@ -131,18 +131,23 @@ join_offer(Offer, _Pid) ->
 -spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), pid(), [router_device:device()]) -> ok | {error, any()}.
 maybe_buy_join_offer(Offer, _Pid, Devices) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    case check_devices_balance(PayloadSize, Devices) of
+    case check_device_is_active(Devices) of
         {error, _Reason}=Error ->
             Error;
         ok ->
-            BFRef = lookup_bf(?BF_KEY),
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case bloom:set(BFRef, PHash) of
-                true ->
-                    maybe_multi_buy(Offer, 10);
-                false ->
-                    true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
-                    ok
+            case check_device_balance(PayloadSize, Devices) of
+                {error, _Reason}=Error ->
+                    Error;
+                ok ->
+                    BFRef = lookup_bf(?BF_KEY),
+                    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+                    case bloom:set(BFRef, PHash) of
+                        true ->
+                            maybe_multi_buy(Offer, 10);
+                        false ->
+                            true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
+                            ok
+                    end
             end
     end.
 
@@ -362,8 +367,8 @@ maybe_start_worker(DeviceID) ->
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
 %% TODO: This function is not very optimized...
--spec check_devices_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
-check_devices_balance(PayloadSize, Devices) ->
+-spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
+check_device_balance(PayloadSize, Devices) ->
     Chain = blockchain_worker:blockchain(),
     %% TODO: We should not be picking the first device
     [Device|_] = Devices,
@@ -395,6 +400,21 @@ handle_packet_metrics(_Packet, ok) ->
 handle_packet_metrics(_Packet, {error, _}) ->
     ok = router_metrics:packet_inc(packet, rejected).
 
+-spec check_device_is_active([router_device:device()]) -> ok | {error, any()}.
+check_device_is_active(Devices) ->
+    %% TODO: We should not be picking the first device
+    [Device|_] = Devices,
+    DeviceID = router_device:id(Device),
+    case router_devices_sup:lookup_device_worker(DeviceID) of
+        {error, _Reason}=Error ->
+            Error;
+        {ok, Pid} ->
+            case router_device_worker:is_active(Pid) of
+                false -> {error, device_inactive};
+                true -> ok
+            end
+    end.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -422,13 +442,17 @@ handle_join_offer_test() ->
     ok = init(),
 
     meck:new(router_device_api, [passthrough]),
-    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [device]} end),
+    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [router_device:new(<<"id">>)]} end),
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
+    meck:new(router_devices_sup, [passthrough]),
+    meck:expect(router_devices_sup, lookup_device_worker, fun(_) -> {ok, self()} end),
+    meck:new(router_device_worker, [passthrough]),
+    meck:expect(router_device_worker, is_active, fun(_) -> true end),
 
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
@@ -449,6 +473,10 @@ handle_join_offer_test() ->
     meck:unload(router_console_dc_tracker),
     ?assert(meck:validate(router_metrics)),
     meck:unload(router_metrics),
+    ?assert(meck:validate(router_devices_sup)),
+    meck:unload(router_devices_sup),
+    ?assert(meck:validate(router_device_worker)),
+    meck:unload(router_device_worker),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ok.

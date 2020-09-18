@@ -65,6 +65,10 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                    [] -> false;
                    [{device_not_found, Bool}] -> Bool
                end,
+    IsActive = case ets:lookup(Tab, is_active) of
+                   [] -> true;
+                   [{is_active, IS}] -> IS
+               end,
     Body = #{<<"id">> => DeviceID,
              <<"name">> => ?CONSOLE_DEVICE_NAME,
              <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
@@ -72,7 +76,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
              <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
              <<"channels">> => Channels,
              <<"labels">> => ?CONSOLE_LABELS,
-             <<"organization_id">> => ?CONSOLE_ORG_ID},
+             <<"organization_id">> => ?CONSOLE_ORG_ID,
+             <<"active">> => IsActive},
     case NotFound of
         true ->
             {404, [], <<"Not Found">>};
@@ -176,6 +181,12 @@ websocket_info(_Req, {org_update, Topic}, State) ->
                 <<"dc_balance_nonce">> => 0,
                 <<"dc_balance">> => 0},
     Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"organization:all:refill:dc_balance">>, Payload),
+    {reply, {text, Data}, State};
+websocket_info(_Req, {is_active, true}, State) ->
+    Data = router_console_ws_handler:encode_msg(<<"0">>, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID]}),
+    {reply, {text, Data}, State};
+websocket_info(_Req, {is_active, false}, State) ->
+    Data = router_console_ws_handler:encode_msg(<<"0">>, <<"device:all">>, <<"device:all:inactive:devices">>, #{<<"devices">> => [?CONSOLE_DEVICE_ID]}),
     {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),

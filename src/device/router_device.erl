@@ -24,143 +24,152 @@
          keys/1, keys/2,
          location/1, location/2,
          metadata/1, metadata/2,
+         is_active/1, is_active/2,
          update/2,
          serialize/1, deserialize/1,
          get/2, get/3, get_by_id/3, save/3, delete/3
         ]).
 
--type device() :: #device_v3{}.
+-type device() :: #device_v4{}.
 
 -export_type([device/0]).
 
 -spec new(binary()) -> device().
 new(ID) ->
-    #device_v3{id=ID,
+    #device_v4{id=ID,
                keys=libp2p_crypto:generate_keys(ecc_compact)}.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
-    Device#device_v3.id.
+    Device#device_v4.id.
 
 -spec name(device()) -> binary() | undefined.
 name(Device) ->
-    Device#device_v3.name.
+    Device#device_v4.name.
 
 -spec name(binary(), device()) -> device().
 name(Name, Device) ->
-    Device#device_v3{name=Name}.
+    Device#device_v4{name=Name}.
 
 -spec app_eui(device()) -> binary() | undefined.
 app_eui(Device) ->
-    Device#device_v3.app_eui.
+    Device#device_v4.app_eui.
 
 -spec app_eui(binary(), device()) -> device().
 app_eui(EUI, Device) ->
-    Device#device_v3{app_eui=EUI}.
+    Device#device_v4{app_eui=EUI}.
 
 -spec dev_eui(device()) -> binary() | undefined.
 dev_eui(Device) ->
-    Device#device_v3.dev_eui.
+    Device#device_v4.dev_eui.
 
 -spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
-    Device#device_v3{dev_eui=EUI}.
+    Device#device_v4{dev_eui=EUI}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
 nwk_s_key(Device) ->
-    Device#device_v3.nwk_s_key.
+    Device#device_v4.nwk_s_key.
 
 -spec nwk_s_key(binary(), device()) -> device().
 nwk_s_key(Key, Device) ->
-    Device#device_v3{nwk_s_key=Key}.
+    Device#device_v4{nwk_s_key=Key}.
 
 -spec app_s_key(device()) -> binary() | undefined.
 app_s_key(Device) ->
-    Device#device_v3.app_s_key.
+    Device#device_v4.app_s_key.
 
 -spec app_s_key(binary(), device()) -> device().
 app_s_key(Key, Device) ->
-    Device#device_v3{app_s_key=Key}.
+    Device#device_v4{app_s_key=Key}.
 
 -spec devaddr(device()) -> binary() | undefined.
 devaddr(Device) ->
-    Device#device_v3.devaddr.
+    Device#device_v4.devaddr.
 
 -spec devaddr(binary(), device()) -> device().
 devaddr(Devaddr, Device) ->
-    Device#device_v3{devaddr=Devaddr}.
+    Device#device_v4{devaddr=Devaddr}.
 
 -spec join_nonce(device()) -> non_neg_integer().
 join_nonce(Device) ->
-    Device#device_v3.join_nonce.
+    Device#device_v4.join_nonce.
 
 -spec join_nonce(non_neg_integer(), device()) -> device().
 join_nonce(Nonce, Device) ->
-    Device#device_v3{join_nonce=Nonce}.
+    Device#device_v4{join_nonce=Nonce}.
 
 -spec fcnt(device()) -> non_neg_integer().
 fcnt(Device) ->
-    Device#device_v3.fcnt.
+    Device#device_v4.fcnt.
 
 -spec fcnt(non_neg_integer(), device()) -> device().
 fcnt(Fcnt, Device) ->
-    Device#device_v3{fcnt=Fcnt}.
+    Device#device_v4{fcnt=Fcnt}.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->
-    Device#device_v3.fcntdown.
+    Device#device_v4.fcntdown.
 
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
-    Device#device_v3{fcntdown=Fcnt}.
+    Device#device_v4{fcntdown=Fcnt}.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
-    Device#device_v3.offset.
+    Device#device_v4.offset.
 
 -spec offset(non_neg_integer(), device()) -> device().
 offset(Offset, Device) ->
-    Device#device_v3{offset=Offset}.
+    Device#device_v4{offset=Offset}.
 
 -spec channel_correction(device()) -> boolean().
 channel_correction(Device) ->
-    Device#device_v3.channel_correction.
+    Device#device_v4.channel_correction.
 
 -spec channel_correction(boolean(), device()) -> device().
 channel_correction(Correct, Device) ->
-    Device#device_v3{channel_correction=Correct}.
+    Device#device_v4{channel_correction=Correct}.
 
 -spec queue(device()) -> [any()].
 queue(Device) ->
-    Device#device_v3.queue.
+    Device#device_v4.queue.
 
 -spec queue([any()], device()) -> device().
 queue(Q, Device) ->
-    Device#device_v3{queue=Q}.
+    Device#device_v4{queue=Q}.
 
 -spec keys(device()) -> map().
 keys(Device) ->
-    Device#device_v3.keys.
+    Device#device_v4.keys.
 
 -spec keys(map(), device()) -> device().
 keys(Keys, Device) ->
-    Device#device_v3{keys=Keys}.
+    Device#device_v4{keys=Keys}.
 
 -spec location(device()) -> libp2p_crypto:pubkey_bin() | undefined.
 location(Device) ->
-    Device#device_v3.location.
+    Device#device_v4.location.
 
 -spec location(libp2p_crypto:pubkey_bin() | undefined, device()) -> device().
 location(PubkeyBin, Device) ->
-    Device#device_v3{location=PubkeyBin}.
+    Device#device_v4{location=PubkeyBin}.
 
 -spec metadata(device()) -> map().
 metadata(Device) ->
-    Device#device_v3.metadata.
+    Device#device_v4.metadata.
 
 -spec metadata(map(), device()) -> device().
 metadata(Meta, Device) ->
-    Device#device_v3{metadata=Meta}.
+    Device#device_v4{metadata=Meta}.
+
+-spec is_active(device()) -> boolean().
+is_active(Device) ->
+    Device#device_v4.is_active.
+
+-spec is_active(boolean(), device()) -> device().
+is_active(IsActive, Device) ->
+    Device#device_v4{is_active=IsActive}.
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
@@ -194,7 +203,9 @@ update([{keys, Value}|T], Device) ->
 update([{location, Value}|T], Device) ->
     update(T, ?MODULE:location(Value, Device));
 update([{metadata, Value}|T], Device) ->
-    update(T, ?MODULE:metadata(Value, Device)).
+    update(T, ?MODULE:metadata(Value, Device));
+update([{is_active, Value}|T], Device) ->
+    update(T, ?MODULE:is_active(Value, Device)).
 
 -spec serialize(device()) -> binary().
 serialize(Device) ->
@@ -203,16 +214,34 @@ serialize(Device) ->
 -spec deserialize(binary()) -> device().
 deserialize(Binary) ->
     case erlang:binary_to_term(Binary) of
+        #device_v4{}=V4 ->
+            V4;
         #device_v3{}=V3 ->
-            V3;
+            #device_v4{id=V3#device_v3.id,
+                       name=V3#device_v3.name,
+                       dev_eui=V3#device_v3.dev_eui,
+                       app_eui=V3#device_v3.app_eui,
+                       nwk_s_key=V3#device_v3.nwk_s_key,
+                       app_s_key=V3#device_v3.app_s_key,
+                       devaddr=V3#device_v3.devaddr,
+                       join_nonce=V3#device_v3.join_nonce,
+                       fcnt=V3#device_v3.fcnt,
+                       fcntdown=V3#device_v3.fcntdown,
+                       offset=V3#device_v3.offset,
+                       channel_correction=V3#device_v3.channel_correction,
+                       queue=V3#device_v3.queue,
+                       keys=V3#device_v3.keys,
+                       location=V3#device_v3.location,
+                       metadata=V3#device_v3.metadata,
+                       is_active=true};
         #device_v2{}=V2 ->
-            #device_v3{id=V2#device_v2.id,
+            #device_v4{id=V2#device_v2.id,
                        name=V2#device_v2.name,
                        dev_eui=V2#device_v2.dev_eui,
                        app_eui=V2#device_v2.app_eui,
                        nwk_s_key=V2#device_v2.nwk_s_key,
                        app_s_key=V2#device_v2.app_s_key,
-                       devaddr=router_device_devaddr:default_devaddr(),
+                       devaddr=undefined,
                        join_nonce=V2#device_v2.join_nonce,
                        fcnt=V2#device_v2.fcnt,
                        fcntdown=V2#device_v2.fcntdown,
@@ -221,13 +250,14 @@ deserialize(Binary) ->
                        queue=V2#device_v2.queue,
                        keys=V2#device_v2.keys,
                        location=undefined,
-                       metadata=V2#device_v2.metadata};
+                       metadata=V2#device_v2.metadata,
+                       is_active=true};
         #device_v1{}=V1 ->
             Keys = case V1#device_v1.key of
                        undefined -> libp2p_crypto:generate_keys(ecc_compact);
                        Key -> Key
                    end,
-            #device_v3{id=V1#device_v1.id,
+            #device_v4{id=V1#device_v1.id,
                        name=V1#device_v1.name,
                        dev_eui=V1#device_v1.dev_eui,
                        app_eui=V1#device_v1.app_eui,
@@ -241,9 +271,10 @@ deserialize(Binary) ->
                        channel_correction=V1#device_v1.channel_correction,
                        queue=V1#device_v1.queue,
                        keys=Keys,
-                       metadata=#{}};
+                       metadata=#{},
+                       is_active=true};
         #device{}=V0 ->
-            #device_v3{id=V0#device.id,
+            #device_v4{id=V0#device.id,
                        name=V0#device.name,
                        dev_eui=V0#device.dev_eui,
                        app_eui=V0#device.app_eui,
@@ -257,7 +288,8 @@ deserialize(Binary) ->
                        channel_correction=V0#device.channel_correction,
                        queue=V0#device.queue,
                        keys=libp2p_crypto:generate_keys(ecc_compact),
-                       metadata=#{}}
+                       metadata=#{},
+                       is_active=true}
     end.
 
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
@@ -327,7 +359,7 @@ new_test() ->
     meck:new(libp2p_crypto, [passthrough]),
     meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> Keys end),
 
-    ?assertEqual(#device_v3{id= <<"id">>, keys=Keys}, new(<<"id">>)),
+    ?assertEqual(#device_v4{id= <<"id">>, keys=Keys}, new(<<"id">>)),
 
     ?assert(meck:validate(libp2p_crypto)),
     meck:unload(libp2p_crypto).
@@ -418,8 +450,9 @@ update_test() ->
                {queue, [a]},
                {keys, #{}},
                {location, <<"location">>},
-               {metadata, #{a => b}}],
-    UpdatedDevice = #device_v3{id = <<"id">>,
+               {metadata, #{a => b}},
+               {is_active, false}],
+    UpdatedDevice = #device_v4{id = <<"id">>,
                                name = <<"name">>,
                                app_eui = <<"app_eui">>,
                                dev_eui = <<"dev_eui">>,
@@ -434,7 +467,8 @@ update_test() ->
                                queue = [a],
                                keys = #{},
                                location = <<"location">>,
-                               metadata = #{a => b}},
+                               metadata = #{a => b},
+                               is_active = false},
     ?assertEqual(UpdatedDevice, update(Updates, Device)).
 
 serialize_deserialize_test() ->
@@ -467,22 +501,27 @@ upgrade_test() ->
     {ok, DB, [_, CF]} = router_db:get(),
 
     DeviceID = <<"id">>,
-    V3Device = #device_v3{id=DeviceID, keys=Keys},
+    V4Device = #device_v4{id=DeviceID, keys=Keys},
 
     V0Device = #device{id=DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
-    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V3Device], get(DB, CF)),
+    ?assertEqual({ok, V4Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V4Device], get(DB, CF)),
 
-    V1Device = #device_v1{id=DeviceID, key=Keys},
+    V1Device = #device_v1{id=DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V1Device), []),
-    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V3Device], get(DB, CF)),
+    ?assertEqual({ok, V4Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V4Device], get(DB, CF)),
 
-    V2Device = #device_v1{id=DeviceID, key=Keys},
+    V2Device = #device_v2{id=DeviceID, keys=Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V2Device), []),
-    ?assertEqual({ok, V3Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V3Device], get(DB, CF)),
+    ?assertEqual({ok, V4Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V4Device], get(DB, CF)),
+
+    V3Device = #device_v3{id=DeviceID, keys=Keys},
+    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V3Device), []),
+    ?assertEqual({ok, V4Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V4Device], get(DB, CF)),
 
     gen_server:stop(Pid),
     ?assert(meck:validate(libp2p_crypto)),

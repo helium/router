@@ -71,10 +71,12 @@ get_device(DeviceID) ->
             AppEui = kvc:path([<<"app_eui">>], JSONDevice),
             Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice),
                          organization_id => kvc:path([<<"organization_id">>], JSONDevice)},
+            IsActive = kvc:path([<<"active">>], JSONDevice),
             DeviceUpdates = [{name, Name},
                              {dev_eui, lorawan_utils:hex_to_binary(DevEui)},
                              {app_eui, lorawan_utils:hex_to_binary(AppEui)},
-                             {metadata, Metadata}],
+                             {metadata, Metadata},
+                             {is_active, IsActive}],
             {ok, router_device:update(DeviceUpdates, Device)}
     end.
 
@@ -99,10 +101,12 @@ get_devices(DevEui, AppEui) ->
                                                    AppKey = lorawan_utils:hex_to_binary(kvc:path([<<"app_key">>], JSONDevice)),
                                                    Metadata = #{labels => kvc:path([<<"labels">>], JSONDevice),
                                                                 organization_id => kvc:path([<<"organization_id">>], JSONDevice)},
+                                                   IsActive = kvc:path([<<"active">>], JSONDevice),
                                                    DeviceUpdates = [{name, Name},
                                                                     {dev_eui, DevEui},
                                                                     {app_eui, AppEui},
-                                                                    {metadata, Metadata}],
+                                                                    {metadata, Metadata},
+                                                                    {is_active, IsActive}],
                                                    {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
                                            end,
                                            jsx:decode(Body, [return_maps])),
@@ -327,6 +331,14 @@ handle_info({ws_message, <<"organization:all">>, <<"organization:all:refill:dc_b
     lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
     ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
     {noreply, State};
+handle_info({ws_message, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
+    lager:info("got activate message for devices: ~p", [DeviceIDs]),
+    update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
+handle_info({ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{<<"devices">> := DeviceIDs}}, #state{db=DB, cf=CF}=State) ->
+    lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
+    update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -360,7 +372,6 @@ update_devices(DB, CF, DeviceIDs) ->
                 DeviceIDs)
       end).
 
-
 -spec update_device_record(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> ok.
 update_device_record(DB, CF, DeviceID) ->
     case ?MODULE:get_device(DeviceID) of
@@ -375,7 +386,8 @@ update_device_record(DB, CF, DeviceID) ->
             DeviceUpdates = [{name, router_device:name(APIDevice)},
                              {dev_eui, router_device:dev_eui(APIDevice)},
                              {app_eui, router_device:app_eui(APIDevice)},
-                             {metadata, router_device:metadata(APIDevice)}],
+                             {metadata, router_device:metadata(APIDevice)},
+                             {is_active, router_device:is_active(APIDevice)}],
             Device = router_device:update(DeviceUpdates, Device0),
             {ok, _} = router_device:save(DB, CF, Device),
             ok

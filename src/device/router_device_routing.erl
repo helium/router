@@ -54,6 +54,9 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _DevAddr}} ->
                    packet_offer(Offer, HandlerPid)
            end,
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    HotspotName = blockchain_utils:addr2name(Hotspot),
+    lager:debug("got offer (~p) from ~p resp: ~p", [Offer, HotspotName, Resp]),
     ok = handle_offer_metrics(Routing, Resp),
     Resp.
 

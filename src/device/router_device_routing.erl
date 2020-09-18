@@ -408,7 +408,7 @@ check_device_is_active(Devices) ->
     %% TODO: We should not be picking the first device
     [Device|_] = Devices,
     DeviceID = router_device:id(Device),
-    case router_devices_sup:lookup_device_worker(DeviceID) of
+    case router_devices_sup:maybe_start_worker(DeviceID) of
         {error, _Reason}=Error ->
             Error;
         {ok, Pid} ->

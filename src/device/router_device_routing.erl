@@ -453,7 +453,7 @@ handle_join_offer_test() ->
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
-    meck:expect(router_devices_sup, lookup_device_worker, fun(_) -> {ok, self()} end),
+    meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
     meck:new(router_device_worker, [passthrough]),
     meck:expect(router_device_worker, is_active, fun(_) -> true end),
 

@@ -238,7 +238,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                 [] -> router_device_routing:deny_more(Packet0);
                 _ -> router_device_routing:accept_more(Packet0)
             end,
-            Data = {PubKeyBin, Packet0, Frame, erlang:system_time(second)},
+            Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},
             case SendToChannels of
                 true ->
                     ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data, {Balance, Nonce});
@@ -773,25 +773,10 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
     DevAddr = router_device:devaddr(Device),
     Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-
     Hotspots = lists:foldl(
                  fun({Packet, PubKeyBin, Region}, Acc) ->
-                         HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
-                         {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
-                         Freq = blockchain_helium_packet_v1:frequency(Packet),
-                         {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
-                         [#{id => erlang:list_to_binary(HotspotID),
-                            name => erlang:list_to_binary(HotspotName),
-                            reported_at => erlang:system_time(seconds),
-                            status => success,
-                            selected => PubKeyBin == PubKeyBinSelected,
-                            rssi => blockchain_helium_packet_v1:signal_strength(Packet),
-                            snr => blockchain_helium_packet_v1:snr(Packet),
-                            spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-                            frequency => Freq,
-                            channel => lorawan_mac_region:f2uch(Region, Freq),
-                            lat => Lat,
-                            long => Long}|Acc]
+                         H = router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, erlang:system_time(seconds), <<"success">>),
+                         [maps:put(selected, PubKeyBin == PubKeyBinSelected, H)|Acc]
                  end,
                  [],
                  [PacketSelected|Packets]),
@@ -811,10 +796,6 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
                     libp2p_crypto:pubkey_bin(), atom(), blockchain_helium_packet_v1:packet(),
                     binary() | undefined, any(), any(), blockchain:blockchain()) -> ok.
 report_status(Category, Desc, Device, Status, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain) ->
-    HotspotID = libp2p_crypto:bin_to_b58(PubKeyBin),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(HotspotID),
-    Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
     Payload = case ReplyPayload of
                   undefined -> blockchain_helium_packet_v1:payload(Packet);
                   _ -> ReplyPayload
@@ -826,17 +807,7 @@ report_status(Category, Desc, Device, Status, PubKeyBin, Region, Packet, ReplyPa
                payload_size => erlang:byte_size(Payload),
                port => Port,
                devaddr => lorawan_utils:binary_to_hex(DevAddr),
-               hotspots => [#{id => erlang:list_to_binary(HotspotID),
-                              name => erlang:list_to_binary(HotspotName),
-                              reported_at => erlang:system_time(seconds),
-                              status => Status,
-                              rssi => blockchain_helium_packet_v1:signal_strength(Packet),
-                              snr => blockchain_helium_packet_v1:snr(Packet),
-                              spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-                              frequency => Freq,
-                              channel => lorawan_mac_region:f2uch(Region, Freq),
-                              lat => Lat,
-                              long => Long}],
+               hotspots => [router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, erlang:system_time(seconds), Status)],
                channels => []},
     ok = router_device_api:report_status(Device, Report).
 

@@ -72,7 +72,7 @@ handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
 -spec handle_data(pid(), router_device:device(),
-                  {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
+                  {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
 handle_data(Pid, Device, Data, {Balance, Nonce}) ->
     gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
 
@@ -129,7 +129,7 @@ handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {Balance, Nonce}=BN},
+handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Region, _Time}=Data, {Balance, Nonce}=BN},
             #state{data_cache=DataCache0, balance_cache=BalanceCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
     DataCache1=
@@ -147,7 +147,7 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Time}=Data, {Bala
                         case maps:get(PubKeyBin, CachedData0, undefined) of
                             undefined ->
                                 maps:put(FCnt, CachedData1, DataCache0);
-                            {_, #packet_pb{signal_strength=RSSI}, _, _} ->
+                            {_, #packet_pb{signal_strength=RSSI}, _, _, _} ->
                                 case Packet#packet_pb.signal_strength > RSSI of
                                     true ->
                                         maps:put(FCnt, CachedData1, DataCache0);
@@ -385,25 +385,10 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
                       router_device:device(), pid() , blockchain:blockchain()) -> {ok, map()}.
 send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) ->
     FoldFun =
-        fun({PubKeyBin, Packet, _, Time}, Acc) ->
-                B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-                {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
-                Freq = Packet#packet_pb.frequency,
-                {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Blockchain),
-                [#{id => erlang:list_to_binary(B58),
-                   name => erlang:list_to_binary(HotspotName),
-                   reported_at => Time,
-                   status => <<"success">>,
-                   rssi => Packet#packet_pb.signal_strength,
-                   snr => Packet#packet_pb.snr,
-                   spreading => erlang:list_to_binary(Packet#packet_pb.datarate),
-                   frequency => Freq,
-                   %% TODO use correct regulatory domain here
-                   channel => lorawan_mac_region:f2uch('US915', Freq),
-                   lat => Lat,
-                   long => Long}|Acc]
+        fun({PubKeyBin, Packet, _, Region, Time}, Acc) ->
+                [router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)|Acc]
         end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, Time}|_] = CachedData,
+    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, _Region, Time}|_] = CachedData,
     Map = #{id => router_device:id(Device),
             name => router_device:name(Device),
             dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),

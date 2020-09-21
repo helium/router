@@ -3,7 +3,8 @@
 -export([get_router_oui/1,
          get_hotspot_location/2,
          to_bin/1,
-         b0/4]).
+         b0/4,
+         format_hotspot/6]).
 
 -spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
 get_router_oui(Chain) ->
@@ -42,6 +43,27 @@ to_bin(_) ->
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0,0,0,0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+
+
+-spec format_hotspot(blockchain:blockchain(), libp2p_crypto:pubkey_bin(), blockchain_helium_packet_v1:packet(),
+                     atom(), non_neg_integer(), any()) -> map().
+format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
+    Freq = blockchain_helium_packet_v1:frequency(Packet),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    #{id => erlang:list_to_binary(B58),
+      name => erlang:list_to_binary(HotspotName),
+      reported_at => Time,
+      status => Status,
+      rssi => blockchain_helium_packet_v1:signal_strength(Packet),
+      snr => blockchain_helium_packet_v1:snr(Packet),
+      spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+      frequency => Freq,
+      channel => lorawan_mac_region:f2uch(Region, Freq),
+      lat => Lat,
+      long => Long}.
+
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

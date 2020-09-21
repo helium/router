@@ -32,20 +32,19 @@ init({[Channel, _Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
-    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
-    FixedTopic = topic(Topic),
+    #{endpoint := Endpoint,
+      uplink_topic := UplinkTopic,
+      downlink_topic := DownlinkTopic} = router_channel:args(Channel),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             _ = ping(Conn),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
             %% TODO use a better QoS to add some back pressure
-            {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
+            {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
                         endpoint=Endpoint,
-                        pub_topic=PubTopic,
-                        sub_topic=SubTopic}};
+                        pub_topic=UplinkTopic,
+                        sub_topic=DownlinkTopic}};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -68,22 +67,20 @@ handle_call({update, Channel, Device}, #state{connection=Conn,
                                               endpoint=StateEndpoint,
                                               pub_topic=StatePubTopic,
                                               sub_topic=StateSubTopic}=State) ->
-    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
+    #{endpoint := Endpoint,
+      uplink_topic := UplinkTopic,
+      downlink_topic := DownlinkTopic} = router_channel:args(Channel),
     case Endpoint == StateEndpoint of
         false ->
             {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
         true ->
-            DeviceID = router_channel:device_id(Channel),
-            FixedTopic = topic(Topic),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
-            case SubTopic == StateSubTopic andalso PubTopic == StatePubTopic of
+            case DownlinkTopic == StateSubTopic andalso UplinkTopic == StatePubTopic of
                 true ->
                     {ok, ok, State};
                 false ->
                     {ok, _, _} = emqtt:unsubscribe(Conn, StateSubTopic),
-                    {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
-                    {ok, ok, State#state{pub_topic=PubTopic, sub_topic=SubTopic}}
+                    {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
+                    {ok, ok, State#state{pub_topic=UplinkTopic, sub_topic=DownlinkTopic}}
             end
     end;
 handle_call(_Msg, State) ->
@@ -138,21 +135,6 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
                                             description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
-
--spec topic(binary() | list()) -> binary().
-topic(<<>>) ->
-    <<>>;
-topic("") ->
-    <<>>;
-topic(Topic) when is_list(Topic) ->
-    topic(erlang:list_to_binary(Topic));
-topic(<<"/", Topic/binary>>) ->
-    topic(Topic);
-topic(Topic) ->
-    case binary:last(Topic) == $/ of
-        false -> <<Topic/binary, "/">>;
-        true -> Topic
-    end.
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->

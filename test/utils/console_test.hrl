@@ -20,7 +20,8 @@
 -define(CONSOLE_MQTT_CHANNEL_NAME, <<"fake_mqtt">>).
 -define(CONSOLE_MQTT_CHANNEL, #{<<"type">> => <<"mqtt">>,
                                 <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
-                                                       <<"topic">> => <<"test/">>},
+                                                       <<"uplink">> => #{<<"topic">> => <<"uplink/test">>},
+                                                       <<"downlink">> => #{<<"topic">> => <<"downlink/test">>}},
                                 <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                                 <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME}).
 

@@ -73,8 +73,14 @@ mqtt_test(Config) ->
     %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
-    UplinkTopic = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
-    DownlinkTopic = kvc:path([<<"credentials">>, <<"downlink">> ,<<"topic">>], MQTTChannel),
+    UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
+    DownlinkTemplate = kvc:path([<<"credentials">>, <<"downlink">> ,<<"topic">>], MQTTChannel),
+    DeviceUpdates = [{dev_eui, ?DEVEUI},
+                     {app_eui, ?APPEUI},
+                     {metadata, #{organization_id => ?CONSOLE_ORG_ID}}],
+    DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
+    UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
+    DownlinkTopic = render_topic(DownlinkTemplate, DeviceForTemplate),
     {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
 
     %% Send join packet
@@ -278,7 +284,12 @@ mqtt_update_test(Config) ->
     %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
-    UplinkTopic = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
+    UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
+    DeviceUpdates = [{dev_eui, ?DEVEUI},
+                     {app_eui, ?APPEUI},
+                     {metadata, #{organization_id => ?CONSOLE_ORG_ID}}],
+    DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
+    UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
     {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
 
     %% Send join packet
@@ -387,12 +398,13 @@ mqtt_update_test(Config) ->
 
     %% Switching topic channel should update but no restart
     Tab = proplists:get_value(ets, Config),
-    
-    UplinkTopic1 = <<"uplink/updated">>,
+
+    UplinkTemplate1= <<"uplink/{{app_eui}}/{{device_eui}}">>,
+    UplinkTopic1 = render_topic(UplinkTemplate1, DeviceForTemplate),
     MQTTChannel0 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
-                                             <<"uplink">> => #{<<"topic">> => UplinkTopic1},
-                                             <<"downlink">> => #{<<"topic">> => <<"downlink/test">>}},
+                                            <<"uplink">> => #{<<"topic">> => UplinkTemplate1},
+                                            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}},
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel0]}),
@@ -472,8 +484,8 @@ mqtt_update_test(Config) ->
     %% Switching endpoint channel should restart (back to sub topic 0)
     MQTTChannel1 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://localhost:1883">>,
-                                            <<"uplink">> => #{<<"topic">> => UplinkTopic},
-                                            <<"downlink">> => #{<<"topic">> => <<"downlink/test">>}},
+                                            <<"uplink">> => #{<<"topic">> => <<"uplink/{{org_id}}/{{device_id}}">>},
+                                            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}},
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel1]}),
@@ -557,6 +569,15 @@ mqtt_update_test(Config) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec render_topic(binary(), router_device:device()) -> binary().
+render_topic(Template, Device) ->
+    Metadata = router_device:metadata(Device),
+    Map = #{"device_id" => router_device:id(Device),
+            "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+            "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+            "org_id" => maps:get(organization_id, Metadata, <<>>)},
+    bbmustache:render(Template, Map).
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->

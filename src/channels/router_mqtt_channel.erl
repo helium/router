@@ -7,6 +7,10 @@
 
 -behaviour(gen_event).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
@@ -28,17 +32,20 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init({[Channel, _Device], _}) ->
+init({[Channel, Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
     #{endpoint := Endpoint,
-      uplink_topic := UplinkTopic,
-      downlink_topic := DownlinkTopic} = router_channel:args(Channel),
+      uplink_topic := UplinkTemplate,
+      downlink_topic := DownlinkTemplate} = router_channel:args(Channel),
+    UplinkTopic = render_topic(UplinkTemplate, Device),
+    DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             _ = ping(Conn),
             %% TODO use a better QoS to add some back pressure
+
             {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
@@ -68,8 +75,10 @@ handle_call({update, Channel, Device}, #state{connection=Conn,
                                               pub_topic=StatePubTopic,
                                               sub_topic=StateSubTopic}=State) ->
     #{endpoint := Endpoint,
-      uplink_topic := UplinkTopic,
-      downlink_topic := DownlinkTopic} = router_channel:args(Channel),
+      uplink_topic := UplinkTemplate,
+      downlink_topic := DownlinkTemplate} = router_channel:args(Channel),
+    UplinkTopic = render_topic(UplinkTemplate, Device),
+    DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case Endpoint == StateEndpoint of
         false ->
             {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
@@ -109,6 +118,15 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec render_topic(binary(), router_device:device()) -> binary().
+render_topic(Template, Device) ->
+    Metadata = router_device:metadata(Device),
+    Map = #{"device_id" => router_device:id(Device),
+            "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+            "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+            "org_id" => maps:get(organization_id, Metadata, <<>>)},
+    bbmustache:render(Template, Map).
 
 -spec ping(pid()) -> reference().
 ping(Conn) ->
@@ -177,3 +195,23 @@ connect(URI, DeviceID, Name) ->
             lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
             {error, invalid_mqtt_uri}
     end.
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+
+render_topic_test() ->
+    DeviceID = <<"device_123">>,
+    DevEUI = lorawan_utils:binary_to_hex(<<0,0,0,0,0,0,0,1>>),
+    AppEUI = lorawan_utils:binary_to_hex(<<0,0,0,2,0,0,0,1>>),
+    DeviceUpdates = [{dev_eui, <<0,0,0,0,0,0,0,1>>},
+                     {app_eui, <<0,0,0,2,0,0,0,1>>},
+                     {metadata, #{organization_id => <<"org_123">>}}],
+    Device = router_device:update(DeviceUpdates, router_device:new(DeviceID)),
+
+    ?assertEqual(<<"org_123/device_123">>, render_topic(<<"{{org_id}}/{{device_id}}">>, Device)),
+    ?assertEqual(<<AppEUI/binary, "/", DevEUI/binary>>, render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)),
+    ok.
+
+-endif.

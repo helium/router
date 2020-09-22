@@ -49,7 +49,7 @@ b0(Dir, DevAddr, FCnt, Len) ->
                      atom(), non_neg_integer(), any()) -> map().
 format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(B58),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
     {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
     #{id => erlang:list_to_binary(B58),

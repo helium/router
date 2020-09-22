@@ -801,6 +801,7 @@ report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Bl
                payload => <<>>,
                payload_size => 0,
                port => 0,
+               fcnt => 0,
                devaddr => lorawan_utils:binary_to_hex(DevAddr),
                hotspots => Hotspots,
                channels => []},

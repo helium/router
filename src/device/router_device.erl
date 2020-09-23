@@ -91,11 +91,11 @@ devaddr(Device) ->
 devaddr(Devaddr, Device) ->
     Device#device_v4{devaddr=Devaddr}.
 
--spec join_nonce(device()) -> non_neg_integer().
+-spec join_nonce(device()) -> binary().
 join_nonce(Device) ->
     Device#device_v4.join_nonce.
 
--spec join_nonce(non_neg_integer(), device()) -> device().
+-spec join_nonce(binary(), device()) -> device().
 join_nonce(Nonce, Device) ->
     Device#device_v4{join_nonce=Nonce}.
 
@@ -224,7 +224,7 @@ deserialize(Binary) ->
                        nwk_s_key=V3#device_v3.nwk_s_key,
                        app_s_key=V3#device_v3.app_s_key,
                        devaddr=V3#device_v3.devaddr,
-                       join_nonce=V3#device_v3.join_nonce,
+                       join_nonce=erlang:integer_to_binary(V3#device_v3.join_nonce),
                        fcnt=V3#device_v3.fcnt,
                        fcntdown=V3#device_v3.fcntdown,
                        offset=V3#device_v3.offset,
@@ -242,7 +242,7 @@ deserialize(Binary) ->
                        nwk_s_key=V2#device_v2.nwk_s_key,
                        app_s_key=V2#device_v2.app_s_key,
                        devaddr=undefined,
-                       join_nonce=V2#device_v2.join_nonce,
+                       join_nonce=erlang:integer_to_binary(V2#device_v2.join_nonce),
                        fcnt=V2#device_v2.fcnt,
                        fcntdown=V2#device_v2.fcntdown,
                        offset=V2#device_v2.offset,
@@ -264,7 +264,7 @@ deserialize(Binary) ->
                        nwk_s_key=V1#device_v1.nwk_s_key,
                        app_s_key=V1#device_v1.app_s_key,
                        devaddr=undefined,
-                       join_nonce=V1#device_v1.join_nonce,
+                       join_nonce=erlang:integer_to_binary(V1#device_v1.join_nonce),
                        fcnt=V1#device_v1.fcnt,
                        fcntdown=V1#device_v1.fcntdown,
                        offset=V1#device_v1.offset,
@@ -281,7 +281,7 @@ deserialize(Binary) ->
                        nwk_s_key=V0#device.nwk_s_key,
                        app_s_key=V0#device.app_s_key,
                        devaddr=undefined,
-                       join_nonce=V0#device.join_nonce,
+                       join_nonce=erlang:integer_to_binary(V0#device.join_nonce),
                        fcnt=V0#device.fcnt,
                        fcntdown=V0#device.fcntdown,
                        offset=V0#device.offset,
@@ -396,8 +396,8 @@ devaddr_test() ->
 
 join_nonce_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(0, join_nonce(Device)),
-    ?assertEqual(1, join_nonce(join_nonce(1, Device))).
+    ?assertEqual(<<>>, join_nonce(Device)),
+    ?assertEqual(<<"1">>, join_nonce(join_nonce(<<"1">>, Device))).
 
 fcnt_test() ->
     Device = new(<<"id">>),
@@ -442,7 +442,7 @@ update_test() ->
                {nwk_s_key, <<"nwk_s_key">>},
                {app_s_key, <<"app_s_key">>},
                {devaddr, <<"devaddr">>},
-               {join_nonce, 1},
+               {join_nonce, <<"1">>},
                {fcnt, 1},
                {fcntdown, 1},
                {offset, 1},
@@ -459,7 +459,7 @@ update_test() ->
                                nwk_s_key = <<"nwk_s_key">>,
                                app_s_key = <<"app_s_key">>,
                                devaddr = <<"devaddr">>,
-                               join_nonce = 1,
+                               join_nonce = <<"1">>,
                                fcnt = 1,
                                fcntdown = 1,
                                offset = 1,
@@ -501,7 +501,7 @@ upgrade_test() ->
     {ok, DB, [_, CF]} = router_db:get(),
 
     DeviceID = <<"id">>,
-    V4Device = #device_v4{id=DeviceID, keys=Keys},
+    V4Device = #device_v4{id=DeviceID, keys=Keys, join_nonce= <<"0">>},
 
     V0Device = #device{id=DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),

@@ -5,7 +5,7 @@
                     nwk_s_key :: binary() | undefined,
                     app_s_key :: binary() | undefined,
                     devaddr :: binary() | undefined,
-                    join_nonce=0 :: non_neg_integer(),
+                    join_nonce= <<>> :: binary(),
                     fcnt=0 :: non_neg_integer(),
                     fcntdown=0 :: non_neg_integer(),
                     offset=0 :: non_neg_integer(),

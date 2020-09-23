@@ -54,9 +54,7 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _DevAddr}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-    HotspotName = blockchain_utils:addr2name(Hotspot),
-    lager:debug("got offer (~p) from ~p resp: ~p", [Offer, HotspotName, Resp]),
+    ok = print_offer_resp(Offer, HandlerPid, Resp),
     ok = handle_offer_metrics(Routing, Resp),
     Resp.
 
@@ -115,6 +113,21 @@ accept_more(Packet) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+print_offer_resp(Offer, HandlerPid, Resp) ->
+    Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    HotspotName = blockchain_utils:addr2name(Hotspot),
+    case Routing of
+        #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} ->
+            DevEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
+            AppEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
+            lager:debug("responded ~p to join offer deveui=~p appeui=~p from: ~p (pid: ~p)",
+                        [Resp, DevEUI1, AppEUI1, HotspotName, HandlerPid]);
+        #routing_information_pb{data={devaddr, _DevAddr}} ->
+            lager:debug("responded ~p to packet offer devaddr=~p from: ~p (pid: ~p)",
+                        [Resp, _DevAddr, HotspotName, HandlerPid])
+    end.
 
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 join_offer(Offer, _Pid) ->
@@ -443,6 +456,8 @@ false_positive_test() ->
 
 handle_join_offer_test() ->
     ok = init(),
+
+    application:ensure_all_started(lager),
 
     meck:new(router_device_api, [passthrough]),
     meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [router_device:new(<<"id">>)]} end),

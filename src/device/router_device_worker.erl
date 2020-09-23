@@ -38,6 +38,7 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 -define(MAX_DOWNLINK_SIZE, 242).
+-define(NET_ID, <<"He2">>).
 
 -record(join_cache, {rssi :: float(),
                      reply :: binary(),
@@ -100,25 +101,16 @@ is_active(Pid, IsActive) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Args) ->
+init(#{db := DB, cf := CF, id := ID}=Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     Blockchain = blockchain_worker:blockchain(),
-    DB = maps:get(db, Args),
-    CF = maps:get(cf, Args),
-    ID = maps:get(id, Args),
-    OUI = case application:get_env(router, oui, undefined) of
-              undefined -> undefined;
-              OUI0 when is_list(OUI0) ->
-                  list_to_integer(OUI0);
-              OUI0 ->
-                  OUI0
-          end,
+    OUI = router_device_utils:get_router_oui(),
     Device = get_device(DB, CF, ID),
-    IsActive = router_device:is_active(Device),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{blockchain => Blockchain,
                                                    device_worker => self(),
                                                    device => Device}),
+    IsActive = router_device:is_active(Device),
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
                 oui=OUI, channels_worker=Pid, is_active=IsActive}}.
@@ -133,14 +125,14 @@ handle_cast(device_update, #state{db=DB, cf=CF, device=Device0, channels_worker=
     DeviceID = router_device:id(Device0),
     case router_device_api:get_device(DeviceID) of
         {error, not_found} ->
-            lager:warning("device was removed, removing from DB and shutting down"),
             ok = router_device:delete(DB, CF, DeviceID),
+            lager:info("device was removed, removing from DB and shutting down"),
             {stop, normal, State};
         {error, _Reason} ->
-            lager:error("failed to get device ~p ~p", [DeviceID, _Reason]),
+            lager:error("failed to update device ~p", [_Reason]),
             {noreply, State};
         {ok, APIDevice} ->
-            lager:info("device updated"),
+            lager:info("device updated: ~p", [APIDevice]),
             ChannelsWorker ! refresh_channels,
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [{name, router_device:name(APIDevice)},
@@ -156,18 +148,18 @@ handle_cast({queue_message, {_Type, Port, Payload}=Msg}, #state{db=DB, cf=CF, de
                                                                 channels_worker=ChannelsWorker}=State) ->
     case erlang:byte_size(Payload) of
         Size when Size > ?MAX_DOWNLINK_SIZE ->
-            lager:debug("failed to queue downlink message, too big"),
-            ok = report_status_max_size(Device0, Payload, Port),
+            ok = router_device_utils:report_status_max_size(Device0, Payload, Port),
+            lager:debug("failed to queue downlink message, too big (~p)", [Size]),
             {noreply, State};
         _ ->
             Q = router_device:queue(Device0),
             Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            lager:debug("queue downlink message"),
+            lager:debug("queued downlink message"),
             {noreply, State#state{device=Device1}}
     end;
 handle_cast({join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid}, #state{oui=undefined}=State0) ->
-    lager:warning("got join packet when oui=undefined, standing by..."),
+    lager:warning("got join packet when oui=undefined"),
     {noreply, State0};
 handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid}, #state{chain=Chain, db=DB, cf=CF, device=Device0, join_cache=Cache0,
                                                                                            join_nonce_handled_at=JoinNonceHandledAt, oui=OUI,
@@ -179,7 +171,7 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State0};
-        {ok, Reply, Device1, JoinNonce} ->
+        {ok, Device1, JoinNonce, Reply} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(JoinNonce, Cache0, undefined) of
                 undefined when JoinNonceHandledAt == JoinNonce ->
@@ -217,7 +209,7 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
 handle_cast({frame, Packet, _PacketTime, _PubKeyBin, _Region, _Pid}, #state{device=Device,
                                                                             is_active=false}=State) ->
     _ = router_device_routing:deny_more(Packet),
-    ok = report_status_inactive(Device),
+    ok = router_device_utils:report_status_inactive(Device),
     {noreply, State};
 handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=Blockchain,
                                                                          device=Device0,
@@ -226,7 +218,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                                                                          channels_worker=ChannelsWorker}=State) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
         {error, {not_enough_dc, _Reason, Device1}} ->
-            ok = report_status_no_dc(Device0),
+            ok = router_device_utils:report_status_no_dc(Device0),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(Packet0),
             {noreply, State#state{device=Device1}};
@@ -280,12 +272,12 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
-                                              channels_worker=ChannelsWorker, join_cache=Cache0}=State) ->
+                                              channels_worker=ChannelsWorker, join_cache=JoinCache}=State) ->
     #join_cache{reply=Reply,
                 packet_selected=PacketSelected,
                 packets=Packets,
                 device=Device0,
-                pid=Pid} = maps:get(JoinNonce, Cache0),
+                pid=Pid} = maps:get(JoinNonce, JoinCache),
     {Packet, _, Region} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [JoinNonce,
                                                                 lager:pr(Packet, blockchain_helium_packet_v1),
@@ -299,9 +291,8 @@ handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-    ok = report_join_status(Device1, PacketSelected, Packets, Blockchain),
-    Cache1 = maps:remove(JoinNonce, Cache0),
-    {noreply, State#state{device=Device1, join_cache=Cache1}};
+    ok = router_device_utils:report_join_status(Device1, PacketSelected, Packets, Blockchain),
+    {noreply, State#state{device=Device1, join_cache= maps:remove(JoinNonce, JoinCache)}};
 handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
                                           channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
     #frame_cache{packet=Packet,
@@ -340,18 +331,6 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) -> ok.
-save_and_update(DB, CF, Pid, Device) ->
-    {ok, _} = router_device:save(DB, CF, Device),
-    ok = router_device_channels_worker:handle_device_update(Pid, Device).
-
--spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
-get_device(DB, CF, ID) ->
-    case router_device:get_by_id(DB, CF, ID) of
-        {ok, D} -> D;
-        _ -> router_device:new(ID)
-    end.
-
 -spec validate_join(blockchain_helium_packet_v1:packet(),
                     libp2p_crypto:pubkey_to_bin(),
                     atom(),
@@ -359,16 +338,21 @@ get_device(DB, CF, ID) ->
                     router_device:device(),
                     binary(),
                     router_device:device(),
-                    blockchain:blockchain()) -> {ok, binary(), router_device:device(), binary()} | {error, any()}.
+                    blockchain:blockchain()) -> {ok, router_device:device(), binary(), binary()} | {error, any()}.
 validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary,
-                                    _DevEUI0:8/binary, _Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
+                                    _DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
               PubKeyBin, Region, OUI, APIDevice, AppKey, Device, Blockchain) when MType == ?JOIN_REQ ->
     PayloadSize = erlang:byte_size(Payload),
     case router_console_dc_tracker:charge(Device, PayloadSize, Blockchain) of
         {error, _}=Error ->
             Error;
         {ok, _, _} ->
-            handle_join_(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device, router_device:join_nonce(Device))
+            case Nonce == router_device:join_nonce(Device) of
+                true ->
+                    {error, bad_nonce};
+                false ->
+                    handle_join(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device)
+            end
     end;
 validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, _Blockchain) ->
     {error, not_join_req}.
@@ -379,29 +363,17 @@ validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, 
 %% to console and sends back join resp
 %% @end
 %%%-------------------------------------------------------------------
--spec handle_join_(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), atom(), non_neg_integer(), 
-                   router_device:device(), binary(), router_device:device(), non_neg_integer()) ->
-          {ok, binary(), router_device:device(), binary()} | {error, any()}.
-handle_join_(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary,
-                                   DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>},
-             PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, OldNonce) when Nonce == OldNonce ->
-    AName = blockchain_utils:addr2name(PubKeyBin),
-    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    lager:warning("~s ~s tried to join with stale nonce ~p via ~s", [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), Nonce, AName]),
-    {error, bad_nonce};
-handle_join_(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
-                                   DevNonce:2/binary, _MIC:4/binary>>},
-             PubKeyBin, Region, _OUI, APIDevice, AppKey, Device0, _OldNonce) ->
-    AName = blockchain_utils:addr2name(PubKeyBin),
-    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    NetID = <<"He2">>,
+-spec handle_join(blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_to_bin(), atom(),
+                  non_neg_integer(), router_device:device(), binary(), router_device:device()) -> {ok, router_device:device(), binary(), binary()}.
+handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, JoinNonce:2/binary, _MIC:4/binary>>},
+            PubKeyBin, Region, _OUI, APIDevice, AppKey, Device0) ->
     AppNonce = crypto:strong_rand_bytes(3),
     NwkSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
-                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+                                   lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, JoinNonce/binary>>)),
     AppSKey = crypto:block_encrypt(aes_ecb,
                                    AppKey,
-                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)),
+                                   lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, JoinNonce/binary>>)),
     DevAddr = case router_device_devaddr:allocate(Device0, PubKeyBin) of
                   {ok, D} ->
                       D;
@@ -409,7 +381,28 @@ handle_join_(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                       lager:warning("failed to allocate devaddr for ~p: ~p", [router_device:id(Device0), _Reason]),
                       router_device_devaddr:default_devaddr()
               end,
-    RxDelay = ?RX_DELAY,
+    DeviceName = router_device:name(APIDevice),
+    %% don't set the join nonce here yet as we have not chosen the best join request yet
+    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    DeviceUpdates = [{name, DeviceName},
+                     {dev_eui, DevEUI},
+                     {app_eui, AppEUI},
+                     {app_s_key, AppSKey},
+                     {nwk_s_key, NwkSKey},
+                     {devaddr, DevAddr},
+                     {fcntdown, 0},
+                     {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
+                     {location, PubKeyBin},
+                     {metadata, router_device:metadata(APIDevice)}],
+    Device1 = router_device:update(DeviceUpdates, Device0),
+    Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
+    lager:debug("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
+                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
+                 JoinNonce, blockchain_utils:addr2name(PubKeyBin)]),
+    {ok, Device1, JoinNonce, Reply}.
+
+-spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().
+craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     DLSettings = 0,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     CFList = case Region of
@@ -428,26 +421,10 @@ handle_join_(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bin
                      %% Not yet implemented for other regions
                      <<>>
              end,
-    ReplyPayload = <<AppNonce/binary, NetID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, RxDelay:8/integer-unsigned, CFList/binary>>,
+    ReplyPayload = <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings:8/integer-unsigned, ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(aes_ecb, AppKey, lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)),
-    Reply = <<ReplyHdr/binary, EncryptedReply/binary>>,
-    DeviceName = router_device:name(APIDevice),
-    lager:info("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
-               [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), DevNonce, AName]),
-    %% don't set the join nonce here yet as we have not chosen the best join request yet
-    DeviceUpdates = [{name, DeviceName},
-                     {dev_eui, DevEUI},
-                     {app_eui, AppEUI},
-                     {app_s_key, AppSKey},
-                     {nwk_s_key, NwkSKey},
-                     {devaddr, DevAddr},
-                     {fcntdown, 0},
-                     {channel_correction, Region /= 'US915'}, %% only do channel correction for 915 right now
-                     {location, PubKeyBin},
-                     {metadata, router_device:metadata(APIDevice)}],
-    Device1 = router_device:update(DeviceUpdates, Device0),
-    {ok, Reply, Device1, DevNonce}.
+    <<ReplyHdr/binary, EncryptedReply/binary>>.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -516,7 +493,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with empty fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
+                    ok = router_device_utils:report_status(up, Desc, Device0, success, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug("Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
@@ -524,7 +501,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                     Desc = <<"Packet with double fopts received from AppEUI: ",
                              (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
                              (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
+                    ok = router_device_utils:report_status(up, Desc, Device0, error, PubKeyBin, Region, Packet, undefined, 0, DevAddr, Blockchain),
                     {error, double_fopts};
                 _N ->
                     AppSKey = router_device:app_s_key(Device0),
@@ -602,7 +579,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, undefined, Frame, Blockchain),
+            ok = router_device_utils:report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, undefined, Frame, Blockchain),
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1};
@@ -640,14 +617,14 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
+            ok = router_device_utils:report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
             {send, Device1, Packet1};
         false ->
             DeviceUpdates = [{queue, T},
                              {channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
+            ok = router_device_utils:report_frame_status(ACK, ConfirmedDown, Port, PubKeyBin, Region, Device1, Packet1, ReplyPayload, Frame, Blockchain),
             {send, Device1, Packet1}
     end.
 
@@ -700,117 +677,6 @@ mtype_to_ack(_) -> 0.
 ack_to_mtype(true) -> ?CONFIRMED_DOWN;
 ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
--spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(), atom(),
-                          router_device:device(), blockchain_helium_packet_v1:packet(),
-                          binary() | undefined, #frame{}, blockchain:blockchain()) -> ok.
-report_frame_status(0, false, 0, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, FPort, DevAddr, Blockchain);
-report_frame_status(1, _ConfirmedDown, undefined, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr, fport=FPort}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, FPort, DevAddr, Blockchain);
-report_frame_status(1, true, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
-report_frame_status(1, false, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(ack, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
-report_frame_status(_, true, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain);
-report_frame_status(_, false, Port, PubKeyBin, Region, Device, Packet, ReplyPayload, #frame{devaddr=DevAddr}, Blockchain) ->
-    FCnt = router_device:fcnt(Device),
-    Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
-    ok = report_status(down, Desc, Device, success, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain).
-
--spec report_status_max_size(router_device:device(), binary(), non_neg_integer()) -> ok.
-report_status_max_size(Device, Payload, Port) ->
-    Report = #{category => packet_dropped,
-               description => <<"Packet request exceeds maximum 242 bytes">>,
-               reported_at => erlang:system_time(seconds),
-               payload => base64:encode(Payload),
-               payload_size => erlang:byte_size(Payload),
-               port => Port,
-               devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-               hotspots => [],
-               channels => []},
-    ok = router_device_api:report_status(Device, Report).
-
--spec report_status_no_dc(router_device:device()) -> ok.
-report_status_no_dc(Device) ->
-    Report = #{category => packet_dropped,
-               description => <<"Not enough DC">>,
-               reported_at => erlang:system_time(seconds),
-               payload => <<>>,
-               payload_size => 0,
-               port => 0,
-               devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-               hotspots => [],
-               channels => []},
-    ok = router_device_api:report_status(Device, Report).
-
--spec report_status_inactive(router_device:device()) -> ok.
-report_status_inactive(Device) ->
-    Report = #{category => packet_dropped,
-               description => <<"Transmission has been paused. Contact your administrator">>,
-               reported_at => erlang:system_time(seconds),
-               payload => <<>>,
-               payload_size => 0,
-               port => 0,
-               devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-               hotspots => [],
-               channels => []},
-    ok = router_device_api:report_status(Device, Report).
-
-report_join_status(Device, {_, PubKeyBinSelected, _}=PacketSelected, Packets, Blockchain) ->
-    DevEUI = router_device:dev_eui(Device),
-    AppEUI = router_device:app_eui(Device),
-    DevAddr = router_device:devaddr(Device),
-    Desc = <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-    Hotspots = lists:foldl(
-                 fun({Packet, PubKeyBin, Region}, Acc) ->
-                         H = router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, erlang:system_time(seconds), <<"success">>),
-                         [maps:put(selected, PubKeyBin == PubKeyBinSelected, H)|Acc]
-                 end,
-                 [],
-                 [PacketSelected|Packets]),
-    Report = #{category => activation,
-               description => Desc,
-               reported_at => erlang:system_time(seconds),
-               payload => <<>>,
-               payload_size => 0,
-               port => 0,
-               fcnt => 0,
-               devaddr => lorawan_utils:binary_to_hex(DevAddr),
-               hotspots => Hotspots,
-               channels => []},
-    ok = router_device_api:report_status(Device, Report).
-
--spec report_status(atom(), binary(), router_device:device(), success | error,
-                    libp2p_crypto:pubkey_bin(), atom(), blockchain_helium_packet_v1:packet(),
-                    binary() | undefined, any(), any(), blockchain:blockchain()) -> ok.
-report_status(Category, Desc, Device, Status, PubKeyBin, Region, Packet, ReplyPayload, Port, DevAddr, Blockchain) ->
-    Payload = case ReplyPayload of
-                  undefined -> blockchain_helium_packet_v1:payload(Packet);
-                  _ -> ReplyPayload
-              end,
-    Report = #{category => Category,
-               description => Desc,
-               reported_at => erlang:system_time(seconds),
-               payload => base64:encode(Payload),
-               payload_size => erlang:byte_size(Payload),
-               port => Port,
-               devaddr => lorawan_utils:binary_to_hex(DevAddr),
-               hotspots => [router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, erlang:system_time(seconds), Status)],
-               channels => []},
-    ok = router_device_api:report_status(Device, Report).
-
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->
     FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
@@ -836,10 +702,6 @@ frame_to_packet_payload(Frame, Device) ->
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(router_utils:b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
 
--spec int_to_bin(integer()) -> binary().
-int_to_bin(Int) ->
-    erlang:list_to_binary(erlang:integer_to_list(Int)).
-
 -spec packet_to_rxq(blockchain_helium_packet_v1:packet()) -> #rxq{}.
 packet_to_rxq(Packet) ->
     #rxq{freq = blockchain_helium_packet_v1:frequency(Packet),
@@ -849,3 +711,15 @@ packet_to_rxq(Packet) ->
          tmms = blockchain_helium_packet_v1:timestamp(Packet),
          rssi = blockchain_helium_packet_v1:signal_strength(Packet),
          lsnr = blockchain_helium_packet_v1:snr(Packet)}.
+
+-spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) -> ok.
+save_and_update(DB, CF, Pid, Device) ->
+    {ok, _} = router_device:save(DB, CF, Device),
+    ok = router_device_channels_worker:handle_device_update(Pid, Device).
+
+-spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
+get_device(DB, CF, ID) ->
+    case router_device:get_by_id(DB, CF, ID) of
+        {ok, D} -> D;
+        _ -> router_device:new(ID)
+    end.

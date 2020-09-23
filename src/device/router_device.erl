@@ -91,11 +91,11 @@ devaddr(Device) ->
 devaddr(Devaddr, Device) ->
     Device#device_v4{devaddr=Devaddr}.
 
--spec join_nonce(device()) -> non_neg_integer().
+-spec join_nonce(device()) -> binary().
 join_nonce(Device) ->
     Device#device_v4.join_nonce.
 
--spec join_nonce(non_neg_integer(), device()) -> device().
+-spec join_nonce(binary(), device()) -> device().
 join_nonce(Nonce, Device) ->
     Device#device_v4{join_nonce=Nonce}.
 
@@ -396,8 +396,8 @@ devaddr_test() ->
 
 join_nonce_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(0, join_nonce(Device)),
-    ?assertEqual(1, join_nonce(join_nonce(1, Device))).
+    ?assertEqual(<<>>, join_nonce(Device)),
+    ?assertEqual(<<"1">>, join_nonce(join_nonce(<<"1">>, Device))).
 
 fcnt_test() ->
     Device = new(<<"id">>),
@@ -442,7 +442,7 @@ update_test() ->
                {nwk_s_key, <<"nwk_s_key">>},
                {app_s_key, <<"app_s_key">>},
                {devaddr, <<"devaddr">>},
-               {join_nonce, 1},
+               {join_nonce, <<"1">>},
                {fcnt, 1},
                {fcntdown, 1},
                {offset, 1},
@@ -459,7 +459,7 @@ update_test() ->
                                nwk_s_key = <<"nwk_s_key">>,
                                app_s_key = <<"app_s_key">>,
                                devaddr = <<"devaddr">>,
-                               join_nonce = 1,
+                               join_nonce = <<"1">>,
                                fcnt = 1,
                                fcntdown = 1,
                                offset = 1,

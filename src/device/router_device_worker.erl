@@ -397,8 +397,8 @@ handle_join(#packet_pb{payload= <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/bina
     Device1 = router_device:update(DeviceUpdates, Device0),
     Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
     lager:debug("DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
-               [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
-                JoinNonce, blockchain_utils:addr2name(PubKeyBin)]),
+                [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI),
+                 JoinNonce, blockchain_utils:addr2name(PubKeyBin)]),
     {ok, Device1, JoinNonce, Reply}.
 
 -spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().

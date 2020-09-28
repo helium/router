@@ -10,7 +10,8 @@
          packet_inc/2,
          downlink_inc/2,
          decoder_observe/3,
-         console_api_observe/3]).
+         console_api_observe/3,
+         ws_state/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -36,6 +37,7 @@
 -define(SC_ACTIVE, ?BASE ++ "state_channel_active").
 -define(DECODED_TIME, ?BASE ++ "decoder_decoded_duration").
 -define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
+-define(WS, ?BASE ++ "ws_state").
 
 -define(METRICS, [{counter, ?OFFER, [type, status], "Offer count"},
                   {counter, ?PACKET, [type, status], "Packet count"},
@@ -44,7 +46,8 @@
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
                   {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
                   {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]}]).
+                  {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]},
+                  {boolean, ?WS, [], "Websocket State"}]).
 
 -record(state, {}).
 
@@ -77,6 +80,10 @@ decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
 console_api_observe(Type, Status, Time) ->
     ok = prometheus_histogram:observe(?CONSOLE_API_TIME, [Type, Status], Time).
 
+-spec ws_state(boolean()) -> ok.
+ws_state(State) ->
+    ok = prometheus_boolean:set(?WS, [], State).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -100,7 +107,11 @@ init(Args) ->
               _ = prometheus_histogram:declare([{name, Name},
                                                 {help, Help},
                                                 {labels, Labels},
-                                                {buckets, Buckets}])
+                                                {buckets, Buckets}]);
+         ({boolean, Name, Labels, Help}) ->
+              _ = prometheus_boolean:declare([{name, Name},
+                                            {help, Help},
+                                            {labels, Labels}])
       end,
       ?METRICS),
     _ = schedule_next_tick(),

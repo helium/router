@@ -76,10 +76,12 @@ onconnect(_WSReq, State) ->
     lager:debug("connected ~p", [_WSReq]),
     self() ! heartbeat,
     self() ! auto_join,
+    router_metrics:ws_state(true),
     {ok, State}.
 
 ondisconnect(_Error, State) ->
     lager:warning("discconnected ~p ", [_Error]),
+    router_metrics:ws_state(false),
     {reconnect, timer:seconds(60), State}.
 
 websocket_handle({text, Msg}, _Req, State) ->
@@ -100,9 +102,11 @@ websocket_info(heartbeat, _Req, #state{heartbeat=Heartbeat}=State) ->
     lager:debug("sending heartbeat ~p", [Ref]),
     _ = erlang:send_after(?HEARTBEAT_TIMER, self(), heartbeat),
     TimerRef = erlang:send_after(?HEARTBEAT_TIMER, self(), {heartbeat_timeout, Ref}),
+    router_metrics:ws_state(true),
     {reply, {text, Payload}, State#state{heartbeat=Heartbeat+1, heartbeat_timeout=TimerRef}};
 websocket_info({heartbeat_timeout, Ref}, _Req, State) ->
     lager:warning("we missed heartbeat ~p, disconnecting", [Ref]),
+    router_metrics:ws_state(false),
     {close, <<"failed heartbeat">>, State#state{heartbeat=0, heartbeat_timeout=undefined}};
 websocket_info(auto_join, _Req, #state{auto_join=AutoJoin}=State) ->
     lists:foreach(
@@ -116,6 +120,7 @@ websocket_info(auto_join, _Req, #state{auto_join=AutoJoin}=State) ->
     {ok, State};
 websocket_info(close, _Req, State) ->
     lager:info("rcvd close msg"),
+    router_metrics:ws_state(false),
     {close, <<>>, State};
 websocket_info(_Msg, _Req, State) ->
     lager:warning("rcvd unknown websocket_info msg: ~p, ~p", [_Msg, _Req]),
@@ -123,6 +128,7 @@ websocket_info(_Msg, _Req, State) ->
 
 websocket_terminate(Reason, _ConnState, _State) ->
     lager:warning("websocket closed wih reason ~p",[Reason]),
+    router_metrics:ws_state(true),
     ok.
 
 %% ------------------------------------------------------------------

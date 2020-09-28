@@ -71,6 +71,8 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
                         case lookup(OrgID) of
                             {error, not_found} ->
                                 fetch_and_save_org_balance(OrgID);
+                            {ok, 0, _N} ->
+                                fetch_and_save_org_balance(OrgID);
                             {ok, B, N} ->
                                 {B, N}
                         end,

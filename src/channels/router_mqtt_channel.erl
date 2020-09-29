@@ -39,13 +39,13 @@ init({[Channel, Device], _}) ->
     #{endpoint := Endpoint,
       uplink_topic := UplinkTemplate,
       downlink_topic := DownlinkTemplate} = router_channel:args(Channel),
+    %% Render topic mustache template 
     UplinkTopic = render_topic(UplinkTemplate, Device),
     DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             _ = ping(Conn),
-            %% TODO use a better QoS to add some back pressure
-
+            %% Crash if we can't subscribe so that will be caught and reported to user via console 
             {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,

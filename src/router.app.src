@@ -27,7 +27,8 @@
     websocket_client,
     erlang_v8,
     prometheus,
-    elli
+    elli,
+    bbmustache
    ]},
   {included_applications, [blockchain]},
   {env,[]},

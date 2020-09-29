@@ -7,6 +7,10 @@
 
 -behaviour(gen_event).
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
@@ -28,24 +32,26 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init({[Channel, _Device], _}) ->
+init({[Channel, Device], _}) ->
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
-    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
-    FixedTopic = topic(Topic),
+    #{endpoint := Endpoint,
+      uplink_topic := UplinkTemplate,
+      downlink_topic := DownlinkTemplate} = router_channel:args(Channel),
+    %% Render topic mustache template 
+    UplinkTopic = render_topic(UplinkTemplate, Device),
+    DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             _ = ping(Conn),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
-            %% TODO use a better QoS to add some back pressure
-            {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
+            %% Crash if we can't subscribe so that will be caught and reported to user via console 
+            {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
                         endpoint=Endpoint,
-                        pub_topic=PubTopic,
-                        sub_topic=SubTopic}};
+                        pub_topic=UplinkTopic,
+                        sub_topic=DownlinkTopic}};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -68,22 +74,22 @@ handle_call({update, Channel, Device}, #state{connection=Conn,
                                               endpoint=StateEndpoint,
                                               pub_topic=StatePubTopic,
                                               sub_topic=StateSubTopic}=State) ->
-    #{endpoint := Endpoint, topic := Topic} = router_channel:args(Channel),
+    #{endpoint := Endpoint,
+      uplink_topic := UplinkTemplate,
+      downlink_topic := DownlinkTemplate} = router_channel:args(Channel),
+    UplinkTopic = render_topic(UplinkTemplate, Device),
+    DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case Endpoint == StateEndpoint of
         false ->
             {swap_handler, ok, swapped, State, router_channel:handler(Channel), [Channel, Device]};
         true ->
-            DeviceID = router_channel:device_id(Channel),
-            FixedTopic = topic(Topic),
-            PubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/rx", [FixedTopic, DeviceID])),
-            SubTopic = erlang:list_to_binary(io_lib:format("~shelium/~s/tx/#", [FixedTopic, DeviceID])),
-            case SubTopic == StateSubTopic andalso PubTopic == StatePubTopic of
+            case DownlinkTopic == StateSubTopic andalso UplinkTopic == StatePubTopic of
                 true ->
                     {ok, ok, State};
                 false ->
                     {ok, _, _} = emqtt:unsubscribe(Conn, StateSubTopic),
-                    {ok, _, _} = emqtt:subscribe(Conn, SubTopic, 0),
-                    {ok, ok, State#state{pub_topic=PubTopic, sub_topic=SubTopic}}
+                    {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
+                    {ok, ok, State#state{pub_topic=UplinkTopic, sub_topic=DownlinkTopic}}
             end
     end;
 handle_call(_Msg, State) ->
@@ -113,6 +119,15 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec render_topic(binary(), router_device:device()) -> binary().
+render_topic(Template, Device) ->
+    Metadata = router_device:metadata(Device),
+    Map = #{"device_id" => router_device:id(Device),
+            "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+            "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+            "organization_id" => maps:get(organization_id, Metadata, <<>>)},
+    bbmustache:render(Template, Map).
+
 -spec ping(pid()) -> reference().
 ping(Conn) ->
     erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
@@ -138,21 +153,6 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
                                             description => list_to_binary(io_lib:format("~p", [Reason]))})
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
-
--spec topic(binary() | list()) -> binary().
-topic(<<>>) ->
-    <<>>;
-topic("") ->
-    <<>>;
-topic(Topic) when is_list(Topic) ->
-    topic(erlang:list_to_binary(Topic));
-topic(<<"/", Topic/binary>>) ->
-    topic(Topic);
-topic(Topic) ->
-    case binary:last(Topic) == $/ of
-        false -> <<Topic/binary, "/">>;
-        true -> Topic
-    end.
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
@@ -195,3 +195,23 @@ connect(URI, DeviceID, Name) ->
             lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
             {error, invalid_mqtt_uri}
     end.
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+
+render_topic_test() ->
+    DeviceID = <<"device_123">>,
+    DevEUI = lorawan_utils:binary_to_hex(<<0,0,0,0,0,0,0,1>>),
+    AppEUI = lorawan_utils:binary_to_hex(<<0,0,0,2,0,0,0,1>>),
+    DeviceUpdates = [{dev_eui, <<0,0,0,0,0,0,0,1>>},
+                     {app_eui, <<0,0,0,2,0,0,0,1>>},
+                     {metadata, #{organization_id => <<"org_123">>}}],
+    Device = router_device:update(DeviceUpdates, router_device:new(DeviceID)),
+
+    ?assertEqual(<<"org_123/device_123">>, render_topic(<<"{{organization_id}}/{{device_id}}">>, Device)),
+    ?assertEqual(<<AppEUI/binary, "/", DevEUI/binary>>, render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)),
+    ok.
+
+-endif.

@@ -73,8 +73,15 @@ mqtt_test(Config) ->
     %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
-    SubTopic = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
-    {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
+    UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
+    DownlinkTemplate = kvc:path([<<"credentials">>, <<"downlink">> ,<<"topic">>], MQTTChannel),
+    DeviceUpdates = [{dev_eui, ?DEVEUI},
+                     {app_eui, ?APPEUI},
+                     {metadata, #{organization_id => ?CONSOLE_ORG_ID}}],
+    DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
+    UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
+    DownlinkTopic = render_topic(DownlinkTemplate, DeviceForTemplate),
+    {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
@@ -182,8 +189,7 @@ mqtt_test(Config) ->
 
     %% Publish a downlink packet via MQTT server
     DownlinkPayload = <<"mqttpayload">>,
-    emqtt:publish(MQTTConn, <<SubTopic/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/tx/channel">>,
-                  jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}), 0),
+    emqtt:publish(MQTTConn, DownlinkTopic, jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}), 0),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0), router_device:app_s_key(Device0), 1)},
@@ -278,8 +284,13 @@ mqtt_update_test(Config) ->
     %% Connect and subscribe to MQTT Server
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel), <<"mqtt_test">>, undefined),
-    SubTopic0 = kvc:path([<<"credentials">>, <<"topic">>], MQTTChannel),
-    {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
+    UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">> ,<<"topic">>], MQTTChannel),
+    DeviceUpdates = [{dev_eui, ?DEVEUI},
+                     {app_eui, ?APPEUI},
+                     {metadata, #{organization_id => ?CONSOLE_ORG_ID}}],
+    DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
+    UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
+    {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
 
     %% Send join packet
     JoinNonce = crypto:strong_rand_bytes(2),
@@ -324,7 +335,7 @@ mqtt_update_test(Config) ->
 
     %% We should receive the channel data via the MQTT server here
     receive
-        {publish, #{payload := Payload0, topic := <<SubTopic0:5/binary, _/binary>>}} ->
+        {publish, #{payload := Payload0, topic := UplinkTopic}} ->
             self() ! {channel_data, jsx:decode(Payload0, [return_maps])}
     after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload0")
@@ -387,16 +398,19 @@ mqtt_update_test(Config) ->
 
     %% Switching topic channel should update but no restart
     Tab = proplists:get_value(ets, Config),
-    SubTopic1 = <<"updated/">>,
+
+    UplinkTemplate1= <<"uplink/{{app_eui}}/{{device_eui}}">>,
+    UplinkTopic1 = render_topic(UplinkTemplate1, DeviceForTemplate),
     MQTTChannel0 = #{<<"type">> => <<"mqtt">>,
                      <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
-                                            <<"topic">> => SubTopic1},
+                                            <<"uplink">> => #{<<"topic">> => UplinkTemplate1},
+                                            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}},
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel0]}),
     {ok, WorkerPid} = router_devices_sup:maybe_start_worker(WorkerID, #{}),
-    {ok, _, _} = emqtt:unsubscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>),
-    {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic1/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
+    {ok, _, _} = emqtt:unsubscribe(MQTTConn, UplinkTopic),
+    {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic1, 0),
 
     %% Force device_worker refresh channels
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
@@ -406,7 +420,7 @@ mqtt_update_test(Config) ->
 
     %% We should receive the channel data via the MQTT server here with NEW SUB TOPIC (SubTopic1)
     receive
-        {publish, #{payload := Payload1, topic := <<SubTopic1:8/binary, _/binary>>}} ->
+        {publish, #{payload := Payload1, topic := UplinkTopic1}} ->
             self() ! {channel_data, jsx:decode(Payload1, [return_maps])}
     after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload1")
@@ -469,14 +483,15 @@ mqtt_update_test(Config) ->
 
     %% Switching endpoint channel should restart (back to sub topic 0)
     MQTTChannel1 = #{<<"type">> => <<"mqtt">>,
-                     <<"credentials">> => #{<<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
-                                            <<"topic">> => SubTopic0},
+                     <<"credentials">> => #{<<"endpoint">> => <<"mqtt://localhost:1883">>,
+                                            <<"uplink">> => #{<<"topic">> => <<"uplink/{{org_id}}/{{device_id}}">>},
+                                            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}},
                      <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
                      <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME},
     ets:insert(Tab, {channels, [MQTTChannel1]}),
     {ok, WorkerPid} = router_devices_sup:maybe_start_worker(WorkerID, #{}),
-    {ok, _, _} = emqtt:unsubscribe(MQTTConn, <<SubTopic1/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>),
-    {ok, _, _} = emqtt:subscribe(MQTTConn, <<SubTopic0/binary, "helium/", ?CONSOLE_DEVICE_ID/binary, "/rx">>, 0),
+    {ok, _, _} = emqtt:unsubscribe(MQTTConn, UplinkTopic1),
+    {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
 
     %% Force device_worker refresh channels
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
@@ -486,7 +501,7 @@ mqtt_update_test(Config) ->
 
     %% We should receive the channel data via the MQTT server here with OLD SUB TOPIC (SubTopic0)
     receive
-        {publish, #{payload := Payload2, topic := <<SubTopic0:5/binary, _/binary>>}} ->
+        {publish, #{payload := Payload2, topic := UplinkTopic}} ->
             self() ! {channel_data, jsx:decode(Payload2, [return_maps])}
     after ?MQTT_TIMEOUT ->
             ct:fail("timeout Payload2")
@@ -554,6 +569,15 @@ mqtt_update_test(Config) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec render_topic(binary(), router_device:device()) -> binary().
+render_topic(Template, Device) ->
+    Metadata = router_device:metadata(Device),
+    Map = #{"device_id" => router_device:id(Device),
+            "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+            "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+            "org_id" => maps:get(organization_id, Metadata, <<>>)},
+    bbmustache:render(Template, Map).
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->

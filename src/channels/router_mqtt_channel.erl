@@ -125,7 +125,7 @@ render_topic(Template, Device) ->
     Map = #{"device_id" => router_device:id(Device),
             "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
             "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-            "org_id" => maps:get(organization_id, Metadata, <<>>)},
+            "organization_id" => maps:get(organization_id, Metadata, <<>>)},
     bbmustache:render(Template, Map).
 
 -spec ping(pid()) -> reference().
@@ -210,7 +210,7 @@ render_topic_test() ->
                      {metadata, #{organization_id => <<"org_123">>}}],
     Device = router_device:update(DeviceUpdates, router_device:new(DeviceID)),
 
-    ?assertEqual(<<"org_123/device_123">>, render_topic(<<"{{org_id}}/{{device_id}}">>, Device)),
+    ?assertEqual(<<"org_123/device_123">>, render_topic(<<"{{organization_id}}/{{device_id}}">>, Device)),
     ?assertEqual(<<AppEUI/binary, "/", DevEUI/binary>>, render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)),
     ok.
 

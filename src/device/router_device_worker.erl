@@ -246,7 +246,10 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                                       pid=Pid,
                                       region=Region  },
             case maps:get(FCnt, Cache0, undefined) of
-                undefined when FCnt =< DownlinkHandledAt ->
+                undefined when FCnt =< DownlinkHandledAt andalso
+                               %% devices will retransmit with an old fcnt if they're looking for an ack
+                               %% so check that is not the case here
+                               Frame#frame.ack == 0 ->
                     %% late packet
                     {noreply, State};
                 undefined ->

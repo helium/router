@@ -207,9 +207,11 @@ packet_offer(Offer, _Pid) ->
                             case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
+                                    lager:debug("most likely a replay packet for ~p buying", [_DeviceID]),
                                     ok;
                                 false ->
                                     %% This is probably a late packet we should still use the multi buy
+                                    lager:debug("most likely a late packet for ~p multi buying", [_DeviceID]),
                                     maybe_multi_buy(Offer, 10)
                             end;
                         {error, not_found} ->

@@ -254,7 +254,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                     %% late packet
                     {noreply, State};
                 undefined ->
-                    _ = erlang:send_after(max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {frame_timeout, FCnt}),
+                    _ = erlang:send_after(max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {frame_timeout, FCnt, PacketTime}),
                     Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
                 #frame_cache{rssi=RSSI1, pid=Pid2, count=Count}=FrameCache0 ->
@@ -296,8 +296,8 @@ handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     ok = router_device_utils:report_join_status(Device1, PacketSelected, Packets, Blockchain),
     {noreply, State#state{device=Device1, join_cache= maps:remove(JoinNonce, JoinCache)}};
-handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
-                                          channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
+handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
+                                                      channels_worker=ChannelsWorker, frame_cache=Cache0}=State) ->
     #frame_cache{packet=Packet,
                  pubkey_bin=PubKeyBin,
                  frame=Frame,
@@ -319,7 +319,7 @@ handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
             case mtype_to_ack(Frame#frame.mtype) of
-                1 -> router_device_routing:allow_replay(Packet, DeviceID);
+                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
             {noreply, State#state{device=Device1, frame_cache=Cache1}};

@@ -15,7 +15,7 @@
 -export([init/0,
          handle_offer/2, handle_packet/3,
          deny_more/1, accept_more/1, clear_multi_buy/1,
-         allow_replay/2, clear_replay/1]).
+         allow_replay/3, clear_replay/1]).
 
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
@@ -39,6 +39,7 @@
 
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
+-define(RX2_WINDOW, timer:seconds(2)).
 
 -spec init() -> ok.
 init() ->
@@ -121,15 +122,15 @@ clear_multi_buy(Packet) ->
     true = ets:delete(?MB_ETS, PHash),
     ok.
 
--spec allow_replay(blockchain_helium_packet_v1:packet(), binary()) -> ok.
-allow_replay(Packet, DeviceID) ->
+-spec allow_replay(blockchain_helium_packet_v1:packet(), binary(), non_neg_integer()) -> ok.
+allow_replay(Packet, DeviceID, PacketTime) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    true = ets:insert(?REPLAY_ETS, {PHash, DeviceID}),
+    true = ets:insert(?REPLAY_ETS, {PHash, DeviceID, PacketTime}),
     ok.
 
 -spec clear_replay(binary()) -> ok.
 clear_replay(DeviceID) ->
-    true = ets:match_delete(?REPLAY_ETS, {'_', DeviceID}),
+    true = ets:match_delete(?REPLAY_ETS, {'_', DeviceID, '_'}),
     ok.
 
 %% ------------------------------------------------------------------
@@ -202,8 +203,15 @@ packet_offer(Offer, _Pid) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, _DeviceID} ->
-                            ok;
+                        {ok, _DeviceID, PackeTime} ->
+                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                                true ->
+                                    %% Buying replay packet
+                                    ok;
+                                false ->
+                                    %% This is probably a late packet we should still use the multi buy
+                                    maybe_multi_buy(Offer, 10)
+                            end;
                         {error, not_found} ->
                             maybe_multi_buy(Offer, 10)
                     end;
@@ -247,11 +255,11 @@ validate_devaddr(DevAddr) ->
             {error, unknown_device}
     end.
 
--spec lookup_replay(binary()) -> {ok, binary()} | {error, not_found}.
+-spec lookup_replay(binary()) -> {ok, binary(), non_neg_integer()} | {error, not_found}.
 lookup_replay(PHash) ->
     case ets:lookup(?REPLAY_ETS, PHash) of
-        [{PHash, DeviceID}] ->
-            {ok, DeviceID};
+        [{PHash, DeviceID, PacketTime}] ->
+            {ok, DeviceID, PacketTime};
         _ ->
             {error, not_found}
     end.
@@ -498,9 +506,10 @@ replay_test() ->
     Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     DeviceID = <<"device_id">>,
+    PacketTime = 0,
 
-    ?assertEqual(ok, allow_replay(Packet, DeviceID)),
-    ?assertEqual({ok, DeviceID}, lookup_replay(PHash)),
+    ?assertEqual(ok, allow_replay(Packet, DeviceID, PacketTime)),
+    ?assertEqual({ok, DeviceID, PacketTime}, lookup_replay(PHash)),
     ?assertEqual(ok, clear_replay(DeviceID)),
     ?assertEqual({error, not_found}, lookup_replay(PHash)),
 

@@ -110,8 +110,8 @@ init(Args) ->
                                                 {buckets, Buckets}]);
          ({boolean, Name, Labels, Help}) ->
               _ = prometheus_boolean:declare([{name, Name},
-                                            {help, Help},
-                                            {labels, Labels}])
+                                              {help, Help},
+                                              {labels, Labels}])
       end,
       ?METRICS),
     _ = schedule_next_tick(),

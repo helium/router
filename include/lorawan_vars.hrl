@@ -1,4 +1,4 @@
--define(JOIN_REQ,2#000).
+-define(JOIN_REQ, 2#000).
 -define(JOIN_ACCEPT, 2#001).
 -define(CONFIRMED_UP, 2#100).
 -define(UNCONFIRMED_UP, 2#010).

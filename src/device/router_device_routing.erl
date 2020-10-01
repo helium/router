@@ -14,7 +14,8 @@
 
 -export([init/0,
          handle_offer/2, handle_packet/3,
-         deny_more/1, accept_more/1]).
+         deny_more/1, accept_more/1, clear_multy_buy/1,
+         allow_replay/2, clear_replay/1]).
 
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
@@ -36,10 +37,14 @@
                         [{'<','$2','$1'}],
                         [{{Hash,'$1',{'+','$2',1}}}]}]).
 
+%% Replay
+-define(REPLAY_ETS, router_device_routing_replay_ets).
+
 -spec init() -> ok.
 init() ->
     ets:new(?MB_ETS, [public, named_table, set]),
     ets:new(?BF_ETS, [public, named_table, set]),
+    ets:new(?REPLAY_ETS, [public, named_table, set]),
     {ok, BloomJoinRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
                                              ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
@@ -110,6 +115,23 @@ accept_more(Packet) ->
             ok
     end.
 
+-spec clear_multy_buy(blockchain_helium_packet_v1:packet()) -> ok.
+clear_multy_buy(Packet) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    true = ets:delete(?MB_ETS, PHash),
+    ok.
+
+-spec allow_replay(blockchain_helium_packet_v1:packet(), binary()) -> ok.
+allow_replay(Packet, DeviceID) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    true = ets:insert(?REPLAY_ETS, {PHash, DeviceID}),
+    ok.
+
+-spec clear_replay(binary()) -> ok.
+clear_replay(DeviceID) ->
+    true = ets:match_delete(?REPLAY_ETS, {'_', DeviceID}),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
@@ -179,7 +201,12 @@ packet_offer(Offer, _Pid) ->
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
                 true ->
-                    maybe_multi_buy(Offer, 10);
+                    case lookup_replay(PHash) of
+                        {ok, _DeviceID} ->
+                            ok;
+                        {error, not_found} ->
+                            maybe_multi_buy(Offer, 10)
+                    end;
                 false ->
                     ok
             end
@@ -218,6 +245,15 @@ validate_devaddr(DevAddr) ->
             end;
         _ ->
             {error, unknown_device}
+    end.
+
+-spec lookup_replay(binary()) -> {ok, binary()} | {error, not_found}.
+lookup_replay(PHash) ->
+    case ets:lookup(?REPLAY_ETS, PHash) of
+        [{PHash, DeviceID}] ->
+            {ok, DeviceID};
+        _ ->
+            {error, not_found}
     end.
 
 -spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) -> ok | {error, any()}.
@@ -437,6 +473,20 @@ check_device_is_active(Devices) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+replay_test() ->
+    ets:new(?REPLAY_ETS, [public, named_table, set]),
+    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    DeviceID = <<"device_id">>,
+
+    ?assertEqual(ok, allow_replay(Packet, DeviceID)),
+    ?assertEqual({ok, DeviceID}, lookup_replay(PHash)),
+    ?assertEqual(ok, clear_replay(DeviceID)),
+    ?assertEqual({error, not_found}, lookup_replay(PHash)),
+
+    ets:delete(?REPLAY_ETS),
+    ok.
+
 false_positive_test() ->
     {ok, BFRef} = bloom:new_forgetful(?BF_BITMAP_SIZE, ?BF_UNIQ_CLIENTS_MAX,
                                       ?BF_FILTERS_MAX, ?BF_ROTATE_AFTER),
@@ -498,6 +548,7 @@ handle_join_offer_test() ->
     meck:unload(router_device_worker),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
+    ets:delete(?REPLAY_ETS),
     ok.
 
 
@@ -549,6 +600,7 @@ handle_packet_offer_test() ->
     meck:unload(router_metrics),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
+    ets:delete(?REPLAY_ETS),
     ok.
 
 -endif.

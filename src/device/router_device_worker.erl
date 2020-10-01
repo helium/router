@@ -226,9 +226,10 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
             _ = router_device_routing:deny_more(Packet0),
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
-            case router_device:queue(Device1) of
-                [] -> router_device_routing:deny_more(Packet0);
-                _ -> router_device_routing:accept_more(Packet0)
+            FrameAck = Frame#frame.ack,
+            case router_device:queue(Device1) == [] orelse FrameAck == 1 of
+                false -> router_device_routing:deny_more(Packet0);
+                true -> router_device_routing:accept_more(Packet0)
             end,
             Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},
             case SendToChannels of
@@ -249,11 +250,10 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                 undefined when FCnt =< DownlinkHandledAt andalso
                                %% devices will retransmit with an old fcnt if they're looking for an ack
                                %% so check that is not the case here
-                               Frame#frame.ack == 0 ->
+                               FrameAck == 0 ->
                     %% late packet
                     {noreply, State};
                 undefined ->
-
                     _ = erlang:send_after(max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {frame_timeout, FCnt}),
                     Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{device=Device1, frame_cache=Cache1, downlink_handled_at=FCnt}};
@@ -305,19 +305,27 @@ handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device
                  pid=Pid,
                  region=Region} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
+    ok = router_device_routing:clear_multy_buy(Packet),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
+    DeviceID = router_device:id(Device),
     case handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
+            router_device_routing:clear_replay(DeviceID),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
+            case mtype_to_ack(Frame#frame.mtype) of
+                1 -> router_device_routing:allow_replay(Packet, DeviceID);
+                _ -> router_device_routing:clear_replay(DeviceID)
+            end,
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
+            router_device_routing:clear_replay(DeviceID),
             {noreply, State#state{frame_cache=Cache1}}
     end;
 handle_info(_Msg, State) ->

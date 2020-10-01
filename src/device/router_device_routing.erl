@@ -473,6 +473,26 @@ check_device_is_active(Devices) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+multi_buy_test() ->
+    ets:new(?MB_ETS, [public, named_table, set]),
+    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
+    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual(ok, deny_more(Packet)),
+    ?assertEqual([{PHash, 0, -1}], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual(ok, clear_multy_buy(Packet)),
+    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual(ok, accept_more(Packet)),
+    ?assertEqual([{PHash, ?PACKET_MAX, 1}], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual(ok, clear_multy_buy(Packet)),
+    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual(ok, clear_multy_buy(Packet)),
+
+    ets:delete(?MB_ETS),
+    ok.
+
+
 replay_test() ->
     ets:new(?REPLAY_ETS, [public, named_table, set]),
     Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),

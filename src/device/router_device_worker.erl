@@ -305,7 +305,7 @@ handle_info({frame_timeout, FCnt}, #state{chain=Blockchain, db=DB, cf=CF, device
                  pid=Pid,
                  region=Region} = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
-    ok = router_device_routing:clear_multy_buy(Packet),
+    ok = router_device_routing:clear_multi_buy(Packet),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
     DeviceID = router_device:id(Device),
     case handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) of

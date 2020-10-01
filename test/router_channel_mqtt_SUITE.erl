@@ -576,7 +576,7 @@ render_topic(Template, Device) ->
     Map = #{"device_id" => router_device:id(Device),
             "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
             "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-            "org_id" => maps:get(organization_id, Metadata, <<>>)},
+            "organization_id" => maps:get(organization_id, Metadata, <<>>)},
     bbmustache:render(Template, Map).
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.

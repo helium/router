@@ -129,11 +129,12 @@ handle_cast(handle_join, State) ->
     {noreply, State#state{fcnt=-1}};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Region, _Time}=Data, {Balance, Nonce}=BN},
+handle_cast({handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time}=Data, {Balance, Nonce}=BN},
             #state{data_cache=DataCache0, balance_cache=BalanceCache0, fcnt=CurrFCnt}=State) ->
     FCnt = router_device:fcnt(Device),
-    DataCache1=
-        case FCnt =< CurrFCnt of
+    CheckFCnt = FCnt =< CurrFCnt andalso router_device_utils:mtype_to_ack(Frame#frame.mtype) == 0,
+    DataCache1 =
+        case CheckFCnt of
             true ->
                 lager:debug("we received a late packet ~p from ~p: ~p", [{FCnt, CurrFCnt}, PubKeyBin, Packet]),
                 DataCache0;
@@ -158,7 +159,7 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, _Frame, _Region, _Time}=Da
                 end
         end,
     BalanceCache1 =
-        case FCnt =< CurrFCnt of
+        case CheckFCnt of
             true ->
                 BalanceCache0;
             false ->

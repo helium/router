@@ -6,8 +6,10 @@
          report_status_no_dc/1,
          report_status_inactive/1,
          report_join_status/4,
-         get_router_oui/0]).
+         get_router_oui/0,
+         mtype_to_ack/1]).
 
+-include("lorawan_vars.hrl").
 -include("device_worker.hrl").
 
 -spec report_frame_status(integer(), boolean(), any(), libp2p_crypto:pubkey_bin(), atom(),
@@ -131,6 +133,10 @@ get_router_oui() ->
         OUI0 ->
             OUI0
     end.
+
+-spec mtype_to_ack(integer()) -> 0 | 1.
+mtype_to_ack(?CONFIRMED_UP) -> 1;
+mtype_to_ack(_) -> 0.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

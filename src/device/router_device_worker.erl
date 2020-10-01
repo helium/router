@@ -226,7 +226,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
             _ = router_device_routing:deny_more(Packet0),
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
-            FrameAck = Frame#frame.ack,
+            FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
             case router_device:queue(Device1) == [] orelse FrameAck == 1 of
                 false -> router_device_routing:deny_more(Packet0);
                 true -> router_device_routing:accept_more(Packet0)
@@ -252,6 +252,7 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                                %% so check that is not the case here
                                FrameAck == 0 ->
                     %% late packet
+                    lager:debug("got a late packet @ ~p", [FCnt]),
                     {noreply, State};
                 undefined ->
                     _ = erlang:send_after(max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)), self(), {frame_timeout, FCnt, PacketTime}),
@@ -318,7 +319,7 @@ handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, c
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
-            case mtype_to_ack(Frame#frame.mtype) of
+            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
@@ -569,7 +570,7 @@ handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain
                            blockchain:blockchain(),
                            list()) -> noop | {ok, router_device:device()} | {send,router_device:device(), blockchain_helium_packet_v1:packet()}.
 handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
-    ACK = mtype_to_ack(Frame#frame.mtype),
+    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(Packet0, Region, Device0, Frame, Count),
@@ -604,7 +605,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
             noop
     end;
 handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [{ConfirmedDown, Port, ReplyPayload}|T]) ->
-    ACK = mtype_to_ack(Frame#frame.mtype),
+    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     lager:info("downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
@@ -679,10 +680,6 @@ were_channels_corrected(Frame, 'US915') ->
 were_channels_corrected(_Frame, _Region) ->
     %% we only do channel correction for 915 right now
     true.
-
--spec mtype_to_ack(integer()) -> 0 | 1.
-mtype_to_ack(?CONFIRMED_UP) -> 1;
-mtype_to_ack(_) -> 0.
 
 -spec ack_to_mtype(boolean()) -> integer().
 ack_to_mtype(true) -> ?CONFIRMED_DOWN;

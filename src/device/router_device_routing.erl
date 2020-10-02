@@ -161,7 +161,7 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
             lager:debug("responded ~p to join offer deveui=~s appeui=~s from: ~p (pid: ~p)",
                         [Resp, DevEUI1, AppEUI1, HotspotName, HandlerPid]);
         #routing_information_pb{data={devaddr, DevAddr0}} ->
-            DevAddr1 = lorawan_utils:binary_to_hex(lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>)),
+            DevAddr1 = lorawan_utils:binary_to_hex(lorawan_utils:reverse(devaddr_to_bin(DevAddr0))),
             lager:debug("responded ~p to packet offer devaddr=~s from: ~p (pid: ~p)",
                         [Resp, DevAddr1, HotspotName, HandlerPid])
     end.
@@ -205,9 +205,8 @@ maybe_buy_join_offer(Offer, _Pid, Devices) ->
     end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
-packet_offer(Offer, _Pid) ->
-    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
-    case validate_devaddr(DevAddr) of
+packet_offer(Offer, Pid) ->
+    case validate_packet_offer(Offer, Pid) of
         {error, _}=Error ->
             Error;
         ok ->
@@ -234,6 +233,29 @@ packet_offer(Offer, _Pid) ->
                     ok
             end
     end.
+
+-spec validate_packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
+validate_packet_offer(Offer, _Pid) ->
+    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
+    case validate_devaddr(DevAddr) of
+        {error, _}=Error ->
+            Error;
+        ok ->
+            {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+            PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+            Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(devaddr_to_bin(DevAddr))), PubKeyBin),
+            case check_device_is_active(Devices) of
+                {error, _Reason}=Error ->
+                    Error;
+                ok ->
+                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+                    case check_device_balance(PayloadSize, Devices) of
+                        {error, _Reason}=Error -> Error;
+                        ok -> ok
+                    end
+            end
+    end.
+    
 
 -spec validate_devaddr(non_neg_integer()) -> ok | {error, any()}.
 validate_devaddr(DevAddr) ->
@@ -300,9 +322,36 @@ maybe_multi_buy(Offer, Attempts) ->
             end
     end.
 
+-spec check_device_is_active([router_device:device()]) -> ok | {error, any()}.
+check_device_is_active(Devices) ->
+    %% TODO: We should not be picking the first device
+    [Device|_] = Devices,
+    DeviceID = router_device:id(Device),
+    case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
+        {ok, Pid} ->
+            case router_device_worker:is_active(Pid) of
+                false -> {error, ?DEVICE_INACTIVE};
+                true -> ok
+            end
+    end.
+
+%% TODO: This function is not very optimized...
+-spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
+check_device_balance(PayloadSize, Devices) ->
+    Chain = blockchain_worker:blockchain(),
+    %% TODO: We should not be picking the first device
+    [Device|_] = Devices,
+    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+        {error, _Reason} -> {error, ?DEVICE_NO_DC};
+        {ok, _OrgID, _Balance, _Nonce} -> ok
+    end.
+
 -spec eui_to_bin(undefined | non_neg_integer()) -> binary().
 eui_to_bin(undefined) -> <<>>;
 eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
+
+-spec devaddr_to_bin(non_neg_integer()) -> binary().
+devaddr_to_bin(Devaddr) -> <<Devaddr:32/integer-unsigned-big>>.
 
 -spec lookup_bf(atom()) -> reference().
 lookup_bf(Key) ->
@@ -442,17 +491,6 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
-%% TODO: This function is not very optimized...
--spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
-check_device_balance(PayloadSize, Devices) ->
-    Chain = blockchain_worker:blockchain(),
-    %% TODO: We should not be picking the first device
-    [Device|_] = Devices,
-    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
-        {error, _Reason} -> {error, ?DEVICE_NO_DC};
-        {ok, _OrgID, _Balance, _Nonce} -> ok
-    end.
-
 -spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
     ok = router_metrics:offer_inc(join, accepted, accepted);
@@ -475,19 +513,6 @@ handle_packet_metrics(_Packet, ok) ->
     ok = router_metrics:packet_inc(packet, accepted);
 handle_packet_metrics(_Packet, {error, _}) ->
     ok = router_metrics:packet_inc(packet, rejected).
-
--spec check_device_is_active([router_device:device()]) -> ok | {error, any()}.
-check_device_is_active(Devices) ->
-    %% TODO: We should not be picking the first device
-    [Device|_] = Devices,
-    DeviceID = router_device:id(Device),
-    case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
-        {ok, Pid} ->
-            case router_device_worker:is_active(Pid) of
-                false -> {error, ?DEVICE_INACTIVE};
-                true -> ok
-            end
-    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -597,10 +622,19 @@ handle_join_offer_test() ->
 handle_packet_offer_test() ->
     ok = init(),
 
+    Dir = test_utils:tmp_dir("handle_packet_offer_test"),
+    {ok, Pid} = router_db:start_link([Dir]),
+
     Subnet = <<0,0,0,127,255,0>>,
     <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = Subnet,
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     <<DevAddr:32/integer-unsigned-little>> = <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
+
+    DeviceUpdates = [{devaddr, <<DevAddr:32/integer-unsigned-little>>},
+    Device0 = router_device:new(<<"device_id">>),
+    Device1 = router_device:update(DeviceUpdates, Device0),
+    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+    {ok, _} = router_device:save(DB, CF, Device1),
 
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
@@ -613,6 +647,8 @@ handle_packet_offer_test() ->
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
     meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
+    meck:new(router_device_devaddr, [passthrough]),
+    meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
 
     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
@@ -630,6 +666,7 @@ handle_packet_offer_test() ->
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
 
+    gen_server:stop(Pid),
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ?assert(meck:validate(blockchain)),
@@ -640,6 +677,8 @@ handle_packet_offer_test() ->
     meck:unload(blockchain_ledger_routing_v1),
     ?assert(meck:validate(router_metrics)),
     meck:unload(router_metrics),
+    ?assert(meck:validate(router_device_devaddr)),
+    meck:unload(router_device_devaddr),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),

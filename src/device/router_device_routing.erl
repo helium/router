@@ -240,14 +240,15 @@ packet_offer(Offer, Pid) ->
 
 -spec validate_packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 validate_packet_offer(Offer, _Pid) ->
-    #routing_information_pb{data={devaddr, DevAddr}} = blockchain_state_channel_offer_v1:routing(Offer),
-    case validate_devaddr(DevAddr) of
+    #routing_information_pb{data={devaddr, DevAddr0}} = blockchain_state_channel_offer_v1:routing(Offer),
+    case validate_devaddr(DevAddr0) of
         {error, _}=Error ->
             Error;
         ok ->
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-            case router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(devaddr_to_bin(DevAddr))), PubKeyBin) of
+            DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
+            case router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr1)), PubKeyBin) of
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 Devices ->

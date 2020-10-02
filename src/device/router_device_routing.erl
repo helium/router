@@ -48,6 +48,7 @@
 -define(DEVADDR_MALFORMED, devaddr_malformed).
 -define(DEVADDR_NOT_IN_SUBNET, devaddr_not_in_subnet).
 -define(OUI_UNKNOWN, oui_unknown).
+-define(DEVADDR_NO_DEVICE, devaddr_no_device).
 
 %% Join offer rejected reasons
 -define(CONSOLE_UNKNOWN_DEVICE, console_unknown_device).
@@ -176,6 +177,9 @@ join_offer(Offer, _Pid) ->
         {error, _Reason} ->
             lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
             {error, ?CONSOLE_UNKNOWN_DEVICE};
+        {ok, []} ->
+            lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
+            {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, Devices} ->
             lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
             maybe_buy_join_offer(Offer, _Pid, Devices)
@@ -243,19 +247,23 @@ validate_packet_offer(Offer, _Pid) ->
         ok ->
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-            Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(devaddr_to_bin(DevAddr))), PubKeyBin),
-            case check_device_is_active(Devices) of
-                {error, _Reason}=Error ->
-                    Error;
-                ok ->
-                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-                    case check_device_balance(PayloadSize, Devices) of
-                        {error, _Reason}=Error -> Error;
-                        ok -> ok
+            case router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(devaddr_to_bin(DevAddr))), PubKeyBin) of
+                [] ->
+                    {error, ?DEVADDR_NO_DEVICE};
+                Devices ->
+                    case check_device_is_active(Devices) of
+                        {error, _Reason}=Error ->
+                            Error;
+                        ok ->
+                            PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+                            case check_device_balance(PayloadSize, Devices) of
+                                {error, _Reason}=Error -> Error;
+                                ok -> ok
+                            end
                     end
             end
     end.
-    
+
 
 -spec validate_devaddr(non_neg_integer()) -> ok | {error, any()}.
 validate_devaddr(DevAddr) ->
@@ -631,57 +639,57 @@ handle_packet_offer_test() ->
     <<DevAddr:32/integer-unsigned-little>> = <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
 
     DeviceUpdates = [{devaddr, <<DevAddr:32/integer-unsigned-little>>},
-    Device0 = router_device:new(<<"device_id">>),
-    Device1 = router_device:update(DeviceUpdates, Device0),
-    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    {ok, _} = router_device:save(DB, CF, Device1),
+                     Device0 = router_device:new(<<"device_id">>),
+                     Device1 = router_device:update(DeviceUpdates, Device0),
+                     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+                     {ok, _} = router_device:save(DB, CF, Device1),
 
-    meck:new(blockchain_worker, [passthrough]),
-    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(_) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
-    meck:new(blockchain_ledger_routing_v1, [passthrough]),
-    meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
-    meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
-    meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
-    meck:new(router_device_devaddr, [passthrough]),
-    meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
+                     meck:new(blockchain_worker, [passthrough]),
+                     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+                     meck:new(blockchain, [passthrough]),
+                     meck:expect(blockchain, ledger, fun(_) -> ledger end),
+                     meck:new(blockchain_ledger_v1, [passthrough]),
+                     meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
+                     meck:new(blockchain_ledger_routing_v1, [passthrough]),
+                     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
+                     meck:new(router_metrics, [passthrough]),
+                     meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
+                     meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
+                     meck:new(router_device_devaddr, [passthrough]),
+                     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
 
-    Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
-    Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
-    ?assertEqual(ok, handle_offer(Offer0, self())),
-    ok = ?MODULE:deny_more(Packet0),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
+                     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
+                     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
+                     ?assertEqual(ok, handle_offer(Offer0, self())),
+                     ok = ?MODULE:deny_more(Packet0),
+                     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
+                     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
 
-    Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
-    Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ok = ?MODULE:accept_more(Packet1),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
+                     Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
+                     Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
+                     ?assertEqual(ok, handle_offer(Offer1, self())),
+                     ok = ?MODULE:accept_more(Packet1),
+                     ?assertEqual(ok, handle_offer(Offer1, self())),
+                     ?assertEqual(ok, handle_offer(Offer1, self())),
+                     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
+                     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
 
-    gen_server:stop(Pid),
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
-    ?assert(meck:validate(blockchain_ledger_routing_v1)),
-    meck:unload(blockchain_ledger_routing_v1),
-    ?assert(meck:validate(router_metrics)),
-    meck:unload(router_metrics),
-    ?assert(meck:validate(router_device_devaddr)),
-    meck:unload(router_device_devaddr),
-    ets:delete(?BF_ETS),
-    ets:delete(?MB_ETS),
-    ets:delete(?REPLAY_ETS),
-    ok.
+                     gen_server:stop(Pid),
+                     ?assert(meck:validate(blockchain_worker)),
+                     meck:unload(blockchain_worker),
+                     ?assert(meck:validate(blockchain)),
+                     meck:unload(blockchain),
+                     ?assert(meck:validate(blockchain_ledger_v1)),
+                     meck:unload(blockchain_ledger_v1),
+                     ?assert(meck:validate(blockchain_ledger_routing_v1)),
+                     meck:unload(blockchain_ledger_routing_v1),
+                     ?assert(meck:validate(router_metrics)),
+                     meck:unload(router_metrics),
+                     ?assert(meck:validate(router_device_devaddr)),
+                     meck:unload(router_device_devaddr),
+                     ets:delete(?BF_ETS),
+                     ets:delete(?MB_ETS),
+                     ets:delete(?REPLAY_ETS),
+                     ok.
 
 -endif.

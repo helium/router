@@ -227,11 +227,12 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
             FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
-            case router_device:queue(Device1) == [] orelse FrameAck == 1 of
+            case router_device:queue(Device1) =/= [] orelse FrameAck == 1 of
                 false -> router_device_routing:deny_more(Packet0);
                 true -> router_device_routing:accept_more(Packet0)
             end,
             Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},
+            %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
                     ok = router_device_channels_worker:handle_data(ChannelsWorker, Device1, Data, {Balance, Nonce});

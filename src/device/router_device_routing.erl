@@ -442,13 +442,13 @@ check_device_balance(PayloadSize, Devices) ->
 
 -spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
-    ok = router_metrics:offer_inc(join, accepted);
-handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, _}) ->
-    ok = router_metrics:offer_inc(join, rejected);
+    ok = router_metrics:offer_inc(join, accepted, accepted);
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}) ->
+    ok = router_metrics:offer_inc(join, rejected, Reason);
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok) ->
-    ok = router_metrics:offer_inc(packet, accepted);
-handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, _}) ->
-    ok = router_metrics:offer_inc(packet, rejected).
+    ok = router_metrics:offer_inc(packet, accepted, accepted);
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}) ->
+    ok = router_metrics:offer_inc(packet, rejected, Reason).
 
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.

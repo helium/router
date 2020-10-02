@@ -159,12 +159,12 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
         #routing_information_pb{data={eui, #eui_pb{deveui=DevEUI0, appeui=AppEUI0}}} ->
             DevEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
             AppEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
-            lager:debug("responded ~p to join offer deveui=~s appeui=~s from: ~p (pid: ~p)",
-                        [Resp, DevEUI1, AppEUI1, HotspotName, HandlerPid]);
+            lager:debug("responded ~p to join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                        [Resp, DevEUI1, AppEUI1, DevEUI0, AppEUI0, HotspotName, HandlerPid]);
         #routing_information_pb{data={devaddr, DevAddr0}} ->
             DevAddr1 = lorawan_utils:binary_to_hex(lorawan_utils:reverse(devaddr_to_bin(DevAddr0))),
-            lager:debug("responded ~p to packet offer devaddr=~s from: ~p (pid: ~p)",
-                        [Resp, DevAddr1, HotspotName, HandlerPid])
+            lager:debug("responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
+                        [Resp, DevAddr1, DevAddr0, HotspotName, HandlerPid])
     end.
 
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.

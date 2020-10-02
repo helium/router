@@ -36,10 +36,23 @@
 -define(MB_FUN(Hash), [{{Hash,'$1','$2'},
                         [{'<','$2','$1'}],
                         [{{Hash,'$1',{'+','$2',1}}}]}]).
+-define(MB_MAX_PACKET, multi_buy_max_packet).
+-define(MB_TOO_MANY_ATTEMPS, multi_buy_too_many_attempts).
+-define(MB_DENY_MORE, multi_buy_deny_more).
 
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
 -define(RX2_WINDOW, timer:seconds(2)).
+
+%% Devaddr validate
+-define(DEVADDR_MALFORMED, devaddr_malformed).
+-define(DEVADDR_NOT_IN_SUBNET, devaddr_not_in_subnet).
+-define(OUI_UNKNOWN, oui_unknown).
+
+%% Join offer rejected reasons
+-define(CONSOLE_UNKNOWN_DEVICE, console_unknown_device).
+-define(DEVICE_INACTIVE, device_inactive).
+-define(DEVICE_NO_DC, device_not_enought_dc).
 
 -spec init() -> ok.
 init() ->
@@ -162,7 +175,7 @@ join_offer(Offer, _Pid) ->
     case router_device_api:get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
             lager:debug("did not find any device matching ~p/~p", [{DevEUI1, DevEUI0}, {AppEUI1, AppEUI0}]),
-            {error, unknown_device};
+            {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, Devices} ->
             lager:debug("found devices ~p matching ~p/~p", [[router_device:id(D) || D <- Devices], DevEUI1, AppEUI1]),
             maybe_buy_join_offer(Offer, _Pid, Devices)
@@ -245,16 +258,16 @@ validate_devaddr(DevAddr) ->
                         true ->
                             ok;
                         false ->
-                            {error, not_in_subnet}
+                            {error, ?DEVADDR_NOT_IN_SUBNET}
                     end;
                 _ ->
-                    {error, no_subnet}
+                    {error, ?OUI_UNKNOWN}
             catch
                 _:_ ->
-                    {error, no_subnet}
+                    {error, ?OUI_UNKNOWN}
             end;
         _ ->
-            {error, unknown_device}
+            {error, ?DEVADDR_MALFORMED}
     end.
 
 -spec lookup_replay(binary()) -> {ok, binary(), non_neg_integer()} | {error, not_found}.
@@ -269,7 +282,7 @@ lookup_replay(PHash) ->
 -spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) -> ok | {error, any()}.
 %% Handle an issue with worker (so we dont stay lin a loop)
 maybe_multi_buy(_Offer, 0) ->
-    {error, too_many_attempt};
+    {error, ?MB_TOO_MANY_ATTEMPS};
 maybe_multi_buy(Offer, Attempts) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of
@@ -277,12 +290,12 @@ maybe_multi_buy(Offer, Attempts) ->
             timer:sleep(25),
             maybe_multi_buy(Offer, Attempts-1);
         [{PHash, 0, -1}] ->
-            {error, got_enough_packets};
+            {error, ?MB_DENY_MORE};
         [{PHash, Max, Curr}] when Max == Curr ->
-            {error, got_max_packets};
+            {error, ?MB_MAX_PACKET};
         [{PHash, _Max, _Curr}] ->
             case ets:select_replace(?MB_ETS, ?MB_FUN(PHash)) of
-                0 -> {error, got_max_packets};
+                0 -> {error, ?MB_MAX_PACKET};
                 1 -> ok
             end
     end.
@@ -436,7 +449,7 @@ check_device_balance(PayloadSize, Devices) ->
     %% TODO: We should not be picking the first device
     [Device|_] = Devices,
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
-        {error, _Reason}=Error -> Error;
+        {error, _Reason} -> {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} -> ok
     end.
 
@@ -469,11 +482,9 @@ check_device_is_active(Devices) ->
     [Device|_] = Devices,
     DeviceID = router_device:id(Device),
     case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
-        {error, _Reason}=Error ->
-            Error;
         {ok, Pid} ->
             case router_device_worker:is_active(Pid) of
-                false -> {error, device_inactive};
+                false -> {error, ?DEVICE_INACTIVE};
                 true -> ok
             end
     end.
@@ -548,7 +559,7 @@ handle_join_offer_test() ->
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
+    meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
     meck:new(router_device_worker, [passthrough]),
@@ -562,8 +573,8 @@ handle_join_offer_test() ->
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, got_max_packets}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
+    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_device_api)),
     meck:unload(router_device_api),
@@ -601,14 +612,14 @@ handle_packet_offer_test() ->
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
-    meck:expect(router_metrics, offer_inc, fun(_, _) -> ok end),
+    meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
 
     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
     ?assertEqual(ok, handle_offer(Offer0, self())),
     ok = ?MODULE:deny_more(Packet0),
-    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
-    ?assertEqual({error, got_enough_packets}, handle_offer(Offer0, self())),
+    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
+    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
 
     Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
     Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
@@ -616,8 +627,8 @@ handle_packet_offer_test() ->
     ok = ?MODULE:accept_more(Packet1),
     ?assertEqual(ok, handle_offer(Offer1, self())),
     ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
-    ?assertEqual({error, got_max_packets}, handle_offer(Offer1, self())),
+    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
+    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

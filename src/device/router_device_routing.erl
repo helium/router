@@ -660,6 +660,8 @@ handle_packet_offer_test() ->
     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
+    meck:new(router_device_worker, [passthrough]),
+    meck:expect(router_device_worker, is_active, fun(_) -> true end),
 
     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
@@ -692,6 +694,8 @@ handle_packet_offer_test() ->
     meck:unload(router_device_devaddr),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
+    ?assert(meck:validate(router_device_worker)),
+    meck:unload(router_device_worker),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),

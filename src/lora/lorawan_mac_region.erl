@@ -37,11 +37,11 @@ rx1_window(#network{region=Region, rx1_delay=Delay},
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
-rx2_window('US915', RxQ) ->
-    TxQ = #txq{freq=923.3, datr= <<"SF12BW500">>}, %% 923.3MHz / DR8
+rx2_window(Region, RxQ) when Region == 'US915' ->
+    TxQ = #txq{freq=923.3, datr=lorawan_mac_region:dr_to_datar(Region, 8)}, %% 923.3MHz / DR8 (SF12 BW500)
     tx_window(?FUNCTION_NAME, RxQ, 0, TxQ);
-rx2_window('EU868', RxQ) ->
-    TxQ = #txq{freq=869.525, datr= <<"SF12BW125">>}, %% 869.525 MHz / DR0 (SF12, 125 kHz)
+rx2_window(Region, RxQ) when Region == 'EU868' ->
+    TxQ = #txq{freq=869.525, datr=lorawan_mac_region:dr_to_datar(Region, 0)}, %% 869.525 MHz / DR0 (SF12, 125 kHz)
     tx_window(?FUNCTION_NAME, RxQ, 0, TxQ).
 
 %% we calculate in fixed-point numbers

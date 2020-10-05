@@ -37,7 +37,7 @@
                         [{'<','$2','$1'}],
                         [{{Hash,'$1',{'+','$2',1}}}]}]).
 -define(MB_MAX_PACKET, multi_buy_max_packet).
--define(MB_TOO_MANY_ATTEMPS, multi_buy_too_many_attempts).
+-define(MB_TOO_MANY_ATTEMPTS, multi_buy_too_many_attempts).
 -define(MB_DENY_MORE, multi_buy_deny_more).
 
 %% Replay

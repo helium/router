@@ -304,7 +304,7 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
 
 join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     RoutingInfo = {devaddr, 1},
-    HeliumPacket = blockchain_helium_packet_v1:new(RoutingInfo, lorawan, join_payload(AppKey, DevNonce), 1000, RSSI, 923.3, <<"SF8BW125">>, 0.0),
+    HeliumPacket = blockchain_helium_packet_v1:new(lorawan, join_payload(AppKey, DevNonce), 1000, RSSI, 923.3, <<"SF8BW125">>, 0.0, RoutingInfo),
     Packet = #blockchain_state_channel_packet_v1_pb{packet=HeliumPacket, hotspot=PubKeyBin, region = 'US915'},
     Msg = #blockchain_state_channel_message_v1_pb{msg={packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).

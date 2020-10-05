@@ -65,7 +65,7 @@
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.15.2">>},0},
  {<<"helium_proto">>,
   {git,"https://github.com/helium/proto.git",
-       {ref,"9d604b5908ab6084676d3b6e4819792b0c11bc0e"}},
+       {ref,"d43952c1848ceb3353947a68d97ebbb918152ec0"}},
   1},
  {<<"httpc_aws">>,
   {git,"https://github.com/helium/httpc-aws.git",

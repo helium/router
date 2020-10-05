@@ -313,7 +313,7 @@ lookup_replay(PHash) ->
 -spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) -> ok | {error, any()}.
 %% Handle an issue with worker (so we dont stay lin a loop)
 maybe_multi_buy(_Offer, 0) ->
-    {error, ?MB_TOO_MANY_ATTEMPS};
+    {error, ?MB_TOO_MANY_ATTEMPTS};
 maybe_multi_buy(Offer, Attempts) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of

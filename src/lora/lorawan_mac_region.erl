@@ -10,7 +10,7 @@
 -dialyzer([no_return, no_unused, no_match]).
 
 -export([freq/1, net_freqs/1, datars/1, datar_to_dr/2, dr_to_datar/2]).
--export([join1_window/2, join1_window/3, rx1_window/4, rx1_window/3, rx2_rf/2]).
+-export([join1_window/2, join1_window/3, rx1_window/4, rx1_window/3, rx2_window/2]).
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
@@ -18,7 +18,7 @@
 
 -include("lorawan_db.hrl").
 
-                                                % receive windows
+%% receive windows
 
 join1_window(Region, Delay, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
@@ -26,8 +26,8 @@ join1_window(Region, Delay, RxQ) ->
 join1_window(#network{region=Region, join1_delay=Delay}, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
 
-                                                %join2_window(#network{join2_delay=Delay}=Network, Node) ->
-                                                %tx_window(?FUNCTION_NAME, RxQ, Delay, rx2_rf(Network, Node)).
+%% join2_window(#network{join2_delay=Delay}=Network, Node) ->
+%% tx_window(?FUNCTION_NAME, RxQ, Delay, rx2_rf(Network, Node)).
 
 rx1_window(Region, Delay, Offset, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
@@ -36,10 +36,15 @@ rx1_window(#network{region=Region, rx1_delay=Delay},
            #node{rxwin_use={Offset, _, _}}, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
 
-                                                %rx2_window(#network{rx2_delay=Delay}=Network, Node) ->
-                                                %tx_window(?FUNCTION_NAME, RxQ, rx2_rf(Network, Node)).
+%% See RP002-1.0.1 LoRaWAN® Regional
+rx2_window('US915', RxQ) ->
+    TxQ = #txq{freq=923.3, datr= <<"SF12BW500">>}, %% 923.3MHz / DR8
+    tx_window(?FUNCTION_NAME, RxQ, 0, TxQ);
+rx2_window('EU868', RxQ) ->
+    TxQ = #txq{freq=869.525, datr= <<"SF12BW125">>}, %% 869.525 MHz / DR0 (SF12, 125 kHz)
+    tx_window(?FUNCTION_NAME, RxQ, 0, TxQ).
 
-                                                % we calculate in fixed-point numbers
+%% we calculate in fixed-point numbers
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
     tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
@@ -56,11 +61,11 @@ rx1_rf('CN470' = Region, RxQ, Offset) ->
 rx1_rf(Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 
-rx2_rf(#network{region=Region, tx_codr=CodingRate}, #node{rxwin_use={_, DataRate, Freq}}) ->
-    #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate};
-rx2_rf(#network{region=Region, tx_codr=CodingRate, rxwin_init=WinInit}, #profile{rxwin_set=WinSet}) ->
-    {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
-    #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
+%% rx2_rf(#network{region=Region, tx_codr=CodingRate}, #node{rxwin_use={_, DataRate, Freq}}) ->
+%%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate};
+%% rx2_rf(#network{region=Region, tx_codr=CodingRate, rxwin_init=WinInit}, #profile{rxwin_set=WinSet}) ->
+%%     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
+%%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
 
 f2uch('US915', Freq) ->
     f2uch(Freq, {9023, 2}, {9030, 16});
@@ -76,7 +81,7 @@ f2uch('EU868', Freq) when Freq > 868 ->
 
 f2uch(Freq, {Start, Inc}) -> round(10*Freq-Start) div Inc.
 
-                                                % the channels are overlapping, return the integer value
+%% the channels are overlapping, return the integer value
 f2uch(Freq, {Start1, Inc1}, _) when round(10*Freq-Start1) rem Inc1 == 0 ->
     round(10*Freq-Start1) div Inc1;
 f2uch(Freq, _, {Start2, Inc2}) when round(10*Freq-Start2) rem Inc2 == 0 ->
@@ -124,7 +129,7 @@ datar_to_down(Region, DataRate, Offset) ->
     dr_to_datar(Region, DR2).
 
 dr_to_down('AS923', DR, Offset) ->
-                                                % TODO: should be derived based on DownlinkDwellTime
+    %% TODO: should be derived based on DownlinkDwellTime
     MinDR = 0,
     EffOffset =
         if
@@ -167,7 +172,7 @@ drs_to_down(_Region, DR) ->
         7 -> [7, 6, 5, 4, 3, 2]
     end.
 
-                                                % data rate and end-device output power encoding
+%% data rate and end-device output power encoding
 
 datars(Region)
   when Region == 'US915' -> [
@@ -195,7 +200,7 @@ datars(_Region) -> [
                     {4, {8, 125}, updown},
                     {5, {7, 125}, updown},
                     {6, {7, 250}, updown},
-                    {7, 50000, updown}]. % FSK
+                    {7, 50000, updown}]. %% FSK
 
 us_down_datars() -> [
                      {8,  {12, 500}, down},
@@ -219,19 +224,19 @@ datar_to_dr(Region, DataRate) ->
 tuple_to_datar({SF, BW}) ->
     <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>;
 tuple_to_datar(DataRate) ->
-    DataRate. % FSK
+    DataRate. %% FSK
 
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),
     {binary_to_integer(SF), binary_to_integer(BW)};
 datar_to_tuple(DataRate) when is_integer(DataRate) ->
-    DataRate. % FSK
+    DataRate. %% FSK
 
 codr_to_tuple(CodingRate) ->
     [A, B] = binary:split(CodingRate, [<<"/">>], [global, trim_all]),
     {binary_to_integer(A), binary_to_integer(B)}.
 
-                                                % static channel plan parameters
+%% static channel plan parameters
 freq('EU868') ->
     #{min=>863, max=>870, default=>[868.10, 868.30, 868.50]};
 freq('US915') ->
@@ -255,7 +260,7 @@ freq('RU868') ->
 
 net_freqs(#network{region=Region, init_chans=Chans})
   when Region == 'US915'; Region == 'AU915'; Region == 'CN470' ->
-                                                % convert enabled channels to frequencies
+    %% convert enabled channels to frequencies
     lists:map(
       fun(Ch) -> uch2f(Region, Ch) end,
       expand_intervals(Chans));
@@ -263,7 +268,7 @@ net_freqs(#network{name=Name, region=Region, init_chans=Chans, cflist=CFList}) -
     #{default := Freqs0} = freq(Region),
     {Freqs1, _, _} = lists:unzip3(CFList),
     Freqs = Freqs0 ++ Freqs1,
-                                                % list the enabled frequencies
+    %% list the enabled frequencies
     lists:filtermap(
       fun (Ch) when Ch < length(Freqs) ->
               {true, lists:nth(Ch+1, Freqs)};
@@ -285,11 +290,11 @@ max_downlink_snr(Region, DataRate, Offset) ->
     {SF, _} = dr_to_tuple(Region, dr_to_down(Region, DataRate, Offset)),
     max_snr(SF).
 
-                                                % from SX1272 DataSheet, Table 13
+%% from SX1272 DataSheet, Table 13
 max_snr(SF) ->
-    -5-2.5*(SF-6). % dB
+    -5-2.5*(SF-6). %% dB
 
-                                                % link_adr_req command
+%% link_adr_req command
 
 set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut)
   when Region == 'US915'; Region == 'AU915' ->
@@ -349,13 +354,13 @@ build_bin(Chans, {Min, Max}) ->
 build_bin0(MinMax, {A, B}) when B < A ->
     build_bin0(MinMax, {B, A});
 build_bin0({Min, Max}, {A, B}) when B < Min; Max < A ->
-                                                % out of range
+    %% out of range
     <<0:(Max-Min+1)>>;
 build_bin0({Min, Max}, {A, B}) ->
     C = max(Min, A),
     D = min(Max, B),
     Bits = Max-Min+1,
-                                                % construct the binary
+    %% construct the binary
     Bin = <<-1:(D-C+1), 0:(C-Min)>>,
     case bit_size(Bin) rem Bits of
         0 -> Bin;
@@ -371,7 +376,7 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
                     ChMask -> [{link_adr_req, datar_to_dr(Region, DataRate), TXPower, ChMask, Idx, 0} | FOptsOut]
                 end).
 
-                                                % transmission time estimation
+%% transmission time estimation
 
 tx_time(FOpts, FRMPayloadSize, TxQ) ->
     tx_time(phy_payload_size(FOpts, FRMPayloadSize), TxQ).
@@ -384,22 +389,22 @@ tx_time(PhyPayloadSize, #txq{datr=DataRate, codr=CodingRate}) ->
     {4, CR} = codr_to_tuple(CodingRate),
     tx_time(PhyPayloadSize, SF, CR, BW*1000).
 
-                                                % see http://www.semtech.com/images/datasheet/LoraDesignGuide_STD.pdf
+%% see http://www.semtech.com/images/datasheet/LoraDesignGuide_STD.pdf
 tx_time(PL, SF, CR, 125000) when SF == 11; SF == 12 ->
-                                                % Optimization is mandated with spreading factors of 11 and 12 at 125 kHz bandwidth
+    %% Optimization is mandated with spreading factors of 11 and 12 at 125 kHz bandwidth
     tx_time(PL, SF, CR, 125000, 1);
 tx_time(PL, SF, CR, 250000) when SF == 12 ->
-                                                % The firmware uses also optimization for SF 12 at 250 kHz bandwidth
+    %% The firmware uses also optimization for SF 12 at 250 kHz bandwidth
     tx_time(PL, SF, CR, 250000, 1);
 tx_time(PL, SF, CR, BW) ->
     tx_time(PL, SF, CR, BW, 0).
 
 tx_time(PL, SF, CR, BW, DE) ->
     TSym = math:pow(2, SF)/BW,
-                                                % lorawan uses an explicit header
+    %% lorawan uses an explicit header
     PayloadSymbNb = 8 + max(ceiling((8*PL-4*SF+28+16)/(4*(SF-2*DE)))*CR, 0),
-                                                % lorawan uses 8 symbols preamble
-                                                % the last +1 is a correction based on practical experiments
+    %% lorawan uses 8 symbols preamble
+    %% the last +1 is a correction based on practical experiments
     1000*((8 + 4.25) + PayloadSymbNb + 1)*TSym.
 
 ceiling(X) ->
@@ -415,7 +420,7 @@ ceiling(X) ->
 region_test_()-> [
                   ?_assertEqual({12,125}, datar_to_tuple(<<"SF12BW125">>)),
                   ?_assertEqual({4,6}, codr_to_tuple(<<"4/6">>)),
-                                                % values [ms] verified using the LoRa Calculator, +1 chirp correction based on experiments
+                  %% values [ms] verified using the LoRa Calculator, +1 chirp correction based on experiments
                   ?_assertEqual(1024, test_tx_time(<<"0123456789">>, <<"SF12BW125">>, <<"4/5">>)),
                   ?_assertEqual(297, test_tx_time(<<"0123456789">>, <<"SF10BW125">>, <<"4/5">>)),
                   ?_assertEqual(21, test_tx_time(<<"0123456789">>, <<"SF7BW250">>, <<"4/5">>)),
@@ -432,7 +437,7 @@ region_test_()-> [
 
 test_tx_time(Packet, DataRate, CodingRate) ->
     round(tx_time(byte_size(Packet),
-                                                % the constants are only to make Dialyzer happy
+                  %% the constants are only to make Dialyzer happy
                   #txq{freq=869.525, datr=DataRate, codr=CodingRate})).
 
 bits_test_()-> [
@@ -456,4 +461,4 @@ bits_test_()-> [
                               set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, []))
                ].
 
-                                                % end of file
+%% end of file

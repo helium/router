@@ -41,6 +41,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, router_device_api_module, router_console_device_api),
     ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
     ok = application:set_env(router, console_secret, <<"secret">>),
+    ok = application:set_env(router, metrics_port, 4000),
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     Tab = ets:new(?ETS, [public, set]),

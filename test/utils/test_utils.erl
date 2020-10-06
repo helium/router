@@ -40,8 +40,6 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, router_console_device_api, [{endpoint, ?CONSOLE_URL},
                                                                  {ws_endpoint, ?CONSOLE_WS_URL},
                                                                  {secret, <<>>}]),
-    ok = application:set_env(router, console_endpoint, ?CONSOLE_URL),
-    ok = application:set_env(router, console_secret, <<"secret">>),
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
     ok = application:set_env(router, metrics_port, 4000),

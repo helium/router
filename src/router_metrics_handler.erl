@@ -56,7 +56,7 @@ export_devaddr() ->
             {ok, Devices}
     end.
 
--spec get_location_info(blockchain:blockchain(), router_device:device()) -> {binary(), binary(), float(), float()}.
+-spec get_location_info(blockchain:blockchain(), router_device:device()) -> {list(), list(), float(), float()}.
 get_location_info(Chain, Device) ->
     case router_device:location(Device) of
         undefined ->
@@ -66,7 +66,7 @@ get_location_info(Chain, Device) ->
             HotspotName = blockchain_utils:addr2name(PubKeyBin),
             case router_utils:get_hotspot_location(PubKeyBin, Chain) of
                 {unknown, unknown} ->
-                    {B58, HotspotName, 0, 0};
+                    {B58, HotspotName, 0.0, 0.0};
                 {Lat, Long} ->
                     {B58, HotspotName, Lat, Long}
             end

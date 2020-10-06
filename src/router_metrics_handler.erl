@@ -47,8 +47,8 @@ export_devaddr() ->
                                 #{id => router_device:id(Device),
                                   name => router_device:name(Device),
                                   devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-                                  hotspot_id => HotspotID,
-                                  hotspot_name => HotspotName,
+                                  hotspot_id => erlang:list_to_binary(HotspotID),
+                                  hotspot_name => erlang:list_to_binary(HotspotName),
                                   lat => Lat,
                                   long => Long}
                         end,
@@ -98,8 +98,8 @@ export_devaddr_test() ->
     ?assertEqual(<<"device_id">>, maps:get(id, Map)),
     ?assertEqual(<<"device_name">>, maps:get(name, Map)),
     ?assertEqual(<<"03040048">>, maps:get(devaddr, Map)),
-    ?assertEqual(libp2p_crypto:bin_to_b58(PubKeyBin), maps:get(hotspot_id, Map)),
-    ?assertEqual(blockchain_utils:addr2name(PubKeyBin), maps:get(hotspot_name, Map)),
+    ?assertEqual(erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)), maps:get(hotspot_id, Map)),
+    ?assertEqual(erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin)), maps:get(hotspot_name, Map)),
     ?assertEqual(1.2, maps:get(lat, Map)),
     ?assertEqual(1.3, maps:get(long, Map)),
 

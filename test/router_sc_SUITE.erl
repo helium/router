@@ -97,7 +97,6 @@ end_per_group(_, _Config) ->
     ok.
 
 init_per_testcase(TestCase, Config0) ->
-    ok = application:set_env(router, metrics_port, 4000),
     application:ensure_all_started(lager),
     Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),

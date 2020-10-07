@@ -66,7 +66,6 @@ sc_v2_test_cases() ->
 
 init_per_suite(Config) ->
     %% init_per_suite is the FIRST thing that runs and is common for both groups
-
     SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
                ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
                ?max_xor_filter_size => 1024*100,     %% Max xor filter size, set to 1024*100
@@ -98,6 +97,7 @@ end_per_group(_, _Config) ->
     ok.
 
 init_per_testcase(TestCase, Config0) ->
+    ok = application:set_env(router, metrics_port, 4000),
     application:ensure_all_started(lager),
     Config = router_ct_utils:init_per_testcase(?MODULE, TestCase, Config0),
     Miners = ?config(miners, Config),

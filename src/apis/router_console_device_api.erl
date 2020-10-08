@@ -160,7 +160,7 @@ report_status(Device, Map) ->
                         frame_up => FrameUp,
                         frame_down => router_device:fcntdown(Device),
                         payload_size => maps:get(payload_size, Map),
-                        port => maps:get(port, Map),
+                        port => maps:get(port, Map, 0),
                         devaddr => maps:get(devaddr, Map),
                         hotspots => maps:get(hotspots, Map),
                         channels => [maps:remove(debug, C) ||C <- Channels],

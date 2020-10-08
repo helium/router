@@ -303,7 +303,7 @@ handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=D
         Error ->
             case maps:get(ChannelID, Channels, undefined) of
                 undefined ->
-                    lager:error("unknown channel ~p went down", [ChannelID]),
+                    lager:error("unknown channel ~p went down: ~p", [ChannelID, Error]),
                     {noreply, State#state{channels=maps:remove(ChannelID, Channels),
                                           channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
                 Channel -> 

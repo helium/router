@@ -25,7 +25,8 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init({[Channel, _Device], _}) ->
+init({[Channel, Device], _}) ->
+    lager:md([{device_id, router_device:id(Device)}]),
     lager:info("init with ~p", [Channel]),
     #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
     Headers1 = lists:ukeymerge(1, lists:ukeysort(1, Headers0),
@@ -57,8 +58,10 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
+handle_info({ping, _}, State) ->
+    {ok, State};
 handle_info(_Msg, State) ->
-    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->

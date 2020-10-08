@@ -27,12 +27,14 @@
                 connection :: pid(),
                 endpoint :: binary(),
                 pub_topic :: binary(),
-                sub_topic :: binary()}).
+                sub_topic :: binary(),
+                ping :: reference()}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
+    lager:md([{device_id, router_device:id(Device)}]),
     lager:info("~p init with ~p", [?MODULE, Channel]),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -44,14 +46,14 @@ init({[Channel, Device], _}) ->
     DownlinkTopic = render_topic(DownlinkTemplate, Device),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            _ = ping(Conn),
             %% Crash if we can't subscribe so that will be caught and reported to user via console 
             {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
             {ok, #state{channel=Channel,
                         connection=Conn,
                         endpoint=Endpoint,
                         pub_topic=UplinkTopic,
-                        sub_topic=DownlinkTopic}};
+                        sub_topic=DownlinkTopic,
+                        ping=ping(Conn)}};
         {error, Reason} ->
             {error, Reason}
     end.
@@ -100,20 +102,30 @@ handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connecti
     Controller = router_channel:controller(Channel),
     router_device_channels_worker:handle_downlink(Controller, Payload, mqtt),
     {ok, State};
-handle_info({Conn, ping}, #state{connection=Conn}=State) ->
-    _ = ping(Conn),
-    Res = (catch emqtt:ping(Conn)),
-    lager:debug("pinging MQTT connection ~p", [Res]),
-    {ok, State};
+handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
+    _ = erlang:cancel_timer(TimerRef),
+    pong = (catch emqtt:ping(Conn)),
+    lager:debug("pinging MQTT connection ~p", [Conn]),
+    {ok, State#state{ping=ping(Conn)}};
+handle_info({disconnected, _Type, _Reason}, #state{channel=Channel, endpoint=Endpoint,
+                                                  sub_topic=DownlinkTopic, ping=TimerRef}=State) ->
+    _ = erlang:cancel_timer(TimerRef),
+    DeviceID = router_channel:device_id(Channel),
+    ChannelName = router_channel:name(Channel),
+    {ok, Conn} = connect(Endpoint, DeviceID, ChannelName),
+    {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
+    {ok, State#state{connection=Conn, ping=ping(Conn)}};
 handle_info(_Msg, State) ->
-    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{connection=Conn}) ->
-    (catch emqtt:disconnect(Conn)).
+    (catch emqtt:disconnect(Conn)),
+    (catch emqtt:stop(Conn)),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -130,7 +142,7 @@ render_topic(Template, Device) ->
 
 -spec ping(pid()) -> reference().
 ping(Conn) ->
-    erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
+    erlang:send_after(?PING_TIMEOUT, self(), {ping, Conn}).
 
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->

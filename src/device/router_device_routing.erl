@@ -697,7 +697,6 @@ handle_packet_offer_test() ->
     meck:unload(router_device_devaddr),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
-    ?assert(meck:validate(router_device_worker)),
     meck:unload(router_device_worker),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),

@@ -13,10 +13,7 @@
          end_per_suite/1,
          init_per_testcase/2,
          end_per_testcase/2,
-         all/0,
-         groups/0,
-         init_per_group/2,
-         end_per_group/2
+         all/0
         ]).
 
 -export([
@@ -33,40 +30,21 @@
 
 %% common test callbacks
 
-groups() ->
-    [
-     {sc_v1,
-      [],
-      sc_v1_test_cases()
-     },
-     {sc_v2,
-      [],
-      sc_v2_test_cases()
-     }].
 
 all() ->
-    [{group, sc_v1}, {group, sc_v2}].
-
-sc_v1_test_cases() ->
-    [
-     maintain_channels_test,
+    [maintain_channels_test,
      handle_packets_test,
      default_routers_test,
-     no_oui_test
-    ].
+     no_oui_test].
 
-sc_v2_test_cases() ->
-    [
-     maintain_channels_test,
-     handle_packets_test,
-     default_routers_test,
-     no_oui_test,
-     no_dc_entry_test
-    ].
 
 init_per_suite(Config) ->
     %% init_per_suite is the FIRST thing that runs and is common for both groups
-    SCVars = #{?max_open_sc => 2,                    %% Max open state channels per router, set to 2
+    SCVars = #{?sc_version => 2,
+                ?sc_overcommit => 2,
+                %% SC GC won't trigger without election
+                ?election_interval => 30,
+                ?max_open_sc => 2,                    %% Max open state channels per router, set to 2
                ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
                ?max_xor_filter_size => 1024*100,     %% Max xor filter size, set to 1024*100
                ?max_xor_filter_num => 5,             %% Max number of xor filters, set to 5
@@ -75,26 +53,10 @@ init_per_suite(Config) ->
                ?max_subnet_num => 20,                %% Max subnet num
                ?dc_payload_size => 24,               %% DC payload size for calculating DCs
                ?sc_grace_blocks => 5},               %% Grace period (in num of blocks) for state channels to get GCd
-    [{sc_vars, SCVars} | Config].
+    [{sc_vars, SCVars}, {sc_version, 2} | Config].
 
 end_per_suite(Config) ->
     Config.
-
-init_per_group(sc_v1, Config) ->
-    %% This is only for configuration and checking purposes
-    [{sc_version, 1} | Config];
-init_per_group(sc_v2, Config) ->
-    SCVars = ?config(sc_vars, Config),
-    SCV2Vars = maps:merge(SCVars,
-                          #{?sc_version => 2,
-                            ?sc_overcommit => 2,
-                            %% SC GC won't trigger without election
-                            ?election_interval => 30
-                           }),
-    [{sc_vars, SCV2Vars}, {sc_version, 2} | Config].
-
-end_per_group(_, _Config) ->
-    ok.
 
 init_per_testcase(TestCase, Config0) ->
     application:ensure_all_started(lager),
@@ -238,6 +200,7 @@ maintain_channels_test(Config) ->
                                          RouterLedger = ct_rpc:call(RouterNode, blockchain, ledger, [RouterChain]),
                                          MySCs = ct_rpc:call(RouterNode, blockchain_state_channels_server, state_channels, []),
                                          {ok, SCs} = ct_rpc:call(RouterNode, blockchain_ledger_v1, find_scs_by_owner, [RouterPubkeyBin, RouterLedger]),
+                                         ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {MySCs, SCs}]),
                                          map_size(SCs) == 2 andalso map_size(MySCs) == 2
                                  end, 30, timer:seconds(1)),
 
@@ -247,7 +210,7 @@ maintain_channels_test(Config) ->
     %% Wait 450 blocks, for multiple sc open txns to have occured
     true = miner_test:wait_until(fun() ->
                                          {ok, RouterChainHeight} = ct_rpc:call(RouterNode, blockchain, height, [RouterChain]),
-                                         RouterChainHeight > 450
+                                         RouterChainHeight > 100
                                  end, 300, timer:seconds(30)),
 
     Blocks = ct_rpc:call(RouterNode, blockchain, blocks, [RouterChain]),

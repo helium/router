@@ -6,7 +6,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         offer_inc/2,
+         offer_inc/3,
          packet_inc/2,
          downlink_inc/2,
          decoder_observe/3,
@@ -39,7 +39,7 @@
 -define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
 -define(WS, ?BASE ++ "ws_state").
 
--define(METRICS, [{counter, ?OFFER, [type, status], "Offer count"},
+-define(METRICS, [{counter, ?OFFER, [type, status, reason], "Offer count"},
                   {counter, ?PACKET, [type, status], "Packet count"},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
@@ -58,10 +58,10 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec offer_inc(join | packet, accepted | rejected) -> ok.
-offer_inc(Type, Status) when (Type == join orelse Type == packet)
-                             andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_counter:inc(?OFFER, [Type, Status]).
+-spec offer_inc(join | packet, accepted | rejected, any()) -> ok.
+offer_inc(Type, Status, Reason) when (Type == join orelse Type == packet)
+                                     andalso (Status == accepted orelse Status == rejected) ->
+    ok = prometheus_counter:inc(?OFFER, [Type, Status, Reason]).
 
 -spec packet_inc(join | packet, accepted | rejected) -> ok.
 packet_inc(Type, Status) when (Type == join orelse Type == packet)

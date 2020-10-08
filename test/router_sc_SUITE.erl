@@ -35,7 +35,8 @@ all() ->
     [maintain_channels_test,
      handle_packets_test,
      default_routers_test,
-     no_oui_test].
+     no_oui_test,
+     no_dc_entry_test].
 
 
 init_per_suite(Config) ->
@@ -57,6 +58,7 @@ init_per_suite(Config) ->
 
 end_per_suite(Config) ->
     Config.
+
 
 init_per_testcase(TestCase, Config0) ->
     application:ensure_all_started(lager),

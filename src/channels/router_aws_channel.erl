@@ -27,7 +27,8 @@
                 aws :: pid(),
                 connection :: pid(),
                 endpoint :: string(),
-                pubtopic :: binary()}).
+                pubtopic :: binary(),
+                ping :: reference()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -43,12 +44,11 @@ init({[Channel, Device], _}) ->
                 {error, Reason} ->
                     {error, Reason};
                 {ok, Conn} ->
-                    _ = ping(),
                     Topic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
                     {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
                     #{topic := PubTopic} = router_channel:args(Channel),
-                    {ok, #state{channel=Channel, aws=AWS,
-                                connection=Conn, endpoint=Endpoint, pubtopic=PubTopic}}
+                    {ok, #state{channel=Channel, aws=AWS, connection=Conn,
+                                endpoint=Endpoint, pubtopic=PubTopic, ping=ping(Conn)}}
             end
     end.
 
@@ -76,11 +76,11 @@ handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connect
     Controller = router_channel:controller(Channel),
     router_device_channels_worker:handle_downlink(Controller, Payload, aws),
     {ok, State};
-handle_info(ping, #state{connection=Conn}=State) ->
+handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
+    _ = erlang:cancel_timer(TimerRef),
     pong = (catch emqtt:ping(Conn)),
     lager:debug("pinging MQTT connection ~p", [Conn]),
-    _ = ping(),
-    {ok, State};
+    {ok, State#state{ping=ping(Conn)}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
@@ -88,16 +88,18 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{connection=Conn}) ->
+    (catch emqtt:disconnect(Conn)),
+    (catch emqtt:stop(Conn)),
     ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec ping() -> reference().
-ping() ->
-    erlang:send_after(?PING_TIMEOUT, self(), ping).
+-spec ping(pid()) -> reference().
+ping(Conn) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {ping, Conn}).
 
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->

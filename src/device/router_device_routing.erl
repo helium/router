@@ -333,7 +333,6 @@ maybe_multi_buy(Offer, Attempts) ->
 
 -spec check_device_is_active([router_device:device()]) -> ok | {error, any()}.
 check_device_is_active(Devices) ->
-    %% TODO: We should not be picking the first device
     [Device|_] = Devices,
     DeviceID = router_device:id(Device),
     case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
@@ -348,7 +347,6 @@ check_device_is_active(Devices) ->
 -spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
 check_device_balance(PayloadSize, Devices) ->
     Chain = blockchain_worker:blockchain(),
-    %% TODO: We should not be picking the first device
     [Device|_] = Devices,
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} -> {error, ?DEVICE_NO_DC};

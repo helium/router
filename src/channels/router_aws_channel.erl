@@ -32,6 +32,7 @@
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
+    lager:md([{device_id, router_device:id(Device)}]),
     lager:info("~p init with ~p", [?MODULE, Channel]),
     case setup_aws(Channel, Device) of
         {error, Reason} ->
@@ -42,7 +43,7 @@ init({[Channel, Device], _}) ->
                 {error, Reason} ->
                     {error, Reason};
                 {ok, Conn} ->
-                    _ = ping(Conn),
+                    _ = ping(),
                     Topic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
                     {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
                     #{topic := PubTopic} = router_channel:args(Channel),
@@ -75,13 +76,13 @@ handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connect
     Controller = router_channel:controller(Channel),
     router_device_channels_worker:handle_downlink(Controller, Payload, aws),
     {ok, State};
-handle_info({Conn, ping}, #state{connection=Conn}=State) ->
-    _ = ping(Conn),
-    Res = (catch emqtt:ping(Conn)),
-    lager:debug("pinging MQTT connection ~p", [Res]),
+handle_info(ping, #state{connection=Conn}=State) ->
+    pong = (catch emqtt:ping(Conn)),
+    lager:debug("pinging MQTT connection ~p", [Conn]),
+    _ = ping(),
     {ok, State};
 handle_info(_Msg, State) ->
-    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -94,9 +95,9 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec ping(pid()) -> reference().
-ping(Conn) ->
-    erlang:send_after(?PING_TIMEOUT, self(), {Conn, ping}).
+-spec ping() -> reference().
+ping() ->
+    erlang:send_after(?PING_TIMEOUT, self(), ping).
 
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->

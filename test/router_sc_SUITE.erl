@@ -42,10 +42,10 @@ all() ->
 init_per_suite(Config) ->
     %% init_per_suite is the FIRST thing that runs and is common for both groups
     SCVars = #{?sc_version => 2,
-                ?sc_overcommit => 2,
-                %% SC GC won't trigger without election
-                ?election_interval => 30,
-                ?max_open_sc => 2,                    %% Max open state channels per router, set to 2
+               ?sc_overcommit => 2,
+               %% SC GC won't trigger without election
+               ?election_interval => 30,
+               ?max_open_sc => 2,                    %% Max open state channels per router, set to 2
                ?min_expire_within => 10,             %% Min state channel expiration (# of blocks)
                ?max_xor_filter_size => 1024*100,     %% Max xor filter size, set to 1024*100
                ?max_xor_filter_num => 5,             %% Max number of xor filters, set to 5

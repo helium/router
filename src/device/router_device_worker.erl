@@ -112,6 +112,7 @@ init(#{db := DB, cf := CF, id := ID}=Args) ->
                                                    device => Device}),
     IsActive = router_device:is_active(Device),
     lager:md([{device_id, router_device:id(Device)}]),
+    self() ! device_update,
     {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
                 oui=OUI, channels_worker=Pid, is_active=IsActive}}.
 

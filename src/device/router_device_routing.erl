@@ -338,7 +338,9 @@ check_device_is_active(Devices) ->
     case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
         {ok, Pid} ->
             case router_device_worker:is_active(Pid) of
-                false -> {error, ?DEVICE_INACTIVE};
+                false ->
+                    ok = router_device_utils:report_status_inactive(Device),
+                    {error, ?DEVICE_INACTIVE};
                 true -> ok
             end
     end.
@@ -349,8 +351,11 @@ check_device_balance(PayloadSize, Devices) ->
     Chain = blockchain_worker:blockchain(),
     [Device|_] = Devices,
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
-        {error, _Reason} -> {error, ?DEVICE_NO_DC};
-        {ok, _OrgID, _Balance, _Nonce} -> ok
+        {error, _Reason} ->
+            ok = router_device_utils:report_status_no_dc(Device),
+            {error, ?DEVICE_NO_DC};
+        {ok, _OrgID, _Balance, _Nonce} ->
+            ok
     end.
 
 -spec eui_to_bin(undefined | non_neg_integer()) -> binary().

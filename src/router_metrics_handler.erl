@@ -18,10 +18,17 @@ handle(Req, _Args) ->
 handle('GET', [<<"metrics">>], _Req) ->
     {ok, [], prometheus_text_format:format()};
 %% Expose /devaddr to export a list of devices with there location and devaddr
-handle('GET', [<<"devaddr">>], _Req) ->
+handle('GET', [<<"devaddr">>, <<"json">>], _Req) ->
     case export_devaddr() of
         {ok, Devices} ->
             {ok, [], jsx:encode(Devices)};
+        {error, Reason} ->
+            {500, [], Reason}
+    end;
+handle('GET', [<<"devaddr">>, <<"csv">>], _Req) ->
+    case export_devaddr() of
+        {ok, Devices} ->
+            {ok, [], csv_format(Devices)};
         {error, Reason} ->
             {500, [], Reason}
     end;
@@ -33,6 +40,26 @@ handle_event(_Event, _Data, _Args) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec csv_format(list(map())) -> list().
+csv_format(Devices) ->
+    Header = "device_name,device_id,device_devaddr,hotspot_id,hotspot_name,latitude,longitude",
+    CSV = lists:reverse(lists:foldl(
+        fun(Map, Acc) ->
+            ToAppend = erlang:binary_to_list(maps:get(name, Map)) ++ "," ++
+            erlang:binary_to_list(maps:get(id, Map)) ++ "," ++
+            erlang:binary_to_list(maps:get(devaddr, Map)) ++ "," ++
+            erlang:binary_to_list(maps:get(hotspot_id, Map)) ++ "," ++
+            erlang:binary_to_list(maps:get(hotspot_name, Map)) ++ "," ++
+            io_lib:format("~.20f", [maps:get(lat, Map)]) ++ "," ++
+            io_lib:format("~.20f", [maps:get(long, Map)]),
+            [ToAppend | Acc]
+        end,
+        [],
+        Devices
+    )),
+    LineSep = io_lib:nl(),
+    [Header, LineSep, string:join(CSV, LineSep), LineSep].
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.
 export_devaddr() ->
@@ -77,6 +104,38 @@ get_location_info(Chain, Device) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+export_devaddr_csv_test() ->
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(router_utils, [passthrough]),
+    meck:expect(router_utils, get_hotspot_location, fun(_, _) -> {1.2, 1.3} end),
+
+    Dir = test_utils:tmp_dir("export_devaddr_test"),
+    {ok, Pid} = router_db:start_link([Dir]),
+    {ok, DB, [_, CF]} = router_db:get(),
+    #{public := Pubkey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(Pubkey),
+    DeviceUpdates = [{name, <<"Test Device Name">>},
+                     {location, PubKeyBin},
+                     {devaddr, <<3,4,0,72>>}],
+    Device = router_device:update(DeviceUpdates, router_device:new(<<"test_device_id">>)),
+    {ok, _} = router_device:save(DB, CF, Device),
+
+    {ok, Devices} = export_devaddr(),
+    Expected = ["device_name,device_id,device_devaddr,hotspot_id,hotspot_name,latitude,longitude",
+                  "\n",
+                  "Test Device Name,test_device_id,03040048,"++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ ","++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441",
+                  "\n"],
+    Got = csv_format(Devices),
+    ?assertEqual(Expected, Got),
+
+    ?assert(meck:validate(router_utils)),
+    meck:unload(router_utils),
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    gen_server:stop(Pid),
+    ok.
+
 export_devaddr_test() ->
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
@@ -88,15 +147,15 @@ export_devaddr_test() ->
     {ok, DB, [_, CF]} = router_db:get(),
     #{public := Pubkey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(Pubkey),
-    DeviceUpdates = [{name, <<"device_name">>},
+    DeviceUpdates = [{name, <<"Test Device Name">>},
                      {location, PubKeyBin},
                      {devaddr, <<3,4,0,72>>}],
-    Device = router_device:update(DeviceUpdates, router_device:new(<<"device_id">>)),
+    Device = router_device:update(DeviceUpdates, router_device:new(<<"test_device_id">>)),
     {ok, _} = router_device:save(DB, CF, Device),
 
     {ok, [Map]} = export_devaddr(),
-    ?assertEqual(<<"device_id">>, maps:get(id, Map)),
-    ?assertEqual(<<"device_name">>, maps:get(name, Map)),
+    ?assertEqual(<<"test_device_id">>, maps:get(id, Map)),
+    ?assertEqual(<<"Test Device Name">>, maps:get(name, Map)),
     ?assertEqual(<<"03040048">>, maps:get(devaddr, Map)),
     ?assertEqual(erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)), maps:get(hotspot_id, Map)),
     ?assertEqual(erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin)), maps:get(hotspot_name, Map)),

@@ -83,8 +83,6 @@ is_active() ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    %% TODO: Not really sure where exactly to install this handler at tbh...
-    ok = router_handler:add_stream_handler(blockchain_swarm:swarm()),
     ok = blockchain_event:add_handler(self()),
     erlang:send_after(500, self(), post_init),
     Tref = schedule_next_tick(),

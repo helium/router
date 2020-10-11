@@ -53,14 +53,14 @@ csv_format(Devices) ->
                                               " / Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ to_list(maps:get(hotspot_name, Map)) ++ ",",
                                           Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
                                           Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
-                                          Color = "green",
+                                          Color = maps:get(color, Map, "green"),
                                           [Name ++ Desc ++ Lat ++ Long ++ Color | Acc];
                                       false ->
                                           Name =  to_list(maps:get(hotspot_name, Map)) ++ ",",
                                           Desc = "Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++  ",",
                                           Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
                                           Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
-                                          Color = "blue",
+                                          Color = maps:get(color, Map, "blue"),
                                           [Name ++ Desc ++ Lat ++ Long ++ Color | Acc]
                                   end
                           end,
@@ -72,7 +72,7 @@ csv_format(Devices) ->
 
 -spec group_by_hotspot(list(map())) -> map().
 group_by_hotspot(Devices) ->
-    Map =lists:foldl(
+    Map = lists:foldl(
            fun(Device, Acc) ->
                    HotspotID = maps:get(hotspot_id, Device),
                    case maps:get(HotspotID, Acc, []) of
@@ -80,9 +80,15 @@ group_by_hotspot(Devices) ->
                            Hotspot = #{hotspot_id => HotspotID,
                                        hotspot_name => maps:get(hotspot_name, Device),
                                        lat => maps:get(lat, Device),
-                                       long => maps:get(long, Device)},
+                                       long => maps:get(long, Device),
+                                       color => "blue"},
                            maps:put(HotspotID, [add_coo_jitter(Device), Hotspot], Acc);
-                       Grouped -> maps:put(HotspotID, [add_coo_jitter(Device)|Grouped], Acc)
+                       Grouped ->
+                           DevAddr = maps:get(devaddr, Device),
+                           case lists:filter(fun(E) -> maps:get(devaddr, E, "") == DevAddr end, Grouped) of
+                               [] -> maps:put(HotspotID, [add_coo_jitter(Device)|Grouped], Acc);
+                               _ -> maps:put(HotspotID, [add_coo_jitter(maps:put(color, "red", Device))|Grouped], Acc)
+                           end
                    end
            end,
            #{},
@@ -97,8 +103,8 @@ add_coo_jitter(Device) ->
 
 coo_jitter() ->
     case rand:uniform(2) of
-        1 -> rand:uniform(100)/10000*-1;
-        2 -> rand:uniform(100)/10000
+        1 -> rand:uniform(100)/100000*-1;
+        2 -> rand:uniform(100)/100000
     end.
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.

@@ -43,21 +43,20 @@ handle_event(_Event, _Data, _Args) ->
 
 -spec csv_format(list(map())) -> list().
 csv_format(Devices) ->
-    Header = "device_name,device_id,device_devaddr,hotspot_id,hotspot_name,latitude,longitude",
+    Header = "name,desc,latitude,longitude,color",
     CSV = lists:reverse(lists:foldl(
-        fun(Map, Acc) ->
-            ToAppend = erlang:binary_to_list(maps:get(name, Map)) ++ "," ++
-            erlang:binary_to_list(maps:get(id, Map)) ++ "," ++
-            erlang:binary_to_list(maps:get(devaddr, Map)) ++ "," ++
-            erlang:binary_to_list(maps:get(hotspot_id, Map)) ++ "," ++
-            erlang:binary_to_list(maps:get(hotspot_name, Map)) ++ "," ++
-            io_lib:format("~.20f", [maps:get(lat, Map)]) ++ "," ++
-            io_lib:format("~.20f", [maps:get(long, Map)]),
-            [ToAppend | Acc]
-        end,
-        [],
-        Devices
-    )),
+                          fun(Map, Acc) ->
+                                  Name =  erlang:binary_to_list(maps:get(devaddr, Map)) ++ ",",
+                                  Desc = "Device name: " ++ erlang:binary_to_list(maps:get(name, Map)) ++ " / Device ID: " ++ erlang:binary_to_list(maps:get(id, Map)) ++
+                                      " / Hostspot ID: " ++ erlang:binary_to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ erlang:binary_to_list(maps:get(hotspot_name, Map)) ++ ",",
+                                  Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
+                                  Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
+                                  Color = "green",
+                                  [Name ++ Desc ++ Lat ++ Long ++ Color | Acc]
+                          end,
+                          [],
+                          Devices
+                         )),
     LineSep = io_lib:nl(),
     [Header, LineSep, string:join(CSV, LineSep), LineSep].
 
@@ -122,9 +121,8 @@ export_devaddr_csv_test() ->
     {ok, _} = router_device:save(DB, CF, Device),
 
     {ok, Devices} = export_devaddr(),
-    Expected = ["device_name,device_id,device_devaddr,hotspot_id,hotspot_name,latitude,longitude",
-                  "\n",
-                  "Test Device Name,test_device_id,03040048,"++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ ","++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441",
+    Expected = ["name,desc,latitude,longitude,color","\n",
+                  "03040048,Device name: Test Device Name / Device ID: test_device_id / Hostspot ID: " ++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ " / Hostspot Name: "++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441,green",
                   "\n"],
     Got = csv_format(Devices),
     ?assertEqual(Expected, Got),

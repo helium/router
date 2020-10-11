@@ -46,19 +46,60 @@ csv_format(Devices) ->
     Header = "name,desc,latitude,longitude,color",
     CSV = lists:reverse(lists:foldl(
                           fun(Map, Acc) ->
-                                  Name =  to_list(maps:get(devaddr, Map)) ++ ",",
-                                  Desc = "Device name: " ++ to_list(maps:get(name, Map)) ++ " / Device ID: " ++ to_list(maps:get(id, Map)) ++
-                                      " / Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ to_list(maps:get(hotspot_name, Map)) ++ ",",
-                                  Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
-                                  Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
-                                  Color = "green",
-                                  [Name ++ Desc ++ Lat ++ Long ++ Color | Acc]
+                                  case maps:is_key(devaddr, Map) of
+                                      true ->
+                                          Name =  to_list(maps:get(devaddr, Map)) ++ ",",
+                                          Desc = "Device name: " ++ to_list(maps:get(name, Map)) ++ " / Device ID: " ++ to_list(maps:get(id, Map)) ++
+                                              " / Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ to_list(maps:get(hotspot_name, Map)) ++ ",",
+                                          Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
+                                          Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
+                                          Color = "green",
+                                          [Name ++ Desc ++ Lat ++ Long ++ Color | Acc];
+                                      false ->
+                                          Name =  to_list(maps:get(hotspot_name, Map)) ++ ",",
+                                          Desc = "Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++  ",",
+                                          Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
+                                          Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
+                                          Color = "blue",
+                                          [Name ++ Desc ++ Lat ++ Long ++ Color | Acc]
+                                  end
                           end,
                           [],
-                          Devices
+                          group_by_hotspot(Devices)
                          )),
     LineSep = io_lib:nl(),
     [Header, LineSep, string:join(CSV, LineSep), LineSep].
+
+-spec group_by_hotspot(list(map())) -> map().
+group_by_hotspot(Devices) ->
+    Map =lists:foldl(
+           fun(Device, Acc) ->
+                   HotspotID = maps:get(hotspot_id, Device),
+                   case maps:get(HotspotID, Acc, []) of
+                       [] ->
+                           Hotspot = #{hotspot_id => HotspotID,
+                                       hotspot_name => maps:get(hotspot_name, Device),
+                                       lat => maps:get(lat, Device),
+                                       long => maps:get(long, Device)},
+                           maps:put(HotspotID, [add_coo_jitter(Device), Hotspot], Acc);
+                       Grouped -> maps:put(HotspotID, [add_coo_jitter(Device)|Grouped], Acc)
+                   end
+           end,
+           #{},
+           Devices
+          ),
+    lists:flatten(maps:values(Map)).
+
+add_coo_jitter(Device) ->
+    Lat = maps:get(lat, Device),
+    Long = maps:get(long, Device),
+    maps:put(lat, Lat + coo_jitter(), maps:put(long, Long + coo_jitter(), Device)).
+
+coo_jitter() ->
+    case rand:uniform(2) of
+        1 -> rand:uniform(100)/10000*-1;
+        2 -> rand:uniform(100)/10000
+    end.
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.
 export_devaddr() ->
@@ -128,8 +169,8 @@ export_devaddr_csv_test() ->
 
     {ok, Devices} = export_devaddr(),
     Expected = ["name,desc,latitude,longitude,color","\n",
-                  "03040048,Device name: Test Device Name / Device ID: test_device_id / Hostspot ID: " ++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ " / Hostspot Name: "++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441,green",
-                  "\n"],
+                "03040048,Device name: Test Device Name / Device ID: test_device_id / Hostspot ID: " ++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ " / Hostspot Name: "++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441,green",
+                "\n"],
     Got = csv_format(Devices),
     ?assertEqual(Expected, Got),
 

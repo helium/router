@@ -86,7 +86,7 @@ export_devaddr() ->
 get_location_info(Chain, Device) ->
     case router_device:location(Device) of
         undefined ->
-            {<<"">>, <<"">>, 0.0, 0.0};
+            {"unasserted", "unasserted", 0.0, 0.0};
         PubKeyBin ->
             B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
             HotspotName = blockchain_utils:addr2name(PubKeyBin),
@@ -109,7 +109,7 @@ export_devaddr_csv_test() ->
     meck:new(router_utils, [passthrough]),
     meck:expect(router_utils, get_hotspot_location, fun(_, _) -> {1.2, 1.3} end),
 
-    Dir = test_utils:tmp_dir("export_devaddr_test"),
+    Dir = test_utils:tmp_dir("export_devaddr_csv_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     {ok, DB, [_, CF]} = router_db:get(),
     #{public := Pubkey} = libp2p_crypto:generate_keys(ecc_compact),

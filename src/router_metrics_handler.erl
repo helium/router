@@ -46,9 +46,9 @@ csv_format(Devices) ->
     Header = "name,desc,latitude,longitude,color",
     CSV = lists:reverse(lists:foldl(
                           fun(Map, Acc) ->
-                                  Name =  erlang:binary_to_list(maps:get(devaddr, Map)) ++ ",",
-                                  Desc = "Device name: " ++ erlang:binary_to_list(maps:get(name, Map)) ++ " / Device ID: " ++ erlang:binary_to_list(maps:get(id, Map)) ++
-                                      " / Hostspot ID: " ++ erlang:binary_to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ erlang:binary_to_list(maps:get(hotspot_name, Map)) ++ ",",
+                                  Name =  to_list(maps:get(devaddr, Map)) ++ ",",
+                                  Desc = "Device name: " ++ to_list(maps:get(name, Map)) ++ " / Device ID: " ++ to_list(maps:get(id, Map)) ++
+                                      " / Hostspot ID: " ++ to_list(maps:get(hotspot_id, Map)) ++ " / Hostspot Name: " ++ to_list(maps:get(hotspot_name, Map)) ++ ",",
                                   Lat = io_lib:format("~.20f", [maps:get(lat, Map)]) ++ ",",
                                   Long = io_lib:format("~.20f", [maps:get(long, Map)]) ++ ",",
                                   Color = "green",
@@ -97,6 +97,12 @@ get_location_info(Chain, Device) ->
                     {B58, HotspotName, Lat, Long}
             end
     end.
+
+-spec to_list(atom() | binary()) -> list().
+to_list(A) when is_atom(A) ->
+    erlang:atom_to_list(A);
+to_list(B) when is_binary(B) ->
+    erlang:binary_to_list(B).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

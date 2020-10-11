@@ -70,41 +70,43 @@ csv_format(Devices) ->
     LineSep = io_lib:nl(),
     [Header, LineSep, string:join(CSV, LineSep), LineSep].
 
--spec group_by_hotspot(list(map())) -> map().
+-spec group_by_hotspot(list(map())) -> list().
 group_by_hotspot(Devices) ->
     Map = lists:foldl(
-           fun(Device, Acc) ->
-                   HotspotID = maps:get(hotspot_id, Device),
-                   case maps:get(HotspotID, Acc, []) of
-                       [] ->
-                           Hotspot = #{hotspot_id => HotspotID,
-                                       hotspot_name => maps:get(hotspot_name, Device),
-                                       lat => maps:get(lat, Device),
-                                       long => maps:get(long, Device),
-                                       color => "blue"},
-                           maps:put(HotspotID, [add_coo_jitter(Device), Hotspot], Acc);
-                       Grouped ->
-                           DevAddr = maps:get(devaddr, Device),
-                           case lists:filter(fun(E) -> maps:get(devaddr, E, "") == DevAddr end, Grouped) of
-                               [] -> maps:put(HotspotID, [add_coo_jitter(Device)|Grouped], Acc);
-                               _ -> maps:put(HotspotID, [add_coo_jitter(maps:put(color, "red", Device))|Grouped], Acc)
-                           end
-                   end
-           end,
-           #{},
-           Devices
-          ),
+            fun(Device, Acc) ->
+                    HotspotID = maps:get(hotspot_id, Device),
+                    case maps:get(HotspotID, Acc, []) of
+                        [] ->
+                            Hotspot = #{hotspot_id => HotspotID,
+                                        hotspot_name => maps:get(hotspot_name, Device),
+                                        lat => maps:get(lat, Device),
+                                        long => maps:get(long, Device),
+                                        color => "blue"},
+                            maps:put(HotspotID, [add_coo_jitter(Device), Hotspot], Acc);
+                        Grouped ->
+                            DevAddr = maps:get(devaddr, Device),
+                            case lists:filter(fun(E) -> maps:get(devaddr, E, "") == DevAddr end, Grouped) of
+                                [] -> maps:put(HotspotID, [add_coo_jitter(Device)|Grouped], Acc);
+                                _ -> maps:put(HotspotID, [add_coo_jitter(maps:put(color, "red", Device))|Grouped], Acc)
+                            end
+                    end
+            end,
+            #{},
+            Devices
+           ),
     lists:flatten(maps:values(Map)).
 
+-spec add_coo_jitter(map()) -> map().
 add_coo_jitter(Device) ->
     Lat = maps:get(lat, Device),
     Long = maps:get(long, Device),
     maps:put(lat, Lat + coo_jitter(), maps:put(long, Long + coo_jitter(), Device)).
 
+-spec coo_jitter() -> float().
 coo_jitter() ->
     case rand:uniform(2) of
-        1 -> rand:uniform(100)/100000*-1;
-        2 -> rand:uniform(100)/100000
+        1 -> rand:uniform(100)/10000*-1;
+        2 -> rand:uniform(100)/10000
     end.
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.
@@ -167,18 +169,39 @@ export_devaddr_csv_test() ->
     {ok, DB, [_, CF]} = router_db:get(),
     #{public := Pubkey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(Pubkey),
-    DeviceUpdates = [{name, <<"Test Device Name">>},
-                     {location, PubKeyBin},
-                     {devaddr, <<3,4,0,72>>}],
-    Device = router_device:update(DeviceUpdates, router_device:new(<<"test_device_id">>)),
-    {ok, _} = router_device:save(DB, CF, Device),
+    DeviceUpdates0 = [{name, <<"Test Device Name 0">>},
+                      {location, PubKeyBin},
+                      {devaddr, <<3,4,0,72>>}],
+    Device0 = router_device:update(DeviceUpdates0, router_device:new(<<"test_device_id_0">>)),
+    {ok, _} = router_device:save(DB, CF, Device0),
+    DeviceUpdates1 = [{name, <<"Test Device Name 1">>},
+                      {location, PubKeyBin},
+                      {devaddr, <<3,4,0,72>>}],
+    Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"test_device_id_1">>)),
+    {ok, _} = router_device:save(DB, CF, Device1),
+    DeviceUpdates2 = [{name, <<"Test Device Name 2">>},
+                      {location, PubKeyBin},
+                      {devaddr, <<0,4,0,72>>}],
+    Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"test_device_id_2">>)),
+    {ok, _} = router_device:save(DB, CF, Device2),
 
     {ok, Devices} = export_devaddr(),
-    Expected = ["name,desc,latitude,longitude,color","\n",
-                "03040048,Device name: Test Device Name / Device ID: test_device_id / Hostspot ID: " ++ libp2p_crypto:bin_to_b58(PubKeyBin) ++ " / Hostspot Name: "++ blockchain_utils:addr2name(PubKeyBin) ++ ",1.19999999999999995559,1.30000000000000004441,green",
-                "\n"],
-    Got = csv_format(Devices),
-    ?assertEqual(Expected, Got),
+    Expexted = [#{color => "red",devaddr => <<"03040048">>,
+                    hotspot_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    hotspot_name => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin)),
+                    id => <<"test_device_id_0">>,name => <<"Test Device Name 0">>},
+                  #{devaddr => <<"03040048">>,
+                    hotspot_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    hotspot_name => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin)),
+                    id => <<"test_device_id_1">>,name => <<"Test Device Name 1">>},
+                  #{devaddr => <<"00040048">>,
+                    hotspot_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    hotspot_name => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin)),
+                    id => <<"test_device_id_2">>,name => <<"Test Device Name 2">>},
+                  #{color => "blue",
+                    hotspot_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    hotspot_name => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin))}],
+    ?assert(Expexted == [maps:remove(lat, maps:remove(long, D)) || D <- group_by_hotspot(Devices)]),
 
     ?assert(meck:validate(router_utils)),
     meck:unload(router_utils),

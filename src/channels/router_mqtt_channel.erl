@@ -109,9 +109,10 @@ handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
     {ok, State#state{ping=ping(Conn)}};
 handle_info({disconnected, _Type, _Reason}, #state{channel=Channel, endpoint=Endpoint,
                                                    sub_topic=DownlinkTopic, ping=TimerRef}=State) ->
-    _ = erlang:cancel_timer(TimerRef),
     DeviceID = router_channel:device_id(Channel),
     ChannelName = router_channel:name(Channel),
+    lager:error("got a disconnected message: ~p ~p trying to reconnect to ~p", [_Type, _Reason, {Endpoint, ChannelName}]),
+    _ = erlang:cancel_timer(TimerRef),
     {ok, Conn} = connect(Endpoint, DeviceID, ChannelName),
     {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
     {ok, State#state{connection=Conn, ping=ping(Conn)}};

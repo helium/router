@@ -20,8 +20,7 @@
          handle_join/8,
          handle_frame/6,
          queue_message/2,
-         device_update/1,
-         is_active/1, is_active/2]).
+         device_update/1]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -90,14 +89,6 @@ queue_message(Pid, Msg) ->
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
--spec is_active(Pid :: pid()) -> boolean().
-is_active(Pid) ->
-    gen_server:call(Pid, is_active).
-
--spec is_active(Pid :: pid(), boolean()) -> ok.
-is_active(Pid, IsActive) ->
-    gen_server:cast(Pid, {is_active, IsActive}).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -116,8 +107,7 @@ init(#{db := DB, cf := CF, id := ID}=Args) ->
     {ok, #state{chain=Blockchain, db=DB, cf=CF, device=Device,
                 oui=OUI, channels_worker=Pid, is_active=IsActive}}.
 
-handle_call(is_active, _From, #state{is_active=IsActive}=State) ->
-    {reply, IsActive, State};
+
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

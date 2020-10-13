@@ -78,8 +78,8 @@ handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connect
     {ok, State};
 handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
     _ = erlang:cancel_timer(TimerRef),
-    pong = (catch emqtt:ping(Conn)),
-    lager:debug("pinging MQTT connection ~p", [Conn]),
+    Pong = (catch emqtt:ping(Conn)),
+    lager:debug("pinging MQTT connection ~p ~p", [Conn, Pong]),
     {ok, State#state{ping=ping(Conn)}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),

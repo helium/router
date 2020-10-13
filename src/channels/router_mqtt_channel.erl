@@ -104,8 +104,8 @@ handle_info({publish, #{client_pid := Pid, payload := Payload}}, #state{connecti
     {ok, State};
 handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
     _ = erlang:cancel_timer(TimerRef),
-    pong = (catch emqtt:ping(Conn)),
-    lager:debug("pinging MQTT connection ~p", [Conn]),
+    Pong = (catch emqtt:ping(Conn)),
+    lager:debug("pinging MQTT connection ~p ~p", [Conn, Pong]),
     {ok, State#state{ping=ping(Conn)}};
 handle_info({disconnected, _Type, _Reason}, #state{channel=Channel, endpoint=Endpoint,
                                                    sub_topic=DownlinkTopic, ping=TimerRef}=State) ->

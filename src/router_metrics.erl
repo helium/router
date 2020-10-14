@@ -6,9 +6,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         offer_inc/3,
          offer_observe/4,
-         packet_inc/2,
+         packet_observe/3,
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
@@ -30,9 +29,8 @@
 -define(METRICS_TICK, '__router_metrics_tick').
 
 -define(BASE, "router_").
--define(OFFER, ?BASE ++ "device_routing_offer").
--define(OFFER_TIME, ?BASE ++ "device_routing_offer_time").
--define(PACKET, ?BASE ++ "device_routing_packet").
+-define(OFFER, ?BASE ++ "device_routing_offer_duration").
+-define(PACKET, ?BASE ++ "device_routing_packet_duration").
 -define(DOWNLINK, ?BASE ++ "device_downlink_packet").
 -define(DC, ?BASE ++ "dc_balance").
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
@@ -41,9 +39,8 @@
 -define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
 -define(WS, ?BASE ++ "ws_state").
 
--define(METRICS, [{counter, ?OFFER, [type, status, reason], "Offer count"},
-                  {histogram, ?OFFER_TIME, [type, status, reason], "Offer duration", [50, 100, 250, 500, 1000]},
-                  {counter, ?PACKET, [type, status], "Packet count"},
+-define(METRICS, [{histogram, ?OFFER, [type, status, reason], "Offer duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?PACKET, [type, status, reason], "Packet duration", [50, 100, 250, 500, 1000]},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
@@ -61,20 +58,15 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec offer_inc(join | packet, accepted | rejected, any()) -> ok.
-offer_inc(Type, Status, Reason) when (Type == join orelse Type == packet)
-                                     andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_counter:inc(?OFFER, [Type, Status, Reason]).
-
 -spec offer_observe(join | packet, accepted | rejected, any(), non_neg_integer()) -> ok.
 offer_observe(Type, Status, Reason, Time) when (Type == join orelse Type == packet)
                                                andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_histogram:observe(?OFFER_TIME, [Type, Status, Reason], Time).
+    ok = prometheus_histogram:observe(?OFFER, [Type, Status, Reason], Time).
 
--spec packet_inc(join | packet, accepted | rejected) -> ok.
-packet_inc(Type, Status) when (Type == join orelse Type == packet)
-                              andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_counter:inc(?PACKET, [Type, Status]).
+-spec packet_observe(join | packet, accepted | rejected, non_neg_integer()) -> ok.
+packet_observe(Type, Status, Time) when (Type == join orelse Type == packet)
+                                        andalso (Status == accepted orelse Status == rejected) ->
+    ok = prometheus_histogram:observe(?OFFER, [Type, Status], Time).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->

@@ -7,7 +7,7 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          routing_offer_observe/4, routing_packet_observe/3,
-         packet_observe_start/3, packet_observe_end/3,
+         packet_observe_start/3, packet_observe_end/5,
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
@@ -42,7 +42,7 @@
 
 -define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?ROUTING_PACKET, [type, status], "Routing Packet duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?PACKET, [], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
+                  {histogram, ?PACKET, [type, downlink], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
@@ -74,9 +74,9 @@ routing_packet_observe(Type, Status, Time) when (Type == join orelse Type == pac
 packet_observe_start(PacketHash, PubKeyBin, Time) ->
     gen_server:cast(?MODULE, {packet_observe_start, PacketHash, PubKeyBin, Time}).
 
--spec packet_observe_end(binary(), binary(), non_neg_integer()) -> ok.
-packet_observe_end(PacketHash, PubKeyBin, Time) ->
-    gen_server:cast(?MODULE, {packet_observe_end, PacketHash, PubKeyBin, Time}).
+-spec packet_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
+packet_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
+    gen_server:cast(?MODULE, {packet_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
@@ -134,12 +134,12 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({packet_observe_start, PacketHash, PubKeyBin, Start}, #state{packet_duration=PD}=State) ->
     {noreply, State#state{packet_duration=maps:put({PacketHash, PubKeyBin}, Start, PD)}};
-handle_cast({packet_observe_end, PacketHash, PubKeyBin, End}, #state{packet_duration=PD}=State) ->
+handle_cast({packet_observe_end, PacketHash, PubKeyBin, End, Type, Downlink}, #state{packet_duration=PD}=State) ->
     case maps:get({PacketHash, PubKeyBin}, PD, undefined) of
         undefined ->
             {noreply, State};
         Start ->
-            ok = prometheus_histogram:observe(?PACKET, [], End-Start),
+            ok = prometheus_histogram:observe(?PACKET, [Type, Downlink], End-Start),
             {noreply, State#state{packet_duration=maps:remove({PacketHash, PubKeyBin}, PD)}}
     end;
 handle_cast(_Msg, State) ->

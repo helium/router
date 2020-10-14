@@ -185,7 +185,11 @@ handle_cast({join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pi
                         false ->
                             lager:debug("got another join for ~p with worst RSSI ~p", [JoinNonce, {NewRSSI, OldRSSI}]),
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
-                            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0), PubKeyBin, erlang:system_time(millisecond)),
+                            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0),
+                                                                   PubKeyBin,
+                                                                   erlang:system_time(millisecond),
+                                                                   join,
+                                                                   false),
                             Cache1 = maps:put(JoinNonce, JoinCache1#join_cache{packets=[{Packet0, PubKeyBin, Region}|OldPackets]}, Cache0),
                             {noreply, State0#state{join_cache=Cache1}};
                         true ->
@@ -213,11 +217,19 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
             ok = router_device_utils:report_status_no_dc(Device0),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(Packet0),
-            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0), PubKeyBin, erlang:system_time(millisecond)),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0),
+                                                   PubKeyBin,
+                                                   erlang:system_time(millisecond),
+                                                   packet,
+                                                   false),
             {noreply, State#state{device=Device1}};
         {error, _Reason} ->
             _ = router_device_routing:deny_more(Packet0),
-            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0), PubKeyBin, erlang:system_time(millisecond)),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0),
+                                                   PubKeyBin,
+                                                   erlang:system_time(millisecond),
+                                                   packet,
+                                                   false),
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
             FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
@@ -257,7 +269,11 @@ handle_cast({frame, Packet0, PacketTime, PubKeyBin, Region, Pid}, #state{chain=B
                     case RSSI0 > RSSI1 of
                         false ->
                             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
-                            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0), PubKeyBin, erlang:system_time(millisecond)),
+                            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet0),
+                                                                   PubKeyBin,
+                                                                   erlang:system_time(millisecond),
+                                                                   packet,
+                                                                   false),
                             Cache1 = maps:put(FCnt, FrameCache0#frame_cache{count=Count+1}, Cache0),
                             {noreply, State#state{device=Device1, frame_cache=Cache1}};
                         true ->
@@ -288,7 +304,11 @@ handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
                                                           packet_to_rxq(Packet)),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
     catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
-    ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
+    ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet),
+                                           PubKeyBin,
+                                           erlang:system_time(millisecond),
+                                           join,
+                                           true),
     Device1 = router_device:join_nonce(JoinNonce, Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
@@ -311,7 +331,11 @@ handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, c
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             router_device_routing:clear_replay(DeviceID),
-            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                   PubKeyBin,
+                                                   erlang:system_time(millisecond),
+                                                   packet,
+                                                   false),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
@@ -321,12 +345,20 @@ handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, c
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
-            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                   PubKeyBin,
+                                                   erlang:system_time(millisecond),
+                                                   packet,
+                                                   true),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             router_device_routing:clear_replay(DeviceID),
-            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                   PubKeyBin,
+                                                   erlang:system_time(millisecond),
+                                                   packet,
+                                                   false),
             {noreply, State#state{frame_cache=Cache1}}
     end;
 handle_info(_Msg, State) ->

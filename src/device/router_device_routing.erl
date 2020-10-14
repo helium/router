@@ -67,6 +67,7 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
+    Start = erlang:system_time(millisecond),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp = case Routing of
                #routing_information_pb{data={eui, _EUI}} ->
@@ -74,8 +75,11 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _DevAddr}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    ok = print_offer_resp(Offer, HandlerPid, Resp),
-    ok = handle_offer_metrics(Routing, Resp),
+    End = erlang:system_time(millisecond),
+    erlang:spawn(fun() ->
+                         ok = print_offer_resp(Offer, HandlerPid, Resp),
+                         ok = handle_offer_metrics(Routing, Resp, End-Start)
+                 end),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
@@ -500,15 +504,15 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
-handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
-    ok = router_metrics:offer_inc(join, accepted, accepted);
-handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}) ->
-    ok = router_metrics:offer_inc(join, rejected, Reason);
-handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok) ->
-    ok = router_metrics:offer_inc(packet, accepted, accepted);
-handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}) ->
-    ok = router_metrics:offer_inc(packet, rejected, Reason).
+-spec handle_offer_metrics(any(), ok | {error, any()}, non_neg_integer()) -> ok.
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok, Time) ->
+    ok = router_metrics:offer_observe(join, accepted, accepted, Time);
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}, Time) ->
+    ok = router_metrics:offer_observe(join, rejected, Reason, Time);
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok, Time) ->
+    ok = router_metrics:offer_observe(packet, accepted, accepted, Time);
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}, Time) ->
+    ok = router_metrics:offer_observe(packet, rejected, Reason, Time).
 
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.

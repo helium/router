@@ -20,50 +20,55 @@
          code_change/3]).
 
 -define(PING_TIMEOUT, timer:seconds(25)).
+-define(BACKOFF_MIN, timer:seconds(10)).
+-define(BACKOFF_MAX, timer:minutes(5)).
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).
 
 -record(state, {channel :: router_channel:channel(),
+                channel_id :: binary(),
+                device ::  router_device:device(),
+                connection :: pid() | undefined,
+                connection_backoff :: backoff:backoff(),
+                endpoint :: binary(),
+                uplink_topic :: binary(),
+                downlink_topic :: binary(),
+                ping :: reference() | undefined,
                 aws :: pid(),
-                connection :: pid(),
-                endpoint :: string(),
-                pubtopic :: binary(),
-                ping :: reference()}).
+                key :: any(),
+                cert :: any()}).
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
     lager:md([{device_id, router_device:id(Device)}]),
-    lager:info("~p init with ~p", [?MODULE, Channel]),
+    ChannelID = router_channel:id(Channel),
+    DeviceID = router_device:id(Device),
+    lager:info("[~s] ~p init with ~p", [ChannelID, ?MODULE, Channel]),
+    #{topic := UplinkTopic} = router_channel:args(Channel),
+    DownlinkTopic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
     case setup_aws(Channel, Device) of
         {error, Reason} ->
             {error, Reason};
         {ok, AWS, Endpoint, Key, Cert} ->
-            DeviceID = router_channel:device_id(Channel),
-            case connect(DeviceID, Endpoint, Key, Cert) of
-                {error, Reason} ->
-                    {error, Reason};
-                {ok, Conn} ->
-                    Topic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
-                    {ok, _, _} = emqtt:subscribe(Conn, Topic, 0),
-                    #{topic := PubTopic} = router_channel:args(Channel),
-                    {ok, #state{channel=Channel, aws=AWS, connection=Conn,
-                                endpoint=Endpoint, pubtopic=PubTopic, ping=ping(Conn)}}
-            end
+            Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
+            self() ! {?MODULE, connect, ChannelID},
+            {ok, #state{channel=Channel,
+                        channel_id=ChannelID,
+                        device=Device,
+                        connection_backoff=Backoff,
+                        endpoint=Endpoint,
+                        uplink_topic=UplinkTopic,
+                        downlink_topic=DownlinkTopic,
+                        aws=AWS,
+                        key=Key,
+                        cert=Cert}}
     end.
 
-handle_event({data, Ref, Data}, #state{channel=Channel, connection=Conn, endpoint=Endpoint, pubtopic=Topic}=State) ->
-    Body = router_channel:encode_data(Channel, Data),
-    Res = emqtt:publish(Conn, Topic, Body, 0),
-    lager:debug("published: ~p result: ~p", [Data, Res]),
-    Debug = #{req => #{endpoint => erlang:list_to_binary(Endpoint),
-                       topic => Topic,
-                       qos => 0,
-                       body => Body}},
-    ok = handle_publish_res(Res, Channel, Ref, Debug),
-    {ok, State};
-handle_event(_Msg, State) ->
-    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
+handle_event({data, Ref, Data}, State) ->
+    publish(Ref, Data, State);
+handle_event(_Msg, #state{channel_id=ChannelID}=State) ->
+    lager:warning("[~s] rcvd unknown cast msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
 
 handle_call({update, Channel, Device}, State) ->
@@ -72,34 +77,119 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
+handle_info({?MODULE, connect, ChannelID}, #state{channel_id=ChannelID, device=Device,
+                                                  connection=OldConn, connection_backoff=Backoff0,
+                                                  endpoint=Endpoint, downlink_topic=DownlinkTopic,
+                                                  ping=TimerRef, key=Key, cert=Cert}=State) ->
+    ok = cleanup_connection(OldConn),
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    DeviceID = router_device:id(Device),
+    case connect(DeviceID, Endpoint, Key, Cert) of
+        {ok, Conn} ->
+            case emqtt:subscribe(Conn, DownlinkTopic, 0) of
+                {ok, _, _} ->
+                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [ChannelID, Endpoint, Conn, DownlinkTopic]),
+                    {_, Backoff1} =  backoff:succeed(Backoff0),
+                    {ok, State#state{connection=Conn,
+                                     connection_backoff=Backoff1,
+                                     endpoint=Endpoint,
+                                     ping=ping(ChannelID)}};
+                {error, _SubReason} ->
+                    lager:error("[~s] failed to subscribe to ~p: ~p", [ChannelID, DownlinkTopic, _SubReason]),
+                    Backoff1 = reconnect(ChannelID, Backoff0),
+                    {ok, State#state{connection_backoff=Backoff1}}
+            end;
+        {error, _ConnReason} ->
+            lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff=Backoff1}}
+    end;
+%% Ignore connect message not for us
+handle_info({?MODULE, connect, _}, State) ->
+    {ok, State};
+handle_info({?MODULE, ping, ChannelID}, #state{channel_id=ChannelID, connection=Conn,
+                                               connection_backoff=Backoff0, ping=TimerRef}=State) ->
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    try emqtt:ping(Conn) of
+        pong ->
+            lager:debug("[~s] pinged MQTT connection ~p successfully", [ChannelID, Conn]),
+            {ok, State#state{ping=ping(ChannelID)}}
+    catch _:_ ->
+            lager:error("[~s] failed to ping MQTT connection ~p", [ChannelID, Conn]),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff=Backoff1}}
+    end;
 handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connection=Conn, channel=Channel}=State) ->
     Controller = router_channel:controller(Channel),
     router_device_channels_worker:handle_downlink(Controller, Payload, aws),
     {ok, State};
-handle_info({ping, Conn}, #state{connection=Conn, ping=TimerRef}=State) ->
-    _ = erlang:cancel_timer(TimerRef),
-    Pong = (catch emqtt:ping(Conn)),
-    lager:debug("pinging MQTT connection ~p ~p", [Conn, Pong]),
-    {ok, State#state{ping=ping(Conn)}};
-handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+handle_info({'EXIT', Conn, {_Type, _Reason}}, #state{channel_id=ChannelID, connection=Conn,
+                                                     connection_backoff=Backoff0, ping=TimerRef}=State) ->
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    lager:error("[~s] got a EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
+    Backoff1 = reconnect(ChannelID, Backoff0),
+    {ok, State#state{connection_backoff=Backoff1}};
+handle_info({disconnected, _Type, _Reason}, #state{channel_id=ChannelID}=State) ->
+    lager:error("[~s] got a disconnected message: ~p ~p", [ChannelID, _Type, _Reason]),
+    {ok, State};
+handle_info(_Msg, #state{channel_id=ChannelID}=State) ->
+    lager:warning("[~s] rcvd unknown info msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, #state{connection=Conn}) ->
-    (catch emqtt:disconnect(Conn)),
-    (catch emqtt:stop(Conn)),
-    ok.
+    ok = cleanup_connection(Conn).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec ping(pid()) -> reference().
-ping(Conn) ->
-    erlang:send_after(?PING_TIMEOUT, self(), {ping, Conn}).
+-spec publish(any(), map(), #state{}) -> {ok, #state{}}.
+publish(Ref, Data, #state{channel=Channel, connection=undefined,
+                          endpoint=Endpoint, uplink_topic=Topic}=State) ->
+    Body = router_channel:encode_data(Channel, Data),
+    Debug = #{req => #{endpoint => Endpoint,
+                       topic => Topic,
+                       qos => 0,
+                       body => Body}},
+    ok = handle_publish_res({error, not_connected}, Channel, Ref, Debug),
+    {ok, State};
+publish(Ref, Data, #state{channel=Channel, channel_id=ChannelID, connection=Conn,
+                          connection_backoff=Backoff0, endpoint=Endpoint, uplink_topic=Topic}=State) ->
+    Body = router_channel:encode_data(Channel, Data),
+    Debug = #{req => #{endpoint => Endpoint,
+                       topic => Topic,
+                       qos => 0,
+                       body => Body}},
+    try emqtt:publish(Conn, Topic, Body, 0) of
+        Resp ->
+            lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
+            ok = handle_publish_res(Resp, Channel, Ref, Debug),
+            {ok, State}
+    catch _:_ ->
+            lager:error("[~s] failed to publish", [ChannelID]),
+            ok = handle_publish_res({error, publish_failed}, Channel, Ref, Debug),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff=Backoff1}}
+    end.
+
+-spec ping(binary()) -> reference().
+ping(ChannelID) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
+
+-spec reconnect(binary(), backoff:backoff()) -> backoff:backoff().
+reconnect(ChannelID, Backoff0) ->
+    {Delay, Backoff1} = backoff:fail(Backoff0),
+    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}),
+    Backoff1.
+
+-spec cleanup_connection(pid()) -> ok.
+cleanup_connection(Conn) ->
+    (catch emqtt:disconnect(Conn)),
+    (catch emqtt:stop(Conn)),
+    ok.
 
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->
@@ -123,11 +213,11 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
               end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
--spec connect(binary(), string(), any(), any()) -> {ok, pid()} | {error, any()}.
+-spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
-    Opts = [{host, Hostname},
+    Opts = [{host, erlang:binary_to_list(Hostname)},
             {port, 8883},
             {clientid, DeviceID},
             {keepalive, 30},
@@ -146,7 +236,7 @@ der_encode_cert(PEMCert) ->
     public_key:der_encode('Certificate', Cert).
 
 -spec setup_aws(router_channel:channel(),
-                router_device:device()) -> {ok, pid(), string(), any(), any()} | {error, any()}.
+                router_device:device()) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
 setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
     #{aws_access_key := AccessKey,
@@ -168,7 +258,7 @@ setup_aws(Channel, Device) ->
                         {error, _}=Error ->
                             Error;
                         {ok, Key, Cert} ->
-                            {ok, AWS, Endpoint, Key, Cert}
+                            {ok, AWS, erlang:list_to_binary(Endpoint), Key, Cert}
                     end
             end
     end.

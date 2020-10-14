@@ -306,6 +306,7 @@ handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, c
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             router_device_routing:clear_replay(DeviceID),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
@@ -315,10 +316,12 @@ handle_info({frame_timeout, FCnt, PacketTime}, #state{chain=Blockchain, db=DB, c
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
             {noreply, State#state{device=Device1, frame_cache=Cache1}};
         noop ->
             catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true)),
             router_device_routing:clear_replay(DeviceID),
+            ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet), PubKeyBin, erlang:system_time(millisecond)),
             {noreply, State#state{frame_cache=Cache1}}
     end;
 handle_info(_Msg, State) ->

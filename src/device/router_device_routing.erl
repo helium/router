@@ -77,6 +77,9 @@ handle_offer(Offer, HandlerPid) ->
            end,
     End = erlang:system_time(millisecond),
     erlang:spawn(fun() ->
+                         ok = router_metrics:packet_observe_start(blockchain_state_channel_offer_v1:packet_hash(Offer),
+                                                                  blockchain_state_channel_offer_v1:hotspot(Offer),
+                                                                  Start),
                          ok = print_offer_resp(Offer, HandlerPid, Resp),
                          ok = handle_offer_metrics(Routing, Resp, End-Start)
                  end),
@@ -508,29 +511,29 @@ maybe_start_worker(DeviceID) ->
 
 -spec handle_offer_metrics(any(), ok | {error, any()}, non_neg_integer()) -> ok.
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok, Time) ->
-    ok = router_metrics:offer_observe(join, accepted, accepted, Time);
+    ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}, Time) ->
-    ok = router_metrics:offer_observe(join, rejected, Reason, Time);
+    ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok, Time) ->
-    ok = router_metrics:offer_observe(packet, accepted, accepted, Time);
+    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}, Time) ->
-    ok = router_metrics:offer_observe(packet, rejected, Reason, Time).
+    ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}, non_neg_integer()) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
                                             _DevNonce:2/binary, _MIC:4/binary>>}, ok, Start) when MType == ?JOIN_REQ ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:packet_observe(join, accepted, End-Start);
+    ok = router_metrics:routing_packet_observe(join, accepted, End-Start);
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
                                             _DevNonce:2/binary, _MIC:4/binary>>}, {error, _}, Start) when MType == ?JOIN_REQ  ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:packet_observe(join, rejected, End-Start);
+    ok = router_metrics:routing_packet_observe(join, rejected, End-Start);
 handle_packet_metrics(_Packet, ok, Start) ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:packet_observe(packet, accepted, End-Start);
+    ok = router_metrics:routing_packet_observe(packet, accepted, End-Start);
 handle_packet_metrics(_Packet, {error, _}, Start) ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:packet_observe(packet, rejected, End-Start).
+    ok = router_metrics:routing_packet_observe(packet, rejected, End-Start).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -600,7 +603,7 @@ handle_join_offer_test() ->
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, offer_observe, fun(_, _, _, _) -> ok end),
+    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
 
@@ -659,8 +662,8 @@ handle_packet_offer_test() ->
     meck:new(blockchain_ledger_routing_v1, [passthrough]),
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, packet_observe, fun(_, _, _) -> ok end),
-    meck:expect(router_metrics, offer_observe, fun(_, _, _, _) -> ok end),
+    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _) -> ok end),
+    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
     meck:new(router_console_dc_tracker, [passthrough]),

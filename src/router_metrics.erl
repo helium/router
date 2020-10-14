@@ -40,7 +40,7 @@
 -define(WS, ?BASE ++ "ws_state").
 
 -define(METRICS, [{histogram, ?OFFER, [type, status, reason], "Offer duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?PACKET, [type, status, reason], "Packet duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?PACKET, [type, status], "Packet duration", [50, 100, 250, 500, 1000]},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},

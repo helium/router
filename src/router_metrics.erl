@@ -66,7 +66,7 @@ offer_observe(Type, Status, Reason, Time) when (Type == join orelse Type == pack
 -spec packet_observe(join | packet, accepted | rejected, non_neg_integer()) -> ok.
 packet_observe(Type, Status, Time) when (Type == join orelse Type == packet)
                                         andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_histogram:observe(?OFFER, [Type, Status], Time).
+    ok = prometheus_histogram:observe(?PACKET, [Type, Status], Time).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->

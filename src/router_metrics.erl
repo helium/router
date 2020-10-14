@@ -51,7 +51,7 @@
                   {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]},
                   {boolean, ?WS, [], "Websocket State"}]).
 
--record(state, {end_to_end :: map()}).
+-record(state, {packet_duration :: map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -125,35 +125,35 @@ init(Args) ->
       end,
       ?METRICS),
     _ = schedule_next_tick(),
-    {ok, #state{end_to_end = #{}}}.
+    {ok, #state{packet_duration = #{}}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
 
-handle_cast({packet_observe_start, PacketHash, PubKeyBin, Start}, #state{end_to_end=EToE}=State) ->
-    {noreply, State#state{end_to_end=maps:put({PacketHash, PubKeyBin}, Start, EToE)}};
-handle_cast({packet_observe_end, PacketHash, PubKeyBin, End}, #state{end_to_end=EToE}=State) ->
-    case maps:get({PacketHash, PubKeyBin}, EToE, undefined) of
+handle_cast({packet_observe_start, PacketHash, PubKeyBin, Start}, #state{packet_duration=PD}=State) ->
+    {noreply, State#state{packet_duration=maps:put({PacketHash, PubKeyBin}, Start, PD)}};
+handle_cast({packet_observe_end, PacketHash, PubKeyBin, End}, #state{packet_duration=PD}=State) ->
+    case maps:get({PacketHash, PubKeyBin}, PD, undefined) of
         undefined ->
             {noreply, State};
         Start ->
             ok = prometheus_histogram:observe(?PACKET, [], End-Start),
-            {noreply, State#state{end_to_end=maps:remove({PacketHash, PubKeyBin}, EToE)}}
+            {noreply, State#state{packet_duration=maps:remove({PacketHash, PubKeyBin}, PD)}}
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?METRICS_TICK, State) ->
+handle_info(?METRICS_TICK, #state{packet_duration=PD}=State) ->
     erlang:spawn(
       fun() ->
               ok = record_dc_balance(),
               ok = record_state_channels()
       end),
     _ = schedule_next_tick(),
-    {noreply, State};
+    {noreply, State#state{packet_duration=cleanup_pd(PD)}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -167,6 +167,11 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec cleanup_pd(map()) -> map().
+cleanup_pd(PD) ->
+    End = erlang:system_time(millisecond),
+    maps:filter(fun(_K, Start) -> End-Start < timer:seconds(10) end, PD).
 
 -spec record_dc_balance() -> ok.
 record_dc_balance() ->

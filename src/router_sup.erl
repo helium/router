@@ -77,19 +77,36 @@ init([]) ->
                   ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
                   {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
           end,
+
+    %% create a ed25519 based key
+    %% this will be used as part of libp2p streams negotiation process
+    %% this is a temporary measure until libp2p streams is fully fledged out
+    %% this key will be in addition to the existing ECC key for the time being
+    Ed25519KeyPair =
+        case application:get_env(blockchain, ed25519_keypair) of
+            undefined ->
+                libp2p_keypair:new(ed25519);
+            {ok, KeyPair} ->
+                KeyPair
+        end,
+
     BlockchainOpts = [{key, Key},
                       {seed_nodes, SeedNodes},
                       {max_inbound_connections, 10},
                       {port, application:get_env(router, port, 0)},
                       {base_dir, BaseDir},
+                      {ed25519_keypair, Ed25519KeyPair},
                       {update_dir, application:get_env(router, update_dir, undefined)}],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
+
+
     MetricsOpts = #{port => application:get_env(router, metrics_port, 3000)},
     {ok, {?FLAGS, [?WORKER(router_metrics, [MetricsOpts]),
                    ?SUP(blockchain_sup, [BlockchainOpts]),
+                   ?SUP(router_streams_sup, [BaseDir, Ed25519KeyPair]),
                    ?WORKER(router_db, [DBOpts]),
-                   ?SUP(router_devices_sup, []),
+                   ?SUP(router_devices_sup, [Ed25519KeyPair, BaseDir]),
                    ?WORKER(router_sc_worker, [SCWorkerOpts]),
                    ?SUP(router_console_sup, []),
                    ?WORKER(router_v8, [#{}]),

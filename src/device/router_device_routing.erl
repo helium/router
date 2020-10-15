@@ -525,7 +525,7 @@ handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}
 
 -spec reason_to_single_atom(any()) -> any().
 reason_to_single_atom(Reason) ->
-     case Reason of
+    case Reason of
         {R, _} -> R;
         {R, _, _} -> R;
         R -> R

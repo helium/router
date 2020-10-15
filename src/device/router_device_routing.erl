@@ -101,7 +101,9 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             ok = handle_packet_metrics(Packet, E, Start),
             E;
         ok ->
-            ok = handle_packet_metrics(Packet, ok, Start),
+            ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                             PubKeyBin,
+                                                             Start),
             ok
     end;
 handle_packet(Packet, PacketTime, PubKeyBin) ->
@@ -113,7 +115,9 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok = handle_packet_metrics(Packet, E, Start),
             E;
         ok ->
-            ok = handle_packet_metrics(Packet, ok, Start),
+            ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                             PubKeyBin,
+                                                             Start),
             ok
     end.
 
@@ -519,18 +523,11 @@ handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok, Time) ->
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
 
--spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}, non_neg_integer()) -> ok.
-handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                                            _DevNonce:2/binary, _MIC:4/binary>>}, ok, Start) when MType == ?JOIN_REQ ->
-    End = erlang:system_time(millisecond),
-    ok = router_metrics:routing_packet_observe(join, accepted, End-Start);
+-spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), {error, any()}, non_neg_integer()) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
                                             _DevNonce:2/binary, _MIC:4/binary>>}, {error, _}, Start) when MType == ?JOIN_REQ  ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(join, rejected, End-Start);
-handle_packet_metrics(_Packet, ok, Start) ->
-    End = erlang:system_time(millisecond),
-    ok = router_metrics:routing_packet_observe(packet, accepted, End-Start);
 handle_packet_metrics(_Packet, {error, _}, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, End-Start).

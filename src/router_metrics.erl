@@ -69,7 +69,7 @@ routing_offer_observe(Type, Status, Reason, Time) when (Type == join orelse Type
 
 -spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
 routing_packet_observe(Type, Status, Reason, Time) when (Type == join orelse Type == packet)
-                                                        andalso (Status == accepted orelse Status == rejected) ->
+                                                        andalso Status == accepted ->
     ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, Status, Reason, false], Time).
 
 -spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.

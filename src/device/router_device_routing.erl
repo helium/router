@@ -96,9 +96,9 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
-        {error, _Reason}=E ->
-            lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
-            ok = handle_packet_metrics(Packet, E, Start),
+        {error, Reason}=E ->
+            lager:info("failed to handle sc packet ~p : ~p", [Packet, Reason]),
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             E;
         ok ->
             ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
@@ -110,9 +110,9 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
     %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
     Start = erlang:system_time(millisecond),
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
-        {error, _Reason}=E ->
-            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
-            ok = handle_packet_metrics(Packet, E, Start),
+        {error, Reason}=E ->
+            lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             E;
         ok ->
             ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
@@ -523,12 +523,20 @@ handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok, Time) ->
 handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
 
--spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), {error, any()}, non_neg_integer()) -> ok.
+-spec reason_to_single_atom(any()) -> any().
+reason_to_single_atom(Reason) ->
+     case Reason of
+        {R, _} -> R;
+        {R, _, _} -> R;
+        R -> R
+    end.
+
+-spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), any(), non_neg_integer()) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                                            _DevNonce:2/binary, _MIC:4/binary>>}, {error, Reason}, Start) when MType == ?JOIN_REQ  ->
+                                            _DevNonce:2/binary, _MIC:4/binary>>}, Reason, Start) when MType == ?JOIN_REQ  ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(join, rejected, Reason, End-Start);
-handle_packet_metrics(_Packet, {error, Reason}, Start) ->
+handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End-Start).
 

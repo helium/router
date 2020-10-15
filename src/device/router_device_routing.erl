@@ -19,6 +19,8 @@
 
 -define(BITS_23, 8388607). %% biggest unsigned number in 23 bits
 
+-define(ETS, router_device_routing_ets).
+
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_KEY, bloom_key).
 %% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
@@ -57,6 +59,7 @@
 
 -spec init() -> ok.
 init() ->
+    ets:new(?ETS, [public, named_table, set]),
     ets:new(?MB_ETS, [public, named_table, set]),
     ets:new(?BF_ETS, [public, named_table, set]),
     ets:new(?REPLAY_ETS, [public, named_table, set]),
@@ -283,7 +286,7 @@ validate_packet_offer(Offer, _Pid) ->
 validate_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
-            Chain = blockchain_worker:blockchain(),
+            Chain = get_chain(),
             OUI = case application:get_env(router, oui, undefined) of
                       undefined -> undefined;
                       OUI0 when is_list(OUI0) ->
@@ -358,7 +361,7 @@ check_device_is_active(Devices) ->
 %% TODO: This function is not very optimized...
 -spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
 check_device_balance(PayloadSize, Devices) ->
-    Chain = blockchain_worker:blockchain(),
+    Chain = get_chain(),
     [Device|_] = Devices,
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
@@ -418,7 +421,7 @@ packet(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _A
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
-            Chain = blockchain_worker:blockchain(),
+            Chain = get_chain(),
             OUI = case application:get_env(router, oui, undefined) of
                       undefined -> undefined;
                       OUI0 when is_list(OUI0) ->
@@ -512,6 +515,18 @@ get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
 maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
+
+-spec get_chain() -> blockchain:blockchain().
+get_chain() ->
+    Key = blockchain,
+    case ets:lookup(?ETS, Key) of
+        [] ->
+            Chain = blockchain_worker:blockchain(),
+            true = ets:insert(?ETS, {Key, Chain}),
+            Chain;
+        [{Key, Chain}] ->
+            Chain
+    end.
 
 -spec handle_offer_metrics(any(), ok | {error, any()}, non_neg_integer()) -> ok.
 handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok, Time) ->
@@ -633,6 +648,7 @@ handle_join_offer_test() ->
     meck:unload(router_metrics),
     ?assert(meck:validate(router_devices_sup)),
     meck:unload(router_devices_sup),
+    ets:delete(?ETS),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
@@ -705,6 +721,7 @@ handle_packet_offer_test() ->
     meck:unload(router_device_devaddr),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
+    ets:delete(?ETS),
     ets:delete(?BF_ETS),
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),

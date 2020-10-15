@@ -380,7 +380,9 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
             end;
         error ->
             {error, payload_raw_not_found}
-    end.
+    end;
+downlink_decode(Payload) ->
+    {error, {not_binary_or_map, Payload}}.
 
 -spec send_to_channel([{string(), #packet_pb{}, #frame{}}], {non_neg_integer(), non_neg_integer()},
                       router_device:device(), pid() , blockchain:blockchain()) -> {ok, map()}.

@@ -7,7 +7,7 @@
 %% ------------------------------------------------------------------
 -export([start_link/1,
          routing_offer_observe/4,
-         routing_packet_observe/3, routing_packet_observe_start/3,
+         routing_packet_observe/4, routing_packet_observe_start/3,
          packet_observe_start/3, packet_observe_end/5,
          downlink_inc/2,
          decoder_observe/3,
@@ -42,7 +42,7 @@
 -define(WS, ?BASE ++ "ws_state").
 
 -define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?ROUTING_PACKET, [type, status, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?PACKET, [type, downlink], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
@@ -67,10 +67,10 @@ routing_offer_observe(Type, Status, Reason, Time) when (Type == join orelse Type
                                                        andalso (Status == accepted orelse Status == rejected) ->
     ok = prometheus_histogram:observe(?ROUTING_OFFER, [Type, Status, Reason], Time).
 
--spec routing_packet_observe(join | packet, rejected, non_neg_integer()) -> ok.
-routing_packet_observe(Type, Status, Time) when (Type == join orelse Type == packet)
-                                                andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, Status, false], Time).
+-spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
+routing_packet_observe(Type, Status, Reason, Time) when (Type == join orelse Type == packet)
+                                                        andalso (Status == accepted orelse Status == rejected) ->
+    ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, Status, Reason, false], Time).
 
 -spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
 routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
@@ -155,7 +155,7 @@ handle_cast({packet_observe_end, PacketHash, PubKeyBin, End, Type, Downlink}, #s
                  undefined ->
                      State1;
                  Start1 ->
-                     ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, accepted, Downlink], End-Start1),
+                     ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, accepted, accepted, Downlink], End-Start1),
                      State1#state{routing_packet_duration=maps:remove({PacketHash, PubKeyBin}, RPD)}
              end,
     {noreply, State2};

@@ -525,12 +525,12 @@ handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}
 
 -spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), {error, any()}, non_neg_integer()) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                                            _DevNonce:2/binary, _MIC:4/binary>>}, {error, _}, Start) when MType == ?JOIN_REQ  ->
+                                            _DevNonce:2/binary, _MIC:4/binary>>}, {error, Reason}, Start) when MType == ?JOIN_REQ  ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:routing_packet_observe(join, rejected, End-Start);
-handle_packet_metrics(_Packet, {error, _}, Start) ->
+    ok = router_metrics:routing_packet_observe(join, rejected, Reason, End-Start);
+handle_packet_metrics(_Packet, {error, Reason}, Start) ->
     End = erlang:system_time(millisecond),
-    ok = router_metrics:routing_packet_observe(packet, rejected, End-Start).
+    ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End-Start).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -659,7 +659,7 @@ handle_packet_offer_test() ->
     meck:new(blockchain_ledger_routing_v1, [passthrough]),
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _) -> ok end),
+    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _, _) -> ok end),
     meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),

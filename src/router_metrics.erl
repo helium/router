@@ -6,8 +6,10 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([start_link/1,
-         offer_inc/3,
-         packet_inc/2,
+         routing_offer_observe/4,
+         routing_packet_observe/4, routing_packet_observe_start/3,
+         packet_observe_start/3, packet_observe_end/5,
+         data_inc/3,
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
@@ -29,8 +31,10 @@
 -define(METRICS_TICK, '__router_metrics_tick').
 
 -define(BASE, "router_").
--define(OFFER, ?BASE ++ "device_routing_offer").
--define(PACKET, ?BASE ++ "device_routing_packet").
+-define(ROUTING_OFFER, ?BASE ++ "device_routing_offer_duration").
+-define(ROUTING_PACKET, ?BASE ++ "device_routing_packet_duration").
+-define(PACKET, ?BASE ++ "device_packet_duration").
+-define(DATA, ?BASE ++ "device_data").
 -define(DOWNLINK, ?BASE ++ "device_downlink_packet").
 -define(DC, ?BASE ++ "dc_balance").
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
@@ -39,8 +43,10 @@
 -define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
 -define(WS, ?BASE ++ "ws_state").
 
--define(METRICS, [{counter, ?OFFER, [type, status, reason], "Offer count"},
-                  {counter, ?PACKET, [type, status], "Packet count"},
+-define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
+                  {histogram, ?PACKET, [type, downlink], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
+                  {counter, ?DATA, [hotspot, device], "Data count"},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
@@ -49,7 +55,8 @@
                   {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]},
                   {boolean, ?WS, [], "Websocket State"}]).
 
--record(state, {}).
+-record(state, {routing_packet_duration :: map(),
+                packet_duration :: map()}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -58,15 +65,31 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec offer_inc(join | packet, accepted | rejected, any()) -> ok.
-offer_inc(Type, Status, Reason) when (Type == join orelse Type == packet)
-                                     andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_counter:inc(?OFFER, [Type, Status, Reason]).
+-spec routing_offer_observe(join | packet, accepted | rejected, any(), non_neg_integer()) -> ok.
+routing_offer_observe(Type, Status, Reason, Time) when (Type == join orelse Type == packet)
+                                                       andalso (Status == accepted orelse Status == rejected) ->
+    ok = prometheus_histogram:observe(?ROUTING_OFFER, [Type, Status, Reason], Time).
 
--spec packet_inc(join | packet, accepted | rejected) -> ok.
-packet_inc(Type, Status) when (Type == join orelse Type == packet)
-                              andalso (Status == accepted orelse Status == rejected) ->
-    ok = prometheus_counter:inc(?PACKET, [Type, Status]).
+-spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
+routing_packet_observe(Type, Status, Reason, Time) when (Type == join orelse Type == packet)
+                                                        andalso Status == rejected ->
+    ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, Status, Reason, false], Time).
+
+-spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
+routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
+    gen_server:cast(?MODULE, {routing_packet_observe_start, PacketHash, PubKeyBin, Time}).
+
+-spec packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
+packet_observe_start(PacketHash, PubKeyBin, Time) ->
+    gen_server:cast(?MODULE, {packet_observe_start, PacketHash, PubKeyBin, Time}).
+
+-spec packet_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
+packet_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
+    gen_server:cast(?MODULE, {packet_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}).
+
+-spec data_inc(libp2p_crypto:pubkey_bin(), binary(), non_neg_integer()) -> ok.
+data_inc(PubKeyBin, DeviceID, Size) ->
+    ok = prometheus_counter:inc(?DATA, [blockchain_utils:addr2name(PubKeyBin), DeviceID], Size).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
@@ -115,24 +138,46 @@ init(Args) ->
       end,
       ?METRICS),
     _ = schedule_next_tick(),
-    {ok, #state{}}.
+    {ok, #state{routing_packet_duration = #{},
+                packet_duration = #{}}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({routing_packet_observe_start, PacketHash, PubKeyBin, Start}, #state{routing_packet_duration=RPD}=State) ->
+    {noreply, State#state{routing_packet_duration=maps:put({PacketHash, PubKeyBin}, Start, RPD)}};
+handle_cast({packet_observe_start, PacketHash, PubKeyBin, Start}, #state{packet_duration=PD}=State) ->
+    {noreply, State#state{packet_duration=maps:put({PacketHash, PubKeyBin}, Start, PD)}};
+handle_cast({packet_observe_end, PacketHash, PubKeyBin, End, Type, Downlink}, #state{routing_packet_duration=RPD, packet_duration=PD}=State0) ->
+    State1 = case maps:get({PacketHash, PubKeyBin}, PD, undefined) of
+                 undefined ->
+                     State0;
+                 Start0 ->
+                     ok = prometheus_histogram:observe(?PACKET, [Type, Downlink], End-Start0),
+                     State0#state{packet_duration=maps:remove({PacketHash, PubKeyBin}, PD)}
+             end,
+    State2 = case maps:get({PacketHash, PubKeyBin}, RPD, undefined) of
+                 undefined ->
+                     State1;
+                 Start1 ->
+                     ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, accepted, accepted, Downlink], End-Start1),
+                     State1#state{routing_packet_duration=maps:remove({PacketHash, PubKeyBin}, RPD)}
+             end,
+    {noreply, State2};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?METRICS_TICK, State) ->
+handle_info(?METRICS_TICK, #state{routing_packet_duration=RPD, packet_duration=PD}=State) ->
     erlang:spawn(
       fun() ->
               ok = record_dc_balance(),
               ok = record_state_channels()
       end),
     _ = schedule_next_tick(),
-    {noreply, State};
+    {noreply, State#state{routing_packet_duration=cleanup_pd(RPD),
+                          packet_duration=cleanup_pd(PD)}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -146,6 +191,11 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec cleanup_pd(map()) -> map().
+cleanup_pd(PD) ->
+    End = erlang:system_time(millisecond),
+    maps:filter(fun(_K, Start) -> End-Start < timer:seconds(10) end, PD).
 
 -spec record_dc_balance() -> ok.
 record_dc_balance() ->

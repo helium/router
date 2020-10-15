@@ -67,6 +67,7 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
+    Start = erlang:system_time(millisecond),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp = case Routing of
                #routing_information_pb{data={eui, _EUI}} ->
@@ -74,37 +75,49 @@ handle_offer(Offer, HandlerPid) ->
                #routing_information_pb{data={devaddr, _DevAddr}} ->
                    packet_offer(Offer, HandlerPid)
            end,
-    ok = print_offer_resp(Offer, HandlerPid, Resp),
-    ok = handle_offer_metrics(Routing, Resp),
+    End = erlang:system_time(millisecond),
+    erlang:spawn(fun() ->
+                         ok = router_metrics:packet_observe_start(blockchain_state_channel_offer_v1:packet_hash(Offer),
+                                                                  blockchain_state_channel_offer_v1:hotspot(Offer),
+                                                                  Start),
+                         ok = print_offer_resp(Offer, HandlerPid, Resp),
+                         ok = handle_offer_metrics(Routing, Resp, End-Start)
+                 end),
     Resp.
 
 -spec handle_packet(blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
                     pos_integer(),
                     libp2p_crypto:pubkey_bin() | pid()) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
+    Start = erlang:system_time(millisecond),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     AName = blockchain_utils:addr2name(PubKeyBin),
     lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
-        {error, _Reason}=E ->
-            lager:info("failed to handle sc packet ~p : ~p", [Packet, _Reason]),
-            ok = handle_packet_metrics(Packet, E),
+        {error, Reason}=E ->
+            lager:info("failed to handle sc packet ~p : ~p", [Packet, Reason]),
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             E;
         ok ->
-            ok = handle_packet_metrics(Packet, ok),
+            ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                             PubKeyBin,
+                                                             Start),
             ok
     end;
 handle_packet(Packet, PacketTime, PubKeyBin) ->
     %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
+    Start = erlang:system_time(millisecond),
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
-        {error, _Reason}=E ->
-            lager:info("failed to handle packet ~p : ~p", [Packet, _Reason]),
-            ok = handle_packet_metrics(Packet, E),
+        {error, Reason}=E ->
+            lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             E;
         ok ->
-            ok = handle_packet_metrics(Packet, ok),
+            ok = router_metrics:routing_packet_observe_start(blockchain_helium_packet_v1:packet_hash(Packet),
+                                                             PubKeyBin,
+                                                             Start),
             ok
     end.
 
@@ -500,28 +513,32 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec handle_offer_metrics(any(), ok | {error, any()}) -> ok.
-handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok) ->
-    ok = router_metrics:offer_inc(join, accepted, accepted);
-handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}) ->
-    ok = router_metrics:offer_inc(join, rejected, Reason);
-handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok) ->
-    ok = router_metrics:offer_inc(packet, accepted, accepted);
-handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}) ->
-    ok = router_metrics:offer_inc(packet, rejected, Reason).
+-spec handle_offer_metrics(any(), ok | {error, any()}, non_neg_integer()) -> ok.
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, ok, Time) ->
+    ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
+handle_offer_metrics(#routing_information_pb{data={eui, _}}, {error, Reason}, Time) ->
+    ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, ok, Time) ->
+    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
+handle_offer_metrics(#routing_information_pb{data={devaddr, _}}, {error, Reason}, Time) ->
+    ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
 
+-spec reason_to_single_atom(any()) -> any().
+reason_to_single_atom(Reason) ->
+    case Reason of
+        {R, _} -> R;
+        {R, _, _} -> R;
+        R -> R
+    end.
 
--spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), ok | {error, any()}) -> ok.
+-spec handle_packet_metrics(blockchain_helium_packet_v1:packet(), any(), non_neg_integer()) -> ok.
 handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                                            _DevNonce:2/binary, _MIC:4/binary>>}, ok) when MType == ?JOIN_REQ ->
-    ok = router_metrics:packet_inc(join, accepted);
-handle_packet_metrics(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                                            _DevNonce:2/binary, _MIC:4/binary>>}, {error, _}) when MType == ?JOIN_REQ  ->
-    ok = router_metrics:packet_inc(join, rejected);
-handle_packet_metrics(_Packet, ok) ->
-    ok = router_metrics:packet_inc(packet, accepted);
-handle_packet_metrics(_Packet, {error, _}) ->
-    ok = router_metrics:packet_inc(packet, rejected).
+                                            _DevNonce:2/binary, _MIC:4/binary>>}, Reason, Start) when MType == ?JOIN_REQ  ->
+    End = erlang:system_time(millisecond),
+    ok = router_metrics:routing_packet_observe(join, rejected, Reason, End-Start);
+handle_packet_metrics(_Packet, Reason, Start) ->
+    End = erlang:system_time(millisecond),
+    ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End-Start).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -591,7 +608,7 @@ handle_join_offer_test() ->
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
+    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
 
@@ -650,8 +667,8 @@ handle_packet_offer_test() ->
     meck:new(blockchain_ledger_routing_v1, [passthrough]),
     meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
     meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, packet_inc, fun(_, _) -> ok end),
-    meck:expect(router_metrics, offer_inc, fun(_, _, _) -> ok end),
+    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _, _) -> ok end),
+    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
     meck:new(router_console_dc_tracker, [passthrough]),

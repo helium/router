@@ -657,7 +657,7 @@ handle_join_offer_test() ->
 
 handle_packet_offer_test() ->
     application:ensure_all_started(lager),
-    Dir = test_utils:tmp_dir("init_from_db_test"),
+    Dir = test_utils:tmp_dir("handle_packet_offer_test"),
     {ok, Pid} = router_db:start_link([Dir]),
 
     Subnet = <<0,0,0,127,255,0>>,

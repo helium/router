@@ -5,7 +5,7 @@
  {<<"bbmustache">>,{pkg,<<"bbmustache">>,<<"1.10.0">>},0},
  {<<"blockchain">>,
   {git,"https://github.com/helium/blockchain-core.git",
-       {ref,"fd283997b59dfeb5db59963b33a193a2076337a0"}},
+       {ref,"5420cd1a28142fbb067bbfc2a34a8955b3dc287f"}},
   0},
  {<<"certifi">>,
   {git,"https://github.com/garthk/erlang-certifi",

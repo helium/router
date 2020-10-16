@@ -657,9 +657,7 @@ handle_join_offer_test() ->
 
 handle_packet_offer_test() ->
     application:ensure_all_started(lager),
-    {ok, _} = router_devices_sup:start_link(),
-
-    Dir = test_utils:tmp_dir("handle_packet_offer_test"),
+    Dir = test_utils:tmp_dir("init_from_db_test"),
     {ok, Pid} = router_db:start_link([Dir]),
 
     Subnet = <<0,0,0,127,255,0>>,
@@ -672,6 +670,8 @@ handle_packet_offer_test() ->
     Device1 = router_device:update(DeviceUpdates, Device0),
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
     {ok, _} = router_device:save(DB, CF, Device1),
+
+    {ok, _} = router_devices_sup:start_link(),
 
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),

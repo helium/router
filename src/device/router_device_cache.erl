@@ -34,8 +34,7 @@ get(DeviceID) ->
 
 -spec get_by_devaddr(binary()) -> [router_device:device()].
 get_by_devaddr(DevAddr) ->
-    MS = ets:fun2ms(fun({_, D}) when D#device_v4.devaddr == DevAddr
-                                     andalso D#device_v4.is_active == true -> D end),
+    MS = ets:fun2ms(fun({_, D}) when D#device_v4.devaddr == DevAddr -> D end),
     ets:select(?ETS, MS).
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.

@@ -264,7 +264,7 @@ validate_packet_offer(Offer, _Pid) ->
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
-            case router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr1)), PubKeyBin) of
+            case get_and_sort_devices(DB, CF, DevAddr1, PubKeyBin) of
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 Devices ->
@@ -460,7 +460,7 @@ packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
 
 find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
     {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    Devices = router_device_devaddr:sort_devices(router_device:get(DB, CF, filter_device_fun(DevAddr)), PubKeyBin),
+    Devices = get_and_sort_devices(DB, CF, DevAddr, PubKeyBin),
     case get_device_by_mic(DB, CF, B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};
@@ -473,6 +473,13 @@ find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
                     router_device_worker:handle_frame(WorkerPid, Packet, PacketTime, PubKeyBin, Region, Pid)
             end
     end.
+
+get_and_sort_devices(DB, CF, DevAddr, PubKeyBin) ->
+    {Time1, Devices0} = timer:tc(router_device, get, [DB, CF, filter_device_fun(DevAddr)]),
+    {Time2, Devices1} = timer:tc(router_device_devaddr, sort_devices, [Devices0, PubKeyBin]),
+    router_metrics:function_observe('router_device:get', Time1),
+    router_metrics:function_observe('router_device_devaddr:sort_devices', Time2),
+    Devices1.
 
 -spec filter_device_fun(binary()) -> function().
 filter_device_fun(DevAddr) ->
@@ -624,6 +631,7 @@ handle_join_offer_test() ->
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
+    meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
 
@@ -685,6 +693,7 @@ handle_packet_offer_test() ->
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, routing_packet_observe, fun(_, _, _, _) -> ok end),
     meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
+    meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
     meck:new(router_console_dc_tracker, [passthrough]),

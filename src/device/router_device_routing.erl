@@ -261,10 +261,9 @@ validate_packet_offer(Offer, _Pid) ->
         {error, _}=Error ->
             Error;
         ok ->
-            {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
-            case get_and_sort_devices(DB, CF, DevAddr1, PubKeyBin) of
+            case get_and_sort_devices(DevAddr1, PubKeyBin) of
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 Devices ->
@@ -459,9 +458,8 @@ packet(#packet_pb{payload=Payload}, _PacketTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
-    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    Devices = get_and_sort_devices(DB, CF, DevAddr, PubKeyBin),
-    case get_device_by_mic(DB, CF, B0, MIC, Devices) of
+    Devices = get_and_sort_devices(DevAddr, PubKeyBin),
+    case get_device_by_mic(B0, MIC, Devices) of
         undefined ->
             {error, {unknown_device, DevAddr}};
         Device ->
@@ -474,42 +472,35 @@ find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
             end
     end.
 
-get_and_sort_devices(DB, CF, DevAddr, PubKeyBin) ->
-    {Time1, Devices0} = timer:tc(router_device, get, [DB, CF, filter_device_fun(DevAddr)]),
+get_and_sort_devices(DevAddr, PubKeyBin) ->
+    {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
     {Time2, Devices1} = timer:tc(router_device_devaddr, sort_devices, [Devices0, PubKeyBin]),
-    router_metrics:function_observe('router_device:get', Time1),
+    router_metrics:function_observe('router_device_cache:get_by_devaddr', Time1),
     router_metrics:function_observe('router_device_devaddr:sort_devices', Time2),
     Devices1.
 
--spec filter_device_fun(binary()) -> function().
-filter_device_fun(DevAddr) ->
-    fun(Device) ->
-            router_device:devaddr(Device) == DevAddr orelse
-                router_device_devaddr:default_devaddr() == DevAddr
-    end.
-
--spec get_device_by_mic(rocksdb:db_handle(), rocksdb:cf_handle(), binary(),
-                        binary(), [router_device:device()]) -> router_device:device() | undefined.
-get_device_by_mic(_DB, _CF, _Bin, _MIC, []) ->
+-spec get_device_by_mic(binary(), binary(), [router_device:device()]) -> router_device:device() | undefined.
+get_device_by_mic(_Bin, _MIC, []) ->
     undefined;
-get_device_by_mic(DB, CF, Bin, MIC, [Device|Devices]) ->
+get_device_by_mic(Bin, MIC, [Device|Devices]) ->
     case router_device:nwk_s_key(Device) of
         undefined ->
             DeviceID = router_device:id(Device),
             lager:warning("device ~p did not have a nwk_s_key, deleting", [DeviceID]),
+            {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             ok = router_device:delete(DB, CF, DeviceID),
-            get_device_by_mic(DB, CF, Bin, MIC, Devices);
+            get_device_by_mic(Bin, MIC, Devices);
         NwkSKey ->
             try
                 case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
                     MIC ->
                         Device;
                     _ ->
-                        get_device_by_mic(DB, CF, Bin, MIC, Devices)
+                        get_device_by_mic(Bin, MIC, Devices)
                 end
             catch _:_ ->
                     lager:warning("skipping invalid device ~p", [Device]),
-                    get_device_by_mic(DB, CF, Bin, MIC, Devices)
+                    get_device_by_mic(Bin, MIC, Devices)
             end
     end.
 

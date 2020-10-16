@@ -389,6 +389,7 @@ update_device_record(DB, CF, DeviceID) ->
                              {metadata, router_device:metadata(APIDevice)},
                              {is_active, router_device:is_active(APIDevice)}],
             Device = router_device:update(DeviceUpdates, Device0),
+            {ok, _} = router_device_cache:save(Device),
             {ok, _} = router_device:save(DB, CF, Device),
             ok
     end.

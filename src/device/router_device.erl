@@ -3,7 +3,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
--include_lib("stdlib/include/ms_transform.hrl").
 -include("router_device.hrl").
 
 -export([
@@ -353,31 +352,6 @@ get_fold(_DB, _CF, _Itr, {error, _}, _FilterFun, Acc) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
-
-uuid_v4() ->
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    Str = io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]),
-    list_to_binary(Str).
-
-ets_test() ->
-    ETS = test_ets,
-    ets:new(ETS, [public, named_table, set]),
-    Max = 100000,
-    lists:foreach(
-      fun(I) ->
-              ID = uuid_v4(),
-              true = ets:insert(ETS, {ID, #device_v4{id=ID, devaddr= <<(I rem 2):25/integer-unsigned-little, 72:7/integer>>}})
-      end,
-      lists:seq(1, Max)),
-    MS = ets:fun2ms(fun({_, D}) when D#device_v4.devaddr == <<0:25/integer-unsigned-little, 72:7/integer>>
-                                     andalso D#device_v4.is_active == true -> D end),
-
-    {Time, Got} = timer:tc(ets, select, [ETS, MS]),
-    ?assert(Time/1000 < 100),
-    ?assertEqual(Max/2, length(Got)+0.0),
-    ets:delete(ETS),
-    ok.
 
 new_test() ->
     Keys = libp2p_crypto:generate_keys(ecc_compact),

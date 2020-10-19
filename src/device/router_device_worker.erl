@@ -622,7 +622,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                  freq = TxFreq} = lorawan_mac_region:rx1_window(Region, 0, 0,
                                                                 packet_to_rxq(Packet0)),
             Rx2 = rx2_from_packet(Region, Packet0),
-            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, calculate_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
+            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -661,7 +661,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
          freq = TxFreq} = lorawan_mac_region:rx1_window(Region, 0, 0,
                                                         packet_to_rxq(Packet0)),
     Rx2 = rx2_from_packet(Region, Packet0),
-    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, calculate_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
+    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -752,14 +752,11 @@ rx2_from_packet(Region, Packet) ->
     #txq{time = TxTime,
          datr = TxDataRate,
          freq = TxFreq} = lorawan_mac_region:rx2_window(Region, Rxq),
-    blockchain_helium_packet_v1:window(calculate_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
+    blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
--spec calculate_rx_time(integer()) -> integer().
-calculate_rx_time(Time) ->
-    case Time > 4294967295 of
-        false -> Time;
-        true -> Time rem 4294967295
-    end.
+-spec adjust_rx_time(integer()) -> integer().
+adjust_rx_time(Time) ->
+    Time band 4294967295.
 
 -spec packet_to_rxq(blockchain_helium_packet_v1:packet()) -> #rxq{}.
 packet_to_rxq(Packet) ->

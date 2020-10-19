@@ -749,12 +749,12 @@ frame_to_packet_payload(Frame, Device) ->
 -spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet()) -> blockchain_helium_packet_v1:window().
 rx2_from_packet(Region, Packet) ->
     Rxq = packet_to_rxq(Packet),
-    #txq{time = TxTime,
-         datr = TxDataRate,
-         freq = TxFreq} = lorawan_mac_region:rx2_window(Region, Rxq),
+    #txq{time=TxTime,
+         datr=TxDataRate,
+         freq=TxFreq} = lorawan_mac_region:rx2_window(Region, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
--spec adjust_rx_time(integer()) -> integer().
+-spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().
 adjust_rx_time(Time) ->
     Time band 4294967295.
 

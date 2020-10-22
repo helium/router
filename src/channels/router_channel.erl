@@ -289,9 +289,8 @@ hash_test() ->
     ?assertEqual(Hash, hash(Channel0)).
 
 mapkey_to_str_test() ->
-    Expected #{"test" => test, "a" => 1, "m" => #{"1" => a}},
-    Got = #{test => test, a => 1, m => #{1 => a}},,
-    ?assertEqual(Expected, mapkey_to_str(Got)).
+    ?assertEqual(#{"test" => test, "a" => 1, "m" => #{"1" => a}},
+                 mapkey_to_str(#{test => test, a => 1, m => #{1 => a}})),
     ok.
 
 to_string_test() ->

@@ -154,29 +154,7 @@ encode_data(Decoder, #{payload := Payload, port := Port}=Map, Channel) ->
 maybe_apply_template(undefined, Map) ->
     jsx:encode(Map);
 maybe_apply_template(Template, Map) ->
-    bbmustache:render(Template, mapkey_to_str(Map)).
-
--spec mapkey_to_str(map()) -> map().
-mapkey_to_str(Map) ->
-    maps:fold(fun(K, V, Acc) when is_map(V)->
-                      maps:put(to_string(K), mapkey_to_str(V), Acc);
-                 (K, V, Acc) ->
-                      maps:put(to_string(K), V, Acc)
-              end,
-              #{},
-              Map).
-
--spec to_string(any()) -> string() | any().
-to_string(Atom) when is_atom(Atom) ->
-    erlang:atom_to_list(Atom);
-to_string(Bin) when is_binary(Bin) ->
-    erlang:binary_to_list(Bin);
-to_string(Int) when is_integer(Int) ->
-    erlang:integer_to_list(Int);
-to_string(Float) when is_float(Float) ->
-    erlang:float_to_list(Float);
-to_string(Unknown) ->
-    Unknown.
+    bbmustache:render(Template, jsx:decode(jsx:encode(Map), [return_maps]), [{key_type, binary}]).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -287,19 +265,5 @@ hash_test() ->
     Channel1 = Channel0#channel{controller=undefined},
     Hash = crypto:hash(sha256, erlang:term_to_binary(Channel1)),
     ?assertEqual(Hash, hash(Channel0)).
-
-mapkey_to_str_test() ->
-    ?assertEqual(#{"test" => test, "a" => 1, "m" => #{"1" => a}},
-                 mapkey_to_str(#{test => test, a => 1, m => #{1 => a}})),
-    ok.
-
-to_string_test() ->
-    ?assertEqual("test", to_string(<<"test">>)),
-    ?assertEqual("test", to_string(test)),
-    ?assertEqual("test", to_string("test")),
-    ?assertEqual("12", to_string(12)),
-    ?assertEqual("1.20000000000000000000e+01", to_string(12.0)),
-    ?assertEqual(#{}, to_string(#{})),
-    ok.
 
 -endif.

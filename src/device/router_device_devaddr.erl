@@ -99,7 +99,8 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = blockchain_event:add_handler(self()),
     OUI = case application:get_env(router, oui, undefined) of
-              undefined -> undefined;
+              undefined ->
+                  error(no_oui_configured);
               OUI0 when is_list(OUI0) ->
                   list_to_integer(OUI0);
               OUI0 ->
@@ -199,8 +200,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 
 -spec subnets(non_neg_integer(), blockchain:blockchain()) -> [binary()].
-subnets(undefined, _) ->
-    [];
 subnets(OUI, Chain) ->
     case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
         {ok, RoutingEntry} ->

@@ -11,7 +11,7 @@
          init_per_testcase/2,
          end_per_testcase/2]).
 
--export([join_test/1]).
+-export([lw_join_test/1]).
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0,0,0,0,0,0,0,0>>).
@@ -28,7 +28,7 @@
 %%   Running tests for this suite
 %% @end
 %%--------------------------------------------------------------------
-all() -> [join_test].
+all() -> [lw_join_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -85,7 +85,7 @@ end_per_testcase(_TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-join_test(Config) ->
+lw_join_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     BaseDir = proplists:get_value(base_dir, Config),
     RouterSwarm = blockchain_swarm:swarm(),

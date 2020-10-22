@@ -302,7 +302,7 @@ handle_info({join_timeout, JoinNonce}, #state{chain=Blockchain, db=DB, cf=CF,
          datr = TxDataRate,
          freq = TxFreq} = lorawan_mac_region:join1_window(Region, 0,
                                                           packet_to_rxq(Packet)),
-    DownlinkPacket = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
+    DownlinkPacket = blockchain_helium_packet_v1:new_downlink(Reply, 27, TxTime, TxFreq, binary_to_list(TxDataRate)),
     catch blockchain_state_channel_handler:send_response(Pid, blockchain_state_channel_response_v1:new(true, DownlinkPacket)),
     ok = router_metrics:packet_observe_end(blockchain_helium_packet_v1:packet_hash(Packet),
                                            PubKeyBin,
@@ -621,7 +621,8 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                  datr = TxDataRate,
                  freq = TxFreq} = lorawan_mac_region:rx1_window(Region, 0, 0,
                                                                 packet_to_rxq(Packet0)),
-            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
+            Rx2 = rx2_from_packet(Region, Packet0),
+            Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
             DeviceUpdates = [{channel_correction, ChannelsCorrected},
                              {fcntdown, (FCntDown + 1)}],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -659,7 +660,8 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
          datr = TxDataRate,
          freq = TxFreq} = lorawan_mac_region:rx1_window(Region, 0, 0,
                                                         packet_to_rxq(Packet0)),
-    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, TxTime, 27, TxFreq, binary_to_list(TxDataRate)),
+    Rx2 = rx2_from_packet(Region, Packet0),
+    Packet1 = blockchain_helium_packet_v1:new_downlink(Reply, 27, adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate), Rx2),
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -743,6 +745,18 @@ frame_to_packet_payload(Frame, Device) ->
     Msg = <<PktHdr/binary, PktBody/binary>>,
     MIC = crypto:cmac(aes_cbc128, NwkSKey, <<(router_utils:b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary, Msg/binary>>, 4),
     <<Msg/binary, MIC/binary>>.
+
+-spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet()) -> blockchain_helium_packet_v1:window().
+rx2_from_packet(Region, Packet) ->
+    Rxq = packet_to_rxq(Packet),
+    #txq{time=TxTime,
+         datr=TxDataRate,
+         freq=TxFreq} = lorawan_mac_region:rx2_window(Region, Rxq),
+    blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
+
+-spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().
+adjust_rx_time(Time) ->
+    Time band 4294967295.
 
 -spec packet_to_rxq(blockchain_helium_packet_v1:packet()) -> #rxq{}.
 packet_to_rxq(Packet) ->

@@ -97,8 +97,10 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    ok = blockchain_event:add_handler(self()),
     OUI = case application:get_env(router, oui, undefined) of
-              undefined -> undefined;
+              undefined ->
+                  error(no_oui_configured);
               OUI0 when is_list(OUI0) ->
                   list_to_integer(OUI0);
               OUI0 ->
@@ -165,13 +167,21 @@ handle_info({blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}}, #stat
             Subnets = subnets(OUI, Chain),
             {noreply, State#state{subnets=Subnets}}
     end;
+handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{oui=OUI}=State) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            Subnets = subnets(OUI, Chain),
+            {noreply, State#state{chain=Chain, subnets=Subnets}}
+    end;
 handle_info(post_init, #state{chain=undefined, oui=OUI}=State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            ok = blockchain_event:add_handler(self()),
             Subnets = subnets(OUI, Chain),
             {noreply, State#state{chain=Chain, subnets=Subnets}}
     end;

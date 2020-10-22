@@ -32,11 +32,7 @@
 
 
 all() ->
-    [maintain_channels_test,
-     handle_packets_test,
-     default_routers_test,
-     no_oui_test,
-     no_dc_entry_test].
+    [].
 
 
 init_per_suite(Config) ->

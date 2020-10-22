@@ -194,7 +194,7 @@ template_test(Config) ->
                                             router_device:app_s_key(Device0), 0, #{body => <<136:8, EncodedPayload/binary>>})},
 
     %% Waiting for data from HTTP channel
-    test_utils:wait_channel_data(#{<<"battery">> => 100.0,<<"lat">> => 0.0,<<"long">> => 0.0}),
+    test_utils:wait_channel_data(#{<<"battery">> => 100.0, <<"lat">> => 0.0,<<"long">> => 0.0}),
     ok.
 
 timeout_test(Config) ->

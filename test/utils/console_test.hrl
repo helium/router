@@ -71,7 +71,7 @@
                                     <<"name">> => <<"decoder name">>,
                                     <<"type">> => <<"decoder">>}).
 
--define(CONSOLE_TEMPLATE, <<"{\"battery\":{{battery_percent}},\"lat\":{{latitude}},\"long\":{{longitude}}}">>).
+-define(CONSOLE_TEMPLATE, <<"{{#decoded}}{{#payload}}{\"battery\":{{battery_percent}},\"lat\":{{latitude}},\"long\":{{longitude}}}{{/payload}}{{/decoded}}">>).
 
 -define(CONSOLE_CONSOLE_CHANNEL_ID, <<"1617181920">>).
 -define(CONSOLE_CONSOLE_CHANNEL_NAME, <<"fake_console">>).

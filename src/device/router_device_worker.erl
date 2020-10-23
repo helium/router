@@ -770,6 +770,7 @@ packet_to_rxq(Packet) ->
 
 -spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) -> ok.
 save_and_update(DB, CF, Pid, Device) ->
+    {ok, _} = router_device_cache:save(Device),
     {ok, _} = router_device:save(DB, CF, Device),
     ok = router_device_channels_worker:handle_device_update(Pid, Device).
 

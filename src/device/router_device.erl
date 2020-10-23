@@ -3,7 +3,6 @@
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
-
 -include("router_device.hrl").
 
 -export([

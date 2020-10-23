@@ -67,6 +67,7 @@ id(DeviceId) ->
 init([]) ->
     ets:new(?ETS, [public, named_table, set]),
     ok = router_device_routing:init(),
+    ok = router_device_cache:init(),
     {ok, {?FLAGS, [?WORKER(router_device_worker)]}}.
 
 %% ------------------------------------------------------------------

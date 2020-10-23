@@ -13,7 +13,8 @@
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
-         ws_state/1]).
+         ws_state/1,
+         function_observe/2]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -42,6 +43,7 @@
 -define(DECODED_TIME, ?BASE ++ "decoder_decoded_duration").
 -define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
 -define(WS, ?BASE ++ "ws_state").
+-define(FUN_DURATION, ?BASE ++ "function_duration").
 
 -define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
@@ -53,7 +55,8 @@
                   {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
                   {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]},
-                  {boolean, ?WS, [], "Websocket State"}]).
+                  {boolean, ?WS, [], "Websocket State"},
+                  {histogram, ?FUN_DURATION, [function], "Function duration", [1000, 5000, 10000, 50000, 100000]}]).
 
 -record(state, {routing_packet_duration :: map(),
                 packet_duration :: map()}).
@@ -106,6 +109,10 @@ console_api_observe(Type, Status, Time) ->
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
     ok = prometheus_boolean:set(?WS, [], State).
+
+-spec function_observe(atom(), non_neg_integer()) -> ok.
+function_observe(Fun, Time) ->
+    ok = prometheus_histogram:observe(?FUN_DURATION, [Fun], Time).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

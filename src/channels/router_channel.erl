@@ -155,39 +155,50 @@ maybe_apply_template(undefined, Map) ->
     jsx:encode(Map);
 maybe_apply_template(Template, Map) ->
     NormalMap = jsx:decode(jsx:encode(Map), [return_maps]),
-    Res = bbmustache:render(Template, mk_data_fun(NormalMap), [{key_type, binary}]),
+    Res = bbmustache:render(Template, mk_data_fun(NormalMap, []), [{key_type, binary}]),
     Res.
 
-mk_data_fun(Data) ->
+mk_data_fun(Data, FunStack) ->
     fun(Key0) ->
-            case parse_key(Key0) of
+            case parse_key(Key0, FunStack) of
                 error ->
                     error;
-                {Fun, Key} ->
+                {NewFunStack, Key} ->
                     case kvc:path(Key, Data) of
                         [] ->
                             error;
+                        Val when is_map(Val) ->
+                            io:format("Map Val ~p ~p~n", [Val, NewFunStack]),
+                            {ok, mk_data_fun(Val, NewFunStack)};
                         Val ->
-                            {ok, Fun(Val)}
+                            Res = lists:foldl(fun(Fun, Acc) ->
+                                                     Fun(Acc)
+                                             end, Val, NewFunStack),
+                            io:format("Val ~p ~p ~p~n", [Val, NewFunStack, Res]),
+                            {ok, Res}
                     end
             end
     end.
 
-parse_key(<<"base64_to_hex(", Key0/binary>>) ->
-    case binary:last(Key0) == $) of
-        true ->
-            {fun base64_to_hex/1, binary:part(Key0, 0, byte_size(Key0) - 1)};
-        false ->
+parse_key(<<"base64_to_hex(", Key/binary>>, FunStack) ->
+    parse_key(Key, [fun base64_to_hex/1 | FunStack]);
+parse_key(<<"hex_to_base64(", Key/binary>>, FunStack) ->
+    parse_key(Key, [fun hex_to_base64/1 | FunStack]);
+parse_key(Key0, FunStack) ->
+    case binary:split(Key0, <<")">>, [trim, global]) of
+        [Key] ->
+            {FunStack, Key};
+        Other ->
+            io:format("key parse error ~p ~p~n", [Key0, Other]),
             error
-    end;
-parse_key(Key) ->
-    {fun no_op/1, Key}.
+    end.
 
 base64_to_hex(Val) ->
     Bin = base64:decode(Val),
     lorawan_utils:binary_to_hex(Bin).
 
-no_op(Val) -> Val.
+hex_to_base64(Val) ->
+    base64:encode(lorawan_utils:hex_to_binary(Val)).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -293,9 +304,15 @@ payload_template_test() ->
     ?assertEqual(undefined, payload_template(Channel)).
 
 template_test() ->
-    Template = <<"{{base64_to_hex(foo)}}">>,
-    Map = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
-    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template, Map)),
+    Template1 = <<"{{base64_to_hex(foo)}}">>,
+    Map1 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
+    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template1, Map1)),
+    Template2 = <<"{{base64_to_hex(foo.bar)}}">>,
+    Map2 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
+    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template2, Map2)),
+    Template3 = <<"{{hex_to_base64(base64_to_hex(foo))}}">>,
+    Map3 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
+    ?assertEqual(base64:encode(<<16#deadbeef:32/integer>>), maybe_apply_template(Template3, Map3)),
     ok.
 
 hash_test() ->

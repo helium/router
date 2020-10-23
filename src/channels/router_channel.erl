@@ -313,6 +313,9 @@ template_test() ->
     Template3 = <<"{{hex_to_base64(base64_to_hex(foo))}}">>,
     Map3 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
     ?assertEqual(base64:encode(<<16#deadbeef:32/integer>>), maybe_apply_template(Template3, Map3)),
+    Template4 = <<"{{hex_to_base64(base64_to_hex(foo.bar))}}">>,
+    Map4 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
+    ?assertEqual(base64:encode(<<16#deadbeef:32/integer>>), maybe_apply_template(Template4, Map4)),
     ok.
 
 hash_test() ->

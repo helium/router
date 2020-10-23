@@ -171,8 +171,8 @@ mk_data_fun(Data, FunStack) ->
                             {ok, mk_data_fun(Val, NewFunStack)};
                         Val ->
                             Res = lists:foldl(fun(Fun, Acc) ->
-                                                     Fun(Acc)
-                                             end, Val, NewFunStack),
+                                                      Fun(Acc)
+                                              end, Val, NewFunStack),
                             {ok, Res}
                     end
             end
@@ -194,7 +194,7 @@ parse_key(Key0, FunStack) ->
     case binary:split(Key0, <<")">>, [trim, global]) of
         [Key] ->
             {FunStack, Key};
-        Other ->
+        _Other ->
             error
     end.
 

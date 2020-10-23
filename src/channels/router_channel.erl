@@ -154,7 +154,40 @@ encode_data(Decoder, #{payload := Payload, port := Port}=Map, Channel) ->
 maybe_apply_template(undefined, Map) ->
     jsx:encode(Map);
 maybe_apply_template(Template, Map) ->
-    bbmustache:render(Template, jsx:decode(jsx:encode(Map), [return_maps]), [{key_type, binary}]).
+    NormalMap = jsx:decode(jsx:encode(Map), [return_maps]),
+    Res = bbmustache:render(Template, mk_data_fun(NormalMap), [{key_type, binary}]),
+    Res.
+
+mk_data_fun(Data) ->
+    fun(Key0) ->
+            case parse_key(Key0) of
+                error ->
+                    error;
+                {Fun, Key} ->
+                    case kvc:path(Key, Data) of
+                        [] ->
+                            error;
+                        Val ->
+                            {ok, Fun(Val)}
+                    end
+            end
+    end.
+
+parse_key(<<"base64_to_hex(", Key0/binary>>) ->
+    case binary:last(Key0) == $) of
+        true ->
+            {fun base64_to_hex/1, binary:part(Key0, 0, byte_size(Key0) - 1)};
+        false ->
+            error
+    end;
+parse_key(Key) ->
+    {fun no_op/1, Key}.
+
+base64_to_hex(Val) ->
+    Bin = base64:decode(Val),
+    lorawan_utils:binary_to_hex(Bin).
+
+no_op(Val) -> Val.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -258,6 +291,12 @@ payload_template_test() ->
     Channel = new(<<"channel_id">>, router_http_channel,
                   <<"channel_name">>, [], <<"device_id">>, self()),
     ?assertEqual(undefined, payload_template(Channel)).
+
+template_test() ->
+    Template = <<"{{base64_to_hex(foo)}}">>,
+    Map = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
+    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template, Map)),
+    ok.
 
 hash_test() ->
     Channel0 = new(<<"channel_id">>, router_http_channel,

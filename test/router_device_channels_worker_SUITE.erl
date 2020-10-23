@@ -493,8 +493,8 @@ convert_decoder(JSONChannel) ->
 
 -spec convert_template(map()) -> undefined | binary().
 convert_template(JSONChannel) ->
-    case kvc:path([<<"payload_template">>], JSONChannel, undefined) of
-        undefined -> undefined;
+    case kvc:path([<<"payload_template">>], JSONChannel, null) of
+        null -> undefined;
         Template -> router_utils:to_bin(Template)
     end.
 

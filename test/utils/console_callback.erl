@@ -47,7 +47,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                   mqtt -> ?CONSOLE_MQTT_CHANNEL;
                   aws -> ?CONSOLE_AWS_CHANNEL;
                   decoder -> ?CONSOLE_DECODER_CHANNEL;
-                  console -> ?CONSOLE_CONSOLE_CHANNEL
+                  console -> ?CONSOLE_CONSOLE_CHANNEL;
+                  template -> ?CONSOLE_TEMPLATE_CHANNEL
               end,
     Channels = case NoChannel of
                    true -> [];

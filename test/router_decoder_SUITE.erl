@@ -5,6 +5,7 @@
          end_per_testcase/2]).
 
 -export([decode_test/1,
+         template_test/1,
          timeout_test/1,
          too_many_test/1]).
 
@@ -27,7 +28,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [decode_test, timeout_test, too_many_test].
+    [decode_test, template_test, timeout_test, too_many_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -131,6 +132,69 @@ decode_test(Config) ->
                                                         <<"channel">> => fun erlang:is_number/1,
                                                         <<"lat">> => fun erlang:is_float/1, 
                                                         <<"long">> => fun erlang:is_float/1}]}),
+    ok.
+
+template_test(Config) ->
+    %% Set console to decoder channel mode
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, template}),
+
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
+                                                   Address,
+                                                   router_handler_test:version(),
+                                                   router_handler_test,
+                                                   [self()]),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
+                                           <<"description">> => '_',
+                                           <<"reported_at">> => fun erlang:is_integer/1,
+                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
+                                           <<"frame_up">> => 0,
+                                           <<"frame_down">> => 0,
+                                           <<"payload_size">> => fun erlang:is_integer/1,
+                                           <<"port">> => '_',
+                                           <<"devaddr">> => '_',
+                                           <<"dc">> => fun erlang:is_map/1,
+                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                                                                <<"name">> => erlang:list_to_binary(HotspotName),
+                                                                <<"reported_at">> => fun erlang:is_integer/1,
+                                                                <<"status">> => <<"success">>,
+                                                                <<"selected">> => true,
+                                                                <<"rssi">> => 0.0,
+                                                                <<"snr">> => 0.0,
+                                                                <<"spreading">> => <<"SF8BW125">>,
+                                                                <<"frequency">> => fun erlang:is_float/1,
+                                                                <<"channel">> => fun erlang:is_number/1,
+                                                                <<"lat">> => fun erlang:is_float/1, 
+                                                                <<"long">> => fun erlang:is_float/1}],
+                                           <<"channels">> => []}),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    EncodedPayload = base64:decode(<<"CP4+AAAAAAAAAAA=">>),
+    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
+                                            router_device:app_s_key(Device0), 0, #{body => <<136:8, EncodedPayload/binary>>})},
+
+    %% Waiting for data from HTTP channel
+    test_utils:wait_channel_data(#{<<"battery">> => 100.0, <<"lat">> => 0.0,<<"long">> => 0.0}),
     ok.
 
 timeout_test(Config) ->

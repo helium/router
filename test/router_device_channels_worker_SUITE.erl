@@ -426,7 +426,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>}=JSONChannel) ->
              downlink_token => to_bin(kvc:path([<<"downlink_token">>], JSONChannel))},
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
     Channel;
 convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -437,7 +438,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>}=JSONChannel) ->
              downlink_topic => kvc:path([<<"credentials">>, <<"downlink">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
     Channel;
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -449,7 +451,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>}=JSONChannel) ->
              topic => kvc:path([<<"credentials">>, <<"topic">>], JSONChannel)},
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
-    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
     Channel;
 convert_channel(Device, Pid, #{<<"type">> := <<"console">>}=JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -457,7 +460,8 @@ convert_channel(Device, Pid, #{<<"type">> := <<"console">>}=JSONChannel) ->
     Name = kvc:path([<<"name">>], JSONChannel),
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),
-    Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder, Template),
     Channel;
 convert_channel(_Device, _Pid, _Channel) ->
     false.
@@ -485,6 +489,13 @@ convert_decoder(JSONChannel) ->
                             undefined
                     end
             end
+    end.
+
+-spec convert_template(map()) -> undefined | binary().
+convert_template(JSONChannel) ->
+    case kvc:path([<<"payload_template">>], JSONChannel, null) of
+        null -> undefined;
+        Template -> router_utils:to_bin(Template)
     end.
 
 to_bin(Bin) when is_binary(Bin) ->

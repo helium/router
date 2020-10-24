@@ -45,14 +45,6 @@
                                    <<"name">> => ?CONSOLE_DECODER_CHANNEL_NAME,
                                    <<"function">> => ?CONSOLE_DECODER}).
 
--define(CONSOLE_CONSOLE_CHANNEL_ID, <<"1617181920">>).
--define(CONSOLE_CONSOLE_CHANNEL_NAME, <<"fake_console">>).
--define(CONSOLE_CONSOLE_CHANNEL, #{<<"type">> => <<"console">>,
-                                   <<"credentials">> => #{},
-                                   <<"id">> => ?CONSOLE_CONSOLE_CHANNEL_ID,
-                                   <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
-                                   <<"function">> => ?CONSOLE_DECODER}).
-
 -define(CONSOLE_DECODER_ID, <<"custom-decoder">>).
 -define(CONSOLE_DECODER, #{<<"active">> => true,
                            <<"body">> => ?DECODER,
@@ -61,6 +53,33 @@
                            <<"name">> => <<"decoder name">>,
                            <<"type">> => <<"decoder">>}).
 
+-define(CONSOLE_TEMPLATE_CHANNEL_ID, <<"091809830981">>).
+-define(CONSOLE_TEMPLATE_CHANNEL_NAME, <<"fake_http_template">>).
+-define(CONSOLE_TEMPLATE_CHANNEL, #{<<"type">> => <<"http">>,
+                                    <<"credentials">> => #{<<"headers">> => #{},
+                                                           <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
+                                                           <<"method">> => <<"POST">>},
+                                    <<"id">> => ?CONSOLE_TEMPLATE_CHANNEL_ID,
+                                    <<"name">> => ?CONSOLE_TEMPLATE_CHANNEL_NAME,
+                                    <<"function">> => ?CONSOLE_TEMPLATE_DECODER,
+                                    <<"payload_template">> => ?CONSOLE_TEMPLATE}).
+
+-define(CONSOLE_TEMPLATE_DECODER_ID, <<"custom-template_decoder">>).
+-define(CONSOLE_TEMPLATE_DECODER, #{<<"active">> => true,
+                                    <<"format">> => <<"browan_object_locator">>,
+                                    <<"id">> => ?CONSOLE_TEMPLATE_DECODER_ID,
+                                    <<"name">> => <<"decoder name">>,
+                                    <<"type">> => <<"decoder">>}).
+
+-define(CONSOLE_TEMPLATE, <<"{{#decoded}}{{#payload}}{\"battery\":{{battery_percent}},\"lat\":{{latitude}},\"long\":{{longitude}}}{{/payload}}{{/decoded}}">>).
+
+-define(CONSOLE_CONSOLE_CHANNEL_ID, <<"1617181920">>).
+-define(CONSOLE_CONSOLE_CHANNEL_NAME, <<"fake_console">>).
+-define(CONSOLE_CONSOLE_CHANNEL, #{<<"type">> => <<"console">>,
+                                   <<"credentials">> => #{},
+                                   <<"id">> => ?CONSOLE_CONSOLE_CHANNEL_ID,
+                                   <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
+                                   <<"function">> => ?CONSOLE_DECODER}).
 
 -define(CONSOLE_LABELS, [#{<<"id">> => <<"label_id">>,
                            <<"name">> => <<"label_name">>,

@@ -387,7 +387,6 @@ validate_join(#packet_pb{payload= <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/bi
                                     _DevEUI0:8/binary, Nonce:2/binary, _MIC:4/binary>>=Payload}=Packet,
               PubKeyBin, Region, OUI, APIDevice, AppKey, Device, Blockchain) when MType == ?JOIN_REQ ->
     PayloadSize = erlang:byte_size(Payload),
-    ok = router_metrics:data_inc(PubKeyBin, router_device:id(APIDevice), PayloadSize),
     case router_console_dc_tracker:charge(Device, PayloadSize, Blockchain) of
         {error, _}=Error ->
             Error;
@@ -491,7 +490,6 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
     PayloadSize = erlang:byte_size(FRMPayload),
-    ok = router_metrics:data_inc(PubKeyBin, router_device:id(Device0), PayloadSize),
     case router_console_dc_tracker:charge(Device0, PayloadSize, Blockchain) of
         {error, Reason} ->
             DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],

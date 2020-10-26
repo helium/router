@@ -9,7 +9,6 @@
          routing_offer_observe/4,
          routing_packet_observe/4, routing_packet_observe_start/3,
          packet_observe_start/3, packet_observe_end/5,
-         data_inc/3,
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
@@ -35,7 +34,6 @@
 -define(ROUTING_OFFER, ?BASE ++ "device_routing_offer_duration").
 -define(ROUTING_PACKET, ?BASE ++ "device_routing_packet_duration").
 -define(PACKET, ?BASE ++ "device_packet_duration").
--define(DATA, ?BASE ++ "device_data").
 -define(DOWNLINK, ?BASE ++ "device_downlink_packet").
 -define(DC, ?BASE ++ "dc_balance").
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
@@ -48,7 +46,6 @@
 -define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?PACKET, [type, downlink], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
-                  {counter, ?DATA, [hotspot, device], "Data count"},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
@@ -89,10 +86,6 @@ packet_observe_start(PacketHash, PubKeyBin, Time) ->
 -spec packet_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
 packet_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
     gen_server:cast(?MODULE, {packet_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}).
-
--spec data_inc(libp2p_crypto:pubkey_bin(), binary(), non_neg_integer()) -> ok.
-data_inc(PubKeyBin, DeviceID, Size) ->
-    ok = prometheus_counter:inc(?DATA, [blockchain_utils:addr2name(PubKeyBin), DeviceID], Size).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->

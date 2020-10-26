@@ -10,7 +10,7 @@
 -dialyzer([no_return, no_unused, no_match]).
 
 -export([freq/1, net_freqs/1, datars/1, datar_to_dr/2, dr_to_datar/2]).
--export([join1_window/2, join1_window/3, rx1_window/4, rx1_window/3, rx2_window/2]).
+-export([join1_window/2, join1_window/3, join2_window/2, rx1_window/4, rx1_window/3, rx2_window/2]).
 -export([max_uplink_snr/1, max_uplink_snr/2, max_downlink_snr/3]).
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
@@ -26,8 +26,19 @@ join1_window(Region, Delay, RxQ) ->
 join1_window(#network{region=Region, join1_delay=Delay}, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
 
-%% join2_window(#network{join2_delay=Delay}=Network, Node) ->
-%% tx_window(?FUNCTION_NAME, RxQ, Delay, rx2_rf(Network, Node)).
+%% See RP002-1.0.1 LoRaWAN® Regional
+join2_window(Region, #rxq{tmms=Stamp}=RxQ) when Region == 'US915' -> %% 923.3MHz / DR8 (SF12 BW500)
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{freq=923.3,
+         datr=dr_to_datar(Region, 8),
+         time=Stamp+Delay,
+         codr=RxQ#rxq.codr};
+join2_window(Region, #rxq{tmms=Stamp}=RxQ) when Region == 'EU868' -> %% 869.525 MHz / DR0 (SF12, 125 kHz)
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{freq=869.525,
+         datr=dr_to_datar(Region, 0),
+         time=Stamp+Delay,
+         codr=RxQ#rxq.codr}.
 
 rx1_window(Region, Delay, Offset, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).

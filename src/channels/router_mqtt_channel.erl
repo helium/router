@@ -142,6 +142,9 @@ handle_info({'EXIT', Conn, {_Type, _Reason}}, #state{channel_id=ChannelID, conne
 handle_info({disconnected, _Type, _Reason}, #state{channel_id=ChannelID}=State) ->
     lager:error("[~s] got a disconnected message: ~p ~p", [ChannelID, _Type, _Reason]),
     {ok, State};
+%% Ignore connect message not for us
+handle_info({_, ping, _}, State) ->
+    {ok, State};
 handle_info(_Msg, #state{channel_id=ChannelID}=State) ->
     lager:warning("[~s] rcvd unknown info msg: ~p", [ChannelID, _Msg]),
     {ok, State}.

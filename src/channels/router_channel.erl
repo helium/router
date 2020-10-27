@@ -66,7 +66,7 @@ unique_id(#channel{id=ID, decoder=Decoder}) ->
 
 -spec handler(channel()) -> {atom(), binary()}.
 handler(Channel) ->
-    {Channel#channel.handler, ?MODULE:id(Channel)}.
+    {Channel#channel.handler, ?MODULE:unique_id(Channel)}.
 
 -spec name(channel()) -> binary().
 name(Channel) ->

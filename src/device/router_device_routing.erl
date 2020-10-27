@@ -333,7 +333,7 @@ maybe_multi_buy(Offer, Attempts) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of
         [] ->
-            timer:sleep(25),
+            timer:sleep(10),
             maybe_multi_buy(Offer, Attempts-1);
         [{PHash, 0, -1}] ->
             {error, ?MB_DENY_MORE};

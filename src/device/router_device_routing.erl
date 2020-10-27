@@ -80,7 +80,7 @@ handle_offer(Offer, HandlerPid) ->
            end,
     End = erlang:system_time(millisecond),
     erlang:spawn(fun() ->
-                         ok = router_metrics:packet_observe_start(blockchain_state_channel_offer_v1:packet_hash(Offer),
+                         ok = router_metrics:packet_trip_observe_start(blockchain_state_channel_offer_v1:packet_hash(Offer),
                                                                   blockchain_state_channel_offer_v1:hotspot(Offer),
                                                                   Start),
                          ok = print_offer_resp(Offer, HandlerPid, Resp),

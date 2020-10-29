@@ -66,7 +66,7 @@ unique_id(#channel{id=ID, decoder=Decoder}) ->
 
 -spec handler(channel()) -> {atom(), binary()}.
 handler(Channel) ->
-    {Channel#channel.handler, ?MODULE:id(Channel)}.
+    {Channel#channel.handler, ?MODULE:unique_id(Channel)}.
 
 -spec name(channel()) -> binary().
 name(Channel) ->
@@ -155,8 +155,13 @@ maybe_apply_template(undefined, Map) ->
     jsx:encode(Map);
 maybe_apply_template(Template, Map) ->
     NormalMap = jsx:decode(jsx:encode(Map), [return_maps]),
-    Res = bbmustache:render(Template, mk_data_fun(NormalMap, []), [{key_type, binary}]),
-    Res.
+    Data =  mk_data_fun(NormalMap, []),
+    try bbmustache:render(Template, Data, [{key_type, binary}]) of
+        Res -> Res
+    catch _E:_R ->
+        lager:warning("mustache template render failed ~p:~p, Template: ~p Data: ~p", [_E, _R, Template, Data]),
+        <<"mustache template render failed">>
+    end.
 
 mk_data_fun(Data, FunStack) ->
     fun(Key0) ->

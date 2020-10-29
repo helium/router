@@ -8,8 +8,7 @@
 -export([start_link/1,
          routing_offer_observe/4,
          routing_packet_observe/4, routing_packet_observe_start/3,
-         packet_observe_start/3, packet_observe_end/5,
-         data_inc/3,
+         packet_trip_observe_start/3, packet_trip_observe_end/5,
          downlink_inc/2,
          decoder_observe/3,
          console_api_observe/3,
@@ -34,8 +33,7 @@
 -define(BASE, "router_").
 -define(ROUTING_OFFER, ?BASE ++ "device_routing_offer_duration").
 -define(ROUTING_PACKET, ?BASE ++ "device_routing_packet_duration").
--define(PACKET, ?BASE ++ "device_packet_duration").
--define(DATA, ?BASE ++ "device_data").
+-define(PACKET_TRIP, ?BASE ++ "device_packet_trip_duration").
 -define(DOWNLINK, ?BASE ++ "device_downlink_packet").
 -define(DC, ?BASE ++ "dc_balance").
 -define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
@@ -47,8 +45,7 @@
 
 -define(METRICS, [{histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [50, 100, 250, 500, 1000]},
                   {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [50, 100, 250, 500, 1000]},
-                  {histogram, ?PACKET, [type, downlink], "Packet duration", [50, 100, 250, 500, 1000, 2000]},
-                  {counter, ?DATA, [hotspot, device], "Data count"},
+                  {histogram, ?PACKET_TRIP, [type, downlink], "Packet round trip duration", [50, 100, 250, 500, 1000, 2000]},
                   {counter, ?DOWNLINK, [type, status], "Downlink count"},
                   {gauge, ?DC, [], "DC balance"},
                   {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
@@ -82,17 +79,13 @@ routing_packet_observe(Type, Status, Reason, Time) when (Type == join orelse Typ
 routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
     gen_server:cast(?MODULE, {routing_packet_observe_start, PacketHash, PubKeyBin, Time}).
 
--spec packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
-packet_observe_start(PacketHash, PubKeyBin, Time) ->
-    gen_server:cast(?MODULE, {packet_observe_start, PacketHash, PubKeyBin, Time}).
+-spec packet_trip_observe_start(binary(), binary(), non_neg_integer()) -> ok.
+packet_trip_observe_start(PacketHash, PubKeyBin, Time) ->
+    gen_server:cast(?MODULE, {packet_trip_observe_start, PacketHash, PubKeyBin, Time}).
 
--spec packet_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
-packet_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
-    gen_server:cast(?MODULE, {packet_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}).
-
--spec data_inc(libp2p_crypto:pubkey_bin(), binary(), non_neg_integer()) -> ok.
-data_inc(PubKeyBin, DeviceID, Size) ->
-    ok = prometheus_counter:inc(?DATA, [blockchain_utils:addr2name(PubKeyBin), DeviceID], Size).
+-spec packet_trip_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
+packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
+    gen_server:cast(?MODULE, {packet_trip_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
@@ -154,14 +147,14 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({routing_packet_observe_start, PacketHash, PubKeyBin, Start}, #state{routing_packet_duration=RPD}=State) ->
     {noreply, State#state{routing_packet_duration=maps:put({PacketHash, PubKeyBin}, Start, RPD)}};
-handle_cast({packet_observe_start, PacketHash, PubKeyBin, Start}, #state{packet_duration=PD}=State) ->
+handle_cast({packet_trip_observe_start, PacketHash, PubKeyBin, Start}, #state{packet_duration=PD}=State) ->
     {noreply, State#state{packet_duration=maps:put({PacketHash, PubKeyBin}, Start, PD)}};
-handle_cast({packet_observe_end, PacketHash, PubKeyBin, End, Type, Downlink}, #state{routing_packet_duration=RPD, packet_duration=PD}=State0) ->
+handle_cast({packet_trip_observe_end, PacketHash, PubKeyBin, End, Type, Downlink}, #state{routing_packet_duration=RPD, packet_duration=PD}=State0) ->
     State1 = case maps:get({PacketHash, PubKeyBin}, PD, undefined) of
                  undefined ->
                      State0;
                  Start0 ->
-                     ok = prometheus_histogram:observe(?PACKET, [Type, Downlink], End-Start0),
+                     ok = prometheus_histogram:observe(?PACKET_TRIP, [Type, Downlink], End-Start0),
                      State0#state{packet_duration=maps:remove({PacketHash, PubKeyBin}, PD)}
              end,
     State2 = case maps:get({PacketHash, PubKeyBin}, RPD, undefined) of

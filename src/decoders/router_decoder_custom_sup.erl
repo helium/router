@@ -3,9 +3,12 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0,
-         add/1, delete/1,
-         decode/3]).
+-export([
+    start_link/0,
+    add/1,
+    delete/1,
+    decode/3
+]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -14,23 +17,31 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
--define(WORKER(I), #{id => I,
-                     start => {I, start_link, []},
-                     restart => temporary,
-                     shutdown => 1000,
-                     type => worker,
-                     modules => [I]}).
--define(FLAGS,  #{strategy => simple_one_for_one,
-                  intensity => 3,
-                  period => 60}).
+-define(WORKER(I), #{
+    id => I,
+    start => {I, start_link, []},
+    restart => temporary,
+    shutdown => 1000,
+    type => worker,
+    modules => [I]
+}).
+
+-define(FLAGS, #{
+    strategy => simple_one_for_one,
+    intensity => 3,
+    period => 60
+}).
+
 -define(ETS, router_decoder_custom_sup_ets).
 -define(MAX_V8_CONTEXT, 100).
 
--record(custom_decoder, {id :: binary(),
-                         hash :: binary(),
-                         function :: binary(),
-                         pid :: pid(),
-                         last_used :: integer()}).
+-record(custom_decoder, {
+    id :: binary(),
+    hash :: binary(),
+    function :: binary(),
+    pid :: pid(),
+    last_used :: integer()
+}).
 
 -type custom_decoder() :: #custom_decoder{}.
 
@@ -59,13 +70,13 @@ decode(Decoder, Payload, Port) ->
     case lookup(ID) of
         {error, _Reason} ->
             case ?MODULE:add(Decoder) of
-                {error, _}=Error ->
+                {error, _} = Error ->
                     Error;
                 {ok, Pid} ->
                     router_decoder_custom_worker:decode(Pid, Payload, Port)
             end;
-        {ok, #custom_decoder{pid=Pid}=CustomDecoder} ->
-            ok = insert(CustomDecoder#custom_decoder{last_used=erlang:system_time(seconds)}),
+        {ok, #custom_decoder{pid = Pid} = CustomDecoder} ->
+            ok = insert(CustomDecoder#custom_decoder{last_used = erlang:system_time(seconds)}),
             router_decoder_custom_worker:decode(Pid, Payload, Port)
     end.
 
@@ -92,10 +103,10 @@ add(ID, Function) ->
                 {error, not_found} ->
                     ok = maybe_delete_old_context(),
                     start_worker(ID, Hash, Function);
-                {ok, #custom_decoder{id=ID, hash=Hash, pid=Pid}} ->
+                {ok, #custom_decoder{id = ID, hash = Hash, pid = Pid}} ->
                     lager:debug("context ~p already exists here: ~p", [ID, Pid]),
                     {ok, Pid};
-                {ok, #custom_decoder{id=ID, pid=Pid}} ->
+                {ok, #custom_decoder{id = ID, pid = Pid}} ->
                     ok = stop_worker(ID, Pid),
                     start_worker(ID, Hash, Function)
             end
@@ -106,11 +117,16 @@ start_worker(ID, Hash, Function) ->
     {ok, VM} = router_v8:get(),
     Args = #{id => ID, vm => VM, function => Function},
     case supervisor:start_child(?MODULE, [Args]) of
-        {error, _Err}=Err ->
+        {error, _Err} = Err ->
             Err;
-        {ok, Pid}=OK ->
-            CustomDecoder = #custom_decoder{id=ID, hash=Hash, function=Function,
-                                            pid=Pid, last_used=erlang:system_time(seconds)},
+        {ok, Pid} = OK ->
+            CustomDecoder = #custom_decoder{
+                id = ID,
+                hash = Hash,
+                function = Function,
+                pid = Pid,
+                last_used = erlang:system_time(seconds)
+            },
             ok = insert(CustomDecoder),
             OK
     end.
@@ -124,8 +140,9 @@ stop_worker(ID, Pid) ->
 -spec lookup(binary()) -> {ok, custom_decoder()} | {error, not_found}.
 lookup(ID) ->
     case ets:lookup(?ETS, ID) of
-        [] -> {error, not_found};
-        [{ID, #custom_decoder{pid=Pid}=CustomDecoder}] ->
+        [] ->
+            {error, not_found};
+        [{ID, #custom_decoder{pid = Pid} = CustomDecoder}] ->
             case erlang:is_process_alive(Pid) of
                 true -> {ok, CustomDecoder};
                 false -> {error, not_found}
@@ -142,7 +159,7 @@ maybe_delete_old_context() ->
     case get_oldest_decoder() of
         undefined ->
             ok;
-        #custom_decoder{id=ID, pid=Pid} ->
+        #custom_decoder{id = ID, pid = Pid} ->
             stop_worker(ID, Pid)
     end.
 
@@ -153,11 +170,16 @@ get_oldest_decoder() ->
         false ->
             undefined;
         true ->
-            SortFun = fun([{_, #custom_decoder{last_used=T1}}], [{_, #custom_decoder{last_used=T2}}]) -> T1 < T2 end,
+            SortFun = fun(
+                [{_, #custom_decoder{last_used = T1}}],
+                [{_, #custom_decoder{last_used = T2}}]
+            ) ->
+                T1 < T2
+            end,
             Sorted = lists:sort(SortFun, ets:match(?ETS, '$1')),
             case Sorted of
                 [] -> undefined;
-                [[{_ID, CustomDecoder}]|_] -> CustomDecoder
+                [[{_ID, CustomDecoder}] | _] -> CustomDecoder
             end
     end.
 
@@ -170,8 +192,13 @@ insert_lookup_delete_test() ->
     ets:new(?ETS, [public, named_table, set]),
     ID = <<"id">>,
     Fun = <<"function Decoder(bytes, port) {return 'ok'}">>,
-    CustomDecoder = #custom_decoder{id=ID, hash=crypto:hash(sha256, Fun), function=Fun,
-                                    pid=self(), last_used=erlang:system_time(seconds)},
+    CustomDecoder = #custom_decoder{
+        id = ID,
+        hash = crypto:hash(sha256, Fun),
+        function = Fun,
+        pid = self(),
+        last_used = erlang:system_time(seconds)
+    },
     ok = insert(CustomDecoder),
     ?assertEqual({ok, CustomDecoder}, lookup(ID)),
     ok = delete(ID),
@@ -183,11 +210,21 @@ get_oldest_decoder_test() ->
     ok = application:set_env(router, max_v8_context, 1),
     Fun = <<"function Decoder(bytes, port) {return 'ok'}">>,
     ID0 = <<"id0">>,
-    CustomDecoder0 = #custom_decoder{id=ID0, hash=crypto:hash(sha256, Fun), function=Fun,
-                                     pid=self(), last_used=erlang:system_time(nanosecond)},
+    CustomDecoder0 = #custom_decoder{
+        id = ID0,
+        hash = crypto:hash(sha256, Fun),
+        function = Fun,
+        pid = self(),
+        last_used = erlang:system_time(nanosecond)
+    },
     ID1 = <<"id1">>,
-    CustomDecoder1 = #custom_decoder{id=ID1, hash=crypto:hash(sha256, Fun), function=Fun,
-                                     pid=self(), last_used=erlang:system_time(nanosecond)},
+    CustomDecoder1 = #custom_decoder{
+        id = ID1,
+        hash = crypto:hash(sha256, Fun),
+        function = Fun,
+        pid = self(),
+        last_used = erlang:system_time(nanosecond)
+    },
     ok = insert(CustomDecoder0),
     ok = insert(CustomDecoder1),
 

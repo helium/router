@@ -14,30 +14,37 @@
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([start_link/1,
-         default_devaddr/0,
-         allocate/2,
-         sort_devices/2,
-         pubkeybin_to_loc/2]).
+-export([
+    start_link/1,
+    default_devaddr/0,
+    allocate/2,
+    sort_devices/2,
+    pubkeybin_to_loc/2
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(SERVER, ?MODULE).
 -define(ETS, router_device_devaddr_ets).
--define(BITS_23, 8388607). %% 
+%%
+-define(BITS_23, 8388607).
 
--record(state, {chain = undefined :: blockchain:blockchain() | undefined,
-                oui :: non_neg_integer(),
-                subnets = [] :: [binary()],
-                devaddr_used = #{} :: map()}).
+-record(state, {
+    chain = undefined :: blockchain:blockchain() | undefined,
+    oui :: non_neg_integer(),
+    subnets = [] :: [binary()],
+    devaddr_used = #{} :: map()
+}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -60,11 +67,13 @@ default_devaddr() ->
             end
     end.
 
--spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->  {ok, binary()} | {error, any()}.
+-spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->
+    {ok, binary()} | {error, any()}.
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) -> [router_device:device()].
+-spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) ->
+    [router_device:device()].
 sort_devices(Devices, PubKeyBin) ->
     Chain = blockchain_worker:blockchain(),
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
@@ -75,7 +84,10 @@ sort_devices(Devices, PubKeyBin) ->
     end.
 
 %% TODO: Maybe make this a ets table to avoid lookups all the time
--spec pubkeybin_to_loc(undefined | libp2p_crypto:pubkey_bin(), undefined | blockchain:blockchain()) -> {ok, non_neg_integer()} | {error, any()}.
+-spec pubkeybin_to_loc(
+    undefined | libp2p_crypto:pubkey_bin(),
+    undefined | blockchain:blockchain()
+) -> {ok, non_neg_integer()} | {error, any()}.
 pubkeybin_to_loc(undefined, _Chain) ->
     {error, undef_pubkeybin};
 pubkeybin_to_loc(_PubKeyBin, undefined) ->
@@ -83,7 +95,7 @@ pubkeybin_to_loc(_PubKeyBin, undefined) ->
 pubkeybin_to_loc(PubKeyBin, Chain) ->
     Ledger = blockchain:ledger(Chain),
     case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error;
         {ok, Hotspot} ->
             case blockchain_ledger_gateway_v2:location(Hotspot) of
@@ -98,24 +110,30 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = blockchain_event:add_handler(self()),
-    OUI = case application:get_env(router, oui, undefined) of
-              undefined ->
-                  error(no_oui_configured);
-              OUI0 when is_list(OUI0) ->
-                  list_to_integer(OUI0);
-              OUI0 ->
-                  OUI0
-          end,
+    OUI =
+        case application:get_env(router, oui, undefined) of
+            undefined ->
+                error(no_oui_configured);
+            OUI0 when is_list(OUI0) ->
+                list_to_integer(OUI0);
+            OUI0 ->
+                OUI0
+        end,
     self() ! post_init,
-    {ok, #state{oui=OUI}}.
+    {ok, #state{oui = OUI}}.
 
-handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets=[]}=State) ->
+handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets = []} = State) ->
     {reply, {error, no_subnet}, State};
-handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=Subnets, devaddr_used=Used}=State) ->
-    Index = case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
-                {error, _} -> h3:from_geo({0.0, 0.0}, 12);
-                {ok, IA} -> IA
-            end,
+handle_call(
+    {allocate, _Device, PubKeyBin},
+    _From,
+    #state{chain = Chain, subnets = Subnets, devaddr_used = Used} = State
+) ->
+    Index =
+        case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
+            {error, _} -> h3:from_geo({0.0, 0.0}, 12);
+            {ok, IA} -> IA
+        end,
     Parent = h3:to_geo(h3:parent(Index, 1)),
     {NthSubnet, DevaddrBase} =
         case maps:get(Parent, Used, undefined) of
@@ -126,18 +144,19 @@ handle_call({allocate, _Device, PubKeyBin}, _From, #state{chain=Chain, subnets=S
                 Subnet = lists:nth(Nth, Subnets),
                 <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
                 Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
-                case LastBase+1 >= Base+Max of
+                case LastBase + 1 >= Base + Max of
                     true ->
                         {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
-                        <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> = NextSubnet,
+                        <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> =
+                            NextSubnet,
                         {NextNth, NextBase};
                     false ->
-                        {Nth, LastBase+1} 
+                        {Nth, LastBase + 1}
                 end
         end,
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
-    {reply, Reply, State#state{devaddr_used=maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
+    {reply, Reply, State#state{devaddr_used = maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -146,44 +165,46 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-
-handle_info({blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}}, #state{chain=Chain, oui=OUI}=State) ->
+handle_info(
+    {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
+    #state{chain = Chain, oui = OUI} = State
+) ->
     {ok, Block} = blockchain:get_block(BlockHash, Chain),
     FilterFun = fun(T) ->
-                        case blockchain_txn:type(T) of
-                            blockchain_txn_oui_v1 ->
-                                blockchain_txn_oui_v1:oui(T) == OUI;
-                            blockchain_txn_routing_v1 ->
-                                blockchain_txn_routing_v1:oui(T) == OUI;
-                            _ ->
-                                false
-                        end
-                end,
+        case blockchain_txn:type(T) of
+            blockchain_txn_oui_v1 ->
+                blockchain_txn_oui_v1:oui(T) == OUI;
+            blockchain_txn_routing_v1 ->
+                blockchain_txn_routing_v1:oui(T) == OUI;
+            _ ->
+                false
+        end
+    end,
     %% check if there's any txns that affect our OUI
     case blockchain_utils:find_txn(Block, FilterFun) of
         [] ->
             {noreply, State};
         _ ->
             Subnets = subnets(OUI, Chain),
-            {noreply, State#state{subnets=Subnets}}
+            {noreply, State#state{subnets = Subnets}}
     end;
-handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{oui=OUI}=State) ->
+handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{oui = OUI} = State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
             Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain=Chain, subnets=Subnets}}
+            {noreply, State#state{chain = Chain, subnets = Subnets}}
     end;
-handle_info(post_init, #state{chain=undefined, oui=OUI}=State) ->
+handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
             Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain=Chain, subnets=Subnets}}
+            {noreply, State#state{chain = Chain, subnets = Subnets}}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -210,29 +231,35 @@ subnets(OUI, Chain) ->
 
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->
-    case Nth+1 > erlang:length(Subnets) of
+    case Nth + 1 > erlang:length(Subnets) of
         true -> {1, lists:nth(1, Subnets)};
-        false -> {Nth+1, lists:nth(Nth+1, Subnets)}
+        false -> {Nth + 1, lists:nth(Nth + 1, Subnets)}
     end.
 
--spec sort_devices_fun(router_device:device(), router_device:device(),
-                       h3:index(), blockchain:blockchain()) -> boolean().
+-spec sort_devices_fun(
+    router_device:device(),
+    router_device:device(),
+    h3:index(),
+    blockchain:blockchain()
+) -> boolean().
 sort_devices_fun(DeviceA, DeviceB, Index, Chain) ->
-    IndexA = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
-                 {error, _} -> undefined;
-                 {ok, IA} -> IA
-             end,
-    IndexB = case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceB), Chain) of
-                 {error, _} -> undefined;
-                 {ok, IB} -> IB
-             end,
+    IndexA =
+        case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
+            {error, _} -> undefined;
+            {ok, IA} -> IA
+        end,
+    IndexB =
+        case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceB), Chain) of
+            {error, _} -> undefined;
+            {ok, IB} -> IB
+        end,
     case IndexA == undefined orelse IndexB == undefined of
         true ->
             false;
         false ->
             case
                 h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
-                h3:get_resolution(IndexA) == h3:get_resolution(Index)
+                    h3:get_resolution(IndexA) == h3:get_resolution(Index)
             of
                 false ->
                     {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
@@ -242,7 +269,8 @@ sort_devices_fun(DeviceA, DeviceB, Index, Chain) ->
             end
     end.
 
--spec indexes_to_lowest_res(h3:index(), h3:index(), h3:index()) -> {h3:index(), h3:index(), h3:index()}.
+-spec indexes_to_lowest_res(h3:index(), h3:index(), h3:index()) ->
+    {h3:index(), h3:index(), h3:index()}.
 indexes_to_lowest_res(IndexA, IndexB, IndexC) ->
     Resolutions = [h3:get_resolution(IndexA), h3:get_resolution(IndexB), h3:get_resolution(IndexC)],
     LowestRes = lists:min(Resolutions),
@@ -254,7 +282,7 @@ to_res(Index, Res) ->
 
 -spec compare_distance(h3:index(), h3:index(), h3:index()) -> boolean().
 compare_distance(Index1, Index2, Index3) ->
-    try  h3:grid_distance(Index2, Index1) > h3:grid_distance(Index3, Index1) of
+    try h3:grid_distance(Index2, Index1) > h3:grid_distance(Index3, Index1) of
         Bool -> Bool
     catch
         _:_ -> false

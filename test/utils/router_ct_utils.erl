@@ -3,13 +3,14 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
+
 -include("console_test.hrl").
 -include("router_ct_macros.hrl").
 
 -export([
-         init_per_testcase/3,
-         end_per_testcase/2
-        ]).
+    init_per_testcase/3,
+    end_per_testcase/2
+]).
 
 %% configures one router by default
 init_per_testcase(Mod, TestCase, Config0) ->
@@ -36,13 +37,18 @@ init_router_config(Config, NumRouters) ->
 
     %% NOTE: elli must be running before router nodes start
     Tab = ets:new(router_ct_utils, [public, set]),
-    ElliOpts = [{callback, console_callback},
-                {callback_args, #{forward => self(), ets => Tab,
-                                  app_key => ?APPKEY, app_eui => ?APPEUI, dev_eui => ?DEVEUI}},
-                {port, 3000}
-               ],
+    ElliOpts = [
+        {callback, console_callback},
+        {callback_args, #{
+            forward => self(),
+            ets => Tab,
+            app_key => ?APPKEY,
+            app_eui => ?APPEUI,
+            dev_eui => ?DEVEUI
+        }},
+        {port, 3000}
+    ],
     {ok, ElliPid} = elli:start_link(ElliOpts),
-
 
     %% Get router config results
     RouterConfigResult = router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys),
@@ -75,11 +81,11 @@ init_router_config(Config, NumRouters) ->
     ok = miner_test:wait_for_registration(Miners, miner_consensus_mgr),
 
     [
-     {routers, Routers},
-     {router_keys, RouterKeys},
-     {router_pubkey_bins, RouterPubkeyBins},
-     {elli, ElliPid}
-    | Config
+        {routers, Routers},
+        {router_keys, RouterKeys},
+        {router_pubkey_bins, RouterPubkeyBins},
+        {elli, ElliPid}
+        | Config
     ].
 
 end_per_testcase(TestCase, Config) ->
@@ -99,42 +105,62 @@ end_per_testcase(TestCase, Config) ->
 
 router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
     miner_test:pmap(
-      fun({Router, {_TCPPort1, _UDPPort1}, _ECDH, _PubKey, _Addr, _SigFun}) ->
-              ct:pal("Router ~p", [Router]),
-              ct_rpc:call(Router, cover, start, []),
-              ct_rpc:call(Router, application, load, [lager]),
-              ct_rpc:call(Router, application, load, [blockchain]),
-              ct_rpc:call(Router, application, load, [libp2p]),
-              ct_rpc:call(Router, application, load, [router]),
-              %% give each node its own log directory
-              LogRoot = LogDir ++ "_router_" ++ atom_to_list(Router),
-              ct_rpc:call(Router, application, set_env, [lager, log_root, LogRoot]),
-              ct_rpc:call(Router, lager, set_loglevel, [{lager_file_backend, "log/console.log"}, debug]),
+        fun({Router, {_TCPPort1, _UDPPort1}, _ECDH, _PubKey, _Addr, _SigFun}) ->
+            ct:pal("Router ~p", [Router]),
+            ct_rpc:call(Router, cover, start, []),
+            ct_rpc:call(Router, application, load, [lager]),
+            ct_rpc:call(Router, application, load, [blockchain]),
+            ct_rpc:call(Router, application, load, [libp2p]),
+            ct_rpc:call(Router, application, load, [router]),
+            %% give each node its own log directory
+            LogRoot = LogDir ++ "_router_" ++ atom_to_list(Router),
+            ct_rpc:call(Router, application, set_env, [lager, log_root, LogRoot]),
+            ct_rpc:call(Router, lager, set_loglevel, [
+                {lager_file_backend, "log/console.log"},
+                debug
+            ]),
 
-              %% set blockchain configuration
-              #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ecc_compact),
-              Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
-              RouterBaseDir = BaseDir ++ "_router_" ++ atom_to_list(Router),
-              ct_rpc:call(Router, application, set_env, [blockchain, base_dir, RouterBaseDir]),
-              ct_rpc:call(Router, application, set_env, [blockchain, port, Port]),
-              ct_rpc:call(Router, application, set_env, [blockchain, seed_nodes, SeedNodes]),
-              ct_rpc:call(Router, application, set_env, [blockchain, key, Key]),
-              ct_rpc:call(Router, application, set_env, [blockchain, sc_client_handler, router_sc_client_handler]),
-              ct_rpc:call(Router, application, set_env, [blockchain, sc_packet_handler, router_device_routing]),
+            %% set blockchain configuration
+            #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ecc_compact),
+            Key = {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)},
+            RouterBaseDir = BaseDir ++ "_router_" ++ atom_to_list(Router),
+            ct_rpc:call(Router, application, set_env, [blockchain, base_dir, RouterBaseDir]),
+            ct_rpc:call(Router, application, set_env, [blockchain, port, Port]),
+            ct_rpc:call(Router, application, set_env, [blockchain, seed_nodes, SeedNodes]),
+            ct_rpc:call(Router, application, set_env, [blockchain, key, Key]),
+            ct_rpc:call(Router, application, set_env, [
+                blockchain,
+                sc_client_handler,
+                router_sc_client_handler
+            ]),
+            ct_rpc:call(Router, application, set_env, [
+                blockchain,
+                sc_packet_handler,
+                router_device_routing
+            ]),
 
-              %% Set router configuration
-              ct_rpc:call(Router, application, set_env, [router, base_dir, RouterBaseDir]),
-              ct_rpc:call(Router, application, set_env, [router, port, Port]),
-              ct_rpc:call(Router, application, set_env, [router, seed_nodes, SeedNodes]),
-              ct_rpc:call(Router, application, set_env, [router, oui, 1]),
-              ct_rpc:call(Router, application, set_env, [router, router_device_api_module, router_console_device_api]),
-              ct_rpc:call(Router, application, set_env, [router, router_console_device_api,
-                                                         [{endpoint, ?CONSOLE_URL},
-                                                          {ws_endpoint, ?CONSOLE_WS_URL},
-                                                          {secret, <<"yolo">>}]]),
-              ct_rpc:call(Router, application, set_env, [router, metrics_port, 0]),
-              {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),
-              ct:pal("Router: ~p, StartedApps: ~p", [Router, StartedApps])
-      end,
-      RouterKeys
-     ).
+            %% Set router configuration
+            ct_rpc:call(Router, application, set_env, [router, base_dir, RouterBaseDir]),
+            ct_rpc:call(Router, application, set_env, [router, port, Port]),
+            ct_rpc:call(Router, application, set_env, [router, seed_nodes, SeedNodes]),
+            ct_rpc:call(Router, application, set_env, [router, oui, 1]),
+            ct_rpc:call(Router, application, set_env, [
+                router,
+                router_device_api_module,
+                router_console_device_api
+            ]),
+            ct_rpc:call(Router, application, set_env, [
+                router,
+                router_console_device_api,
+                [
+                    {endpoint, ?CONSOLE_URL},
+                    {ws_endpoint, ?CONSOLE_WS_URL},
+                    {secret, <<"yolo">>}
+                ]
+            ]),
+            ct_rpc:call(Router, application, set_env, [router, metrics_port, 0]),
+            {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),
+            ct:pal("Router: ~p, StartedApps: ~p", [Router, StartedApps])
+        end,
+        RouterKeys
+    ).

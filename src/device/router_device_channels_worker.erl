@@ -8,48 +8,56 @@
 -behavior(gen_server).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+
 -include("device_worker.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([start_link/1,
-         handle_join/1,
-         handle_device_update/2,
-         handle_data/4,
-         report_status/3,
-         handle_downlink/3,
-         state/1]).
+-export([
+    start_link/1,
+    handle_join/1,
+    handle_device_update/2,
+    handle_data/4,
+    report_status/3,
+    handle_downlink/3,
+    state/1
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(SERVER, ?MODULE).
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_INIT,
-        {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-         erlang:make_ref()}).
+    {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
+).
+
 -define(DATA_TIMEOUT, timer:seconds(1)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
--record(state, {chain=blockchain:blockchain(),
-                event_mgr :: pid(),
-                device_worker :: pid(),
-                device :: router_device:device(),
-                channels = #{} :: map(),
-                channels_backoffs = #{} :: map(),
-                data_cache = #{} :: map(),
-                balance_cache = #{} :: map(),
-                fcnt :: integer(),
-                channels_resp_cache = #{} :: map()}).
+-record(state, {
+    chain = blockchain:blockchain(),
+    event_mgr :: pid(),
+    device_worker :: pid(),
+    device :: router_device:device(),
+    channels = #{} :: map(),
+    channels_backoffs = #{} :: map(),
+    data_cache = #{} :: map(),
+    balance_cache = #{} :: map(),
+    fcnt :: integer(),
+    channels_resp_cache = #{} :: map()
+}).
 
 -type state() :: #state{}.
 
@@ -71,8 +79,12 @@ state(Pid) ->
 handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
--spec handle_data(pid(), router_device:device(),
-                  {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()}, {non_neg_integer(), non_neg_integer()}) -> ok.
+-spec handle_data(
+    pid(),
+    router_device:device(),
+    {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()},
+    {non_neg_integer(), non_neg_integer()}
+) -> ok.
 handle_data(Pid, Device, Data, {Balance, Nonce}) ->
     gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
 
@@ -102,7 +114,10 @@ handle_downlink(DeviceID, BinaryPayload, Type) when is_binary(DeviceID) ->
                     router_device_worker:queue_message(Pid, Msg);
                 {error, _Reason} ->
                     ok = router_metrics:downlink_inc(Type, error),
-                    lager:info("could not parse json downlink message ~p for ~p", [_Reason, DeviceID])
+                    lager:info("could not parse json downlink message ~p for ~p", [
+                        _Reason,
+                        DeviceID
+                    ])
             end
     end.
 
@@ -117,7 +132,13 @@ init(Args) ->
     lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
     self() ! refresh_channels,
-    {ok, #state{chain=Blockchain, event_mgr=EventMgrRef, device_worker=DeviceWorker, device=Device, fcnt=-1}}.
+    {ok, #state{
+        chain = Blockchain,
+        event_mgr = EventMgrRef,
+        device_worker = DeviceWorker,
+        device = Device,
+        fcnt = -1
+    }}.
 
 handle_call(state, _From, State) ->
     {reply, State, State};
@@ -126,17 +147,23 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(handle_join, State) ->
-    {noreply, State#state{fcnt=-1}};
+    {noreply, State#state{fcnt = -1}};
 handle_cast({handle_device_update, Device}, State) ->
-    {noreply, State#state{device=Device}};
-handle_cast({handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time}=Data, {Balance, Nonce}=BN},
-            #state{data_cache=DataCache0, balance_cache=BalanceCache0, fcnt=CurrFCnt}=State) ->
+    {noreply, State#state{device = Device}};
+handle_cast(
+    {handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time} = Data, {Balance, Nonce} = BN},
+    #state{data_cache = DataCache0, balance_cache = BalanceCache0, fcnt = CurrFCnt} = State
+) ->
     FCnt = router_device:fcnt(Device),
     CheckFCnt = FCnt =< CurrFCnt andalso router_device_utils:mtype_to_ack(Frame#frame.mtype) == 0,
     DataCache1 =
         case CheckFCnt of
             true ->
-                lager:debug("we received a late packet ~p from ~p: ~p", [{FCnt, CurrFCnt}, PubKeyBin, Packet]),
+                lager:debug("we received a late packet ~p from ~p: ~p", [
+                    {FCnt, CurrFCnt},
+                    PubKeyBin,
+                    Packet
+                ]),
                 DataCache0;
             false ->
                 case maps:get(FCnt, DataCache0, undefined) of
@@ -148,7 +175,7 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time}=Dat
                         case maps:get(PubKeyBin, CachedData0, undefined) of
                             undefined ->
                                 maps:put(FCnt, CachedData1, DataCache0);
-                            {_, #packet_pb{signal_strength=RSSI}, _, _, _} ->
+                            {_, #packet_pb{signal_strength = RSSI}, _, _, _} ->
                                 case Packet#packet_pb.signal_strength > RSSI of
                                     true ->
                                         maps:put(FCnt, CachedData1, DataCache0);
@@ -172,11 +199,11 @@ handle_cast({handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time}=Dat
                         BalanceCache0
                 end
         end,
-    {noreply, State#state{device=Device, data_cache=DataCache1, balance_cache=BalanceCache1}};
-handle_cast({handle_downlink, Msg}, #state{device_worker=DeviceWorker}=State) ->
+    {noreply, State#state{device = Device, data_cache = DataCache1, balance_cache = BalanceCache1}};
+handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_status, FCnt, Report}, #state{channels_resp_cache=Cache0}=State) ->
+handle_cast({report_status, FCnt, Report}, #state{channels_resp_cache = Cache0} = State) ->
     lager:debug("received report_status ~p ~p", [FCnt, Report]),
     Cache1 =
         case maps:get(FCnt, Cache0, undefined) of
@@ -184,9 +211,9 @@ handle_cast({report_status, FCnt, Report}, #state{channels_resp_cache=Cache0}=St
                 lager:warning("received report_status ~p too late ignoring ~p", [FCnt, Report]),
                 Cache0;
             {Data, CachedReports} ->
-                maps:put(FCnt, {Data, [Report|CachedReports]}, Cache0)
+                maps:put(FCnt, {Data, [Report | CachedReports]}, Cache0)
         end,
-    {noreply, State#state{channels_resp_cache=Cache1}};
+    {noreply, State#state{channels_resp_cache = Cache1}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -194,81 +221,112 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 %% Data Handling
 %% ------------------------------------------------------------------
-handle_info({data_timeout, FCnt}, #state{chain=Blockchain, event_mgr=EventMgrRef, device=Device,
-                                         data_cache=DataCache0, balance_cache=BalanceCache0, channels_resp_cache=RespCache0}=State) ->
+handle_info(
+    {data_timeout, FCnt},
+    #state{
+        chain = Blockchain,
+        event_mgr = EventMgrRef,
+        device = Device,
+        data_cache = DataCache0,
+        balance_cache = BalanceCache0,
+        channels_resp_cache = RespCache0
+    } = State
+) ->
     CachedData = maps:values(maps:get(FCnt, DataCache0)),
     CachedDB = maps:get(FCnt, BalanceCache0),
     {ok, Map} = send_to_channel(CachedData, CachedDB, Device, EventMgrRef, Blockchain),
     lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
     _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
-    {noreply, State#state{data_cache=maps:remove(FCnt, DataCache0),
-                          balance_cache=maps:remove(FCnt, BalanceCache0),
-                          fcnt=FCnt,
-                          channels_resp_cache=maps:put(FCnt, {Map, []}, RespCache0)}};
+    {noreply, State#state{
+        data_cache = maps:remove(FCnt, DataCache0),
+        balance_cache = maps:remove(FCnt, BalanceCache0),
+        fcnt = FCnt,
+        channels_resp_cache = maps:put(FCnt, {Map, []}, RespCache0)
+    }};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------
-handle_info({report_status_timeout, FCnt}, #state{device=Device, channels_resp_cache=Cache0}=State) ->
+handle_info(
+    {report_status_timeout, FCnt},
+    #state{device = Device, channels_resp_cache = Cache0} = State
+) ->
     lager:debug("report_status_timeout for ~p", [FCnt]),
     case maps:get(FCnt, Cache0, undefined) of
         undefined ->
             {noreply, State};
         {Data, CachedReports} ->
             Payload = maps:get(payload, Data),
-            ReportsMap = #{category => <<"up">>,
-                           description => <<"Channels report">>,
-                           reported_at => erlang:system_time(seconds),
-                           payload => base64:encode(Payload),
-                           payload_size => erlang:byte_size(Payload),
-                           port => maps:get(port, Data),
-                           devaddr => maps:get(devaddr, Data),
-                           hotspots => maps:get(hotspots, Data),
-                           channels => CachedReports,
-                           fcnt => maps:get(fcnt, Data),
-                           dc => maps:get(dc, Data)},
+            ReportsMap = #{
+                category => <<"up">>,
+                description => <<"Channels report">>,
+                reported_at => erlang:system_time(seconds),
+                payload => base64:encode(Payload),
+                payload_size => erlang:byte_size(Payload),
+                port => maps:get(port, Data),
+                devaddr => maps:get(devaddr, Data),
+                hotspots => maps:get(hotspots, Data),
+                channels => CachedReports,
+                fcnt => maps:get(fcnt, Data),
+                dc => maps:get(dc, Data)
+            },
             ok = router_device_api:report_status(Device, ReportsMap),
-            {noreply, State#state{channels_resp_cache=maps:remove(FCnt, Cache0)}}
+            {noreply, State#state{channels_resp_cache = maps:remove(FCnt, Cache0)}}
     end;
-handle_info(refresh_channels, #state{event_mgr=EventMgrRef, device=Device, channels=Channels0}=State) ->
+handle_info(
+    refresh_channels,
+    #state{event_mgr = EventMgrRef, device = Device, channels = Channels0} = State
+) ->
     APIChannels = lists:foldl(
-                    fun(Channel, Acc) ->
-                            ID = router_channel:unique_id(Channel),
-                            maps:put(ID, Channel, Acc)
-                    end,
-                    #{},
-                    router_device_api:get_channels(Device, self())),
+        fun(Channel, Acc) ->
+            ID = router_channel:unique_id(Channel),
+            maps:put(ID, Channel, Acc)
+        end,
+        #{},
+        router_device_api:get_channels(Device, self())
+    ),
     Channels1 =
         case maps:size(APIChannels) == 0 of
             true ->
                 %% API returned no channels removing all of them and adding the "no channel"
                 lists:foreach(
-                  fun({router_no_channel, <<"no_channel">>}) -> ok;
-                     (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
-                  end,
-                  gen_event:which_handlers(EventMgrRef)),
+                    fun
+                        ({router_no_channel, <<"no_channel">>}) -> ok;
+                        (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
+                    end,
+                    gen_event:which_handlers(EventMgrRef)
+                ),
                 NoChannel = maybe_start_no_channel(Device, EventMgrRef),
                 #{router_channel:unique_id(NoChannel) => NoChannel};
             false ->
-                %% Start channels asynchronously 
+                %% Start channels asynchronously
                 lists:foreach(
-                  fun(Channel) -> self() ! {start_channel, Channel} end,
-                  maps:values(APIChannels)),
+                    fun(Channel) -> self() ! {start_channel, Channel} end,
+                    maps:values(APIChannels)
+                ),
                 %% Removing old channels left in cache but not in API call
                 remove_old_channels(EventMgrRef, APIChannels, Channels0)
-
         end,
-    {noreply, State#state{channels=Channels1}};
-handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRef,
-                                             channels=Channels, channels_backoffs=Backoffs0}=State) ->
+    {noreply, State#state{channels = Channels1}};
+handle_info(
+    {start_channel, Channel},
+    #state{
+        device = Device,
+        event_mgr = EventMgrRef,
+        channels = Channels,
+        channels_backoffs = Backoffs0
+    } = State
+) ->
     ChannelID = router_channel:unique_id(Channel),
     case maps:get(ChannelID, Channels, undefined) of
         undefined ->
             case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                 {ok, Backoffs1} ->
-                    {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
-                                          channels_backoffs=Backoffs1}};
+                    {noreply, State#state{
+                        channels = maps:put(ChannelID, Channel, Channels),
+                        channels_backoffs = Backoffs1
+                    }};
                 {error, _Reason, Backoffs1} ->
-                    {noreply, State#state{channels_backoffs=Backoffs1}}
+                    {noreply, State#state{channels_backoffs = Backoffs1}}
             end;
         CachedChannel ->
             ChannelHash = router_channel:hash(Channel),
@@ -278,59 +336,83 @@ handle_info({start_channel, Channel}, #state{device=Device, event_mgr=EventMgrRe
                     {noreply, State};
                 _OldHash ->
                     lager:info("updating channel ~p", [ChannelID]),
-                    case update_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                    case update_channel(EventMgrRef, Channel, Device, Backoffs0) of
                         {ok, Backoffs1} ->
                             lager:info("channel ~p updated", [ChannelID]),
-                            {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
-                                                  channels_backoffs=Backoffs1}};
+                            {noreply, State#state{
+                                channels = maps:put(ChannelID, Channel, Channels),
+                                channels_backoffs = Backoffs1
+                            }};
                         {error, _Reason, Backoffs1} ->
-                            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                                  channels_backoffs=Backoffs1}}
+                            {noreply, State#state{
+                                channels = maps:remove(ChannelID, Channels),
+                                channels_backoffs = Backoffs1
+                            }}
                     end
             end
     end;
-handle_info({gen_event_EXIT, {_Handler, ChannelID}, ExitReason}, #state{device=Device, channels=Channels,
-                                                                        event_mgr=EventMgrRef,
-                                                                        channels_backoffs=Backoffs0}=State) ->
+handle_info(
+    {gen_event_EXIT, {_Handler, ChannelID}, ExitReason},
+    #state{
+        device = Device,
+        channels = Channels,
+        event_mgr = EventMgrRef,
+        channels_backoffs = Backoffs0
+    } = State
+) ->
     case ExitReason of
         {swapped, _NewHandler, _Pid} ->
             lager:info("channel ~p got swapped ~p", [ChannelID, {_NewHandler, _Pid}]),
             {noreply, State};
         R when R == normal orelse R == shutdown ->
             lager:info("channel ~p went down normally", [ChannelID]),
-            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                  channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
+            {noreply, State#state{
+                channels = maps:remove(ChannelID, Channels),
+                channels_backoffs = maps:remove(ChannelID, Backoffs0)
+            }};
         Error ->
             case maps:get(ChannelID, Channels, undefined) of
                 undefined ->
                     lager:error("unknown channel ~p went down: ~p", [ChannelID, Error]),
-                    {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                          channels_backoffs=maps:remove(ChannelID, Backoffs0)}};
-                Channel -> 
+                    {noreply, State#state{
+                        channels = maps:remove(ChannelID, Channels),
+                        channels_backoffs = maps:remove(ChannelID, Backoffs0)
+                    }};
+                Channel ->
                     ChannelName = router_channel:name(Channel),
                     lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
                     Desc = erlang:list_to_binary(io_lib:format("~p", [Error])),
-                    Report = #{category => <<"channel_crash">>,
-                               description => Desc,
-                               reported_at => erlang:system_time(seconds),
-                               payload => <<>>,
-                               payload_size => 0,
-                               port => 0,
-                               devaddr => <<>>,
-                               hotspots => [],
-                               channels => [#{id => ChannelID,
-                                              name => ChannelName,
-                                              reported_at => erlang:system_time(seconds),
-                                              status => <<"error">>,
-                                              description => Desc}]},
+                    Report = #{
+                        category => <<"channel_crash">>,
+                        description => Desc,
+                        reported_at => erlang:system_time(seconds),
+                        payload => <<>>,
+                        payload_size => 0,
+                        port => 0,
+                        devaddr => <<>>,
+                        hotspots => [],
+                        channels => [
+                            #{
+                                id => ChannelID,
+                                name => ChannelName,
+                                reported_at => erlang:system_time(seconds),
+                                status => <<"error">>,
+                                description => Desc
+                            }
+                        ]
+                    },
                     router_device_api:report_status(Device, Report),
-                    case start_channel(EventMgrRef, Channel, Device, Backoffs0) of  
+                    case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                         {ok, Backoffs1} ->
-                            {noreply, State#state{channels=maps:put(ChannelID, Channel, Channels),
-                                                  channels_backoffs=Backoffs1}};
+                            {noreply, State#state{
+                                channels = maps:put(ChannelID, Channel, Channels),
+                                channels_backoffs = Backoffs1
+                            }};
                         {error, _Reason, Backoffs1} ->
-                            {noreply, State#state{channels=maps:remove(ChannelID, Channels),
-                                                  channels_backoffs=Backoffs1}}
+                            {noreply, State#state{
+                                channels = maps:remove(ChannelID, Channels),
+                                channels_backoffs = Backoffs1
+                            }}
                     end
             end
     end;
@@ -359,18 +441,20 @@ downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
 downlink_decode(MapPayload) when is_map(MapPayload) ->
     case maps:find(<<"payload_raw">>, MapPayload) of
         {ok, Payload} ->
-            Port = case maps:find(<<"port">>, MapPayload) of
-                       {ok, X} when is_integer(X), X > 0, X < 224 ->
-                           X;
-                       _ ->
-                           1
-                   end,
-            Confirmed = case maps:find(<<"confirmed">>, MapPayload) of
-                            {ok, true} ->
-                                true;
-                            _ ->
-                                false
-                        end,
+            Port =
+                case maps:find(<<"port">>, MapPayload) of
+                    {ok, X} when is_integer(X), X > 0, X < 224 ->
+                        X;
+                    _ ->
+                        1
+                end,
+            Confirmed =
+                case maps:find(<<"confirmed">>, MapPayload) of
+                    {ok, true} ->
+                        true;
+                    _ ->
+                        false
+                end,
             try base64:decode(Payload) of
                 Decoded ->
                     {ok, {Confirmed, Port, Decoded}}
@@ -384,30 +468,45 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
 downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
--spec send_to_channel([{string(), #packet_pb{}, #frame{}}], {non_neg_integer(), non_neg_integer()},
-                      router_device:device(), pid() , blockchain:blockchain()) -> {ok, map()}.
+-spec send_to_channel(
+    [{string(), #packet_pb{}, #frame{}}],
+    {non_neg_integer(), non_neg_integer()},
+    router_device:device(),
+    pid(),
+    blockchain:blockchain()
+) -> {ok, map()}.
 send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) ->
-    FoldFun =
-        fun({PubKeyBin, Packet, _, Region, Time}, Acc) ->
-                [router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)|Acc]
-        end,
-    [{_, _, #frame{data=Data, fport=Port, fcnt=FCnt, devaddr=DevAddr}, _Region, Time}|_] = CachedData,
-    Map = #{id => router_device:id(Device),
-            name => router_device:name(Device),
-            dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-            app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-            metadata => router_device:metadata(Device),
-            fcnt => FCnt,
-            reported_at => Time,
-            payload => Data,
-            port => case Port of undefined -> 0; _ -> Port end,
-            devaddr => lorawan_utils:binary_to_hex(DevAddr),
-            hotspots => lists:foldr(FoldFun, [], CachedData),
-            dc => #{balance => Balance, nonce => Nonce}},
+    FoldFun = fun({PubKeyBin, Packet, _, Region, Time}, Acc) ->
+        [
+            router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
+            | Acc
+        ]
+    end,
+    [{_, _, #frame{data = Data, fport = Port, fcnt = FCnt, devaddr = DevAddr}, _Region, Time} | _] =
+        CachedData,
+    Map = #{
+        id => router_device:id(Device),
+        name => router_device:name(Device),
+        dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+        app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        metadata => router_device:metadata(Device),
+        fcnt => FCnt,
+        reported_at => Time,
+        payload => Data,
+        port =>
+            case Port of
+                undefined -> 0;
+                _ -> Port
+            end,
+        devaddr => lorawan_utils:binary_to_hex(DevAddr),
+        hotspots => lists:foldr(FoldFun, [], CachedData),
+        dc => #{balance => Balance, nonce => Nonce}
+    },
     ok = router_channel:handle_data(EventMgrRef, Map, FCnt),
     {ok, Map}.
 
--spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
+-spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
+    {ok, map()} | {error, any(), map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -421,29 +520,40 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
             Desc = erlang:list_to_binary(io_lib:format("~p ~p", [E, Reason])),
-            Report = #{category => <<"channel_start_error">>,
-                       description => Desc,
-                       reported_at => erlang:system_time(seconds),
-                       payload => <<>>,
-                       payload_size => 0,
-                       port => 0,
-                       devaddr => <<>>,
-                       hotspots => [],
-                       channels => [#{id => ChannelID,
-                                      name => ChannelName,
-                                      reported_at => erlang:system_time(seconds),
-                                      status => <<"error">>,
-                                      description => Desc}]},
+            Report = #{
+                category => <<"channel_start_error">>,
+                description => Desc,
+                reported_at => erlang:system_time(seconds),
+                payload => <<>>,
+                payload_size => 0,
+                port => 0,
+                devaddr => <<>>,
+                hotspots => [],
+                channels => [
+                    #{
+                        id => ChannelID,
+                        name => ChannelName,
+                        reported_at => erlang:system_time(seconds),
+                        status => <<"error">>,
+                        description => Desc
+                    }
+                ]
+            },
             router_device_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
-            lager:error("failed to start channel ~p: ~p, retrying in ~pms", [{ChannelID, ChannelName}, {E, Reason}, Delay]),
+            lager:error("failed to start channel ~p: ~p, retrying in ~pms", [
+                {ChannelID, ChannelName},
+                {E, Reason},
+                Delay
+            ]),
             {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
     end.
 
--spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) -> {ok, map()} | {error, any(), map()}.
+-spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
+    {ok, map()} | {error, any(), map()}.
 update_channel(EventMgrRef, Channel, Device, Backoffs) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -458,17 +568,23 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
         {E, Reason} when E == 'EXIT'; E == error ->
             lager:error("failed to update channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
             Desc = erlang:list_to_binary(io_lib:format("~p ~p", [E, Reason])),
-            Report = #{category => <<"update_channel_failure">>,
-                       description => Desc,
-                       reported_at => erlang:system_time(seconds),
-                       payload => <<>>,
-                       payload_size => 0,
-                       hotspots => [],
-                       channels => [#{id => ChannelID,
-                                      name => ChannelName,
-                                      reported_at => erlang:system_time(seconds),
-                                      status => <<"error">>,
-                                      description => Desc}]},
+            Report = #{
+                category => <<"update_channel_failure">>,
+                description => Desc,
+                reported_at => erlang:system_time(seconds),
+                payload => <<>>,
+                payload_size => 0,
+                hotspots => [],
+                channels => [
+                    #{
+                        id => ChannelID,
+                        name => ChannelName,
+                        reported_at => erlang:system_time(seconds),
+                        status => <<"error">>,
+                        description => Desc
+                    }
+                ]
+            },
             router_device_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
@@ -489,33 +605,40 @@ maybe_start_decoder(Channel) ->
                 ok ->
                     lager:info("decoder ~p attached to ~p", [DecoderID, ChannelID]);
                 {error, _Reason} ->
-                    lager:error("failed to attached decoder ~p to ~p: ~p", [DecoderID, ChannelID, _Reason])
+                    lager:error("failed to attached decoder ~p to ~p: ~p", [
+                        DecoderID,
+                        ChannelID,
+                        _Reason
+                    ])
             end
     end.
 
 -spec remove_old_channels(pid(), map(), map()) -> map().
 remove_old_channels(EventMgrRef, APIChannels, Channels) ->
     maps:filter(
-      fun(ChannelID, Channel) ->
-              case maps:get(ChannelID, APIChannels, undefined) of
-                  undefined ->
-                      ok = router_channel:delete(EventMgrRef, Channel),
-                      false;
-                  _ ->
-                      true
-              end
-      end,
-      Channels).
+        fun(ChannelID, Channel) ->
+            case maps:get(ChannelID, APIChannels, undefined) of
+                undefined ->
+                    ok = router_channel:delete(EventMgrRef, Channel),
+                    false;
+                _ ->
+                    true
+            end
+        end,
+        Channels
+    ).
 
 -spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
 maybe_start_no_channel(Device, EventMgrRef) ->
     Handlers = gen_event:which_handlers(EventMgrRef),
-    NoChannel = router_channel:new(<<"no_channel">>,
-                                   router_no_channel,
-                                   <<"no_channel">>,
-                                   #{},
-                                   router_device:id(Device),
-                                   self()),
+    NoChannel = router_channel:new(
+        <<"no_channel">>,
+        router_no_channel,
+        <<"no_channel">>,
+        #{},
+        router_device:id(Device),
+        self()
+    ),
     case lists:keyfind(router_no_channel, 1, Handlers) of
         {router_no_channel, _} -> noop;
         _ -> router_channel:add(EventMgrRef, NoChannel, Device)

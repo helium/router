@@ -5,15 +5,18 @@
 -endif.
 
 -include_lib("stdlib/include/ms_transform.hrl").
+
 -include("router_device.hrl").
 
 -define(ETS, router_device_cache_ets).
 
--export([init/0,
-         save/1,
-         delete/1,
-         get/0, get/1,
-         get_by_devaddr/1]).
+-export([
+    init/0,
+    save/1,
+    delete/1,
+    get/0, get/1,
+    get_by_devaddr/1
+]).
 
 -spec init() -> ok.
 init() ->
@@ -65,8 +68,10 @@ init_from_db() ->
 
 uuid_v4() ->
     <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    Str = io_lib:format("~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-                        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]),
+    Str = io_lib:format(
+        "~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
+        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]
+    ),
     list_to_binary(Str).
 
 init_from_db_test() ->
@@ -108,16 +113,23 @@ get_by_devaddr_test() ->
     ok = init(),
     Max = 100000,
     lists:foreach(
-      fun(I) ->
-              ID = uuid_v4(),
-              true = ets:insert(?ETS, {ID, #device_v4{id=ID, devaddr= <<(I rem 2):25/integer-unsigned-little, 72:7/integer>>}})
-      end,
-      lists:seq(1, Max)),
+        fun(I) ->
+            ID = uuid_v4(),
+            true = ets:insert(
+                ?ETS,
+                {ID, #device_v4{
+                    id = ID,
+                    devaddr = <<(I rem 2):25/integer-unsigned-little, 72:7/integer>>
+                }}
+            )
+        end,
+        lists:seq(1, Max)
+    ),
     DevAddr = <<0:25/integer-unsigned-little, 72:7/integer>>,
     {Time, Got} = timer:tc(?MODULE, get_by_devaddr, [DevAddr]),
 
-    ?assert(Time/1000 < 100),
-    ?assertEqual(Max/2, length(Got)+0.0),
+    ?assert(Time / 1000 < 100),
+    ?assertEqual(Max / 2, length(Got) + 0.0),
 
     gen_server:stop(Pid),
     ets:delete(?ETS),

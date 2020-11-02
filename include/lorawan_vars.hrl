@@ -4,8 +4,8 @@
 -define(UNCONFIRMED_UP, 2#010).
 -define(CONFIRMED_DOWN, 2#101).
 -define(UNCONFIRMED_DOWN, 2#011).
--define(RFU ,2#110).
--define(PRIORITY ,2#111).
+-define(RFU, 2#110).
+-define(PRIORITY, 2#111).
 
 -define(RX_DELAY, 0).
 -define(REPLY_DELAY, 200).

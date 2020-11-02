@@ -12,12 +12,14 @@
 %% ------------------------------------------------------------------
 %% gen_event Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_event/2,
-         handle_call/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_event/2,
+    handle_call/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(PING_TIMEOUT, timer:seconds(25)).
 -define(BACKOFF_MIN, timer:seconds(10)).
@@ -25,18 +27,21 @@
 -define(HEADERS, [{"content-type", "application/json"}]).
 -define(THING_TYPE, <<"Helium-Thing">>).
 
--record(state, {channel :: router_channel:channel(),
-                channel_id :: binary(),
-                device ::  router_device:device(),
-                connection :: pid() | undefined,
-                connection_backoff :: backoff:backoff(),
-                endpoint :: binary(),
-                uplink_topic :: binary(),
-                downlink_topic :: binary(),
-                ping :: reference() | undefined,
-                aws :: pid(),
-                key :: any(),
-                cert :: any()}).
+-record(state, {
+    channel :: router_channel:channel(),
+    channel_id :: binary(),
+    device :: router_device:device(),
+    connection :: pid() | undefined,
+    connection_backoff :: backoff:backoff(),
+    endpoint :: binary(),
+    uplink_topic :: binary(),
+    downlink_topic :: binary(),
+    ping :: reference() | undefined,
+    aws :: pid(),
+    key :: any(),
+    cert :: any()
+}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -46,28 +51,30 @@ init({[Channel, Device], _}) ->
     DeviceID = router_device:id(Device),
     lager:info("[~s] ~p init with ~p", [ChannelID, ?MODULE, Channel]),
     #{topic := UplinkTopic} = router_channel:args(Channel),
-    DownlinkTopic =  <<"helium/devices/", DeviceID/binary, "/down">>,  
+    DownlinkTopic = <<"helium/devices/", DeviceID/binary, "/down">>,
     case setup_aws(Channel, Device) of
         {error, Reason} ->
             {error, Reason};
         {ok, AWS, Endpoint, Key, Cert} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
             self() ! {?MODULE, connect, ChannelID},
-            {ok, #state{channel=Channel,
-                        channel_id=ChannelID,
-                        device=Device,
-                        connection_backoff=Backoff,
-                        endpoint=Endpoint,
-                        uplink_topic=UplinkTopic,
-                        downlink_topic=DownlinkTopic,
-                        aws=AWS,
-                        key=Key,
-                        cert=Cert}}
+            {ok, #state{
+                channel = Channel,
+                channel_id = ChannelID,
+                device = Device,
+                connection_backoff = Backoff,
+                endpoint = Endpoint,
+                uplink_topic = UplinkTopic,
+                downlink_topic = DownlinkTopic,
+                aws = AWS,
+                key = Key,
+                cert = Cert
+            }}
     end.
 
 handle_event({data, Ref, Data}, State) ->
     publish(Ref, Data, State);
-handle_event(_Msg, #state{channel_id=ChannelID}=State) ->
+handle_event(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown cast msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
 
@@ -77,10 +84,20 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-handle_info({?MODULE, connect, ChannelID}, #state{channel_id=ChannelID, device=Device,
-                                                  connection=OldConn, connection_backoff=Backoff0,
-                                                  endpoint=Endpoint, downlink_topic=DownlinkTopic,
-                                                  ping=TimerRef, key=Key, cert=Cert}=State) ->
+handle_info(
+    {?MODULE, connect, ChannelID},
+    #state{
+        channel_id = ChannelID,
+        device = Device,
+        connection = OldConn,
+        connection_backoff = Backoff0,
+        endpoint = Endpoint,
+        downlink_topic = DownlinkTopic,
+        ping = TimerRef,
+        key = Key,
+        cert = Cert
+    } = State
+) ->
     ok = cleanup_connection(OldConn),
     _ = (catch erlang:cancel_timer(TimerRef)),
     DeviceID = router_device:id(Device),
@@ -88,61 +105,90 @@ handle_info({?MODULE, connect, ChannelID}, #state{channel_id=ChannelID, device=D
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
-                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [ChannelID, Endpoint, Conn, DownlinkTopic]),
-                    {_, Backoff1} =  backoff:succeed(Backoff0),
-                    {ok, State#state{connection=Conn,
-                                     connection_backoff=Backoff1,
-                                     endpoint=Endpoint,
-                                     ping=ping(ChannelID)}};
+                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [
+                        ChannelID,
+                        Endpoint,
+                        Conn,
+                        DownlinkTopic
+                    ]),
+                    {_, Backoff1} = backoff:succeed(Backoff0),
+                    {ok, State#state{
+                        connection = Conn,
+                        connection_backoff = Backoff1,
+                        endpoint = Endpoint,
+                        ping = ping(ChannelID)
+                    }};
                 {error, _SubReason} ->
-                    lager:error("[~s] failed to subscribe to ~p: ~p", [ChannelID, DownlinkTopic, _SubReason]),
+                    lager:error("[~s] failed to subscribe to ~p: ~p", [
+                        ChannelID,
+                        DownlinkTopic,
+                        _SubReason
+                    ]),
                     Backoff1 = reconnect(ChannelID, Backoff0),
-                    {ok, State#state{connection_backoff=Backoff1}}
+                    {ok, State#state{connection_backoff = Backoff1}}
             end;
         {error, _ConnReason} ->
             lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
             Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff=Backoff1}}
+            {ok, State#state{connection_backoff = Backoff1}}
     end;
 %% Ignore connect message not for us
 handle_info({?MODULE, connect, _}, State) ->
     {ok, State};
-handle_info({?MODULE, ping, ChannelID}, #state{channel_id=ChannelID, connection=Conn,
-                                               connection_backoff=Backoff0, ping=TimerRef}=State) ->
+handle_info(
+    {?MODULE, ping, ChannelID},
+    #state{
+        channel_id = ChannelID,
+        connection = Conn,
+        connection_backoff = Backoff0,
+        ping = TimerRef
+    } = State
+) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
     try emqtt:ping(Conn) of
         pong ->
             lager:debug("[~s] pinged MQTT connection ~p successfully", [ChannelID, Conn]),
-            {ok, State#state{ping=ping(ChannelID)}}
-    catch _:_ ->
+            {ok, State#state{ping = ping(ChannelID)}}
+    catch
+        _:_ ->
             lager:error("[~s] failed to ping MQTT connection ~p", [ChannelID, Conn]),
             Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff=Backoff1}}
+            {ok, State#state{connection_backoff = Backoff1}}
     end;
-handle_info({publish, #{client_pid := Conn, payload := Payload}}, #state{connection=Conn, channel=Channel}=State) ->
+handle_info(
+    {publish, #{client_pid := Conn, payload := Payload}},
+    #state{connection = Conn, channel = Channel} = State
+) ->
     Controller = router_channel:controller(Channel),
     router_device_channels_worker:handle_downlink(Controller, Payload, aws),
     {ok, State};
-handle_info({'EXIT', Conn, {_Type, _Reason}}, #state{channel_id=ChannelID, connection=Conn,
-                                                     connection_backoff=Backoff0, ping=TimerRef}=State) ->
+handle_info(
+    {'EXIT', Conn, {_Type, _Reason}},
+    #state{
+        channel_id = ChannelID,
+        connection = Conn,
+        connection_backoff = Backoff0,
+        ping = TimerRef
+    } = State
+) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
     lager:error("[~s] got a EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
     Backoff1 = reconnect(ChannelID, Backoff0),
-    {ok, State#state{connection_backoff=Backoff1}};
-handle_info({disconnected, _Type, _Reason}, #state{channel_id=ChannelID}=State) ->
+    {ok, State#state{connection_backoff = Backoff1}};
+handle_info({disconnected, _Type, _Reason}, #state{channel_id = ChannelID} = State) ->
     lager:error("[~s] got a disconnected message: ~p ~p", [ChannelID, _Type, _Reason]),
     {ok, State};
 %% Ignore connect message not for us
 handle_info({_, ping, _}, State) ->
     {ok, State};
-handle_info(_Msg, #state{channel_id=ChannelID}=State) ->
+handle_info(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown info msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{connection=Conn}) ->
+terminate(_Reason, #state{connection = Conn}) ->
     ok = cleanup_connection(Conn).
 
 %% ------------------------------------------------------------------
@@ -150,32 +196,59 @@ terminate(_Reason, #state{connection=Conn}) ->
 %% ------------------------------------------------------------------
 
 -spec publish(any(), map(), #state{}) -> {ok, #state{}}.
-publish(Ref, Data, #state{channel=Channel, connection=undefined,
-                          endpoint=Endpoint, uplink_topic=Topic}=State) ->
+publish(
+    Ref,
+    Data,
+    #state{
+        channel = Channel,
+        connection = undefined,
+        endpoint = Endpoint,
+        uplink_topic = Topic
+    } = State
+) ->
     Body = router_channel:encode_data(Channel, Data),
-    Debug = #{req => #{endpoint => Endpoint,
-                       topic => Topic,
-                       qos => 0,
-                       body => Body}},
+    Debug = #{
+        req => #{
+            endpoint => Endpoint,
+            topic => Topic,
+            qos => 0,
+            body => Body
+        }
+    },
     ok = handle_publish_res({error, not_connected}, Channel, Ref, Debug),
     {ok, State};
-publish(Ref, Data, #state{channel=Channel, channel_id=ChannelID, connection=Conn,
-                          connection_backoff=Backoff0, endpoint=Endpoint, uplink_topic=Topic}=State) ->
+publish(
+    Ref,
+    Data,
+    #state{
+        channel = Channel,
+        channel_id = ChannelID,
+        connection = Conn,
+        connection_backoff = Backoff0,
+        endpoint = Endpoint,
+        uplink_topic = Topic
+    } = State
+) ->
     Body = router_channel:encode_data(Channel, Data),
-    Debug = #{req => #{endpoint => Endpoint,
-                       topic => Topic,
-                       qos => 0,
-                       body => Body}},
+    Debug = #{
+        req => #{
+            endpoint => Endpoint,
+            topic => Topic,
+            qos => 0,
+            body => Body
+        }
+    },
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
             lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
             ok = handle_publish_res(Resp, Channel, Ref, Debug),
             {ok, State}
-    catch _:_ ->
+    catch
+        _:_ ->
             lager:error("[~s] failed to publish", [ChannelID]),
             ok = handle_publish_res({error, publish_failed}, Channel, Ref, Debug),
             Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff=Backoff1}}
+            {ok, State#state{connection_backoff = Backoff1}}
     end.
 
 -spec ping(binary()) -> reference().
@@ -197,37 +270,50 @@ cleanup_connection(Conn) ->
 -spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
 handle_publish_res(Res, Channel, Ref, Debug) ->
     Pid = router_channel:controller(Channel),
-    Result0 = #{id => router_channel:id(Channel),
-                name => router_channel:name(Channel),
-                reported_at => erlang:system_time(seconds)},
-    Result1 = case Res of
-                  {ok, PacketID} ->
-                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{packet_id => PacketID}}),
-                                            status => success,
-                                            description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))});
-                  ok ->
-                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{}}),
-                                            status => success,
-                                            description => <<"ok">>});
-                  {error, Reason} ->
-                      maps:merge(Result0, #{debug => maps:merge(Debug, #{res => #{}}),
-                                            status => failure,
-                                            description => list_to_binary(io_lib:format("~p", [Reason]))})
-              end,
+    Result0 = #{
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel),
+        reported_at => erlang:system_time(seconds)
+    },
+    Result1 =
+        case Res of
+            {ok, PacketID} ->
+                maps:merge(Result0, #{
+                    debug => maps:merge(Debug, #{res => #{packet_id => PacketID}}),
+                    status => success,
+                    description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))
+                });
+            ok ->
+                maps:merge(Result0, #{
+                    debug => maps:merge(Debug, #{res => #{}}),
+                    status => success,
+                    description => <<"ok">>
+                });
+            {error, Reason} ->
+                maps:merge(Result0, #{
+                    debug => maps:merge(Debug, #{res => #{}}),
+                    status => failure,
+                    description => list_to_binary(io_lib:format("~p", [Reason]))
+                })
+        end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
 -spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
-    Opts = [{host, erlang:binary_to_list(Hostname)},
-            {port, 8883},
-            {clientid, DeviceID},
-            {keepalive, 30},
-            {clean_start, true},
-            {ssl, true},
-            {ssl_opts, [{cert, der_encode_cert(Cert)},
-                        {key, {'ECPrivateKey', EncodedPrivKey}}]}],
+    Opts = [
+        {host, erlang:binary_to_list(Hostname)},
+        {port, 8883},
+        {clientid, DeviceID},
+        {keepalive, 30},
+        {clean_start, true},
+        {ssl, true},
+        {ssl_opts, [
+            {cert, der_encode_cert(Cert)},
+            {key, {'ECPrivateKey', EncodedPrivKey}}
+        ]}
+    ],
     {ok, C} = emqtt:start_link(Opts),
     case emqtt:connect(C) of
         {ok, _Props} -> {ok, C};
@@ -238,27 +324,31 @@ der_encode_cert(PEMCert) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(list_to_binary(PEMCert)))),
     public_key:der_encode('Certificate', Cert).
 
--spec setup_aws(router_channel:channel(),
-                router_device:device()) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
+-spec setup_aws(
+    router_channel:channel(),
+    router_device:device()
+) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
 setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
-    #{aws_access_key := AccessKey,
-      aws_secret_key := SecretKey,
-      aws_region := Region} = router_channel:args(Channel),
+    #{
+        aws_access_key := AccessKey,
+        aws_secret_key := SecretKey,
+        aws_region := Region
+    } = router_channel:args(Channel),
     DeviceID = router_channel:device_id(Channel),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
     httpc_aws:set_region(AWS, Region),
     Funs = [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2],
     case ensure(Funs, AWS, DeviceID) of
-        {error, _}=Error ->
+        {error, _} = Error ->
             Error;
         ok ->
             case get_iot_endpoint(AWS) of
-                {error, _}=Error ->
+                {error, _} = Error ->
                     Error;
                 {ok, Endpoint} ->
                     case ensure_certificate(AWS, Device) of
-                        {error, _}=Error ->
+                        {error, _} = Error ->
                             Error;
                         {ok, Key, Cert} ->
                             {ok, AWS, erlang:list_to_binary(Endpoint), Key, Cert}
@@ -273,11 +363,11 @@ ensure(Funs, AWS, DeviceID) ->
 -spec ensure([function()], pid(), binary(), ok | {error, any()}) -> ok | {error, any()}.
 ensure([], _AWS, _DeviceID, Acc) ->
     Acc;
-ensure(_Funs, _AWS, _DeviceID, {error, _}=Error) ->
+ensure(_Funs, _AWS, _DeviceID, {error, _} = Error) ->
     Error;
-ensure([Fun|Funs], AWS, DeviceID, _Acc) when is_function(Fun, 1) ->
+ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 1) ->
     ensure(Funs, AWS, DeviceID, Fun(AWS));
-ensure([Fun|Funs], AWS, DeviceID, _Acc) when is_function(Fun, 2) ->
+ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 2) ->
     ensure(Funs, AWS, DeviceID, Fun(AWS, DeviceID)).
 
 -spec ensure_policy(pid()) -> ok | {error, any()}.
@@ -285,19 +375,19 @@ ensure_policy(AWS) ->
     case httpc_aws:get(AWS, "iot", "/policies/Helium-Policy", []) of
         {error, "Not Found", _} ->
             Policy = #{
-                       <<"Version">> => <<"2012-10-17">>,
-                       <<"Statement">> => #{
-                                            <<"Action">> => [
-                                                             <<"iot:Publish">>,
-                                                             <<"iot:Subscribe">>,
-                                                             <<"iot:Connect">>,
-                                                             <<"iot:Receive">>
-                                                            ],
-                                            <<"Effect">> => <<"Allow">>,
-                                            <<"Resource">> => [<<"*">>]
-                                           }
-                      },
-            PolicyString =  jsx:encode(Policy),
+                <<"Version">> => <<"2012-10-17">>,
+                <<"Statement">> => #{
+                    <<"Action">> => [
+                        <<"iot:Publish">>,
+                        <<"iot:Subscribe">>,
+                        <<"iot:Connect">>,
+                        <<"iot:Receive">>
+                    ],
+                    <<"Effect">> => <<"Allow">>,
+                    <<"Resource">> => [<<"*">>]
+                }
+            },
+            PolicyString = jsx:encode(Policy),
             Body = binary_to_list(jsx:encode(#{policyDocument => PolicyString})),
             case httpc_aws:post(AWS, "iot", "/policies/Helium-Policy", Body, ?HEADERS) of
                 {error, _Reason, _} -> {error, _Reason};
@@ -314,11 +404,11 @@ ensure_thing_type(AWS) ->
     case httpc_aws:get(AWS, "iot", binary_to_list(<<"/thing-types/", ?THING_TYPE/binary>>), []) of
         {error, "Not Found", _} ->
             Type = #{
-                     <<"thingTypeProperties">> => #{
-                                                    <<"searchableAttributes">> => [<<"Helium">>, <<"IoT">>],
-                                                    <<"thingTypeDescription">> => ?THING_TYPE
-                                                   }
-                    },
+                <<"thingTypeProperties">> => #{
+                    <<"searchableAttributes">> => [<<"Helium">>, <<"IoT">>],
+                    <<"thingTypeDescription">> => ?THING_TYPE
+                }
+            },
             Body = binary_to_list(jsx:encode(Type)),
             case httpc_aws:post(AWS, "iot", "/thing-types/Helium-Thing", Body, ?HEADERS) of
                 {error, _Reason, _} -> {error, _Reason};
@@ -336,7 +426,15 @@ ensure_thing(AWS, DeviceID) ->
         {error, "Not Found", _} ->
             Thing = #{<<"thingTypeName">> => ?THING_TYPE},
             Body = binary_to_list(jsx:encode(Thing)),
-            case httpc_aws:post(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary>>), Body, ?HEADERS) of
+            case
+                httpc_aws:post(
+                    AWS,
+                    "iot",
+                    binary_to_list(<<"/things/", DeviceID/binary>>),
+                    Body,
+                    ?HEADERS
+                )
+            of
                 {error, _Reason, _} -> {error, _Reason};
                 {ok, _} -> ok
             end;
@@ -352,8 +450,19 @@ ensure_certificate(AWS, Device) ->
     Key = router_device:keys(Device),
     case get_principals(AWS, DeviceID) of
         [] ->
-            CSR = create_csr(Key, <<"US">>, <<"California">>, <<"San Francisco">>, <<"Helium">>, DeviceID),
-            CSRReq = #{<<"certificateSigningRequest">> => public_key:pem_encode([public_key:pem_entry_encode('CertificationRequest', CSR)])},
+            CSR = create_csr(
+                Key,
+                <<"US">>,
+                <<"California">>,
+                <<"San Francisco">>,
+                <<"Helium">>,
+                DeviceID
+            ),
+            CSRReq = #{
+                <<"certificateSigningRequest">> => public_key:pem_encode([
+                    public_key:pem_entry_encode('CertificationRequest', CSR)
+                ])
+            },
             Body = binary_to_list(jsx:encode(CSRReq)),
             case httpc_aws:post(AWS, "iot", "/certificates?setAsActive=true", Body, ?HEADERS) of
                 {error, _Reason, _} ->
@@ -361,18 +470,18 @@ ensure_certificate(AWS, Device) ->
                 {ok, {_, Res}} ->
                     CertificateArn = proplists:get_value("certificateArn", Res),
                     case attach_certificate(AWS, DeviceID, CertificateArn) of
-                        {error, _}=Error ->
+                        {error, _} = Error ->
                             Error;
                         ok ->
                             case get_certificate_from_arn(AWS, CertificateArn) of
-                                {error, _}=Error -> Error;
+                                {error, _} = Error -> Error;
                                 {ok, Cert} -> {ok, Key, Cert}
-                            end 
+                            end
                     end
             end;
         [CertificateArn] ->
             case get_certificate_from_arn(AWS, CertificateArn) of
-                {error, _}=Error -> Error;
+                {error, _} = Error -> Error;
                 {ok, Cert} -> {ok, Key, Cert}
             end
     end.
@@ -398,49 +507,71 @@ get_certificate_from_arn(AWS, CertificateArn) ->
 
 -spec attach_certificate(pid(), binary(), string()) -> ok | {error, any()}.
 attach_certificate(AWS, DeviceID, CertificateArn) ->
-    Headers0 = [{"x-amzn-iot-principal", CertificateArn},
-                {"content-type", "text/plain"}],
+    Headers0 = [
+        {"x-amzn-iot-principal", CertificateArn},
+        {"content-type", "text/plain"}
+    ],
     case httpc_aws:put(AWS, "iot", "/principal-policies/Helium-Policy", "", Headers0) of
         {error, _Reason, _} ->
             {error, {attach_policy_failed, _Reason}};
         {ok, _} ->
-            Headers1 = [{"x-amzn-principal", CertificateArn},
-                        {"content-type", "text/plain"}],
-            case httpc_aws:put(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>), "", Headers1) of
+            Headers1 = [
+                {"x-amzn-principal", CertificateArn},
+                {"content-type", "text/plain"}
+            ],
+            case
+                httpc_aws:put(
+                    AWS,
+                    "iot",
+                    binary_to_list(<<"/things/", DeviceID/binary, "/principals">>),
+                    "",
+                    Headers1
+                )
+            of
                 {error, _Reason, _} -> {error, {attach_principals_failed, _Reason}};
                 {ok, _} -> ok
             end
     end.
 
 get_principals(AWS, DeviceID) ->
-    case httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>)) of
+    case
+        httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>))
+    of
         {error, _Reason, _} -> [];
         {ok, {_, Data}} -> proplists:get_value("principals", Data, [])
     end.
 
-create_csr(#{secret := {ecc_compact, PrivKey},
-             public := {ecc_compact, {{'ECPoint', PubKey}, _}}}, Country, State, Location, Organization, CommonName) ->
-    CRI = {'CertificationRequestInfo',
-           v1,
-           {rdnSequence, [[{'AttributeTypeAndValue', {2, 5, 4, 6},
-                            pack_country(Country)}],
-                          [{'AttributeTypeAndValue', {2, 5, 4, 8},
-                            pack_string(State)}],
-                          [{'AttributeTypeAndValue', {2, 5, 4, 7},
-                            pack_string(Location)}],
-                          [{'AttributeTypeAndValue', {2, 5, 4, 10},
-                            pack_string(Organization)}],
-                          [{'AttributeTypeAndValue', {2, 5, 4, 3},
-                            pack_string(CommonName)}]]},
-           {'CertificationRequestInfo_subjectPKInfo',
-            {'CertificationRequestInfo_subjectPKInfo_algorithm',{1, 2, 840, 10045, 2 ,1},
-             {asn1_OPENTYPE,<<6, 8, 42, 134, 72, 206, 61, 3, 1, 7>>}},
-            PubKey},
-           []},
+create_csr(
+    #{
+        secret := {ecc_compact, PrivKey},
+        public := {ecc_compact, {{'ECPoint', PubKey}, _}}
+    },
+    Country,
+    State,
+    Location,
+    Organization,
+    CommonName
+) ->
+    CRI =
+        {'CertificationRequestInfo', v1,
+            {rdnSequence, [
+                [{'AttributeTypeAndValue', {2, 5, 4, 6}, pack_country(Country)}],
+                [{'AttributeTypeAndValue', {2, 5, 4, 8}, pack_string(State)}],
+                [{'AttributeTypeAndValue', {2, 5, 4, 7}, pack_string(Location)}],
+                [{'AttributeTypeAndValue', {2, 5, 4, 10}, pack_string(Organization)}],
+                [{'AttributeTypeAndValue', {2, 5, 4, 3}, pack_string(CommonName)}]
+            ]},
+            {'CertificationRequestInfo_subjectPKInfo',
+                {'CertificationRequestInfo_subjectPKInfo_algorithm', {1, 2, 840, 10045, 2, 1},
+                    {asn1_OPENTYPE, <<6, 8, 42, 134, 72, 206, 61, 3, 1, 7>>}},
+                PubKey},
+            []},
 
     DER = public_key:der_encode('CertificationRequestInfo', CRI),
     Signature = public_key:sign(DER, sha256, PrivKey),
-    {'CertificationRequest', CRI, {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE}, Signature}.
+    {'CertificationRequest', CRI,
+        {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE},
+        Signature}.
 
 pack_country(Bin) when size(Bin) == 2 ->
     <<19, 2, Bin:2/binary>>.

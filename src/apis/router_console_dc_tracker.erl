@@ -9,21 +9,25 @@
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([start_link/1,
-         refill/3,
-         has_enough_dc/3,
-         charge/3,
-         current_balance/1]).
+-export([
+    start_link/1,
+    refill/3,
+    has_enough_dc/3,
+    charge/3,
+    current_balance/1
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(SERVER, ?MODULE).
 -define(ETS, router_console_dc_tracker_ets).
@@ -44,12 +48,21 @@ refill(OrgID, Nonce, Balance) ->
             lager:info("refiling ~p with ~p @ epoch ~p", [OrgID, Balance, Nonce]),
             insert(OrgID, Balance, Nonce);
         {ok, OldBalance, _OldNonce} ->
-            lager:info("refiling ~p with ~p (old: ~p) @ epoch ~p (old: ~p)", [OrgID, Balance, OldBalance, Nonce, _OldNonce]),
+            lager:info("refiling ~p with ~p (old: ~p) @ epoch ~p (old: ~p)", [
+                OrgID,
+                Balance,
+                OldBalance,
+                Nonce,
+                _OldNonce
+            ]),
             insert(OrgID, Balance, Nonce)
     end.
 
--spec has_enough_dc(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
-          {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
+-spec has_enough_dc(
+    binary() | router_device:device(),
+    non_neg_integer(),
+    blockchain:blockchain()
+) -> {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
 has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
     case enabled() of
         false ->
@@ -67,7 +80,7 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
                     lager:warning("failed to calculate dc amount ~p", [_Reason]),
                     {error, failed_calculate_dc};
                 DCAmount ->
-                    {Balance0, Nonce} = 
+                    {Balance0, Nonce} =
                         case lookup(OrgID) of
                             {error, not_found} ->
                                 fetch_and_save_org_balance(OrgID);
@@ -76,7 +89,7 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
                             {ok, B, N} ->
                                 {B, N}
                         end,
-                    Balance1 = Balance0-DCAmount,
+                    Balance1 = Balance0 - DCAmount,
                     case {Balance1 >= 0, Nonce > 0} of
                         {false, _} ->
                             {error, {not_enough_dc, Balance0, DCAmount}};
@@ -98,10 +111,10 @@ has_enough_dc(Device, PayloadSize, Chain) ->
     end.
 
 -spec charge(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
-          {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
+    {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
 charge(Device, PayloadSize, Chain) ->
     case ?MODULE:has_enough_dc(Device, PayloadSize, Chain) of
-        {error, _Reason}=Error ->
+        {error, _Reason} = Error ->
             Error;
         {ok, _OrgID, _Balance, 0} ->
             {ok, _Balance, 0};
@@ -135,17 +148,23 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain=undefined}=State) ->
+handle_info(post_init, #state{chain = undefined} = State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            {noreply, State#state{chain=Chain}}
+            {noreply, State#state{chain = Chain}}
     end;
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{chain = undefined} = State
+) ->
     {noreply, State};
-handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state{chain=Chain}=State) ->
+handle_info(
+    {blockchain_event, {add_block, BlockHash, _Syncing, Ledger}},
+    #state{chain = Chain} = State
+) ->
     case blockchain:get_block(BlockHash, Chain) of
         {error, Reason} ->
             lager:error("couldn't get block with hash: ~p, reason: ~p", [BlockHash, Reason]);
@@ -156,14 +175,23 @@ handle_info({blockchain_event, {add_block, BlockHash, _Syncing, Ledger}}, #state
                     lager:info("no burn txn found in block ~p", [BlockHash]);
                 Txns ->
                     lists:foreach(
-                      fun(Txn) ->
-                              Memo = blockchain_txn_token_burn_v1:memo(Txn),
-                              HNTAmount = blockchain_txn_token_burn_v1:amount(Txn),
-                              {ok, DCAmount} = blockchain_ledger_v1:hnt_to_dc(HNTAmount, Ledger),
-                              lager:info("we got a burn for: ~p ~p HNT ~p DC", [Memo, HNTAmount, DCAmount]),
-                              ok = router_console_device_api:organizations_burned(Memo, HNTAmount, DCAmount)
-                      end,
-                      Txns)
+                        fun(Txn) ->
+                            Memo = blockchain_txn_token_burn_v1:memo(Txn),
+                            HNTAmount = blockchain_txn_token_burn_v1:amount(Txn),
+                            {ok, DCAmount} = blockchain_ledger_v1:hnt_to_dc(HNTAmount, Ledger),
+                            lager:info("we got a burn for: ~p ~p HNT ~p DC", [
+                                Memo,
+                                HNTAmount,
+                                DCAmount
+                            ]),
+                            ok = router_console_device_api:organizations_burned(
+                                Memo,
+                                HNTAmount,
+                                DCAmount
+                            )
+                        end,
+                        Txns
+                    )
             end
     end,
     {noreply, State};
@@ -234,7 +262,7 @@ insert(OrgID, Balance, Nonce) ->
 -ifdef(TEST).
 
 refill_test() ->
-    _  = ets:new(?ETS, [public, named_table, set]),
+    _ = ets:new(?ETS, [public, named_table, set]),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
@@ -246,7 +274,7 @@ refill_test() ->
 
 has_enough_dc_test() ->
     ok = application:set_env(router, dc_tracker, "enabled"),
-    _  = ets:new(?ETS, [public, named_table, set]),
+    _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
@@ -273,7 +301,7 @@ has_enough_dc_test() ->
 
 charge_test() ->
     ok = application:set_env(router, dc_tracker, "enabled"),
-    _  = ets:new(?ETS, [public, named_table, set]),
+    _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
@@ -300,7 +328,7 @@ charge_test() ->
     ok.
 
 current_balance_test() ->
-    _  = ets:new(?ETS, [public, named_table, set]),
+    _ = ets:new(?ETS, [public, named_table, set]),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
@@ -309,6 +337,5 @@ current_balance_test() ->
     ?assertEqual({100, 1}, current_balance(OrgID)),
     ets:delete(?ETS),
     ok.
-
 
 -endif.

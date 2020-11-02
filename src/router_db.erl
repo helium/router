@@ -11,31 +11,30 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([
-         start_link/1,
-         get/0
-        ]).
+    start_link/1,
+    get/0
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
 -export([
-         init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3
-        ]).
-
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -define(SERVER, ?MODULE).
 -define(DB_FILE, "router.db").
 -define(CFS, ["default", "devices"]).
 
 -record(state, {
-                db :: rocksdb:db_handle(),
-                cfs :: [rocksdb:cf_handle()]
-               }).
+    db :: rocksdb:db_handle(),
+    cfs :: [rocksdb:cf_handle()]
+}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -50,12 +49,12 @@ get() ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init([Dir]=Args) ->
+init([Dir] = Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, DB, CFs} = open_db(Dir),
-    {ok, #state{db=DB, cfs=CFs}}.
+    {ok, #state{db = DB, cfs = CFs}}.
 
-handle_call(get, _From, #state{db=DB, cfs=CFs}=State) ->
+handle_call(get, _From, #state{db = DB, cfs = CFs} = State) ->
     {reply, {ok, DB, CFs}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -72,7 +71,7 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{db=DB}) ->
+terminate(_Reason, #state{db = DB}) ->
     catch rocksdb:close(DB),
     ok.
 
@@ -80,7 +79,8 @@ terminate(_Reason, #state{db=DB}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec open_db(file:filename_all()) -> {ok, rocksdb:db_handle(), [rocksdb:cf_handle()]} | {error, any()}.
+-spec open_db(file:filename_all()) ->
+    {ok, rocksdb:db_handle(), [rocksdb:cf_handle()]} | {error, any()}.
 open_db(Dir) ->
     DBDir = filename:join(Dir, ?DB_FILE),
     ok = filelib:ensure_dir(DBDir),
@@ -100,15 +100,15 @@ open_db(Dir) ->
                 ["default"]
         end,
 
-    {ok, DB, OpenedCFs} = rocksdb:open_with_cf(DBDir, DBOptions,  [{CF, CFOpts} || CF <- ExistingCFs]),
+    {ok, DB, OpenedCFs} = rocksdb:open_with_cf(DBDir, DBOptions, [{CF, CFOpts} || CF <- ExistingCFs]),
 
     L1 = lists:zip(ExistingCFs, OpenedCFs),
     L2 = lists:map(
-           fun(CF) ->
-                   {ok, CF1} = rocksdb:create_column_family(DB, CF, CFOpts),
-                   {CF, CF1}
-           end,
-           DefaultCFs -- ExistingCFs
-          ),
+        fun(CF) ->
+            {ok, CF1} = rocksdb:create_column_family(DB, CF, CFOpts),
+            {CF, CF1}
+        end,
+        DefaultCFs -- ExistingCFs
+    ),
     L3 = L1 ++ L2,
     {ok, DB, [proplists:get_value(X, L3) || X <- DefaultCFs]}.

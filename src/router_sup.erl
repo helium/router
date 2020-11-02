@@ -13,30 +13,38 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--define(SUP(I, Args), #{id => I,
-                        start => {I, start_link, Args},
-                        restart => permanent,
-                        shutdown => 5000,
-                        type => supervisor,
-                        modules => [I]}).
+-define(SUP(I, Args), #{
+    id => I,
+    start => {I, start_link, Args},
+    restart => permanent,
+    shutdown => 5000,
+    type => supervisor,
+    modules => [I]
+}).
 
--define(WORKER(I, Args), #{id => I,
-                           start => {I, start_link, Args},
-                           restart => permanent,
-                           shutdown => 5000,
-                           type => worker,
-                           modules => [I]}).
+-define(WORKER(I, Args), #{
+    id => I,
+    start => {I, start_link, Args},
+    restart => permanent,
+    shutdown => 5000,
+    type => worker,
+    modules => [I]
+}).
 
--define(WORKER(I, Mod, Args), #{id => I,
-                                start => {Mod, start_link, Args},
-                                restart => permanent,
-                                shutdown => 5000,
-                                type => worker,
-                                modules => [I]}).
+-define(WORKER(I, Mod, Args), #{
+    id => I,
+    start => {Mod, start_link, Args},
+    restart => permanent,
+    shutdown => 5000,
+    type => worker,
+    modules => [I]
+}).
 
--define(FLAGS, #{strategy => rest_for_one,
-                 intensity => 1,
-                 period => 5}).
+-define(FLAGS, #{
+    strategy => rest_for_one,
+    intensity => 1,
+    period => 5
+}).
 
 -define(SERVER, ?MODULE).
 
@@ -61,41 +69,50 @@ init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
-    SeedNodes = case application:get_env(router, seed_nodes) of
-                    {ok, ""} -> [];
-                    {ok, Seeds} -> string:split(Seeds, ",", all);
-                    _ -> []
-                end,
+    SeedNodes =
+        case application:get_env(router, seed_nodes) of
+            {ok, ""} -> [];
+            {ok, Seeds} -> string:split(Seeds, ",", all);
+            _ -> []
+        end,
     BaseDir = application:get_env(router, base_dir, "data"),
     SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
-    Key = case libp2p_crypto:load_keys(SwarmKey) of
-              {ok, #{secret := PrivKey, public := PubKey}} ->
-                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
-              {error, enoent} ->
-                  KeyMap = #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-                  ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
-                  {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
-          end,
-    BlockchainOpts = [{key, Key},
-                      {seed_nodes, SeedNodes},
-                      {max_inbound_connections, 10},
-                      {port, application:get_env(router, port, 0)},
-                      {base_dir, BaseDir},
-                      {update_dir, application:get_env(router, update_dir, undefined)}],
+    Key =
+        case libp2p_crypto:load_keys(SwarmKey) of
+            {ok, #{secret := PrivKey, public := PubKey}} ->
+                {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
+            {error, enoent} ->
+                KeyMap =
+                    #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(
+                        ecc_compact
+                    ),
+                ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
+                {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
+        end,
+    BlockchainOpts = [
+        {key, Key},
+        {seed_nodes, SeedNodes},
+        {max_inbound_connections, 10},
+        {port, application:get_env(router, port, 0)},
+        {base_dir, BaseDir},
+        {update_dir, application:get_env(router, update_dir, undefined)}
+    ],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
     MetricsOpts = #{port => application:get_env(router, metrics_port, 3000)},
-    {ok, {?FLAGS, [?WORKER(router_metrics, [MetricsOpts]),
-                   ?SUP(blockchain_sup, [BlockchainOpts]),
-                   ?WORKER(router_db, [DBOpts]),
-                   ?SUP(router_devices_sup, []),
-                   ?WORKER(router_sc_worker, [SCWorkerOpts]),
-                   ?SUP(router_console_sup, []),
-                   ?WORKER(router_v8, [#{}]),
-                   ?WORKER(router_device_devaddr, [#{}]),
-                   ?SUP(router_decoder_custom_sup, [])
-                  ]}}.
+    {ok,
+        {?FLAGS, [
+            ?WORKER(router_metrics, [MetricsOpts]),
+            ?SUP(blockchain_sup, [BlockchainOpts]),
+            ?WORKER(router_db, [DBOpts]),
+            ?SUP(router_devices_sup, []),
+            ?WORKER(router_sc_worker, [SCWorkerOpts]),
+            ?SUP(router_console_sup, []),
+            ?WORKER(router_v8, [#{}]),
+            ?WORKER(router_device_devaddr, [#{}]),
+            ?SUP(router_decoder_custom_sup, [])
+        ]}}.
 
 %%====================================================================
 %% Internal functions

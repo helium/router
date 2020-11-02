@@ -7,28 +7,28 @@
 %% ------------------------------------------------------------------
 
 -export([
-         server/4,
-         client/2,
-         version/0
-        ]).
+    server/4,
+    client/2,
+    version/0
+]).
 
 %% ------------------------------------------------------------------
 %% libp2p_framed_stream Function Exports
 %% ------------------------------------------------------------------
 -export([
-         init/3,
-         handle_data/3,
-         handle_info/3
-        ]).
+    init/3,
+    handle_data/3,
+    handle_info/3
+]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
 -record(state, {
-                pid :: pid(),
-                key = undefined :: binary() | undefined
-               }).
+    pid :: pid(),
+    key = undefined :: binary() | undefined
+}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -50,17 +50,17 @@ version() ->
 init(server, _Conn, _Args) ->
     lager:info("server started with ~p", [_Args]),
     {ok, #state{}};
-init(client, _Conn, [Pid]=_Args) ->
+init(client, _Conn, [Pid] = _Args) ->
     lager:info("client started with ~p", [_Args]),
-    {ok, #state{pid=Pid}};
-init(client, _Conn, [Pid, Pubkeybin]=_Args) ->
+    {ok, #state{pid = Pid}};
+init(client, _Conn, [Pid, Pubkeybin] = _Args) ->
     lager:info("client started with ~p", [_Args]),
-    {ok, #state{pid=Pid, key=Pubkeybin}}.
+    {ok, #state{pid = Pid, key = Pubkeybin}}.
 
-handle_data(client, Data, #state{pid=Pid, key=undefined}=State) ->
+handle_data(client, Data, #state{pid = Pid, key = undefined} = State) ->
     Pid ! {client_data, undefined, Data},
     {noreply, State};
-handle_data(client, Data, #state{pid=Pid, key=Pubkeybin}=State) ->
+handle_data(client, Data, #state{pid = Pid, key = Pubkeybin} = State) ->
     Pid ! {client_data, Pubkeybin, Data},
     {noreply, State};
 handle_data(_Type, _Data, State) ->

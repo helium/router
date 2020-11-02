@@ -1,22 +1,27 @@
 -module(router_channel_console_SUITE).
 
--export([all/0,
-         init_per_testcase/2,
-         end_per_testcase/2]).
+-export([
+    all/0,
+    init_per_testcase/2,
+    end_per_testcase/2
+]).
 
--export([console_test/1,
-         inactive_test/1]).
+-export([
+    console_test/1,
+    inactive_test/1
+]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
 -include("device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
--define(APPEUI, <<0,0,0,2,0,0,0,1>>).
--define(DEVEUI, <<0,0,0,0,0,0,0,1>>).
+-define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 -define(ETS, ?MODULE).
 
 %%--------------------------------------------------------------------
@@ -56,12 +61,14 @@ console_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
-    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
-                                                   Address,
-                                                   router_handler_test:version(),
-                                                   router_handler_test,
-                                                   [self()]),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
@@ -71,29 +78,35 @@ console_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
-                                           <<"description">> => '_',
-                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                           <<"frame_up">> => 0,
-                                           <<"frame_down">> => 0,
-                                           <<"payload_size">> => fun erlang:is_integer/1,
-                                           <<"port">> => '_',
-                                           <<"devaddr">> => '_',
-                                           <<"dc">> => fun erlang:is_map/1,
-                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                <<"reported_at">> => fun erlang:is_integer/1,
-                                                                <<"status">> => <<"success">>,
-                                                                <<"selected">> => true,
-                                                                <<"rssi">> => 0.0,
-                                                                <<"snr">> => 0.0,
-                                                                <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"channel">> => fun erlang:is_number/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
-                                                                <<"long">> => fun erlang:is_float/1}],
-                                           <<"channels">> => []}),
+    test_utils:wait_report_device_status(#{
+        <<"category">> => <<"activation">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -105,43 +118,69 @@ console_test(Config) ->
 
     %% Send UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
     EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{body => <<1:8, EncodedPayload/binary>>}
+            )},
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
-                                            <<"description">> => '_',
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => fun erlang:is_integer/1,
-                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => 4,
-                                            <<"payload">> => fun erlang:is_binary/1,
-                                            <<"port">> => '_',
-                                            <<"devaddr">> => '_',
-                                            <<"dc">> => fun erlang:is_map/1,
-                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"rssi">> => 0.0,
-                                                                 <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"channel">> => fun erlang:is_number/1,
-                                                                 <<"lat">> => fun erlang:is_float/1, 
-                                                                 <<"long">> => fun erlang:is_float/1}],
-                                            <<"channels">> => [#{<<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary>>,
-                                                                 <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"description">> => '_',
-                                                                 <<"debug">> => #{<<"req">> => #{<<"body">> => fun erlang:is_binary/1}}}]}),
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => 4,
+        <<"payload">> => fun erlang:is_binary/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => <<?CONSOLE_CONSOLE_CHANNEL_ID/binary>>,
+                <<"name">> => ?CONSOLE_CONSOLE_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_',
+                <<"debug">> => #{<<"req">> => #{<<"body">> => fun erlang:is_binary/1}}
+            }
+        ]
+    }),
 
     %% Send another UNCONFIRMED_UP frame packet 20 02 F8 00 => #{<<"vSys">> => -0.5}
     EncodedPayload = to_real_payload(<<"20 02 F8 00">>),
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0, #{body => <<1:8, EncodedPayload/binary>>})},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{body => <<1:8, EncodedPayload/binary>>}
+            )},
 
     %%  Nothing should happen
     ok = loop(10),
@@ -151,12 +190,14 @@ inactive_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
-    [Address|_] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(Swarm,
-                                                   Address,
-                                                   router_handler_test:version(),
-                                                   router_handler_test,
-                                                   [self()]),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
@@ -166,29 +207,35 @@ inactive_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{<<"category">> => <<"activation">>,
-                                           <<"description">> => '_',
-                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                           <<"frame_up">> => 0,
-                                           <<"frame_down">> => 0,
-                                           <<"payload_size">> => fun erlang:is_integer/1,
-                                           <<"port">> => '_',
-                                           <<"devaddr">> => '_',
-                                           <<"dc">> => fun erlang:is_map/1,
-                                           <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                <<"reported_at">> => fun erlang:is_integer/1,
-                                                                <<"status">> => <<"success">>,
-                                                                <<"selected">> => true,
-                                                                <<"rssi">> => 0.0,
-                                                                <<"snr">> => 0.0,
-                                                                <<"spreading">> => <<"SF8BW125">>,
-                                                                <<"frequency">> => fun erlang:is_float/1,
-                                                                <<"channel">> => fun erlang:is_number/1,
-                                                                <<"lat">> => fun erlang:is_float/1, 
-                                                                <<"long">> => fun erlang:is_float/1}],
-                                           <<"channels">> => []}),
+    test_utils:wait_report_device_status(#{
+        <<"category">> => <<"activation">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -199,68 +246,94 @@ inactive_test(Config) ->
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Sending debug event from websocket
-    WSPid = receive
-                {websocket_init, P} -> P
-            after 2500 ->
-                    ct:fail(websocket_init_timeout)
-            end,
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
 
     %% Send UNCONFIRMED_UP frame packet
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 0)},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
 
     %% Waiting for data from HTTP channel
-    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
-                                   <<"downlink_url">> => fun erlang:is_binary/1,
-                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS, <<"organization_id">> => ?CONSOLE_ORG_ID},
-                                   <<"fcnt">> => 0,
-                                   <<"reported_at">> => fun erlang:is_integer/1,
-                                   <<"payload">> => <<>>,
-                                   <<"port">> => 1,
-                                   <<"devaddr">> => '_',
-                                   <<"dc">> => fun erlang:is_map/1,
-                                   <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                        <<"name">> => erlang:list_to_binary(HotspotName),
-                                                        <<"reported_at">> => fun erlang:is_integer/1,
-                                                        <<"status">> => <<"success">>,
-                                                        <<"rssi">> => 0.0,
-                                                        <<"snr">> => 0.0,
-                                                        <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1,
-                                                        <<"channel">> => fun erlang:is_number/1,
-                                                        <<"lat">> => fun erlang:is_float/1, 
-                                                        <<"long">> => fun erlang:is_float/1}]}),
+    test_utils:wait_channel_data(#{
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID
+        },
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
-                                            <<"description">> => '_',
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => fun erlang:is_integer/1,
-                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => fun erlang:is_integer/1,
-                                            <<"port">> => '_',
-                                            <<"devaddr">> => '_',
-                                            <<"dc">> => fun erlang:is_map/1,
-                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"rssi">> => 0.0,
-                                                                 <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"channel">> => fun erlang:is_number/1,
-                                                                 <<"lat">> => fun erlang:is_float/1, 
-                                                                 <<"long">> => fun erlang:is_float/1}],
-                                            <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                                                                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"description">> => '_'}]}),
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
 
     %% We ignore the channel correction  and down messages
     ok = test_utils:ignore_messages(),
@@ -270,96 +343,136 @@ inactive_test(Config) ->
     WSPid ! {is_active, false},
 
     %% Send UNCONFIRMED_UP frame packet
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 1)},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1
+            )},
 
-    test_utils:wait_report_device_status(#{<<"category">> => <<"packet_dropped">>,
-                                           <<"description">> => <<"Transmission has been paused. Contact your administrator">>,
-                                           <<"reported_at">> => fun erlang:is_integer/1,
-                                           <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                           <<"frame_up">> => fun erlang:is_integer/1,
-                                           <<"frame_down">> => fun erlang:is_integer/1,
-                                           <<"payload_size">> => 0,
-                                           <<"port">> => 0,
-                                           <<"devaddr">> => '_',
-                                           <<"dc">> => fun erlang:is_map/1,
-                                           <<"hotspots">> => [],
-                                           <<"channels">> => []}),
+    test_utils:wait_report_device_status(#{
+        <<"category">> => <<"packet_dropped">>,
+        <<"description">> => <<"Transmission has been paused. Contact your administrator">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => 0,
+        <<"port">> => 0,
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [],
+        <<"channels">> => []
+    }),
 
     ets:insert(Tab, {is_active, true}),
     WSPid ! {is_active, true},
 
     %% Send UNCONFIRMED_UP frame packet
-    Stream ! {send, test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, router_device:nwk_s_key(Device0),
-                                            router_device:app_s_key(Device0), 2)},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                2
+            )},
 
     %% Waiting for data from HTTP channel
-    test_utils:wait_channel_data(#{<<"id">> => ?CONSOLE_DEVICE_ID,
-                                   <<"downlink_url">> => fun erlang:is_binary/1,
-                                   <<"name">> => ?CONSOLE_DEVICE_NAME,
-                                   <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-                                   <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-                                   <<"metadata">> => #{<<"labels">> => ?CONSOLE_LABELS, <<"organization_id">> => ?CONSOLE_ORG_ID},
-                                   <<"fcnt">> => 2,
-                                   <<"reported_at">> => fun erlang:is_integer/1,
-                                   <<"payload">> => <<>>,
-                                   <<"port">> => 1,
-                                   <<"devaddr">> => '_',
-                                   <<"dc">> => fun erlang:is_map/1,
-                                   <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                        <<"name">> => erlang:list_to_binary(HotspotName),
-                                                        <<"reported_at">> => fun erlang:is_integer/1,
-                                                        <<"status">> => <<"success">>,
-                                                        <<"rssi">> => 0.0,
-                                                        <<"snr">> => 0.0,
-                                                        <<"spreading">> => <<"SF8BW125">>,
-                                                        <<"frequency">> => fun erlang:is_float/1,
-                                                        <<"channel">> => fun erlang:is_number/1,
-                                                        <<"lat">> => fun erlang:is_float/1, 
-                                                        <<"long">> => fun erlang:is_float/1}]}),
+    test_utils:wait_channel_data(#{
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID
+        },
+        <<"fcnt">> => 2,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{<<"category">> => <<"up">>,
-                                            <<"description">> => '_',
-                                            <<"reported_at">> => fun erlang:is_integer/1,
-                                            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-                                            <<"frame_up">> => fun erlang:is_integer/1,
-                                            <<"frame_down">> => fun erlang:is_integer/1,
-                                            <<"payload_size">> => fun erlang:is_integer/1,
-                                            <<"port">> => '_',
-                                            <<"devaddr">> => '_',
-                                            <<"dc">> => fun erlang:is_map/1,
-                                            <<"hotspots">> => [#{<<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                                                                 <<"name">> => erlang:list_to_binary(HotspotName),
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"rssi">> => 0.0,
-                                                                 <<"snr">> => 0.0,
-                                                                 <<"spreading">> => <<"SF8BW125">>,
-                                                                 <<"frequency">> => fun erlang:is_float/1,
-                                                                 <<"channel">> => fun erlang:is_number/1,
-                                                                 <<"lat">> => fun erlang:is_float/1, 
-                                                                 <<"long">> => fun erlang:is_float/1}],
-                                            <<"channels">> => [#{<<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                                                                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                                                                 <<"reported_at">> => fun erlang:is_integer/1,
-                                                                 <<"status">> => <<"success">>,
-                                                                 <<"description">> => '_'}]}),
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
 
     ok.
-
 
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
 
-loop(0) -> ok;
+loop(0) ->
+    ok;
 loop(I) ->
     receive
         {report_channel_status, Got} -> ct:fail(Got);
-        _Something -> loop(I-1)
-    after 100 -> loop(I-1)
+        _Something -> loop(I - 1)
+    after 100 -> loop(I - 1)
     end.
 
 to_real_payload(Bin) ->
-    erlang:list_to_binary(lists:map(fun(X)-> erlang:binary_to_integer(X, 16) end, binary:split(Bin, <<" ">>, [global]))).
+    erlang:list_to_binary(
+        lists:map(
+            fun(X) -> erlang:binary_to_integer(X, 16) end,
+            binary:split(Bin, <<" ">>, [global])
+        )
+    ).

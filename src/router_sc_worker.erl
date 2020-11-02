@@ -24,28 +24,28 @@
 %% API
 %% ------------------------------------------------------------------
 -export([
-         start_link/1,
-         is_active/0
-        ]).
+    start_link/1,
+    is_active/0
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
 -export([
-         init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3
-        ]).
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -export([
-         init_state_channels/1,
-         open_next_state_channel/1,
-         get_active_count/0,
-         handle_sc_result/2
-        ]).
+    init_state_channels/1,
+    open_next_state_channel/1,
+    get_active_count/0,
+    handle_sc_result/2
+]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -53,18 +53,20 @@
 
 -define(SERVER, ?MODULE).
 -define(SC_EXPIRATION, 25).
--define(SC_AMOUNT, 100). % budget 100 data credits
--define(SC_TICK_INTERVAL, 15000). % 15 seconds in millis
+% budget 100 data credits
+-define(SC_AMOUNT, 100).
+% 15 seconds in millis
+-define(SC_TICK_INTERVAL, 15000).
 -define(SC_TICK, '__router_sc_tick').
 
 -record(state, {
-                oui = undefined :: undefined | non_neg_integer(),
-                chain = undefined :: undefined | blockchain:blockchain(),
-                tref = undefined :: undefined | reference(),
-                in_flight = [] :: [ blockchain_txn_state_channel_open_v1:id() ],
-                tombstones = [] :: [ blockchain_txn_state_channel_open_v1:id() ],
-                is_active = false :: boolean()
-               }).
+    oui = undefined :: undefined | non_neg_integer(),
+    chain = undefined :: undefined | blockchain:blockchain(),
+    tref = undefined :: undefined | reference(),
+    in_flight = [] :: [blockchain_txn_state_channel_open_v1:id()],
+    tombstones = [] :: [blockchain_txn_state_channel_open_v1:id()],
+    is_active = false :: boolean()
+}).
 
 -type state() :: #state{}.
 
@@ -88,7 +90,7 @@ init(Args) ->
     ok = blockchain_event:add_handler(self()),
     erlang:send_after(500, self(), post_init),
     Tref = schedule_next_tick(),
-    {ok, #state{tref=Tref}}.
+    {ok, #state{tref = Tref}}.
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
@@ -100,7 +102,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain=undefined}=State) ->
+handle_info(post_init, #state{chain = undefined} = State) ->
     %% No chain
     case blockchain_worker:blockchain() of
         undefined ->
@@ -109,25 +111,31 @@ handle_info(post_init, #state{chain=undefined}=State) ->
         Chain ->
             case router_utils:get_router_oui(Chain) of
                 undefined ->
-                    {noreply, State#state{chain=Chain}};
+                    {noreply, State#state{chain = Chain}};
                 OUI ->
                     %% We have a chain and an oui on chain
                     %% Only activate if we're on sc_version=2
                     case blockchain:config(sc_version, blockchain:ledger(Chain)) of
                         {ok, 2} ->
-                            {noreply, State#state{chain=Chain, oui=OUI, is_active=true}};
+                            {noreply, State#state{chain = Chain, oui = OUI, is_active = true}};
                         _ ->
-                            {noreply, State#state{chain=Chain, oui=OUI, is_active=false}}
+                            {noreply, State#state{chain = Chain, oui = OUI, is_active = false}}
                     end
             end
     end;
 handle_info({blockchain_event, {new_chain, NC}}, State) ->
-    {noreply, State#state{chain=NC}};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{chain=undefined}=State) ->
+    {noreply, State#state{chain = NC}};
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{chain = undefined} = State
+) ->
     %% Got block without a chain, wut?
     erlang:send_after(500, self(), post_init),
     {noreply, State};
-handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #state{is_active=false, chain=Chain}=State) ->
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{is_active = false, chain = Chain} = State
+) ->
     %% We're inactive, check if we have an oui
     case router_utils:get_router_oui(Chain) of
         undefined ->
@@ -137,34 +145,39 @@ handle_info({blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}}, #sta
             %% Only activate if we're on sc_version=2
             case blockchain:config(sc_version, blockchain:ledger(Chain)) of
                 {ok, 2} ->
-                    {noreply, State#state{oui=OUI, is_active=true}};
+                    {noreply, State#state{oui = OUI, is_active = true}};
                 _ ->
-                    {noreply, State#state{oui=OUI, is_active=false}}
+                    {noreply, State#state{oui = OUI, is_active = false}}
             end
     end;
-
-handle_info({sc_open_success, Id}, #state{is_active=false}=State) ->
-    lager:error("Got an sc_open_success though the sc_worker is inactive. This should never happen. txn id: ~p", [Id]),
+handle_info({sc_open_success, Id}, #state{is_active = false} = State) ->
+    lager:error(
+        "Got an sc_open_success though the sc_worker is inactive. This should never happen. txn id: ~p",
+        [Id]
+    ),
     {noreply, State};
-handle_info({sc_open_failure, Id}, #state{is_active=false}=State) ->
-    lager:error("Got an sc_open_failure though the sc_worker is inactive. This should never happen. txn id: ~p", [Id]),
+handle_info({sc_open_failure, Id}, #state{is_active = false} = State) ->
+    lager:error(
+        "Got an sc_open_failure though the sc_worker is inactive. This should never happen. txn id: ~p",
+        [Id]
+    ),
     {noreply, State};
-handle_info({sc_open_success, Id}, #state{is_active=true, tombstones=T}=State) ->
+handle_info({sc_open_success, Id}, #state{is_active = true, tombstones = T} = State) ->
     lager:debug("sc_open_success for txn id ~p", [Id]),
-    {noreply, State#state{tombstones=[Id|T]}};
-handle_info({sc_open_failure, Id}, #state{is_active=true, tombstones=T}=State) ->
+    {noreply, State#state{tombstones = [Id | T]}};
+handle_info({sc_open_failure, Id}, #state{is_active = true, tombstones = T} = State) ->
     lager:debug("sc_open_failure for txn id ~p", [Id]),
     %% we're not going to immediately try to start a new channel, we will
     %% wait until the next tick to evaluate that decision.
-    {noreply, State#state{tombstones=[Id|T]}};
-handle_info(?SC_TICK, #state{is_active=false}=State) ->
+    {noreply, State#state{tombstones = [Id | T]}};
+handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),
-    {noreply, State#state{tref=Tref}};
-handle_info(?SC_TICK, #state{is_active=true}=State) ->
+    {noreply, State#state{tref = Tref}};
+handle_info(?SC_TICK, #state{is_active = true} = State) ->
     NewState = maybe_start_state_channel(State),
     Tref = schedule_next_tick(),
-    {noreply, NewState#state{tref=Tref}};
+    {noreply, NewState#state{tref = Tref}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -184,72 +197,92 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight=F, tombstones=T}=State) ->
-
+maybe_start_state_channel(#state{in_flight = F, tombstones = T} = State) ->
     NewF = F -- T,
     case get_active_count() + length(NewF) of
         0 ->
             %% initialize with two channels
             lager:info("active_count = 0, opening two state channels"),
             {ok, Id0, Id1} = init_state_channels(State),
-            State#state{in_flight=[Id0, Id1 | NewF], tombstones=[]};
+            State#state{in_flight = [Id0, Id1 | NewF], tombstones = []};
         1 ->
             %% open next state channel
             lager:info("active_count = 1, opening next state channel"),
             {ok, Id0} = open_next_state_channel(State),
-            State#state{in_flight=[Id0 | NewF], tombstones=[]};
+            State#state{in_flight = [Id0 | NewF], tombstones = []};
         Other ->
             %% don't do anything
             lager:info("active_count = ~p, standing by...", [Other]),
-            State#state{in_flight=[], tombstones=[]}
+            State#state{in_flight = [], tombstones = []}
     end.
 
-
--spec init_state_channels(State :: state()) -> {ok,
-                                                blockchain_txn_open_state_channel_v1:id(),
-                                                blockchain_txn_open_state_channel_v1:id()}.
-init_state_channels(#state{oui=OUI, chain=Chain}) ->
+-spec init_state_channels(State :: state()) ->
+    {ok, blockchain_txn_open_state_channel_v1:id(), blockchain_txn_open_state_channel_v1:id()}.
+init_state_channels(#state{oui = OUI, chain = Chain}) ->
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    Id0 = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
-                                      get_sc_expiration_interval(), get_sc_amount(), Chain),
-    Id1 = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 2, OUI,
-                                      get_sc_expiration_interval() * 2, get_sc_amount(), Chain),
+    Id0 = create_and_send_sc_open_txn(
+        PubkeyBin,
+        SigFun,
+        Nonce + 1,
+        OUI,
+        get_sc_expiration_interval(),
+        get_sc_amount(),
+        Chain
+    ),
+    Id1 = create_and_send_sc_open_txn(
+        PubkeyBin,
+        SigFun,
+        Nonce + 2,
+        OUI,
+        get_sc_expiration_interval() * 2,
+        get_sc_amount(),
+        Chain
+    ),
     {ok, Id0, Id1}.
 
 -spec open_next_state_channel(State :: state()) -> {ok, blockchain_txn_state_channel_open_v1:id()}.
-open_next_state_channel(#state{oui=OUI, chain=Chain}) ->
+open_next_state_channel(#state{oui = OUI, chain = Chain}) ->
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
-    NextExpiration = case active_sc_expiration() of
-                         {error, no_active_sc} ->
-                             %% Just set it to expiration_interval
-                             get_sc_expiration_interval();
-                         {ok, ActiveSCExpiration} ->
-                             %% We set the next SC expiration to the difference between current chain height and active
-                             %% plus the expiration_interval
-                             abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
-                     end,
+    NextExpiration =
+        case active_sc_expiration() of
+            {error, no_active_sc} ->
+                %% Just set it to expiration_interval
+                get_sc_expiration_interval();
+            {ok, ActiveSCExpiration} ->
+                %% We set the next SC expiration to the difference between current chain height and active
+                %% plus the expiration_interval
+                abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
+        end,
 
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    Id = create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce + 1, OUI,
-                                     NextExpiration, get_sc_amount(), Chain),
+    Id = create_and_send_sc_open_txn(
+        PubkeyBin,
+        SigFun,
+        Nonce + 1,
+        OUI,
+        NextExpiration,
+        get_sc_amount(),
+        Chain
+    ),
     {ok, Id}.
 
--spec create_and_send_sc_open_txn(PubkeyBin :: libp2p_crypto:pubkey_bin(),
-                                  SigFun :: libp2p_crypto:sig_fun(),
-                                  Nonce :: pos_integer(),
-                                  OUI :: non_neg_integer(),
-                                  Expiration :: pos_integer(),
-                                  Amount :: non_neg_integer(),
-                                  Chain :: blockchain:blockchain()) ->
-          blockchain_txn_state_channel_open_v1:id().
+-spec create_and_send_sc_open_txn(
+    PubkeyBin :: libp2p_crypto:pubkey_bin(),
+    SigFun :: libp2p_crypto:sig_fun(),
+    Nonce :: pos_integer(),
+    OUI :: non_neg_integer(),
+    Expiration :: pos_integer(),
+    Amount :: non_neg_integer(),
+    Chain :: blockchain:blockchain()
+) -> blockchain_txn_state_channel_open_v1:id().
 create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, Chain) ->
     %% Create and open a new state_channel
     %% With its expiration set to 2 * Expiration of the one with max nonce
@@ -257,8 +290,15 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     Txn = blockchain_txn_state_channel_open_v1:new(ID, PubkeyBin, Expiration, OUI, Nonce, Amount),
     Fee = blockchain_txn_state_channel_open_v1:calculate_fee(Txn, Chain),
     SignedTxn = blockchain_txn_state_channel_open_v1:sign(
-                  blockchain_txn_state_channel_open_v1:fee(Txn, Fee),  SigFun),
-    lager:info("Opening state channel for router: ~p, oui: ~p, nonce: ~p, id: ~p", [?TO_B58(PubkeyBin), OUI, Nonce, ID]),
+        blockchain_txn_state_channel_open_v1:fee(Txn, Fee),
+        SigFun
+    ),
+    lager:info("Opening state channel for router: ~p, oui: ~p, nonce: ~p, id: ~p", [
+        ?TO_B58(PubkeyBin),
+        OUI,
+        Nonce,
+        ID
+    ]),
     blockchain_worker:submit_txn(SignedTxn, fun(Result) -> handle_sc_result(Result, ID) end),
     ID.
 
@@ -266,8 +306,10 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
 get_active_count() ->
     blockchain_state_channels_server:get_active_sc_count().
 
--spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin(),
-                Ledger :: blockchain_ledger_v1:ledger()) -> non_neg_integer().
+-spec get_nonce(
+    PubkeyBin :: libp2p_crypto:pubkey_bin(),
+    Ledger :: blockchain_ledger_v1:ledger()
+) -> non_neg_integer().
 get_nonce(PubkeyBin, Ledger) ->
     case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
         {error, _} ->
@@ -301,9 +343,10 @@ get_sc_expiration_interval() ->
         I -> I
     end.
 
--spec handle_sc_result(ok|{error, rejected|invalid},
-                       blockchain_txn_state_channel_open_v1:id()) ->
-          {sc_open_success|sc_open_failure, blockchain_txn_state_channel_open_v1:id()}.
+-spec handle_sc_result(
+    ok | {error, rejected | invalid},
+    blockchain_txn_state_channel_open_v1:id()
+) -> {sc_open_success | sc_open_failure, blockchain_txn_state_channel_open_v1:id()}.
 handle_sc_result(ok, Id) ->
     ?SERVER ! {sc_open_success, Id};
 handle_sc_result(_Error, Id) ->

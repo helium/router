@@ -10,18 +10,22 @@
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
--export([start_link/1,
-         decode/3]).
+-export([
+    start_link/1,
+    decode/3
+]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
--export([init/1,
-         handle_call/3,
-         handle_cast/2,
-         handle_info/2,
-         terminate/2,
-         code_change/3]).
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -31,11 +35,13 @@
 -define(TIMER, timer:hours(48)).
 -define(MAX_EXECUTION, 500).
 
--record(state, {id :: binary(),
-                vm :: pid(),
-                context :: pid(),
-                function :: binary(),
-                timer :: reference()}).
+-record(state, {
+    id :: binary(),
+    vm :: pid(),
+    context :: pid(),
+    function :: binary(),
+    timer :: reference()
+}).
 
 -type state() :: #state{}.
 
@@ -59,13 +65,13 @@ init(Args) ->
     Function = maps:get(function, Args),
     Context = init_context(VM, Function),
     TimerRef = erlang:send_after(?TIMER, self(), timeout),
-    {ok, #state{id=ID, vm=VM, context=Context, function=Function, timer=TimerRef}}.
+    {ok, #state{id = ID, vm = VM, context = Context, function = Function, timer = TimerRef}}.
 
-handle_call({decode, Payload, Port}, _From, #state{timer=TimerRef0}=State0) ->
+handle_call({decode, Payload, Port}, _From, #state{timer = TimerRef0} = State0) ->
     _ = erlang:cancel_timer(TimerRef0),
     {Reply, State1} = decode(Payload, Port, State0, 3),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-    {reply, Reply, State1#state{timer=TimerRef1}};
+    {reply, Reply, State1#state{timer = TimerRef1}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -74,7 +80,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(timeout, #state{id=ID}=State) ->
+handle_info(timeout, #state{id = ID} = State) ->
     lager:info("context ~p has not been used for awhile, shutting down", [ID]),
     {stop, normal, State};
 handle_info(_Msg, State) ->
@@ -84,7 +90,7 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{id=ID, vm=VM, context=Context}=_State) ->
+terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
     catch erlang_v8:destroy_context(VM, Context),
     ok = router_decoder_custom_sup:delete(ID),
     lager:info("context ~p went down: ~p", [ID, _Reason]),
@@ -103,11 +109,11 @@ init_context(VM, Function) ->
 -spec decode(binary(), non_neg_integer(), state(), non_neg_integer()) -> {any(), state()}.
 decode(_Payload, _Port, State, 0) ->
     {{error, failed_too_many_times}, State};
-decode(Payload, Port, #state{vm=VM, context=Context0, function=Function}=State, Retry) ->
+decode(Payload, Port, #state{vm = VM, context = Context0, function = Function} = State, Retry) ->
     case erlang_v8:call(VM, Context0, <<"Decoder">>, [Payload, Port], ?MAX_EXECUTION) of
         {error, invalid_context} ->
             Context1 = init_context(VM, Function),
-            decode(Payload, Port, State#state{context=Context1}, Retry-1);
+            decode(Payload, Port, State#state{context = Context1}, Retry - 1);
         Reply ->
             {Reply, State}
     end.
@@ -125,63 +131,65 @@ load_test() ->
 
     ID = <<"ID">>,
     {ok, VM} = router_v8:get(),
-    Function = <<"
-function bytesToInt(by) {
-                         f = by[0] | by[1]<<8 | by[2]<<16 | by[3]<<24;
-                                                                   return f;
-                                                                   } 
-  
-function bytesToFloat(by) {
-    var bits = by[3]<<24 | by[2]<<16 | by[1]<<8 | by[0];
-    var sign = (bits>>>31 === 0) ? 1.0 : -1.0;
-    var e = bits>>>23 & 0xff;
-    var m = (e === 0) ? (bits & 0x7fffff)<<1 : (bits & 0x7fffff) | 0x800000;
-    var f = sign * m * Math.pow(2, e - 150);
-    return f;
-} 
-  
-function Decoder(bytes, port) {
-  
-    var decoded = {};
-    i = 0;
-  
-    decoded.latitude = bytesToFloat(bytes.slice(i,i+=4));
-    decoded.longitude = bytesToFloat(bytes.slice(i,i+=4));
-    decoded.altitude = bytesToFloat(bytes.slice(i,i+=4));
-    decoded.course = bytesToFloat(bytes.slice(i,i+=4));
-    decoded.speed = bytesToFloat(bytes.slice(i,i+=4));
-    decoded.hdop = bytesToFloat(bytes.slice(i,i+=4));
-  
-    decoded.battery = ((bytes[i++] << 8) | bytes[i++]);
-
-    return decoded;
-}
-">>,
+    Function =
+        <<"\n"
+            "function bytesToInt(by) {\n"
+            "                         f = by[0] | by[1]<<8 | by[2]<<16 | by[3]<<24;\n"
+            "                                                                   return f;\n"
+            "                                                                   } \n"
+            "  \n"
+            "function bytesToFloat(by) {\n"
+            "    var bits = by[3]<<24 | by[2]<<16 | by[1]<<8 | by[0];\n"
+            "    var sign = (bits>>>31 === 0) ? 1.0 : -1.0;\n"
+            "    var e = bits>>>23 & 0xff;\n"
+            "    var m = (e === 0) ? (bits & 0x7fffff)<<1 : (bits & 0x7fffff) | 0x800000;\n"
+            "    var f = sign * m * Math.pow(2, e - 150);\n"
+            "    return f;\n"
+            "} \n"
+            "  \n"
+            "function Decoder(bytes, port) {\n"
+            "  \n"
+            "    var decoded = {};\n"
+            "    i = 0;\n"
+            "  \n"
+            "    decoded.latitude = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "    decoded.longitude = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "    decoded.altitude = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "    decoded.course = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "    decoded.speed = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "    decoded.hdop = bytesToFloat(bytes.slice(i,i+=4));\n"
+            "  \n"
+            "    decoded.battery = ((bytes[i++] << 8) | bytes[i++]);\n"
+            "\n"
+            "    return decoded;\n"
+            "}\n">>,
     Args = #{id => ID, vm => VM, function => Function},
     {ok, Pid} = ?MODULE:start_link(Args),
 
     Payload1 = erlang:binary_to_list(base64:decode(<<"gY0HQi0LqcLNzDRDpHBEQ6VOCECamalADzo=">>)),
-    Result1 = #{<<"altitude">> => 180.8000030517578,
-                       <<"battery">> => 3898,
-                       <<"course">> => 196.44000244140625,
-                       <<"hdop">> => 5.300000190734863,
-                       <<"latitude">> => 33.888187408447266,
-                       <<"longitude">> => -84.5218276977539,
-                       <<"speed">> => 2.1298000812530518},
+    Result1 = #{
+        <<"altitude">> => 180.8000030517578,
+        <<"battery">> => 3898,
+        <<"course">> => 196.44000244140625,
+        <<"hdop">> => 5.300000190734863,
+        <<"latitude">> => 33.888187408447266,
+        <<"longitude">> => -84.5218276977539,
+        <<"speed">> => 2.1298000812530518
+    },
     Port = 6,
 
     lists:foreach(
         fun(X) ->
             case X rem 2 of
                 0 ->
-                     ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port));
+                    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port));
                 _ ->
                     ?assertMatch({ok, _}, ?MODULE:decode(Pid, lists:seq(1, X), Port))
             end
         end,
         lists:seq(1, 1000)
     ),
-   
+
     gen_server:stop(Pid),
     gen_server:stop(VMPid),
     ?assert(meck:validate(router_decoder_custom_sup)),
@@ -196,33 +204,41 @@ random_test() ->
 
     ID = <<"ID">>,
     {ok, VM} = router_v8:get(),
-    Function = <<"
-function Decoder(bytes, port) { 
-  var decoded = {};
-  if (bytes[0] == 1) {
-    decoded.reportType = bytes[0];
-    decoded.deviceType = bytes[1];
-    decoded.voltage = bytes[3]/10;
-    decoded.illuminance = (bytes[4]<<8 | bytes[5])
-  }
-  return decoded; 
-}
-">>,
+    Function =
+        <<"\n"
+            "function Decoder(bytes, port) { \n"
+            "  var decoded = {};\n"
+            "  if (bytes[0] == 1) {\n"
+            "    decoded.reportType = bytes[0];\n"
+            "    decoded.deviceType = bytes[1];\n"
+            "    decoded.voltage = bytes[3]/10;\n"
+            "    decoded.illuminance = (bytes[4]<<8 | bytes[5])\n"
+            "  }\n"
+            "  return decoded; \n"
+            "}\n">>,
     Args = #{id => ID, vm => VM, function => Function},
     {ok, Pid} = ?MODULE:start_link(Args),
 
     Payload0 = erlang:binary_to_list(base64:decode(<<"AQQACgsgGAQgAAA=">>)),
-    Result0 = #{<<"deviceType">> => 4,<<"illuminance">> => 2848,
-                       <<"reportType">> => 1,<<"voltage">> => 1},
+    Result0 = #{
+        <<"deviceType">> => 4,
+        <<"illuminance">> => 2848,
+        <<"reportType">> => 1,
+        <<"voltage">> => 1
+    },
 
     Payload1 = erlang:binary_to_list(base64:decode(<<"AQQBHgAJAAAAAAA=">>)),
-    Result1 = #{<<"deviceType">> => 4,<<"illuminance">> => 9,
-                       <<"reportType">> => 1,<<"voltage">> => 3},
+    Result1 = #{
+        <<"deviceType">> => 4,
+        <<"illuminance">> => 9,
+        <<"reportType">> => 1,
+        <<"voltage">> => 3
+    },
     Port = 6,
 
     ?assertMatch({ok, Result0}, ?MODULE:decode(Pid, Payload0, Port)),
     ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port)),
-   
+
     gen_server:stop(Pid),
     gen_server:stop(VMPid),
     ?assert(meck:validate(router_decoder_custom_sup)),

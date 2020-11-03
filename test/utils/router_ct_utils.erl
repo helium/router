@@ -158,7 +158,11 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
                     {secret, <<"yolo">>}
                 ]
             ]),
-            ct_rpc:call(Router, application, set_env, [router, metrics_port, 0]),
+            ct_rpc:call(Router, application, set_env, [
+                router,
+                router_metrics_report_prometheus_port,
+                0
+            ]),
             {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),
             ct:pal("Router: ~p, StartedApps: ~p", [Router, StartedApps])
         end,

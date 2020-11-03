@@ -2,6 +2,8 @@
 
 -behavior(gen_server).
 
+-include("metrics.hrl").
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -33,61 +35,6 @@
 
 -define(SERVER, ?MODULE).
 
--define(METRICS_TICK_INTERVAL, timer:seconds(10)).
--define(METRICS_TICK, '__router_metrics_tick').
-
--define(BASE, "router_").
--define(ROUTING_OFFER, ?BASE ++ "device_routing_offer_duration").
--define(ROUTING_PACKET, ?BASE ++ "device_routing_packet_duration").
--define(PACKET_TRIP, ?BASE ++ "device_packet_trip_duration").
--define(DOWNLINK, ?BASE ++ "device_downlink_packet").
--define(DC, ?BASE ++ "dc_balance").
--define(SC_ACTIVE_COUNT, ?BASE ++ "state_channel_active_count").
--define(SC_ACTIVE, ?BASE ++ "state_channel_active").
--define(DECODED_TIME, ?BASE ++ "decoder_decoded_duration").
--define(CONSOLE_API_TIME, ?BASE ++ "console_api_duration").
--define(WS, ?BASE ++ "ws_state").
--define(FUN_DURATION, ?BASE ++ "function_duration").
-
--define(METRICS, [
-    {histogram, ?ROUTING_OFFER, [type, status, reason], "Routing Offer duration", [
-        50,
-        100,
-        250,
-        500,
-        1000
-    ]},
-    {histogram, ?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration", [
-        50,
-        100,
-        250,
-        500,
-        1000
-    ]},
-    {histogram, ?PACKET_TRIP, [type, downlink], "Packet round trip duration", [
-        50,
-        100,
-        250,
-        500,
-        1000,
-        2000
-    ]},
-    {counter, ?DOWNLINK, [type, status], "Downlink count"},
-    {gauge, ?DC, [], "DC balance"},
-    {gauge, ?SC_ACTIVE_COUNT, [], "Active State Channel count"},
-    {gauge, ?SC_ACTIVE, [], "Active State Channel balance"},
-    {histogram, ?DECODED_TIME, [type, status], "Decoder decoded duration", [
-        50,
-        100,
-        250,
-        500,
-        1000
-    ]},
-    {histogram, ?CONSOLE_API_TIME, [type, status], "Console API duration", [100, 250, 500, 1000]},
-    {boolean, ?WS, [], "Websocket State"},
-    {histogram, ?FUN_DURATION, [function], "Function duration", [1000, 5000, 10000, 50000, 100000]}
-]).
-
 -record(state, {
     routing_packet_duration :: map(),
     packet_duration :: map()
@@ -105,14 +52,14 @@ routing_offer_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         (Status == accepted orelse Status == rejected)
 ->
-    ok = prometheus_histogram:observe(?ROUTING_OFFER, [Type, Status, Reason], Time).
+    ok = notify(?ROUTING_OFFER, Time, [Type, Status, Reason]).
 
 -spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
 routing_packet_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         Status == rejected
 ->
-    ok = prometheus_histogram:observe(?ROUTING_PACKET, [Type, Status, Reason, false], Time).
+    ok = notify(?ROUTING_PACKET, Time, [Type, Status, Reason, false]).
 
 -spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
 routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
@@ -131,66 +78,35 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
-    ok = prometheus_counter:inc(?DOWNLINK, [Type, Status]).
+    ok = notify(?DOWNLINK, undefined, [Type, Status]).
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
-    ok = prometheus_histogram:observe(?DECODED_TIME, [Type, Status], Time).
+    ok = notify(?DECODED_TIME, Time, [Type, Status]).
 
 -spec console_api_observe(atom(), atom(), non_neg_integer()) -> ok.
 console_api_observe(Type, Status, Time) ->
-    ok = prometheus_histogram:observe(?CONSOLE_API_TIME, [Type, Status], Time).
+    ok = notify(?CONSOLE_API_TIME, Time, [Type, Status]).
 
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
-    ok = prometheus_boolean:set(?WS, [], State).
+    ok = notify(?WS, State).
 
 -spec function_observe(atom(), non_neg_integer()) -> ok.
 function_observe(Fun, Time) ->
-    ok = prometheus_histogram:observe(?FUN_DURATION, [Fun], Time).
+    ok = notify(?PACKET_TRIP, Time, [Fun]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    Port = maps:get(port, Args, 3000),
-    ElliOpts = [
-        {callback, router_metrics_handler},
-        {callback_args, #{}},
-        {port, Port}
-    ],
-    {ok, _Pid} = elli:start_link(ElliOpts),
-    lists:foreach(
-        fun
-            ({counter, Name, Labels, Help}) ->
-                _ = prometheus_counter:declare([
-                    {name, Name},
-                    {help, Help},
-                    {labels, Labels}
-                ]);
-            ({gauge, Name, Labels, Help}) ->
-                _ = prometheus_gauge:declare([
-                    {name, Name},
-                    {help, Help},
-                    {labels, Labels}
-                ]);
-            ({histogram, Name, Labels, Help, Buckets}) ->
-                _ = prometheus_histogram:declare([
-                    {name, Name},
-                    {help, Help},
-                    {labels, Labels},
-                    {buckets, Buckets}
-                ]);
-            ({boolean, Name, Labels, Help}) ->
-                _ = prometheus_boolean:declare([
-                    {name, Name},
-                    {help, Help},
-                    {labels, Labels}
-                ])
-        end,
-        ?METRICS
-    ),
+    {ok, EvtMgr} = gen_event:start_link({local, ?METRICS_EVT_MGR}),
+    % TODO: Make this a sys.config options (a list maybe)
+    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_report_prometheus, #{
+        port => 3000,
+        metrics => ?METRICS
+    }),
     _ = schedule_next_tick(),
     {ok, #state{
         routing_packet_duration = #{},
@@ -198,7 +114,7 @@ init(Args) ->
     }}.
 
 handle_call(_Msg, _From, State) ->
-    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
+    lager:debug("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
 handle_cast(
@@ -220,7 +136,7 @@ handle_cast(
             undefined ->
                 State0;
             Start0 ->
-                ok = prometheus_histogram:observe(?PACKET_TRIP, [Type, Downlink], End - Start0),
+                ok = notify(?PACKET_TRIP, End - Start0, [Type, Downlink]),
                 State0#state{packet_duration = maps:remove({PacketHash, PubKeyBin}, PD)}
         end,
     State2 =
@@ -228,11 +144,7 @@ handle_cast(
             undefined ->
                 State1;
             Start1 ->
-                ok = prometheus_histogram:observe(
-                    ?ROUTING_PACKET,
-                    [Type, accepted, accepted, Downlink],
-                    End - Start1
-                ),
+                ok = notify(?ROUTING_PACKET, End - Start1, [Type, accepted, accepted, Downlink]),
                 State1#state{routing_packet_duration = maps:remove({PacketHash, PubKeyBin}, RPD)}
         end,
     {noreply, State2};
@@ -240,7 +152,10 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?METRICS_TICK, #state{routing_packet_duration = RPD, packet_duration = PD} = State) ->
+handle_info(
+    ?METRICS_TICK,
+    #state{routing_packet_duration = RPD, packet_duration = PD} = State
+) ->
     erlang:spawn(
         fun() ->
             ok = record_dc_balance(),
@@ -280,23 +195,29 @@ record_dc_balance() ->
             ok;
         {ok, Entry} ->
             Balance = blockchain_ledger_data_credits_entry_v1:balance(Entry),
-            _ = prometheus_gauge:set(?DC, Balance),
-            ok
+            ok = notify(?DC, Balance)
     end.
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
     ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
-    _ = prometheus_gauge:set(?SC_ACTIVE_COUNT, ActiveSCCount),
+    ok = notify(?SC_ACTIVE_COUNT, ActiveSCCount),
     case blockchain_state_channels_server:active_sc() of
         undefined ->
-            _ = prometheus_gauge:set(?SC_ACTIVE, [], 0);
+            ok = notify(?SC_ACTIVE, 0);
         ActiveSC ->
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            _ = prometheus_gauge:set(?SC_ACTIVE, [], DCLeft)
-    end,
-    ok.
+            ok = notify(?SC_ACTIVE, DCLeft)
+    end.
+
+-spec notify(atom(), any()) -> ok.
+notify(Key, Data) ->
+    ok = notify(Key, Data, []).
+
+-spec notify(atom(), any(), list()) -> ok.
+notify(Key, Data, MetaData) ->
+    ok = gen_event:notify(?METRICS_EVT_MGR, {data, Key, Data, MetaData}).
 
 -spec schedule_next_tick() -> reference().
 schedule_next_tick() ->

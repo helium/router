@@ -14,11 +14,11 @@
     routing_packet_observe_start/3,
     packet_trip_observe_start/3,
     packet_trip_observe_end/5,
-    downlink_inc/2,
     decoder_observe/3,
+    function_observe/2,
     console_api_observe/3,
-    ws_state/1,
-    function_observe/2
+    downlink_inc/2,
+    ws_state/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -76,25 +76,25 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
         {packet_trip_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}
     ).
 
--spec downlink_inc(atom(), ok | error) -> ok.
-downlink_inc(Type, Status) ->
-    ok = notify(?DOWNLINK, undefined, [Type, Status]).
-
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
     ok = notify(?DECODED_TIME, Time, [Type, Status]).
+
+-spec function_observe(atom(), non_neg_integer()) -> ok.
+function_observe(Fun, Time) ->
+    ok = notify(?FUN_DURATION, Time, [Fun]).
 
 -spec console_api_observe(atom(), atom(), non_neg_integer()) -> ok.
 console_api_observe(Type, Status, Time) ->
     ok = notify(?CONSOLE_API_TIME, Time, [Type, Status]).
 
+-spec downlink_inc(atom(), ok | error) -> ok.
+downlink_inc(Type, Status) ->
+    ok = notify(?DOWNLINK, undefined, [Type, Status]).
+
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
     ok = notify(?WS, State).
-
--spec function_observe(atom(), non_neg_integer()) -> ok.
-function_observe(Fun, Time) ->
-    ok = notify(?PACKET_TRIP, Time, [Fun]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -103,10 +103,7 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, EvtMgr} = gen_event:start_link({local, ?METRICS_EVT_MGR}),
     % TODO: Make this a sys.config options (a list maybe)
-    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_report_prometheus, #{
-        port => 3000,
-        metrics => ?METRICS
-    }),
+    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_report_prometheus, #{metrics => ?METRICS}),
     _ = schedule_next_tick(),
     {ok, #state{
         routing_packet_duration = #{},

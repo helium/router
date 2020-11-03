@@ -150,27 +150,78 @@ metrics_test() ->
     ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?SC_ACTIVE_COUNT, 2, []}),
     ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?DC, 3, []}),
     ok = router_metrics:routing_offer_observe(join, accepted, accepted, 4),
+    ok = router_metrics:routing_packet_observe(join, rejected, rejected, 5),
+    ok = router_metrics:packet_trip_observe_start(<<"packethash">>, <<"pubkeybin">>, 0),
+    ok = router_metrics:packet_trip_observe_end(<<"packethash">>, <<"pubkeybin">>, 6, packet, true),
+    ok = router_metrics:decoder_observe(decoder, ok, 7),
+    ok = router_metrics:function_observe('fun', 8),
+    ok = router_metrics:console_api_observe(api, ok, 9),
+    ok = router_metrics:downlink_inc(http, ok),
+    ok = router_metrics:ws_state(true),
     Format = prometheus_text_format:format(),
     io:format(Format),
     ?assertEqual(
         <<"1">>,
-        extract_data(erlang:atom_to_list(?SC_ACTIVE), prometheus_text_format:format())
+        extract_data(erlang:atom_to_list(?SC_ACTIVE), Format)
     ),
     ?assertEqual(
         <<"2">>,
-        extract_data(erlang:atom_to_list(?SC_ACTIVE_COUNT), prometheus_text_format:format())
+        extract_data(erlang:atom_to_list(?SC_ACTIVE_COUNT), Format)
     ),
     ?assertEqual(
         <<"3">>,
-        extract_data(erlang:atom_to_list(?DC), prometheus_text_format:format())
+        extract_data(erlang:atom_to_list(?DC), Format)
     ),
     ?assertEqual(
         <<"4">>,
         extract_data(
             "router_device_routing_offer_duration_sum{type=\"join\",status=\"accepted\",reason=\"accepted\"}",
-            prometheus_text_format:format()
+            Format
         )
     ),
+    ?assertEqual(
+        <<"5">>,
+        extract_data(
+            "router_device_routing_packet_duration_sum{type=\"join\",status=\"rejected\",reason=\"rejected\",downlink=\"false\"}",
+            Format
+        )
+    ),
+    ?assertEqual(
+        <<"6">>,
+        extract_data(
+            "router_device_packet_trip_duration_sum{type=\"packet\",downlink=\"true\"}",
+            Format
+        )
+    ),
+    ?assertEqual(
+        <<"7">>,
+        extract_data(
+            "router_decoder_decoded_duration_sum{type=\"decoder\",status=\"ok\"}",
+            Format
+        )
+    ),
+    ?assertEqual(
+        <<"8">>,
+        extract_data(
+            "router_function_duration_sum{function=\"fun\"}",
+            Format
+        )
+    ),
+    ?assertEqual(
+        <<"9">>,
+        extract_data(
+            "router_console_api_duration_sum{type=\"api\",status=\"ok\"}",
+            Format
+        )
+    ),
+    ?assertEqual(
+        <<"1">>,
+        extract_data(
+            "router_device_downlink_packet{type=\"http\",status=\"ok\"}",
+            Format
+        )
+    ),
+    ?assertEqual(<<>>, extract_data("router_ws_state", Format)),
 
     gen_server:stop(Pid),
     application:stop(prometheus),

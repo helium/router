@@ -26,11 +26,12 @@
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
-    Port = application:get_env(router, router_metrics_reporter_prometheus_port, 3000),
+    ReporterArgs = router_metrics:get_reporter_props(?MODULE),
+    lager:info("~p init with ~p and ~p", [?MODULE, Args, ReporterArgs]),
     ElliOpts = [
         {callback, router_metrics_reporter_prometheus_handler},
         {callback_args, #{}},
-        {port, Port}
+        {port, proplists:get_value(port, ReporterArgs, 3000)}
     ],
     {ok, _Pid} = elli:start_link(ElliOpts),
     Metrics = maps:get(metrics, Args, []),
@@ -137,6 +138,10 @@ metrics_test() ->
         prometheus_counter,
         prometheus_gauge,
         prometheus_histogram
+    ]),
+    ok = application:set_env(router, metrics, [
+        {reporters, [router_metrics_reporter_prometheus]},
+        {router_metrics_reporter_prometheus, [{port, 3000}]}
     ]),
     {ok, _} = application:ensure_all_started(prometheus),
     {ok, Pid} = router_metrics:start_link(#{}),

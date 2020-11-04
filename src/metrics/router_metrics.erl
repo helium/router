@@ -18,7 +18,8 @@
     function_observe/2,
     console_api_observe/3,
     downlink_inc/2,
-    ws_state/1
+    ws_state/1,
+    get_reporter_props/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -96,16 +97,26 @@ downlink_inc(Type, Status) ->
 ws_state(State) ->
     ok = notify(?WS, State).
 
+-spec get_reporter_props(atom()) -> list().
+get_reporter_props(Reporter) ->
+    MetricsEnv = application:get_env(router, metrics, []),
+    proplists:get_value(Reporter, MetricsEnv, []).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, EvtMgr} = gen_event:start_link({local, ?METRICS_EVT_MGR}),
-    % TODO: Make this a sys.config options (a list maybe)
-    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_reporter_prometheus, #{
-        metrics => ?METRICS
-    }),
+    MetricsEnv = application:get_env(router, metrics, []),
+    lists:foreach(
+        fun(Reporter) ->
+            ok = gen_event:add_sup_handler(EvtMgr, Reporter, #{
+                metrics => ?METRICS
+            })
+        end,
+        proplists:get_value(reporters, MetricsEnv, [])
+    ),
     _ = schedule_next_tick(),
     {ok, #state{
         routing_packet_duration = #{},

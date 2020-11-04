@@ -18,6 +18,10 @@
             {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
             {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
             {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
+        ]},
+        {metrics, [
+            {reporters, [router_metrics_reporter_prometheus]},
+            {router_metrics_reporter_prometheus, [{port, 3000}]}
         ]}
     ]},
     {prometheus, [

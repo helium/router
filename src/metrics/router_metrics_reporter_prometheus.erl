@@ -140,8 +140,8 @@ metrics_test() ->
         prometheus_histogram
     ]),
     ok = application:set_env(router, metrics, [
-        {reporters, [router_metrics_reporter_prometheus]},
-        {router_metrics_reporter_prometheus, [{port, 3000}]}
+        {reporters, [?MODULE]},
+        {?MODULE, [{port, 3000}]}
     ]),
     {ok, _} = application:ensure_all_started(prometheus),
     {ok, Pid} = router_metrics:start_link(#{}),

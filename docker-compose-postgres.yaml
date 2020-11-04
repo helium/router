@@ -1,0 +1,16 @@
+version: '3'
+services:
+  postgres:
+    image: postgres
+    container_name: helium_postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+        - 5432:5432
+  adminer:
+    image: adminer
+    container_name: helium_adminer
+    ports:
+      - 8080:8080
+    depends_on:
+      - postgres

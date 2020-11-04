@@ -9,7 +9,7 @@ else
 endif
 
 compile:
-	$(REBAR) format && $(REBAR) compile
+	$(REBAR) compile && $(REBAR) format
 
 clean:
 	$(REBAR) clean

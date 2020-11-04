@@ -160,7 +160,7 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
             ]),
             ct_rpc:call(Router, application, set_env, [
                 router,
-                router_metrics_report_prometheus_port,
+                router_metrics_reporter_prometheus_port,
                 0
             ]),
             {ok, StartedApps} = ct_rpc:call(Router, application, ensure_all_started, [router]),

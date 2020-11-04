@@ -103,7 +103,9 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, EvtMgr} = gen_event:start_link({local, ?METRICS_EVT_MGR}),
     % TODO: Make this a sys.config options (a list maybe)
-    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_report_prometheus, #{metrics => ?METRICS}),
+    ok = gen_event:add_sup_handler(EvtMgr, router_metrics_reporter_prometheus, #{
+        metrics => ?METRICS
+    }),
     _ = schedule_next_tick(),
     {ok, #state{
         routing_packet_duration = #{},

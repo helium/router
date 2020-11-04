@@ -1,4 +1,4 @@
--module(router_metrics_report_postgres).
+-module(router_metrics_reporter_postgres).
 
 -behaviour(gen_event).
 

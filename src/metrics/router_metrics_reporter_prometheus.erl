@@ -1,4 +1,4 @@
--module(router_metrics_report_prometheus).
+-module(router_metrics_reporter_prometheus).
 
 -behaviour(gen_event).
 
@@ -26,9 +26,9 @@
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
-    Port = application:get_env(router, router_metrics_report_prometheus_port, 3000),
+    Port = application:get_env(router, router_metrics_reporter_prometheus_port, 3000),
     ElliOpts = [
-        {callback, router_metrics_report_prometheus_handler},
+        {callback, router_metrics_reporter_prometheus_handler},
         {callback_args, #{}},
         {port, Port}
     ],

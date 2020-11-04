@@ -44,30 +44,33 @@ init(Args) ->
     {ok, #state{}}.
 
 handle_event({data, Key, Data, _MetaData}, State) when
-    Key == ?SC_ACTIVE; Key == ?SC_ACTIVE_COUNT; Key == ?DC
+    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
     {ok, State};
 handle_event({data, Key, Data, MetaData}, State) when
-    Key == ?ROUTING_OFFER;
-    Key == ?ROUTING_PACKET;
-    Key == ?PACKET_TRIP;
-    Key == ?DECODED_TIME;
-    Key == ?FUN_DURATION;
-    Key == ?CONSOLE_API_TIME
+    Key == ?METRICS_ROUTING_OFFER;
+    Key == ?METRICS_ROUTING_PACKET;
+    Key == ?METRICS_PACKET_TRIP;
+    Key == ?METRICS_DECODED_TIME;
+    Key == ?METRICS_FUN_DURATION;
+    Key == ?METRICS_CONSOLE_API_TIME
 ->
     _ = prometheus_histogram:observe(erlang:atom_to_list(Key), MetaData, Data),
     {ok, State};
-handle_event({data, Key, _Data, MetaData}, State) when Key == ?DOWNLINK ->
+handle_event({data, Key, _Data, MetaData}, State) when Key == ?METRICS_DOWNLINK ->
     _ = prometheus_counter:inc(erlang:atom_to_list(Key), MetaData),
     {ok, State};
-handle_event({data, Key, Data, _MetaData}, State) when Key == ?WS ->
+handle_event({data, Key, Data, _MetaData}, State) when Key == ?METRICS_WS ->
     _ = prometheus_boolean:set(erlang:atom_to_list(Key), Data),
     {ok, State};
 handle_event({data, Key, Data, _MetaData}, State) when
-    Key == ?SC_ACTIVE; Key == ?SC_ACTIVE_COUNT; Key == ?DC
+    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
+    {ok, State};
+handle_event({data, _Key, _Data, _MetaData}, State) ->
+    lager:debug("ignore data ~p ~p ~p", [_Key, _Data, _MetaData]),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:debug("rcvd unknown evt msg: ~p", [_Msg]),
@@ -92,19 +95,21 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 
 -spec declare_metric(atom(), list(), string()) -> any().
-declare_metric(Key, Meta, Desc) when Key == ?SC_ACTIVE; Key == ?SC_ACTIVE_COUNT; Key == ?DC ->
+declare_metric(Key, Meta, Desc) when
+    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
+->
     _ = prometheus_gauge:declare([
         {name, erlang:atom_to_list(Key)},
         {help, Desc},
         {labels, Meta}
     ]);
 declare_metric(Key, Meta, Desc) when
-    Key == ?ROUTING_OFFER;
-    Key == ?ROUTING_PACKET;
-    Key == ?PACKET_TRIP;
-    Key == ?DECODED_TIME;
-    Key == ?FUN_DURATION;
-    Key == ?CONSOLE_API_TIME
+    Key == ?METRICS_ROUTING_OFFER;
+    Key == ?METRICS_ROUTING_PACKET;
+    Key == ?METRICS_PACKET_TRIP;
+    Key == ?METRICS_DECODED_TIME;
+    Key == ?METRICS_FUN_DURATION;
+    Key == ?METRICS_CONSOLE_API_TIME
 ->
     _ = prometheus_histogram:declare([
         {name, erlang:atom_to_list(Key)},
@@ -112,13 +117,13 @@ declare_metric(Key, Meta, Desc) when
         {labels, Meta},
         {buckets, [50, 100, 250, 500, 1000, 2000]}
     ]);
-declare_metric(Key, Meta, Desc) when Key == ?DOWNLINK ->
+declare_metric(Key, Meta, Desc) when Key == ?METRICS_DOWNLINK ->
     _ = prometheus_counter:declare([
         {name, erlang:atom_to_list(Key)},
         {help, Desc},
         {labels, Meta}
     ]);
-declare_metric(Key, Meta, Desc) when Key == ?WS ->
+declare_metric(Key, Meta, Desc) when Key == ?METRICS_WS ->
     _ = prometheus_boolean:declare([
         {name, erlang:atom_to_list(Key)},
         {help, Desc},
@@ -148,12 +153,12 @@ metrics_test() ->
 
     ?assertEqual(
         <<"0">>,
-        extract_data(erlang:atom_to_list(?SC_ACTIVE_COUNT), prometheus_text_format:format())
+        extract_data(erlang:atom_to_list(?METRICS_SC_ACTIVE_COUNT), prometheus_text_format:format())
     ),
 
-    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?SC_ACTIVE, 1, []}),
-    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?SC_ACTIVE_COUNT, 2, []}),
-    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?DC, 3, []}),
+    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?METRICS_SC_ACTIVE, 1, []}),
+    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?METRICS_SC_ACTIVE_COUNT, 2, []}),
+    ok = gen_event:notify(?METRICS_EVT_MGR, {data, ?METRICS_DC, 3, []}),
     ok = router_metrics:routing_offer_observe(join, accepted, accepted, 4),
     ok = router_metrics:routing_packet_observe(join, rejected, rejected, 5),
     ok = router_metrics:packet_trip_observe_start(<<"packethash">>, <<"pubkeybin">>, 0),
@@ -167,15 +172,15 @@ metrics_test() ->
     io:format(Format),
     ?assertEqual(
         <<"1">>,
-        extract_data(erlang:atom_to_list(?SC_ACTIVE), Format)
+        extract_data(erlang:atom_to_list(?METRICS_SC_ACTIVE), Format)
     ),
     ?assertEqual(
         <<"2">>,
-        extract_data(erlang:atom_to_list(?SC_ACTIVE_COUNT), Format)
+        extract_data(erlang:atom_to_list(?METRICS_SC_ACTIVE_COUNT), Format)
     ),
     ?assertEqual(
         <<"3">>,
-        extract_data(erlang:atom_to_list(?DC), Format)
+        extract_data(erlang:atom_to_list(?METRICS_DC), Format)
     ),
     ?assertEqual(
         <<"4">>,

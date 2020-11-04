@@ -47,7 +47,6 @@ init_per_testcase(TestCase, Config) ->
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
     ]),
-    ok = application:set_env(router, router_metrics_reporter_prometheus_port, 4000),
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     Tab = ets:new(?ETS, [public, set]),

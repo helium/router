@@ -4,28 +4,30 @@
 -define(METRICS_TICK, '__router_metrics_tick').
 -define(METRICS_EVT_MGR, router_metrics_evt_mgr).
 
--define(DC, router_dc_balance).
--define(SC_ACTIVE_COUNT, router_state_channel_active_count).
--define(SC_ACTIVE, router_state_channel_active).
--define(ROUTING_OFFER, router_device_routing_offer_duration).
--define(ROUTING_PACKET, router_device_routing_packet_duration).
--define(PACKET_TRIP, router_device_packet_trip_duration).
--define(DECODED_TIME, router_decoder_decoded_duration).
--define(FUN_DURATION, router_function_duration).
--define(CONSOLE_API_TIME, router_console_api_duration).
--define(DOWNLINK, router_device_downlink_packet).
--define(WS, router_ws_state).
+-define(METRICS_DC, router_dc_balance).
+-define(METRICS_SC_ACTIVE_COUNT, router_state_channel_active_count).
+-define(METRICS_SC_ACTIVE, router_state_channel_active).
+-define(METRICS_ROUTING_OFFER, router_device_routing_offer_duration).
+-define(METRICS_ROUTING_PACKET, router_device_routing_packet_duration).
+-define(METRICS_PACKET_TRIP, router_device_packet_trip_duration).
+-define(METRICS_DECODED_TIME, router_decoder_decoded_duration).
+-define(METRICS_FUN_DURATION, router_function_duration).
+-define(METRICS_CONSOLE_API_TIME, router_console_api_duration).
+-define(METRICS_DOWNLINK, router_device_downlink_packet).
+-define(METRICS_WS, router_ws_state).
+-define(METRICS_DEVICE_DATA, router_device_data).
 
 -define(METRICS, [
-    {?SC_ACTIVE, [], "Active State Channel balance"},
-    {?SC_ACTIVE_COUNT, [], "Active State Channel count"},
-    {?DC, [], "Active State Channel balance"},
-    {?ROUTING_OFFER, [type, status, reason], "Routing Offer duration"},
-    {?ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration"},
-    {?PACKET_TRIP, [type, downlink], "Packet round trip duration"},
-    {?DECODED_TIME, [type, status], "Decoder decoded duration"},
-    {?FUN_DURATION, [function], "Function duration"},
-    {?CONSOLE_API_TIME, [type, status], "Console API duration"},
-    {?DOWNLINK, [type, status], "Downlink count"},
-    {?WS, [], "Websocket State"}
+    {?METRICS_SC_ACTIVE, [], "Active State Channel balance"},
+    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channel count"},
+    {?METRICS_DC, [], "Active State Channel balance"},
+    {?METRICS_ROUTING_OFFER, [type, status, reason], "Routing Offer duration"},
+    {?METRICS_ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration"},
+    {?METRICS_PACKET_TRIP, [type, downlink], "Packet round trip duration"},
+    {?METRICS_DECODED_TIME, [type, status], "Decoder decoded duration"},
+    {?METRICS_FUN_DURATION, [function], "Function duration"},
+    {?METRICS_CONSOLE_API_TIME, [type, status], "Console API duration"},
+    {?METRICS_DOWNLINK, [type, status], "Downlink count"},
+    {?METRICS_WS, [], "Websocket State"},
+    {?METRICS_DEVICE_DATA, [hotspot, device], "Data counter"}
 ]).

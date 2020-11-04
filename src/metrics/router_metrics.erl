@@ -19,6 +19,7 @@
     console_api_observe/3,
     downlink_inc/2,
     ws_state/1,
+    data_inc/3,
     get_reporter_props/1
 ]).
 
@@ -53,14 +54,14 @@ routing_offer_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         (Status == accepted orelse Status == rejected)
 ->
-    ok = notify(?ROUTING_OFFER, Time, [Type, Status, Reason]).
+    ok = notify(?METRICS_ROUTING_OFFER, Time, [Type, Status, Reason]).
 
 -spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
 routing_packet_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         Status == rejected
 ->
-    ok = notify(?ROUTING_PACKET, Time, [Type, Status, Reason, false]).
+    ok = notify(?METRICS_ROUTING_PACKET, Time, [Type, Status, Reason, false]).
 
 -spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
 routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
@@ -79,23 +80,27 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
-    ok = notify(?DECODED_TIME, Time, [Type, Status]).
+    ok = notify(?METRICS_DECODED_TIME, Time, [Type, Status]).
 
 -spec function_observe(atom(), non_neg_integer()) -> ok.
 function_observe(Fun, Time) ->
-    ok = notify(?FUN_DURATION, Time, [Fun]).
+    ok = notify(?METRICS_FUN_DURATION, Time, [Fun]).
 
 -spec console_api_observe(atom(), atom(), non_neg_integer()) -> ok.
 console_api_observe(Type, Status, Time) ->
-    ok = notify(?CONSOLE_API_TIME, Time, [Type, Status]).
+    ok = notify(?METRICS_CONSOLE_API_TIME, Time, [Type, Status]).
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
-    ok = notify(?DOWNLINK, undefined, [Type, Status]).
+    ok = notify(?METRICS_DOWNLINK, undefined, [Type, Status]).
 
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
-    ok = notify(?WS, State).
+    ok = notify(?METRICS_WS, State).
+
+-spec data_inc(libp2p_crypto:pubkey_bin(), binary(), non_neg_integer()) -> ok.
+data_inc(PubKeyBin, DeviceID, Size) ->
+    ok = notify(?METRICS_DEVICE_DATA, Size, [PubKeyBin, DeviceID]).
 
 -spec get_reporter_props(atom()) -> list().
 get_reporter_props(Reporter) ->
@@ -146,7 +151,7 @@ handle_cast(
             undefined ->
                 State0;
             Start0 ->
-                ok = notify(?PACKET_TRIP, End - Start0, [Type, Downlink]),
+                ok = notify(?METRICS_PACKET_TRIP, End - Start0, [Type, Downlink]),
                 State0#state{packet_duration = maps:remove({PacketHash, PubKeyBin}, PD)}
         end,
     State2 =
@@ -154,7 +159,12 @@ handle_cast(
             undefined ->
                 State1;
             Start1 ->
-                ok = notify(?ROUTING_PACKET, End - Start1, [Type, accepted, accepted, Downlink]),
+                ok = notify(?METRICS_ROUTING_PACKET, End - Start1, [
+                    Type,
+                    accepted,
+                    accepted,
+                    Downlink
+                ]),
                 State1#state{routing_packet_duration = maps:remove({PacketHash, PubKeyBin}, RPD)}
         end,
     {noreply, State2};
@@ -205,20 +215,20 @@ record_dc_balance() ->
             ok;
         {ok, Entry} ->
             Balance = blockchain_ledger_data_credits_entry_v1:balance(Entry),
-            ok = notify(?DC, Balance)
+            ok = notify(?METRICS_DC, Balance)
     end.
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
     ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
-    ok = notify(?SC_ACTIVE_COUNT, ActiveSCCount),
+    ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveSCCount),
     case blockchain_state_channels_server:active_sc() of
         undefined ->
-            ok = notify(?SC_ACTIVE, 0);
+            ok = notify(?METRICS_SC_ACTIVE, 0);
         ActiveSC ->
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            ok = notify(?SC_ACTIVE, DCLeft)
+            ok = notify(?METRICS_SC_ACTIVE, DCLeft)
     end.
 
 -spec notify(atom(), any()) -> ok.

@@ -893,6 +893,7 @@ handle_packet_offer_test() ->
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
     ets:delete(router_devices_ets),
+    ets:delete(router_device_cache_ets),
     application:stop(lager),
     ok.
 

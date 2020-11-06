@@ -29,7 +29,7 @@
         prometheus,
         elli,
         bbmustache,
-        pgapp
+        epgsql
     ]},
     {included_applications, [blockchain]},
     {env, []},

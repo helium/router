@@ -39,7 +39,7 @@
             "long" => -120.9000053210367
         }
     ],
-    dc : {
+    "dc" : {
         "balance": 3000,
         "nonce": 2
     }
@@ -88,7 +88,7 @@
             "debug": {req: {}, res: {}}
         }
     ],
-    dc : {
+    "dc" : {
         "balance": 3000,
         "nonce": 2,
         // ONLY ON CATEGORY UP/ACTIVATION

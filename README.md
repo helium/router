@@ -40,8 +40,8 @@
         }
     ],
     dc : {
-        balance: 3000,
-        nonce: 2
+        "balance": 3000,
+        "nonce": 2
     }
 }
 ```
@@ -89,8 +89,10 @@
         }
     ],
     dc : {
-        balance: 3000,
-        nonce: 2
+        "balance": 3000,
+        "nonce": 2,
+        // ONLY ON CATEGORY UP/ACTIVATION
+        "used":  1
     }
 }
 ```

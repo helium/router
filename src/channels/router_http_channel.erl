@@ -97,7 +97,14 @@ make_http_req(Method, URL, Headers, Payload) ->
     try hackney:request(Method, URL, Headers, Payload, [with_body]) of
         Res -> Res
     catch
-        What:Why:_Stacktrace -> {error, {What, Why}}
+        _What:_Why:_Stacktrace ->
+            lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
+                {Method, URL, Headers, Payload},
+                _What,
+                _Why,
+                _Stacktrace
+            ]),
+            {error, http_req_failed}
     end.
 
 -spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.

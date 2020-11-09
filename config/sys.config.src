@@ -20,7 +20,7 @@
             {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
         ]}
     ]},
-        {prometheus, [
+    {prometheus, [
         {collectors, [
             prometheus_boolean,
             prometheus_counter,
@@ -32,7 +32,7 @@
         ]},
         {vm_system_info_collector_metrics, [process_count]}
     ]},
-     {lager, [
+    {lager, [
         {suppress_supervisor_start_stop, true},
         {log_root, "/var/data/log/router"},
         {crash_log, "crash.log"},

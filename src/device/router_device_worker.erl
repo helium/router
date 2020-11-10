@@ -63,6 +63,13 @@
     region :: atom()
 }).
 
+-record(adr_cache, {
+    hotspot :: libp2p_crypto:pubkey_bin(),
+    rssi :: float(),
+    snr :: float(),
+    packet_size :: integer()
+}).
+
 -record(state, {
     chain :: blockchain:blockchain(),
     db :: rocksdb:db_handle(),
@@ -74,6 +81,7 @@
     channels_worker :: pid(),
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
+    adr_cache = queue:new() :: queue:queue(#adr_cache{}),
     is_active = true :: boolean()
 }).
 
@@ -324,7 +332,8 @@ handle_cast(
         device = Device0,
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
-        channels_worker = ChannelsWorker
+        channels_worker = ChannelsWorker,
+        adr_cache = ADRCache0
     } = State
 ) ->
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
@@ -379,6 +388,7 @@ handle_cast(
                 pid = Pid,
                 region = Region
             },
+            ADRCache1 = add_to_adr_cache(ADRCache0, PubKeyBin, Packet0),
             case maps:get(FCnt, Cache0, undefined) of
                 undefined when
                     FCnt =< DownlinkHandledAt andalso
@@ -388,7 +398,7 @@ handle_cast(
                 ->
                     %% late packet
                     lager:debug("got a late packet @ ~p", [FCnt]),
-                    {noreply, State};
+                    {noreply, State#state{adr_cache = ADRCache1}};
                 undefined ->
                     _ = erlang:send_after(
                         max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)),
@@ -399,7 +409,8 @@ handle_cast(
                     {noreply, State#state{
                         device = Device1,
                         frame_cache = Cache1,
-                        downlink_handled_at = FCnt
+                        downlink_handled_at = FCnt,
+                        adr_cache = ADRCache1
                     }};
                 #frame_cache{rssi = RSSI1, pid = Pid2, count = Count} = FrameCache0 ->
                     case RSSI0 > RSSI1 of
@@ -420,7 +431,11 @@ handle_cast(
                                 FrameCache0#frame_cache{count = Count + 1},
                                 Cache0
                             ),
-                            {noreply, State#state{device = Device1, frame_cache = Cache1}};
+                            {noreply, State#state{
+                                device = Device1,
+                                frame_cache = Cache1,
+                                adr_cache = ADRCache1
+                            }};
                         true ->
                             catch blockchain_state_channel_handler:send_response(
                                 Pid2,
@@ -431,7 +446,11 @@ handle_cast(
                                 FrameCache#frame_cache{count = Count + 1},
                                 Cache0
                             ),
-                            {noreply, State#state{device = Device1, frame_cache = Cache1}}
+                            {noreply, State#state{
+                                device = Device1,
+                                frame_cache = Cache1,
+                                adr_cache = ADRCache1
+                            }}
                     end
             end
     end;
@@ -582,6 +601,31 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec add_to_adr_cache(
+    queue:queue(),
+    libp2p_crypto:pubkey_bin(),
+    blockchain_helium_packet_v1:packet()
+) -> queue:queue().
+add_to_adr_cache(ADRCache, PubKeyBin, Packet) ->
+    Item = #adr_cache{
+        hotspot = PubKeyBin,
+        rssi = blockchain_helium_packet_v1:signal_strength(Packet),
+        snr = blockchain_helium_packet_v1:snr(Packet),
+        packet_size = erlang:byte_size(blockchain_helium_packet_v1:payload(Packet))
+    },
+    limit_adr_cache(queue:in_r(Item, ADRCache)).
+
+-spec limit_adr_cache(queue:queue()) -> queue:queue().
+limit_adr_cache(ADRCache0) ->
+    case queue:len(ADRCache0) > 25 of
+        false ->
+            ADRCache0;
+        true ->
+            {{value, V}, ADRCache1} = queue:out_r(ADRCache0),
+            lager:debug("dropped ~p", [V]),
+            ADRCache1
+    end.
 
 -spec validate_join(
     blockchain_helium_packet_v1:packet(),

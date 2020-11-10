@@ -177,7 +177,7 @@ report_status(Device, Map) ->
             Category = maps:get(category, Map),
             Channels = maps:get(channels, Map),
             FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
-            DCMap =
+            DCMap0 =
                 case maps:get(dc, Map, undefined) of
                     undefined ->
                         Metadata = router_device:metadata(Device),
@@ -186,6 +186,17 @@ report_status(Device, Map) ->
                         #{balance => B, nonce => N};
                     BN ->
                         BN
+                end,
+            PayloadSize = maps:get(payload_size, Map),
+            Hotspots = maps:get(hotspots, Map),
+            DCMap1 =
+                case lists:member(Category, [<<"up">>, activation]) of
+                    false ->
+                        DCMap0;
+                    true ->
+                        Ledger = blockchain:ledger(blockchain_worker:blockchain()),
+                        Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
+                        maps:put(used, Used * erlang:length(Hotspots), DCMap0)
                 end,
             Body0 = #{
                 category => Category,
@@ -197,9 +208,9 @@ report_status(Device, Map) ->
                 payload_size => maps:get(payload_size, Map),
                 port => maps:get(port, Map, 0),
                 devaddr => maps:get(devaddr, Map),
-                hotspots => maps:get(hotspots, Map),
+                hotspots => Hotspots,
                 channels => [maps:remove(debug, C) || C <- Channels],
-                dc => DCMap
+                dc => DCMap1
             },
             DebugLeft = debug_lookup(DeviceID),
             Body1 =

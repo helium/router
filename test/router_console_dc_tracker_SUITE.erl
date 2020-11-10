@@ -80,7 +80,7 @@ dc_test(Config) ->
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
         <<"devaddr">> => '_',
-        <<"dc">> => #{<<"balance">> => 99, <<"nonce">> => 1},
+        <<"dc">> => #{<<"balance">> => 99, <<"nonce">> => 1, <<"used">> => 1},
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
@@ -190,7 +190,7 @@ dc_test(Config) ->
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
         <<"devaddr">> => '_',
-        <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1},
+        <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 2},
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),

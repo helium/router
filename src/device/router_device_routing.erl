@@ -313,12 +313,16 @@ validate_packet_offer(Offer, _Pid) ->
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
-                    % TODO: Make this single device here
                     case check_device_is_active(Device) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
-                            % TODO: Here I should populate an offer ETS
+                            case maybe_start_worker(router_device:id(Device)) of
+                                {error, _} ->
+                                    ok;
+                                {ok, WorkerPid} ->
+                                    router_device_worker:handle_offer(WorkerPid, Offer)
+                            end,
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
                             case check_device_balance(PayloadSize, Device) of
                                 {error, _Reason} = Error -> Error;

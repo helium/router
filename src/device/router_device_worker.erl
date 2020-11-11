@@ -19,6 +19,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
+    handle_offer/2,
     handle_join/8,
     handle_frame/6,
     queue_message/2,
@@ -44,6 +45,8 @@
 -define(MAX_DOWNLINK_SIZE, 242).
 -define(NET_ID, <<"He2">>).
 
+-define(MAX_ADR_CACHE_SIZE, 50).
+
 -record(state, {
     chain :: blockchain:blockchain(),
     db :: rocksdb:db_handle(),
@@ -64,6 +67,10 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
+
+-spec handle_offer(pid(), blockchain_state_channel_offer_v1:offer()) -> ok.
+handle_offer(WorkerPid, Offer) ->
+    gen_server:cast(WorkerPid, {handle_offer, Offer}).
 
 -spec handle_join(
     pid(),
@@ -131,6 +138,15 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({handle_offer, Offer}, #state{adr_cache = ADRCache0} = State) ->
+    Item = #adr_cache{
+        hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+        rssi = undefined,
+        snr = undefined,
+        packet_size = blockchain_state_channel_offer_v1:payload_size(Offer)
+    },
+    ADRCache1 = limit_adr_cache(queue:in_r(Item, ADRCache0)),
+    {noreply, State#state{adr_cache = ADRCache1}};
 handle_cast(
     device_update,
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
@@ -592,7 +608,7 @@ add_to_adr_cache(ADRCache, PubKeyBin, Packet) ->
 
 -spec limit_adr_cache(queue:queue()) -> queue:queue().
 limit_adr_cache(ADRCache0) ->
-    case queue:len(ADRCache0) > 25 of
+    case queue:len(ADRCache0) > ?MAX_ADR_CACHE_SIZE of
         false ->
             ADRCache0;
         true ->

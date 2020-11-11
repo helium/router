@@ -33,7 +33,7 @@
 
 -record(adr_cache, {
     hotspot :: libp2p_crypto:pubkey_bin(),
-    rssi :: float(),
-    snr :: float(),
+    rssi :: float() | undefined,
+    snr :: float() | undefined,
     packet_size :: integer()
 }).

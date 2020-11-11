@@ -416,9 +416,23 @@ adr_cache_test(Config) ->
         ]
     }),
 
+    PayloadSize = 32,
+    Packet = blockchain_helium_packet_v1:new(
+        lorawan,
+        crypto:strong_rand_bytes(PayloadSize),
+        erlang:system_time(millisecond),
+        -20.0,
+        915.0,
+        "DR",
+        9.2,
+        {devaddr, 16#deadbeef}
+    ),
+    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin1, 'US915'),
     {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    ok = router_device_worker:handle_offer(DeviceWorkerPid, Offer),
+
     #state{adr_cache = ADRCache0} = sys:get_state(DeviceWorkerPid),
-    ?assertEqual(2, queue:len(ADRCache0)),
+    ?assertEqual(3, queue:len(ADRCache0)),
 
     {{value, Item1}, ADRCache1} = queue:out_r(ADRCache0),
     ?assertEqual(
@@ -430,7 +444,17 @@ adr_cache_test(Config) ->
         #adr_cache{hotspot = PubKeyBin2, rssi = Packet2RSSI, snr = Packet2SNR, packet_size = 13},
         Item2
     ),
-    ?assertEqual({empty, ADRCache2}, queue:out_r(ADRCache2)),
+    {{value, Item3}, ADRCache3} = queue:out_r(ADRCache2),
+    ?assertEqual(
+        #adr_cache{
+            hotspot = PubKeyBin1,
+            rssi = undefined,
+            snr = undefined,
+            packet_size = PayloadSize
+        },
+        Item3
+    ),
+    ?assertEqual({empty, ADRCache3}, queue:out_r(ADRCache3)),
     ok.
 
 %% ------------------------------------------------------------------

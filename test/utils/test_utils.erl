@@ -28,7 +28,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
@@ -430,7 +430,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
         payload = Payload1,
         frequency = 923.3,
         datarate = <<"SF8BW125">>,
-        signal_strength = maps:get(rssi, Options, 0.0)
+        signal_strength = maps:get(rssi, Options, 0.0),
+        snr = maps:get(snr, Options, 0.0)
     },
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,

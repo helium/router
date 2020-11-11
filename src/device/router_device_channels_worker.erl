@@ -9,7 +9,7 @@
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports

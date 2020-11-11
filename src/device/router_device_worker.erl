@@ -10,7 +10,7 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("public_key/include/public_key.hrl").
 
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("lorawan_db.hrl").
 
@@ -43,32 +43,6 @@
 -define(BITS_23, 8388607).
 -define(MAX_DOWNLINK_SIZE, 242).
 -define(NET_ID, <<"He2">>).
-
--record(join_cache, {
-    rssi :: float(),
-    reply :: binary(),
-    packet_selected :: {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()},
-    packets = [] :: [{blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()}],
-    device :: router_device:device(),
-    pid :: pid()
-}).
-
--record(frame_cache, {
-    rssi :: float(),
-    count = 1 :: pos_integer(),
-    packet :: blockchain_helium_packet_v1:packet(),
-    pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    frame :: #frame{},
-    pid :: pid(),
-    region :: atom()
-}).
-
--record(adr_cache, {
-    hotspot :: libp2p_crypto:pubkey_bin(),
-    rssi :: float(),
-    snr :: float(),
-    packet_size :: integer()
-}).
 
 -record(state, {
     chain :: blockchain:blockchain(),

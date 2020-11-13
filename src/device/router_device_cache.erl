@@ -91,7 +91,7 @@ init_from_db_test() ->
     ok.
 
 get_save_delete_test() ->
-    Dir = test_utils:tmp_dir("init_from_db_test"),
+    Dir = test_utils:tmp_dir("get_save_delete_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     ok = init(),
     ID = uuid_v4(),
@@ -108,7 +108,7 @@ get_save_delete_test() ->
     ok.
 
 get_by_devaddr_test() ->
-    Dir = test_utils:tmp_dir("init_from_db_test"),
+    Dir = test_utils:tmp_dir("get_by_devaddr_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     ok = init(),
     Max = 100000,

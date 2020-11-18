@@ -435,17 +435,17 @@ adr_cache_test(Config) ->
     ?assertEqual(3, queue:len(ADRCache0)),
 
     {{value, Item1}, ADRCache1} = queue:out_r(ADRCache0),
-    ?assertEqual(
+    ?assertMatch(
         #adr_cache{hotspot = PubKeyBin1, rssi = Packet1RSSI, snr = Packet1SNR, packet_size = 13},
         Item1
     ),
     {{value, Item2}, ADRCache2} = queue:out_r(ADRCache1),
-    ?assertEqual(
+    ?assertMatch(
         #adr_cache{hotspot = PubKeyBin2, rssi = Packet2RSSI, snr = Packet2SNR, packet_size = 13},
         Item2
     ),
     {{value, Item3}, ADRCache3} = queue:out_r(ADRCache2),
-    ?assertEqual(
+    ?assertMatch(
         #adr_cache{
             hotspot = PubKeyBin1,
             rssi = undefined,

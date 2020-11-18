@@ -143,7 +143,8 @@ handle_cast({handle_offer, Offer}, #state{adr_cache = ADRCache0} = State) ->
         hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
         rssi = undefined,
         snr = undefined,
-        packet_size = blockchain_state_channel_offer_v1:payload_size(Offer)
+        packet_size = blockchain_state_channel_offer_v1:payload_size(Offer),
+        packet_hash = blockchain_state_channel_offer_v1:packet_hash(Offer)
     },
     ADRCache1 = limit_adr_cache(queue:in_r(Item, ADRCache0)),
     {noreply, State#state{adr_cache = ADRCache1}};
@@ -602,7 +603,8 @@ add_to_adr_cache(ADRCache, PubKeyBin, Packet) ->
         hotspot = PubKeyBin,
         rssi = blockchain_helium_packet_v1:signal_strength(Packet),
         snr = blockchain_helium_packet_v1:snr(Packet),
-        packet_size = erlang:byte_size(blockchain_helium_packet_v1:payload(Packet))
+        packet_size = erlang:byte_size(blockchain_helium_packet_v1:payload(Packet)),
+        packet_hash = blockchain_helium_packet_v1:packet_hash(Packet)
     },
     limit_adr_cache(queue:in_r(Item, ADRCache)).
 

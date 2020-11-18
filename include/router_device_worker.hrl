@@ -35,5 +35,6 @@
     hotspot :: libp2p_crypto:pubkey_bin(),
     rssi :: float() | undefined,
     snr :: float() | undefined,
-    packet_size :: integer()
+    packet_size :: integer(),
+    packet_hash :: binary()
 }).

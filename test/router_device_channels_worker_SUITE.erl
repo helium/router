@@ -609,7 +609,11 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
     Args = #{
         endpoint => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
         uplink_topic => kvc:path([<<"credentials">>, <<"uplink">>, <<"topic">>], JSONChannel),
-        downlink_topic => kvc:path([<<"credentials">>, <<"downlink">>, <<"topic">>], JSONChannel)
+        downlink_topic => kvc:path(
+            [<<"credentials">>, <<"downlink">>, <<"topic">>],
+            JSONChannel,
+            undefined
+        )
     },
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),

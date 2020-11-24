@@ -35,7 +35,7 @@
     connection_backoff :: backoff:backoff(),
     endpoint :: binary(),
     uplink_topic :: binary(),
-    downlink_topic :: binary(),
+    downlink_topic :: binary() | undefined,
     ping :: reference() | undefined
 }).
 
@@ -93,8 +93,8 @@ handle_call(
                 true ->
                     {ok, ok, State};
                 false ->
-                    {ok, _, _} = emqtt:unsubscribe(Conn, StateDownlinkTopic),
-                    {ok, _, _} = emqtt:subscribe(Conn, DownlinkTopic, 0),
+                    _ = emqtt:unsubscribe(Conn, StateDownlinkTopic),
+                    _ = emqtt:subscribe(Conn, DownlinkTopic, 0),
                     {ok, ok, State#state{
                         uplink_topic = UplinkTopic,
                         downlink_topic = DownlinkTopic
@@ -105,6 +105,42 @@ handle_call(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown call msg: ~p", [ChannelID, _Msg]),
     {ok, ok, State}.
 
+handle_info(
+    {?MODULE, connect, ChannelID},
+    #state{
+        channel = Channel,
+        channel_id = ChannelID,
+        device = Device,
+        connection = OldConn,
+        connection_backoff = Backoff0,
+        endpoint = Endpoint,
+        downlink_topic = undefined,
+        ping = TimerRef
+    } = State
+) ->
+    ok = cleanup_connection(OldConn),
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    DeviceID = router_device:id(Device),
+    ChannelName = router_channel:name(Channel),
+    case connect(Endpoint, DeviceID, ChannelName) of
+        {ok, Conn} ->
+            lager:info("[~s] conencted to : ~p (~p)", [
+                ChannelID,
+                Endpoint,
+                Conn
+            ]),
+            {_, Backoff1} = backoff:succeed(Backoff0),
+            {ok, State#state{
+                connection = Conn,
+                connection_backoff = Backoff1,
+                endpoint = Endpoint,
+                ping = ping(ChannelID)
+            }};
+        {error, _ConnReason} ->
+            lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff = Backoff1}}
+    end;
 handle_info(
     {?MODULE, connect, ChannelID},
     #state{
@@ -375,11 +411,14 @@ connect(URI, DeviceID, Name) ->
             {error, invalid_mqtt_uri}
     end.
 
--spec render_topic(binary(), router_device:device()) -> binary().
+-spec render_topic(binary() | undefined, router_device:device()) -> binary() | undefined.
+render_topic(undefined, _Device) ->
+    undefined;
 render_topic(Template, Device) ->
     Metadata = router_device:metadata(Device),
     Map = #{
         "device_id" => router_device:id(Device),
+        "device_name" => router_device:name(Device),
         "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
         "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
         "organization_id" => maps:get(organization_id, Metadata, <<>>)
@@ -396,6 +435,7 @@ render_topic_test() ->
     DevEUI = lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
     AppEUI = lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
     DeviceUpdates = [
+        {name, <<"device_name">>},
         {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>},
         {metadata, #{organization_id => <<"org_123">>}}
@@ -409,6 +449,10 @@ render_topic_test() ->
     ?assertEqual(
         <<AppEUI/binary, "/", DevEUI/binary>>,
         render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)
+    ),
+    ?assertEqual(
+        <<"org_123/device_name">>,
+        render_topic(<<"{{organization_id}}/{{device_name}}">>, Device)
     ),
     ok.
 

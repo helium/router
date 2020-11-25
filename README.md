@@ -16,6 +16,7 @@
     "fcnt": 2,
     "reported_at": 123,
     "payload": "base64 encoded payload",
+    "payload_size": 22,
      // ONLY if payload is decoded
     "decoded": {
         "status": "success | error",

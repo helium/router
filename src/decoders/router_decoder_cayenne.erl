@@ -19,8 +19,8 @@
 decode(_Decoder, Payload, _Port) ->
     decode_lpp(Payload, []).
 
-decode_lpp(<<>>, Acc) ->
-    {ok, lists:reverse(Acc)};
+decode_lpp(<<>>, [M | Tail]) ->
+    {ok, lists:reverse([maps:put(last, true, M) | Tail])};
 decode_lpp(<<Channel:8/unsigned-integer, _/binary>>, _) when Channel > 99 ->
     {error, lpp_reserved_channel};
 decode_lpp(
@@ -186,7 +186,8 @@ decode_test() ->
                 value => 25.5,
                 unit => celcius,
                 name => temperature,
-                type => ?TEMPERATURE
+                type => ?TEMPERATURE,
+                last => true
             }
         ]},
         decode_lpp(<<16#03, 16#67, 16#01, 16#10, 16#05, 16#67, 16#00, 16#FF>>, [])
@@ -199,7 +200,8 @@ decode_test() ->
                 value => #{x => 1.234, y => -1.234, z => 0.0},
                 name => accelerometer,
                 type => ?ACCELEROMETER,
-                unit => 'G'
+                unit => 'G',
+                last => true
             }
         ]},
         decode_lpp(<<16#06, 16#71, 16#04, 16#D2, 16#FB, 16#2E, 16#00, 16#00>>, [])

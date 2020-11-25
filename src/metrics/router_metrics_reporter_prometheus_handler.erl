@@ -1,4 +1,4 @@
--module(router_metrics_handler).
+-module(router_metrics_reporter_prometheus_handler).
 
 -behaviour(elli_handler).
 

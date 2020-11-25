@@ -822,7 +822,6 @@ handle_join_offer_test() ->
     ok.
 
 handle_packet_offer_test() ->
-    application:ensure_all_started(lager),
     Dir = test_utils:tmp_dir("handle_packet_offer_test"),
     {ok, Pid} = router_db:start_link([Dir]),
 
@@ -893,7 +892,7 @@ handle_packet_offer_test() ->
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
     ets:delete(router_devices_ets),
-    application:stop(lager),
+    ets:delete(router_device_cache_ets),
     ok.
 
 -endif.

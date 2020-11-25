@@ -100,7 +100,7 @@ init([]) ->
     ],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
-    MetricsOpts = #{port => application:get_env(router, metrics_port, 3000)},
+    MetricsOpts = #{},
     {ok,
         {?FLAGS, [
             ?WORKER(router_metrics, [MetricsOpts]),

@@ -48,9 +48,9 @@ init_per_testcase(TestCase, Config) ->
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
     ]),
+    ok = application:set_env(router, metrics, [{reporters, []}]),
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
-    ok = application:set_env(router, metrics_port, 4000),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->

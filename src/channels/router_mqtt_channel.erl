@@ -91,11 +91,14 @@ handle_call(
         true ->
             case DownlinkTopic == StateDownlinkTopic andalso UplinkTopic == StateUplinkTopic of
                 true ->
-                    {ok, ok, State};
+                    {ok, ok, State#state{
+                        channel = Channel
+                    }};
                 false ->
                     _ = emqtt:unsubscribe(Conn, StateDownlinkTopic),
                     _ = emqtt:subscribe(Conn, DownlinkTopic, 0),
                     {ok, ok, State#state{
+                        channel = Channel,
                         uplink_topic = UplinkTopic,
                         downlink_topic = DownlinkTopic
                     }}

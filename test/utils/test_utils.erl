@@ -28,7 +28,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
@@ -154,7 +154,9 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _Device, _, _, _, Pid, _, _, _IsActive} = sys:get_state(WorkerPid),
+    {state, _Chain, _DB, _CF, _Device, _, _, _, Pid, _, _, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
     Pid.
 
 force_refresh_channels(DeviceID) ->
@@ -430,7 +432,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
         payload = Payload1,
         frequency = 923.3,
         datarate = <<"SF8BW125">>,
-        signal_strength = maps:get(rssi, Options, 0.0)
+        signal_strength = maps:get(rssi, Options, 0.0),
+        snr = maps:get(snr, Options, 0.0)
     },
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,

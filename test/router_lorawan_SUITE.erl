@@ -4,7 +4,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("utils/console_test.hrl").
 

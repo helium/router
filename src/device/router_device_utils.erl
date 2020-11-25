@@ -12,7 +12,7 @@
 ]).
 
 -include("lorawan_vars.hrl").
--include("device_worker.hrl").
+-include("router_device_worker.hrl").
 
 -spec report_frame_status(
     integer(),

@@ -227,25 +227,27 @@ join_offer(Offer, _Pid) ->
                 {AppEUI1, AppEUI0}
             ]),
             {error, ?CONSOLE_UNKNOWN_DEVICE};
-        {ok, Devices} ->
+        {ok, [Device | _] = Devices} ->
             lager:debug("found devices ~p matching ~p/~p", [
                 [router_device:id(D) || D <- Devices],
                 DevEUI1,
                 AppEUI1
             ]),
-            maybe_buy_join_offer(Offer, _Pid, Devices)
+            maybe_buy_join_offer(Offer, _Pid, Device)
     end.
 
--spec maybe_buy_join_offer(blockchain_state_channel_offer_v1:offer(), pid(), [
+-spec maybe_buy_join_offer(
+    blockchain_state_channel_offer_v1:offer(),
+    pid(),
     router_device:device()
-]) -> ok | {error, any()}.
-maybe_buy_join_offer(Offer, _Pid, Devices) ->
+) -> ok | {error, any()}.
+maybe_buy_join_offer(Offer, _Pid, Device) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    case check_device_is_active(Devices) of
+    case check_device_is_active(Device) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            case check_device_balance(PayloadSize, Devices) of
+            case check_device_balance(PayloadSize, Device) of
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
@@ -310,13 +312,19 @@ validate_packet_offer(Offer, _Pid) ->
             case get_and_sort_devices(DevAddr1, PubKeyBin) of
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
-                Devices ->
-                    case check_device_is_active(Devices) of
+                [Device | _] ->
+                    case check_device_is_active(Device) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
+                            case maybe_start_worker(router_device:id(Device)) of
+                                {error, _} ->
+                                    ok;
+                                {ok, WorkerPid} ->
+                                    router_device_worker:handle_offer(WorkerPid, Offer)
+                            end,
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-                            case check_device_balance(PayloadSize, Devices) of
+                            case check_device_balance(PayloadSize, Device) of
                                 {error, _Reason} = Error -> Error;
                                 ok -> ok
                             end
@@ -398,9 +406,8 @@ maybe_multi_buy(Offer, Attempts) ->
             end
     end.
 
--spec check_device_is_active([router_device:device()]) -> ok | {error, any()}.
-check_device_is_active(Devices) ->
-    [Device | _] = Devices,
+-spec check_device_is_active(router_device:device()) -> ok | {error, any()}.
+check_device_is_active(Device) ->
     case router_device:is_active(Device) of
         false ->
             ok = router_device_utils:report_status_inactive(Device),
@@ -410,10 +417,9 @@ check_device_is_active(Devices) ->
     end.
 
 %% TODO: This function is not very optimized...
--spec check_device_balance(non_neg_integer(), [router_device:device()]) -> ok | {error, any()}.
-check_device_balance(PayloadSize, Devices) ->
+-spec check_device_balance(non_neg_integer(), router_device:device()) -> ok | {error, any()}.
+check_device_balance(PayloadSize, Device) ->
     Chain = get_chain(),
-    [Device | _] = Devices,
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
             ok = router_device_utils:report_status_no_dc(Device),

@@ -392,6 +392,7 @@ http_update_test(Config) ->
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,

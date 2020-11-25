@@ -493,6 +493,7 @@ send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) -
         fcnt => FCnt,
         reported_at => Time,
         payload => Data,
+        payload_size => erlang:byte_size(Data),
         port =>
             case Port of
                 undefined -> 0;

@@ -28,6 +28,5 @@
     {?METRICS_FUN_DURATION, [function], "Function duration"},
     {?METRICS_CONSOLE_API_TIME, [type, status], "Console API duration"},
     {?METRICS_DOWNLINK, [type, status], "Downlink count"},
-    {?METRICS_WS, [], "Websocket State"},
-    {?METRICS_DEVICE_DATA, [hotspot, device], "Data counter"}
+    {?METRICS_WS, [], "Websocket State"}
 ]).

@@ -19,7 +19,6 @@
     console_api_observe/3,
     downlink_inc/2,
     ws_state/1,
-    data_inc/3,
     get_reporter_props/1
 ]).
 
@@ -97,10 +96,6 @@ downlink_inc(Type, Status) ->
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
     ok = notify(?METRICS_WS, State).
-
--spec data_inc(libp2p_crypto:pubkey_bin(), binary(), non_neg_integer()) -> ok.
-data_inc(PubKeyBin, DeviceID, Size) ->
-    ok = notify(?METRICS_DEVICE_DATA, Size, [PubKeyBin, DeviceID]).
 
 -spec get_reporter_props(atom()) -> list().
 get_reporter_props(Reporter) ->

@@ -1,4 +1,4 @@
-# Router
+# Helium Router ![CI](https://github.com/helium/routerv3/workflows/CI/badge.svg?branch=master)
 
 ## Data
 

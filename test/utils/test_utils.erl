@@ -96,6 +96,8 @@ init_per_testcase(TestCase, Config) ->
         {port, 3000}
     ],
     {ok, Pid} = elli:start_link(ElliOpts),
+    application:ensure_all_started(gun),
+
     {ok, _} = application:ensure_all_started(router),
 
     {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),

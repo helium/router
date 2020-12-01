@@ -101,6 +101,24 @@ init([]) ->
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
     MetricsOpts = #{},
+
+    %% set config for chatterbox
+    %% if a new http2 handler is added, be sure to add its route/path and
+    %% associated module to the fun below
+    RouterHttp2HandlerRoutingFun = fun
+        (<<"/v1/router/message">>) -> {ok, http2_handler_router_message_v1};
+        (UnknownRequestType) -> {error, {handler_not_found, UnknownRequestType}}
+    end,
+
+    ok = application:set_env(
+        chatterbox,
+        stream_callback_opts,
+        [
+            {http2_handler_routing_fun, RouterHttp2HandlerRoutingFun},
+            {http2_client_ref_header_name, <<"x-gateway-id">>}
+        ]
+    ),
+
     {ok,
         {?FLAGS, [
             ?WORKER(router_metrics, [MetricsOpts]),
@@ -111,6 +129,7 @@ init([]) ->
             ?SUP(router_console_sup, []),
             ?WORKER(router_v8, [#{}]),
             ?WORKER(router_device_devaddr, [#{}]),
+            ?SUP(chatterbox_sup, []),
             ?SUP(router_decoder_custom_sup, [])
         ]}}.
 

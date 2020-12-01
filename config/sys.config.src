@@ -24,6 +24,24 @@
             {router_metrics_reporter_prometheus, [{port, 3000}]}
         ]}
     ]},
+    {chatterbox, [
+        {port, 8080},
+        {ssl, false},
+        {ssl_options, [
+            {certfile, "localhost.crt"},
+            {keyfile, "localhost.key"},
+            {versions, ['tlsv1.2']},
+            {alpn_preferred_protocols, [<<"h2">>]}
+        ]},
+        {concurrent_acceptors, 100},
+        {stream_callback_mod, lib_http2_stream},
+        {chatterbox_static_content_handler, [
+            {root_dir, "./"}
+        ]},
+        {chatterbox_static_stream, [
+            {root_dir, "./"}
+        ]}
+    ]},
     {prometheus, [
         {collectors, [
             prometheus_boolean,

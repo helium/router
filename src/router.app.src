@@ -29,7 +29,8 @@
         prometheus,
         elli,
         bbmustache,
-        iso8601
+        iso8601,
+        lib_http2_handler
     ]},
     {included_applications, [blockchain]},
     {env, []},

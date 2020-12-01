@@ -25,7 +25,7 @@
         ]}
     ]},
     {chatterbox, [
-        {port, 20443},
+        {port, 8080},
         {ssl, false},
         {ssl_options, [
             {certfile, "localhost.crt"},

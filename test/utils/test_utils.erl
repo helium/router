@@ -49,12 +49,6 @@ init_per_testcase(TestCase, Config) ->
         {secret, <<>>}
     ]),
     ok = application:set_env(router, metrics, [{reporters, []}]),
-
-    ok = application:set_env(chatterbox, stream_callback_mod, lib_http2_stream),
-    ok = application:set_env(chatterbox, ssl, false),
-    ok = application:set_env(chatterbox, port, 8080),
-    ok = application:set_env(chatterbox, concurrent_acceptors, 2),
-
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
     filelib:ensure_dir(BaseDir ++ "/log"),

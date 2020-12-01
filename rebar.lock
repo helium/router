@@ -105,7 +105,7 @@
  {<<"lager">>,{pkg,<<"lager">>,<<"3.7.0">>},0},
  {<<"lib_http2_handler">>,
   {git,"https://github.com/helium/lib-http2-handler.git",
-       {ref,"06a97342a8a00fbbda3a6d7763ecf072d5fcc98d"}},
+       {ref,"0304533c3792c914ff1b5f94fc677fc25ec1aa87"}},
   0},
  {<<"libp2p">>,
   {git,"https://github.com/helium/erlang-libp2p.git",

@@ -65,7 +65,6 @@ join_http2_test(Config) ->
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Packet = test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -40),
-    ct:pal("verified chatterbox port ~p", [application:get_env(chatterbox, port)]),
 
     {ok, ConnPid} = gun:open("localhost", 8080, #{
         transport => tcp,

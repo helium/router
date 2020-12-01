@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: master
+    tags: '*'
+  pull_request:
+    branches: master
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    container:
+      image: heliumsystems/builder-erlang:1
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - name: Build
+        env:
+          SANITIZE_ERLANG_NIFS: 1
+        run: ./rebar3 compile
+      
+      - name: Check formatting
+        run: ./rebar3 fmt --verbose --check rebar.config && rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && rebar3 fmt --verbose --check "config/sys.{config,config.src}"
+      
+      - name: Run xref
+        run: ./rebar3 xref
+
+      - name: Run Dialyzer
+        run: ./rebar3 dialyzer
+
+      - name: Run EUnit tests
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: LD_PRELOAD="$(cc --print-file libasan.so)" ./rebar3 eunit
+
+      - name: Run CT tests
+        env:
+          # We turn off leak detection to reduce noise from leaking
+          # processes that rebar exec()s before it actually runs the
+          # tests.
+          ASAN_OPTIONS: detect_leaks=0
+        run: LD_PRELOAD="$(cc --print-file libasan.so)" ./rebar3 ct

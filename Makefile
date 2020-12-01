@@ -12,19 +12,16 @@ compile:
 	$(REBAR) compile && $(REBAR) format
 
 clean:
-	$(REBAR) clean
+	git clean -dXfffffffffff
 
-test: compile
-	$(REBAR) as test do xref, eunit, ct && $(REBAR) dialyzer
-
-ci:
-	$(REBAR) dialyzer && ($(REBAR) as test do xref, eunit, ct || (mkdir -p artifacts; tar --exclude='./_build/test/lib' --exclude='./_build/test/plugins' -czf artifacts/$(CIBRANCH).tar.gz _build/test; false))
-
-typecheck:
-	$(REBAR) dialyzer
-
-cover:
-	$(REBAR) cover
+test:
+	$(REBAR) fmt --verbose --check rebar.config && \
+	$(REBAR) fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && \
+	$(REBAR) fmt --verbose --check "config/sys.{config,config.src}" && \
+	$(REBAR) xref && \
+	$(REBAR) dialyzer && \
+	$(REBAR) eunit && \
+	$(REBAR) ct
 
 rel:
 	$(REBAR) release

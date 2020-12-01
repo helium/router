@@ -35,6 +35,6 @@ RUN make
 
 ADD config/vm.args config/vm.args
 ADD config/sys.config.src config/sys.config.src
-RUN ./rebar3 release
+RUN make rel
 
-CMD ["_build/default/rel/router/bin/router", "foreground"]
+CMD ["make", "run"]

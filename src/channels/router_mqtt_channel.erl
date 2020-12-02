@@ -220,7 +220,7 @@ handle_info(
     #state{channel = Channel, connection = Conn} = State
 ) ->
     Controller = router_channel:controller(Channel),
-    router_device_channels_worker:handle_downlink(Controller, Payload, mqtt),
+    router_device_channels_worker:handle_downlink(Controller, Payload, Channel),
     {ok, State};
 handle_info(
     {'EXIT', Conn, {_Type, _Reason}},

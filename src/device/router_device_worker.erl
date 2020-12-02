@@ -99,9 +99,9 @@ handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey,
 handle_frame(WorkerPid, Packet, PacketTime, PubKeyBin, Region, Pid) ->
     gen_server:cast(WorkerPid, {frame, Packet, PacketTime, PubKeyBin, Region, Pid}).
 
--spec queue_message(pid(), {boolean(), integer(), binary()}) -> ok.
-queue_message(Pid, Msg) ->
-    gen_server:cast(Pid, {queue_message, Msg}).
+-spec queue_message(pid(), #downlink{}) -> ok.
+queue_message(Pid, #downlink{} = Downlink) ->
+    gen_server:cast(Pid, {queue_message, Downlink}).
 
 -spec device_update(Pid :: pid()) -> ok.
 device_update(Pid) ->
@@ -177,7 +177,7 @@ handle_cast(
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
 handle_cast(
-    {queue_message, {_Type, Port, Payload} = Msg},
+    {queue_message, #downlink{port = Port, payload = Payload} = Downlink},
     #state{
         db = DB,
         cf = CF,
@@ -192,7 +192,7 @@ handle_cast(
             {noreply, State};
         _ ->
             Q = router_device:queue(Device0),
-            Device1 = router_device:queue(lists:append(Q, [Msg]), Device0),
+            Device1 = router_device:queue(lists:append(Q, [Downlink]), Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("queued downlink message"),
             {noreply, State#state{device = Device1}}
@@ -840,7 +840,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                             1 ->
                                 case router_device:queue(Device0) of
                                     %% Check if confirmed down link
-                                    [{true, _, _} | T] ->
+                                    [#downlink{confirmed = true} | T] ->
                                         DeviceUpdates = [
                                             {fcnt, FCnt},
                                             {queue, T},
@@ -943,7 +943,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                             1 ->
                                 case router_device:queue(Device0) of
                                     %% Check if confirmed down link
-                                    [{true, _, _} | T] ->
+                                    [#downlink{confirmed = true} | T] ->
                                         DeviceUpdates = [
                                             {fcnt, FCnt},
                                             {queue, T},
@@ -1012,7 +1012,7 @@ handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain
     #frame{},
     pos_integer(),
     blockchain:blockchain(),
-    list()
+    [#downlink{}]
 ) ->
     noop
     | {ok, router_device:device()}
@@ -1101,7 +1101,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
             noop
     end;
 handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [
-    {ConfirmedDown, Port, ReplyPayload}
+    #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
     | T
 ]) ->
     ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
@@ -1166,6 +1166,11 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
         binary_to_list(TxDataRate),
         Rx2
     ),
+    MapChannel = maps:merge(router_channel:to_map(Channel), #{
+        status => success,
+        reported_at => erlang:system_time(seconds),
+        description => <<"downlink sent">>
+    }),
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -1179,7 +1184,8 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                 Packet1,
                 ReplyPayload,
                 Frame,
-                Blockchain
+                Blockchain,
+                [MapChannel]
             ),
             {send, Device1, Packet1};
         false ->
@@ -1199,7 +1205,8 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                 Packet1,
                 ReplyPayload,
                 Frame,
-                Blockchain
+                Blockchain,
+                [MapChannel]
             ),
             {send, Device1, Packet1}
     end.

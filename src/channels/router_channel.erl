@@ -11,7 +11,8 @@
     controller/1,
     decoder/1,
     payload_template/1,
-    hash/1
+    hash/1,
+    to_map/1
 ]).
 
 -export([
@@ -151,6 +152,13 @@ handle_data(Pid, Data, Ref) ->
 -spec encode_data(channel(), map()) -> binary().
 encode_data(Channel, Map) ->
     encode_data(?MODULE:decoder(Channel), Map, Channel).
+
+-spec to_map(channel()) -> map().
+to_map(Channel) ->
+    #{
+        id => ?MODULE:id(Channel),
+        name => ?MODULE:name(Channel)
+    }.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

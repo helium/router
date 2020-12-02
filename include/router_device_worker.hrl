@@ -38,3 +38,10 @@
     packet_size :: integer(),
     packet_hash :: binary()
 }).
+
+-record(downlink, {
+    confirmed :: boolean(),
+    port :: non_neg_integer(),
+    payload :: binary(),
+    channel :: router_channel:channel()
+}).

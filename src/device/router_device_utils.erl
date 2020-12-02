@@ -2,7 +2,9 @@
 
 -export([
     report_frame_status/10,
+    report_frame_status/11,
     report_status/11,
+    report_status/12,
     report_status_max_size/3,
     report_status_no_dc/1,
     report_status_inactive/1,
@@ -15,9 +17,9 @@
 -include("router_device_worker.hrl").
 
 -spec report_frame_status(
-    integer(),
+    0 | 1,
     boolean(),
-    any(),
+    non_neg_integer(),
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
@@ -27,16 +29,56 @@
     blockchain:blockchain()
 ) -> ok.
 report_frame_status(
-    0,
-    false,
-    0,
+    Ack,
+    Confirmed,
+    Port,
+    PubKeybin,
+    Region,
+    Device,
+    Packet,
+    ReplyPayload,
+    Frame,
+    Blockchain
+) ->
+    ?MODULE:report_frame_status(
+        Ack,
+        Confirmed,
+        Port,
+        PubKeybin,
+        Region,
+        Device,
+        Packet,
+        ReplyPayload,
+        Frame,
+        Blockchain,
+        []
+    ).
+
+-spec report_frame_status(
+    0 | 1,
+    boolean(),
+    non_neg_integer(),
+    libp2p_crypto:pubkey_bin(),
+    atom(),
+    router_device:device(),
+    blockchain_helium_packet_v1:packet(),
+    binary() | undefined,
+    #frame{},
+    blockchain:blockchain(),
+    [map()]
+) -> ok.
+report_frame_status(
+    0 = _Ack,
+    false = _Confirmed,
+    0 = _Port,
     PubKeyBin,
     Region,
     Device,
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr, fport = FPort},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Correcting channel mask in response to ", (int_to_bin(FCnt))/binary>>,
@@ -51,19 +93,21 @@ report_frame_status(
         ReplyPayload,
         FPort,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     );
 report_frame_status(
-    1,
+    1 = _Ack,
     _ConfirmedDown,
-    undefined,
+    undefined = _Port,
     PubKeyBin,
     Region,
     Device,
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr, fport = FPort},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK in response to fcnt ", (int_to_bin(FCnt))/binary>>,
@@ -78,11 +122,12 @@ report_frame_status(
         ReplyPayload,
         FPort,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     );
 report_frame_status(
-    1,
-    true,
+    1 = _Ack,
+    true = _Confirmed,
     Port,
     PubKeyBin,
     Region,
@@ -90,7 +135,8 @@ report_frame_status(
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
@@ -105,11 +151,12 @@ report_frame_status(
         ReplyPayload,
         Port,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     );
 report_frame_status(
-    1,
-    false,
+    1 = _Ack,
+    false = _Confirmed,
     Port,
     PubKeyBin,
     Region,
@@ -117,7 +164,8 @@ report_frame_status(
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending ACK and unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
@@ -132,11 +180,12 @@ report_frame_status(
         ReplyPayload,
         Port,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     );
 report_frame_status(
-    _,
-    true,
+    _Ack,
+    true = _Confirmed,
     Port,
     PubKeyBin,
     Region,
@@ -144,7 +193,8 @@ report_frame_status(
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending confirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
@@ -159,11 +209,12 @@ report_frame_status(
         ReplyPayload,
         Port,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     );
 report_frame_status(
-    _,
-    false,
+    _Ack,
+    false = _Confirmed,
     Port,
     PubKeyBin,
     Region,
@@ -171,7 +222,8 @@ report_frame_status(
     Packet,
     ReplyPayload,
     #frame{devaddr = DevAddr},
-    Blockchain
+    Blockchain,
+    Channels
 ) ->
     FCnt = router_device:fcnt(Device),
     Desc = <<"Sending unconfirmed data in response to fcnt ", (int_to_bin(FCnt))/binary>>,
@@ -186,10 +238,12 @@ report_frame_status(
         ReplyPayload,
         Port,
         DevAddr,
-        Blockchain
+        Blockchain,
+        Channels
     ).
 
 -spec report_status(
+    % ack | up | down,
     atom(),
     binary(),
     router_device:device(),
@@ -198,7 +252,7 @@ report_frame_status(
     atom(),
     blockchain_helium_packet_v1:packet(),
     binary() | undefined,
-    any(),
+    non_neg_integer(),
     any(),
     blockchain:blockchain()
 ) -> ok.
@@ -214,6 +268,50 @@ report_status(
     Port,
     DevAddr,
     Blockchain
+) ->
+    ?MODULE:report_status(
+        Category,
+        Desc,
+        Device,
+        Status,
+        PubKeyBin,
+        Region,
+        Packet,
+        ReplyPayload,
+        Port,
+        DevAddr,
+        Blockchain,
+        []
+    ).
+
+-spec report_status(
+    % ack | up | down,
+    atom(),
+    binary(),
+    router_device:device(),
+    success | error,
+    libp2p_crypto:pubkey_bin(),
+    atom(),
+    blockchain_helium_packet_v1:packet(),
+    binary() | undefined,
+    non_neg_integer(),
+    binary(),
+    blockchain:blockchain(),
+    [map()]
+) -> ok.
+report_status(
+    Category,
+    Desc,
+    Device,
+    Status,
+    PubKeyBin,
+    Region,
+    Packet,
+    ReplyPayload,
+    Port,
+    DevAddr,
+    Blockchain,
+    Channels
 ) ->
     Payload =
         case ReplyPayload of
@@ -238,7 +336,7 @@ report_status(
                 Status
             )
         ],
-        channels => []
+        channels => Channels
     },
     ok = router_device_api:report_status(Device, Report).
 

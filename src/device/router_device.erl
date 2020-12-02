@@ -5,6 +5,7 @@
 -endif.
 
 -include("router_device.hrl").
+-include("router_device_worker.hrl").
 
 -export([
     new/1,
@@ -137,11 +138,11 @@ channel_correction(Device) ->
 channel_correction(Correct, Device) ->
     Device#device_v4{channel_correction = Correct}.
 
--spec queue(device()) -> [any()].
+-spec queue(device()) -> [#downlink{}].
 queue(Device) ->
     Device#device_v4.queue.
 
--spec queue([any()], device()) -> device().
+-spec queue([#downlink{}], device()) -> device().
 queue(Q, Device) ->
     Device#device_v4{queue = Q}.
 

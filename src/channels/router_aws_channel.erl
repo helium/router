@@ -160,7 +160,7 @@ handle_info(
     #state{connection = Conn, channel = Channel} = State
 ) ->
     Controller = router_channel:controller(Channel),
-    router_device_channels_worker:handle_downlink(Controller, Payload, aws),
+    router_device_channels_worker:handle_downlink(Controller, Payload, Channel),
     {ok, State};
 handle_info(
     {'EXIT', Conn, {_Type, _Reason}},

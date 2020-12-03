@@ -118,7 +118,15 @@ dupes_test(Config) ->
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
-    Msg0 = {false, 1, <<"somepayload">>},
+    Channel = router_channel:new(
+        <<"fake">>,
+        websocket,
+        <<"fake">>,
+        #{},
+        0,
+        self()
+    ),
+    Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     router_device_worker:queue_message(WorkerPid, Msg0),
 
     %% Send 4 similar packets to make it look like it's coming from 2 diff hotspots
@@ -216,6 +224,44 @@ dupes_test(Config) ->
 
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"down">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName1),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    %% Waiting for report channel status from HTTP channel
+    test_utils:wait_report_channel_status(#{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -268,7 +314,7 @@ dupes_test(Config) ->
     {ok, Reply1} = test_utils:wait_state_channel_message(
         Msg0,
         Device0,
-        erlang:element(3, Msg0),
+        Msg0#downlink.payload,
         ?UNCONFIRMED_DOWN,
         0,
         0,
@@ -277,36 +323,6 @@ dupes_test(Config) ->
     ),
     ct:pal("Reply ~p", [Reply1]),
     true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
-
-    %% We had message in the queue so we expect a device status down
-    test_utils:wait_report_device_status(#{
-        <<"category">> => <<"down">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW500">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
 
     %% Make sure we did not get a duplicate
     receive
@@ -494,9 +510,22 @@ adr_test(Config) ->
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
-    Msg0 = {false, 1, <<"somepayload">>},
+    Channel = router_channel:new(
+        <<"fake">>,
+        websocket,
+        <<"fake">>,
+        #{},
+        0,
+        self()
+    ),
+    Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     router_device_worker:queue_message(WorkerPid, Msg0),
-    Msg1 = {true, 2, <<"someotherpayload">>},
+    Msg1 = #downlink{
+        confirmed = true,
+        port = 2,
+        payload = <<"someotherpayload">>,
+        channel = Channel
+    },
     router_device_worker:queue_message(WorkerPid, Msg1),
 
     %% Send 2 similar packets to make it look like it's coming from 2 diff hotspots
@@ -545,6 +574,44 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Capture downlink before uplink is handled
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"down">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{
         <<"category">> => <<"up">>,
@@ -586,7 +653,7 @@ adr_test(Config) ->
     {ok, Reply1} = test_utils:wait_state_channel_message(
         Msg0,
         Device0,
-        erlang:element(3, Msg0),
+        Msg0#downlink.payload,
         ?UNCONFIRMED_DOWN,
         1,
         0,
@@ -595,36 +662,6 @@ adr_test(Config) ->
     ),
     ct:pal("Reply ~p", [Reply1]),
     true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
-
-    %% We had message in the queue so we expect a device status down
-    test_utils:wait_report_device_status(#{
-        <<"category">> => <<"down">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW500">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
 
     %% Make sure we did not get a duplicate
     receive
@@ -684,6 +721,44 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Waiting for ack cause we sent a CONFIRMED_UP
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"ack">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 1,
+        <<"frame_down">> => 1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW500">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{
         <<"category">> => <<"up">>,
@@ -722,40 +797,10 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Waiting for ack cause we sent a CONFIRMED_UP
-    test_utils:wait_report_device_status(#{
-        <<"category">> => <<"ack">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 1,
-        <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW500">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
-
     {ok, Reply2} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,
-        erlang:element(3, Msg1),
+        Msg1#downlink.payload,
         ?CONFIRMED_DOWN,
         0,
         1,
@@ -813,6 +858,44 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Waiting for report channel status down message
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"down">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 2,
+        <<"frame_down">> => 1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{
         <<"category">> => <<"up">>,
@@ -850,40 +933,11 @@ adr_test(Config) ->
             }
         ]
     }),
-    %% Waiting for report channel status down message
-    test_utils:wait_report_device_status(#{
-        <<"category">> => <<"down">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 2,
-        <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW500">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
 
     {ok, Reply3} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,
-        erlang:element(3, Msg1),
+        Msg1#downlink.payload,
         ?CONFIRMED_DOWN,
         0,
         0,
@@ -940,6 +994,44 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Waiting for report channel status down message
+    test_utils:wait_report_channel_status(#{
+        <<"category">> => <<"down">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_report_channel_status(#{
         <<"category">> => <<"up">>,
@@ -947,7 +1039,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => 3,
-        <<"frame_down">> => 2,
+        <<"frame_down">> => 1,
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
         <<"devaddr">> => '_',

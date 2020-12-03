@@ -130,7 +130,8 @@ http_downlink_test(Config) ->
                 0
             )},
 
-    test_utils:wait_report_device_status(#{
+    %% Waiting for websocket downlink with channel
+    test_utils:wait_report_channel_status(#{
         <<"category">> => <<"down">>,
         <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -147,7 +148,7 @@ http_downlink_test(Config) ->
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
-                <<"rssi">> => fun erlang:is_float/1,
+                <<"rssi">> => 27,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -158,8 +159,8 @@ http_downlink_test(Config) ->
         ],
         <<"channels">> => [
             #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"id">> => <<"console_websocket">>,
+                <<"name">> => <<"Console websocket">>,
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
@@ -181,7 +182,7 @@ http_downlink_test(Config) ->
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
-        <<"payload_size">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
@@ -220,9 +221,9 @@ http_downlink_test(Config) ->
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"rssi">> => fun erlang:is_number/1,
+                <<"snr">> => fun erlang:is_float/1,
+                <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,

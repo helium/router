@@ -203,7 +203,15 @@ drop_downlink_test(Config) ->
 
     {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     Payload = crypto:strong_rand_bytes(243),
-    Msg = {true, 2, Payload},
+    Channel = router_channel:new(
+        <<"fake">>,
+        device_worker,
+        <<"fake">>,
+        #{},
+        0,
+        self()
+    ),
+    Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
     ok = router_device_worker:queue_message(DeviceWorkerPid, Msg),
 
     test_utils:wait_report_device_status(#{

@@ -79,7 +79,7 @@ dupes_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -223,7 +223,7 @@ dupes_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -261,7 +261,7 @@ dupes_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -386,7 +386,7 @@ join_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -471,7 +471,7 @@ adr_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -575,7 +575,7 @@ adr_test(Config) ->
     }),
 
     %% Capture downlink before uplink is handled
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -613,7 +613,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -722,7 +722,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for ack cause we sent a CONFIRMED_UP
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"ack">>, #{
         <<"category">> => <<"ack">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -760,7 +760,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -859,7 +859,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status down message
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -897,7 +897,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -995,7 +995,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status down message
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1033,7 +1033,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1130,7 +1130,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1168,7 +1168,7 @@ adr_test(Config) ->
     }),
 
     %% Wait for device status ack message
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"ack">>, #{
         <<"category">> => <<"ack">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,

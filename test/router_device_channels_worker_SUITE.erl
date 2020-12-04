@@ -258,7 +258,7 @@ crashing_channel_test(Config) ->
     {Backoff1, _} = maps:get(<<"HTTP_1">>, State1#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN, backoff:get(Backoff1)),
 
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"channel_crash">>, #{
         <<"category">> => <<"channel_crash">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -292,7 +292,7 @@ crashing_channel_test(Config) ->
     ?assertEqual(#{}, State2#state.channels),
     {Backoff2, _} = maps:get(<<"HTTP_1">>, State2#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN * 2, backoff:get(Backoff2)),
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"channel_crash">>, #{
         <<"category">> => <<"channel_crash">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -314,7 +314,7 @@ crashing_channel_test(Config) ->
             }
         ]
     }),
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"channel_start_error">>, #{
         <<"category">> => <<"channel_start_error">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -378,7 +378,7 @@ late_packet_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -522,7 +522,7 @@ late_packet_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -574,8 +574,8 @@ late_packet_test(Config) ->
 
     %% Make sure we did not get a duplicate with that late message
     receive
-        {report_channel_status, Got} ->
-            ct:fail("wait_report_channel_status failed we got ~p", [Got]);
+        {console_event, Got} ->
+            ct:fail("wait/1 failed we got ~p", [Got]);
         {channel_data, Got} ->
             ct:fail("wait_channel_data failed we got ~p", [Got])
     after 10000 -> ok

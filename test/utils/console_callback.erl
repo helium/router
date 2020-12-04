@@ -125,10 +125,7 @@ handle(
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),
     Data = jsx:decode(Body, [return_maps]),
-    case maps:get(<<"channels">>, Data, []) of
-        [] -> Pid ! {report_device_status, Data};
-        _ -> Pid ! {report_channel_status, Data}
-    end,
+    Pid ! {console_event, maps:get(<<"category">>, Data, <<"unknown">>), Data},
     {200, [], <<>>};
 handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req, Args) ->
     Pid = maps:get(forward, Args),

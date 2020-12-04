@@ -100,7 +100,7 @@ mqtt_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -191,7 +191,7 @@ mqtt_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -293,7 +293,7 @@ mqtt_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -331,7 +331,7 @@ mqtt_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -429,7 +429,7 @@ mqtt_update_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -520,7 +520,7 @@ mqtt_update_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -636,7 +636,7 @@ mqtt_update_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -748,7 +748,7 @@ mqtt_update_test(Config) ->
     }),
 
     %% Waiting for report channel status from MQTT channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,

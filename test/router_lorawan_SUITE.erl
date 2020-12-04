@@ -133,7 +133,7 @@ lw_join_test(Config) ->
     end,
 
     {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -239,7 +239,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from console downlink
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -277,7 +277,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -358,7 +358,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from console channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -396,7 +396,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -433,7 +433,7 @@ lw_join_test(Config) ->
         ]
     }),
 
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"ack">>, #{
         <<"category">> => <<"ack">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,

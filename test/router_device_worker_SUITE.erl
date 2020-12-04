@@ -89,7 +89,7 @@ device_update_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -167,7 +167,7 @@ drop_downlink_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -214,7 +214,7 @@ drop_downlink_test(Config) ->
     Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
     ok = router_device_worker:queue_message(DeviceWorkerPid, Msg),
 
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"packet_dropped">>, #{
         <<"category">> => <<"packet_dropped">>,
         <<"description">> => <<"Packet request exceeds maximum 242 bytes">>,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -252,7 +252,7 @@ adr_cache_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -375,7 +375,7 @@ adr_cache_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,

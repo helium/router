@@ -357,44 +357,6 @@ lw_join_test(Config) ->
         ]
     }),
 
-    %% Waiting for report channel status from console channel
-    test_utils:wait(<<"up">>, #{
-        <<"category">> => <<"up">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => fun erlang:is_binary/1,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => '_',
-                <<"long">> => '_'
-            }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
-    }),
-
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,

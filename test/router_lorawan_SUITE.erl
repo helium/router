@@ -421,7 +421,15 @@ lw_join_test(Config) ->
                 <<"long">> => '_'
             }
         ],
-        <<"channels">> => []
+        <<"channels">> => [
+            #{
+                <<"id">> => router_channel:id(Channel),
+                <<"name">> => router_channel:name(Channel),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
     }),
 
     test_utils:wait_state_channel_message(?REPLY_DELAY + 250, PubKeyBin0),

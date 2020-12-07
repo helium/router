@@ -465,7 +465,7 @@ adr_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
-    %% Send join packet
+    %% Device sends a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
     timer:sleep(?JOIN_DELAY),
@@ -518,8 +518,12 @@ adr_test(Config) ->
         0,
         self()
     ),
+
+    %% Queue unconfirmed downlink message for device
     Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     router_device_worker:queue_message(WorkerPid, Msg0),
+
+    %% Queue confirmed downlink message for device
     Msg1 = #downlink{
         confirmed = true,
         port = 2,
@@ -528,7 +532,7 @@ adr_test(Config) ->
     },
     router_device_worker:queue_message(WorkerPid, Msg1),
 
-    %% Send 2 similar packets to make it look like it's coming from 2 diff hotspots
+    %% Device sends unconfirmed up
     Stream !
         {send,
             test_utils:frame_packet(
@@ -574,16 +578,16 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Capture downlink before uplink is handled
-    test_utils:wait(<<"down">>, #{
+    %% Unconfirmed downlink being sent to device
+    test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => fun erlang:is_integer/1,
         <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
+        <<"payload_size">> => erlang:byte_size(Msg0#downlink.payload),
+        <<"port">> => Msg0#downlink.port,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
@@ -603,8 +607,8 @@ adr_test(Config) ->
         ],
         <<"channels">> => [
             #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
+                <<"id">> => router_channel:id(Msg0#downlink.channel),
+                <<"name">> => router_channel:name(Msg0#downlink.channel),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
@@ -612,13 +616,13 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Waiting for report channel status from HTTP channel
-    test_utils:wait(<<"up">>, #{
+    %% Wait for unconfirmed up from device
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_up">> => 0,
         <<"frame_down">> => fun erlang:is_integer/1,
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
@@ -650,6 +654,7 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Device received unconfirmed down
     {ok, Reply1} = test_utils:wait_state_channel_message(
         Msg0,
         Device0,
@@ -662,18 +667,6 @@ adr_test(Config) ->
     ),
     ct:pal("Reply ~p", [Reply1]),
     true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
-
-    %% Make sure we did not get a duplicate
-    receive
-        {client_data, _, _Data2} ->
-            ct:fail("double_reply ~p", [
-                blockchain_state_channel_v1_pb:decode_msg(
-                    _Data2,
-                    blockchain_state_channel_message_v1_pb
-                )
-            ])
-    after 0 -> ok
-    end,
 
     %% Send CONFIRMED_UP frame packet
     Stream !
@@ -729,8 +722,8 @@ adr_test(Config) ->
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => 1,
         <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
+        <<"payload_size">> => erlang:byte_size(Msg1#downlink.payload),
+        <<"port">> => Msg1#downlink.port,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
@@ -750,8 +743,8 @@ adr_test(Config) ->
         ],
         <<"channels">> => [
             #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
+                <<"id">> => router_channel:id(Msg1#downlink.channel),
+                <<"name">> => router_channel:name(Msg1#downlink.channel),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
@@ -797,6 +790,7 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Device received confirmed down
     {ok, Reply2} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,
@@ -804,7 +798,7 @@ adr_test(Config) ->
         ?CONFIRMED_DOWN,
         0,
         1,
-        2,
+        Msg1#downlink.port,
         1
     ),
     %% check we're still getting ADR commands
@@ -858,6 +852,7 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Sending Msg1 again because it was not acknowledged by the device
     %% Waiting for report channel status down message
     test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
@@ -866,8 +861,8 @@ adr_test(Config) ->
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => 2,
         <<"frame_down">> => 1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
+        <<"payload_size">> => erlang:byte_size(Msg1#downlink.payload),
+        <<"port">> => Msg1#downlink.port,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
@@ -887,8 +882,8 @@ adr_test(Config) ->
         ],
         <<"channels">> => [
             #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
+                <<"id">> => router_channel:id(Msg1#downlink.channel),
+                <<"name">> => router_channel:name(Msg1#downlink.channel),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
@@ -934,6 +929,7 @@ adr_test(Config) ->
         ]
     }),
 
+    %% Device received confirmed down from Msg1
     {ok, Reply3} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,
@@ -947,7 +943,7 @@ adr_test(Config) ->
     %% check NOT we're still getting ADR commands
     false = lists:keymember(link_adr_req, 1, Reply3#frame.fopts),
 
-    %% ack the packet, we don't expect a reply here
+    %% ack resent Msg1 packet, not requesting a reply
     Stream !
         {send,
             test_utils:frame_packet(
@@ -994,44 +990,6 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Waiting for report channel status down message
-    test_utils:wait(<<"down">>, #{
-        <<"category">> => <<"down">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => fun erlang:is_binary/1,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
-    }),
-
     %% Waiting for report channel status from HTTP channel
     test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
@@ -1039,7 +997,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => 3,
-        <<"frame_down">> => 1,
+        <<"frame_down">> => 2,
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
         <<"devaddr">> => '_',
@@ -1070,7 +1028,6 @@ adr_test(Config) ->
         ]
     }),
 
-    timer:sleep(1000),
     receive
         {client_data, _, _Data3} ->
             Decoded = {response, Response} = blockchain_state_channel_message_v1:decode(_Data3),
@@ -1080,7 +1037,7 @@ adr_test(Config) ->
                 _ ->
                     ct:fail("unexpected_reply ~p", [Decoded])
             end
-    after 0 -> ok
+    after 2000 -> ok
     end,
 
     %% send a confimed up to provoke a 'bare ack'
@@ -1168,6 +1125,7 @@ adr_test(Config) ->
     }),
 
     %% Wait for device status ack message
+    %% Downlinks have been exhausted
     test_utils:wait_for_console_event(<<"ack">>, #{
         <<"category">> => <<"ack">>,
         <<"description">> => '_',
@@ -1196,6 +1154,8 @@ adr_test(Config) ->
         ],
         <<"channels">> => []
     }),
+
+    %% Device received unconfirmed down, no longer contains adr commands
     {ok, Reply4} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,

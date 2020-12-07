@@ -171,6 +171,7 @@ get_channels(Device, DeviceWorkerPid) ->
 report_status(Device, Map) ->
     erlang:spawn(
         fun() ->
+            lager:md([{device_id, router_device:id(Device)}]),
             {Endpoint, Token} = token_lookup(),
             DeviceID = router_device:id(Device),
             Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,

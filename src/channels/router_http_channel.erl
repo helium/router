@@ -132,7 +132,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
             {ok, StatusCode, ResponseHeaders, ResponseBody} when
                 StatusCode >= 200, StatusCode =< 300
             ->
-                router_device_channels_worker:handle_downlink(Pid, ResponseBody, http),
+                router_device_channels_worker:handle_downlink(Pid, ResponseBody, Channel),
                 maps:merge(Result0, #{
                     debug => maps:merge(Debug, #{
                         res => #{

@@ -78,7 +78,7 @@ console_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -130,7 +130,7 @@ console_test(Config) ->
             )},
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -182,8 +182,7 @@ console_test(Config) ->
                 #{body => <<1:8, EncodedPayload/binary>>}
             )},
 
-    %%  Nothing should happen
-    ok = loop(10),
+    ok = test_utils:ignore_messages(),
     ok.
 
 inactive_test(Config) ->
@@ -207,7 +206,7 @@ inactive_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -299,7 +298,7 @@ inactive_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -354,7 +353,7 @@ inactive_test(Config) ->
                 1
             )},
 
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"packet_dropped">>, #{
         <<"category">> => <<"packet_dropped">>,
         <<"description">> => <<"Transmission has been paused. Contact your administrator">>,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -419,7 +418,7 @@ inactive_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -461,15 +460,6 @@ inactive_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-loop(0) ->
-    ok;
-loop(I) ->
-    receive
-        {report_channel_status, Got} -> ct:fail(Got);
-        _Something -> loop(I - 1)
-    after 100 -> loop(I - 1)
-    end.
 
 to_real_payload(Bin) ->
     erlang:list_to_binary(

@@ -7,10 +7,8 @@
     get_device_channels_worker/1,
     force_refresh_channels/1,
     ignore_messages/0,
+    wait_for_console_event/2,
     wait_for_join_resp/3,
-    wait_for_channel_correction/2,
-    wait_report_device_status/1,
-    wait_report_channel_status/1,
     wait_channel_data/1,
     wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
     wait_organizations_burned/1,
@@ -175,6 +173,26 @@ ignore_messages() ->
     after 2000 -> ok
     end.
 
+% "category": "up | down | activation | ack | packet_dropped | channel_crash | channel_start_error"
+wait_for_console_event(Category, Expected) ->
+    try
+        receive
+            {console_event, Category, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event ~p data failed ~p", [Category, Reason])
+                end
+        after 4250 -> ct:fail("wait_for_console_event ~p timeout", [Category])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
+            ct:fail("wait_for_console_event ~p failed", [Category])
+    end.
+
 wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
     receive
         {client_data, PubKeyBin, Data} ->
@@ -196,67 +214,6 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
                     ct:fail("invalid join response")
             end
     after 1250 -> ct:fail("missing_join for")
-    end.
-
-wait_for_channel_correction(Device, HotspotName) ->
-    Correction = {false, undefined, <<>>},
-    {ok, _} = ?MODULE:wait_state_channel_message(
-        Correction,
-        Device,
-        erlang:element(3, Correction),
-        ?UNCONFIRMED_DOWN,
-        0,
-        0,
-        undefined,
-        0
-    ),
-    ?MODULE:wait_report_device_status(#{
-        <<"status">> => <<"success">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"category">> => <<"down">>,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 1,
-        <<"hotspot_name">> => erlang:list_to_binary(HotspotName)
-    }),
-    ok.
-
-wait_report_device_status(Expected) ->
-    try
-        receive
-            {report_device_status, Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        ok;
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_report_device_status data failed ~p", [Reason])
-                end
-        after 1250 -> ct:fail("wait_report_device_status timeout")
-        end
-    catch
-        _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_report_device_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
-            ct:fail("wait_report_device_status failed")
-    end.
-
-wait_report_channel_status(Expected) ->
-    try
-        receive
-            {report_channel_status, Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        ok;
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_report_channel_status data failed ~p", [Reason])
-                end
-        after 4250 -> ct:fail("wait_report_channel_status timeout")
-        end
-    catch
-        _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_report_channel_status stacktrace ~p~n", [{_Reason, _Stacktrace}]),
-            ct:fail("wait_report_channel_status failed")
     end.
 
 wait_channel_data(Expected) ->

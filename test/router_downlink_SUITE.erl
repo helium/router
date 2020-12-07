@@ -71,7 +71,7 @@ http_downlink_test(Config) ->
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_report_device_status(#{
+    test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -130,6 +130,44 @@ http_downlink_test(Config) ->
                 0
             )},
 
+    %% Waiting for websocket downlink with channel
+    test_utils:wait_for_console_event(<<"down">>, #{
+        <<"category">> => <<"down">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => fun erlang:is_float/1,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => <<"console_websocket">>,
+                <<"name">> => <<"Console websocket">>,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
         <<"id">> => ?CONSOLE_DEVICE_ID,
@@ -144,7 +182,7 @@ http_downlink_test(Config) ->
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
-        <<"payload_size">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
@@ -166,7 +204,7 @@ http_downlink_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_report_channel_status(#{
+    test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -183,9 +221,9 @@ http_downlink_test(Config) ->
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"rssi">> => fun erlang:is_number/1,
+                <<"snr">> => fun erlang:is_float/1,
+                <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,

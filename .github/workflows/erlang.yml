@@ -25,13 +25,10 @@ jobs:
         run: ./rebar3 compile
       
       - name: Check formatting
-        run: ./rebar3 fmt --verbose --check rebar.config && rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && rebar3 fmt --verbose --check "config/sys.{config,config.src}"
+        run: ./rebar3 fmt --verbose --check rebar.config && ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && ./rebar3 fmt --verbose --check "config/sys.{config,config.src}"
       
       - name: Run xref
         run: ./rebar3 xref
-
-      - name: Run Dialyzer
-        run: ./rebar3 dialyzer
 
       - name: Run EUnit tests
         env:
@@ -45,3 +42,6 @@ jobs:
           # tests.
           ASAN_OPTIONS: detect_leaks=0
         run: LD_PRELOAD="$(cc --print-file libasan.so)" ./rebar3 ct
+
+      - name: Run Dialyzer
+        run: ./rebar3 dialyzer

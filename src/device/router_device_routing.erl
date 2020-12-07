@@ -613,6 +613,8 @@ find_device(PubKeyBin, DevAddr, MIC, Payload) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin),
     B0 = b0_from_payload(Payload, 16),
     case get_device_by_mic(B0, MIC, Payload, Devices) of
+        {error, _} = Error ->
+            Error;
         undefined ->
             {error, {unknown_device, DevAddr}};
         Device ->
@@ -627,7 +629,7 @@ get_and_sort_devices(DevAddr, PubKeyBin) ->
     Devices1.
 
 -spec get_device_by_mic(binary(), binary(), binary(), [router_device:device()]) ->
-    router_device:device() | undefined.
+    router_device:device() | undefined | {error, any()}.
 get_device_by_mic(_B0, _MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
@@ -657,7 +659,7 @@ get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
                                         {ok, DB, [_DefaultCF, CF]} = router_db:get(),
                                         ok = router_device:delete(DB, CF, DeviceID),
                                         ok = router_device_cache:delete(DeviceID),
-                                        undefined;
+                                        {error, {unsupported_fcnt, DeviceID}};
                                     _ ->
                                         get_device_by_mic(B0, MIC, Payload, Devices)
                                 end;

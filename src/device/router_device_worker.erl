@@ -352,9 +352,15 @@ handle_cast(
             {noreply, State};
         {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
             FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
-            case router_device:queue(Device1) =/= [] orelse FrameAck == 1 of
-                false -> router_device_routing:deny_more(Packet0);
-                true -> router_device_routing:accept_more(Packet0)
+            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
+            case MultiBuyValue > 1 of
+                true ->
+                    router_device_routing:accept_more(Packet0, MultiBuyValue);
+                false ->
+                    case router_device:queue(Device1) =/= [] orelse FrameAck == 1 of
+                        false -> router_device_routing:deny_more(Packet0);
+                        true -> router_device_routing:accept_more(Packet0)
+                    end
             end,
             Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},
             %% TODO: Maybe move this down a little?

@@ -164,7 +164,8 @@ mqtt_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -266,7 +267,8 @@ mqtt_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -493,7 +495,8 @@ mqtt_update_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -609,7 +612,8 @@ mqtt_update_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -721,7 +725,8 @@ mqtt_update_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,

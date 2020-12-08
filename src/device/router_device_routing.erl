@@ -19,6 +19,7 @@
     handle_packet/3,
     deny_more/1,
     accept_more/1,
+    accept_more/2,
     clear_multi_buy/1,
     allow_replay/3,
     clear_replay/1
@@ -47,6 +48,7 @@
 -define(MB_MAX_PACKET, multi_buy_max_packet).
 -define(MB_TOO_MANY_ATTEMPTS, multi_buy_too_many_attempts).
 -define(MB_DENY_MORE, multi_buy_deny_more).
+-define(MB_UNLIMITED, 9999).
 
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
@@ -156,12 +158,16 @@ deny_more(Packet) ->
 
 -spec accept_more(blockchain_helium_packet_v1:packet()) -> ok.
 accept_more(Packet) ->
+    ?MODULE:accept_more(Packet, ?PACKET_MAX).
+
+-spec accept_more(blockchain_helium_packet_v1:packet(), non_neg_integer()) -> ok.
+accept_more(Packet, Max) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case ets:lookup(?MB_ETS, PHash) of
-        [{PHash, ?PACKET_MAX, _}] ->
+        [{PHash, Max, _}] ->
             ok;
         _ ->
-            true = ets:insert(?MB_ETS, {PHash, ?PACKET_MAX, 1}),
+            true = ets:insert(?MB_ETS, {PHash, Max, 1}),
             ok
     end.
 
@@ -395,6 +401,8 @@ maybe_multi_buy(Offer, Attempts) ->
         [] ->
             timer:sleep(10),
             maybe_multi_buy(Offer, Attempts - 1);
+        [{PHash, ?MB_UNLIMITED, _Curr}] ->
+            ok;
         [{PHash, 0, -1}] ->
             {error, ?MB_DENY_MORE};
         [{PHash, Max, Curr}] when Max == Curr ->
@@ -856,6 +864,7 @@ handle_packet_offer_test() ->
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
 
+    %% Deny more packets after first
     Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
     Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
     ?assertEqual(ok, handle_offer(Offer0, self())),
@@ -863,6 +872,7 @@ handle_packet_offer_test() ->
     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
 
+    %% Accept MAX packets
     Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
     Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
     ?assertEqual(ok, handle_offer(Offer1, self())),
@@ -871,6 +881,32 @@ handle_packet_offer_test() ->
     ?assertEqual(ok, handle_offer(Offer1, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
+
+    %% Accept more than MAX packets
+    Packet2 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload2">>),
+    Offer2 = blockchain_state_channel_offer_v1:from_packet(Packet2, <<"hotspot">>, 'REGION'),
+    ok = ?MODULE:accept_more(Packet2, ?PACKET_MAX * 2),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual(ok, handle_offer(Offer2, self())),
+    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer2, self())),
+
+    %% Accept Unlimited Packets
+    Packet3 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload3">>),
+    Offer3 = blockchain_state_channel_offer_v1:from_packet(Packet3, <<"hotspot">>, 'REGION'),
+    ok = ?MODULE:accept_more(Packet3, ?MB_UNLIMITED),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    %% exceeding PACKET_MAX
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
+    ?assertEqual(ok, handle_offer(Offer3, self())),
 
     gen_server:stop(Pid),
     ?assert(meck:validate(blockchain_worker)),

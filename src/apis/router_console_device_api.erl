@@ -426,7 +426,15 @@ handle_info(
     lager:info("sending downlink ~p for devices ~p", [BinaryPayload, DeviceIDs]),
     lists:foreach(
         fun(DeviceID) ->
-            ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, console_ws)
+            Channel = router_channel:new(
+                <<"console_websocket">>,
+                websocket,
+                <<"Console downlink tool">>,
+                #{},
+                DeviceID,
+                self()
+            ),
+            ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, Channel)
         end,
         DeviceIDs
     ),

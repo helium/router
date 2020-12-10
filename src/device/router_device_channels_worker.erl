@@ -92,8 +92,8 @@ handle_data(Pid, Device, Data, {Balance, Nonce}) ->
 report_status(Pid, Ref, Map) ->
     gen_server:cast(Pid, {report_status, Ref, Map}).
 
--spec handle_downlink(pid() | binary(), binary(), atom() | router_channel:channel()) -> ok.
-handle_downlink(Pid, BinaryPayload, Channel) when is_pid(Pid), not is_atom(Channel) ->
+-spec handle_downlink(pid() | binary(), binary(), router_channel:channel()) -> ok.
+handle_downlink(Pid, BinaryPayload, Channel) when is_pid(Pid) ->
     {ChannelHandler, _} = router_channel:handler(Channel),
     case downlink_decode(BinaryPayload) of
         {ok, {Confirmed, Port, Payload}} ->
@@ -111,23 +111,16 @@ handle_downlink(Pid, BinaryPayload, Channel) when is_pid(Pid), not is_atom(Chann
             ok = router_metrics:downlink_inc(ChannelHandler, error),
             lager:info("could not parse json downlink message ~p", [_Reason])
     end;
-handle_downlink(DeviceID, BinaryPayload, console_ws = Type) when is_binary(DeviceID) ->
+handle_downlink(DeviceID, BinaryPayload, Channel) when is_binary(DeviceID) ->
+    {ChannelHandler, _} = router_channel:handler(Channel),
     case router_devices_sup:lookup_device_worker(DeviceID) of
         {error, _Reason} ->
-            ok = router_metrics:downlink_inc(Type, error),
+            ok = router_metrics:downlink_inc(ChannelHandler, error),
             lager:info("failed to find device ~p: ~p", [DeviceID, _Reason]);
         {ok, Pid} ->
             case downlink_decode(BinaryPayload) of
                 {ok, {Confirmed, Port, Payload}} ->
-                    ok = router_metrics:downlink_inc(Type, ok),
-                    Channel = router_channel:new(
-                        <<"console_websocket">>,
-                        websocket,
-                        <<"Console downlink tool">>,
-                        #{},
-                        DeviceID,
-                        self()
-                    ),
+                    ok = router_metrics:downlink_inc(ChannelHandler, ok),
                     router_device_worker:queue_message(Pid, #downlink{
                         confirmed = Confirmed,
                         port = Port,
@@ -135,7 +128,7 @@ handle_downlink(DeviceID, BinaryPayload, console_ws = Type) when is_binary(Devic
                         channel = Channel
                     });
                 {error, _Reason} ->
-                    ok = router_metrics:downlink_inc(Type, error),
+                    ok = router_metrics:downlink_inc(ChannelHandler, error),
                     lager:info("could not parse json downlink message ~p for ~p", [
                         _Reason,
                         DeviceID

@@ -123,7 +123,7 @@ handle_downlink(DeviceID, BinaryPayload, console_ws = Type) when is_binary(Devic
                     Channel = router_channel:new(
                         <<"console_websocket">>,
                         websocket,
-                        <<"Console websocket">>,
+                        <<"Console downlink tool">>,
                         #{},
                         DeviceID,
                         self()

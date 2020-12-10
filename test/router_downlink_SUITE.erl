@@ -160,7 +160,7 @@ http_downlink_test(Config) ->
         <<"channels">> => [
             #{
                 <<"id">> => <<"console_websocket">>,
-                <<"name">> => <<"Console websocket">>,
+                <<"name">> => <<"Console downlink tool">>,
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'

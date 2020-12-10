@@ -145,9 +145,8 @@ handle_packet(Packet, PacketTime, PubKeyBin) ->
             ok
     end.
 
--spec deny_more(blockchain_helium_packet_v1:packet()) -> ok.
-deny_more(Packet) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+-spec deny_more(binary()) -> ok.
+deny_more(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of
         [{PHash, 0, -1}] ->
             ok;
@@ -156,13 +155,12 @@ deny_more(Packet) ->
             ok
     end.
 
--spec accept_more(blockchain_helium_packet_v1:packet()) -> ok.
-accept_more(Packet) ->
-    ?MODULE:accept_more(Packet, ?PACKET_MAX).
+-spec accept_more(binary()) -> ok.
+accept_more(PHash) ->
+    ?MODULE:accept_more(PHash, ?PACKET_MAX).
 
--spec accept_more(blockchain_helium_packet_v1:packet(), non_neg_integer()) -> ok.
-accept_more(Packet, Max) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+-spec accept_more(binary(), non_neg_integer()) -> ok.
+accept_more(PHash, Max) ->
     case ets:lookup(?MB_ETS, PHash) of
         [{PHash, Max, _}] ->
             ok;
@@ -261,7 +259,7 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
                     case bloom:set(BFRef, PHash) of
                         true ->
-                            maybe_multi_buy(Offer, 10);
+                            maybe_multi_buy(Offer, 10, Device);
                         false ->
                             true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
                             ok
@@ -274,7 +272,7 @@ packet_offer(Offer, Pid) ->
     case validate_packet_offer(Offer, Pid) of
         {error, _} = Error ->
             Error;
-        ok ->
+        {ok, Device} ->
             BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
@@ -293,10 +291,10 @@ packet_offer(Offer, Pid) ->
                                     lager:debug("most likely a late packet for ~p multi buying", [
                                         _DeviceID
                                     ]),
-                                    maybe_multi_buy(Offer, 10)
+                                    maybe_multi_buy(Offer, 10, Device)
                             end;
                         {error, not_found} ->
-                            maybe_multi_buy(Offer, 10)
+                            maybe_multi_buy(Offer, 10, Device)
                     end;
                 false ->
                     ok
@@ -304,7 +302,7 @@ packet_offer(Offer, Pid) ->
     end.
 
 -spec validate_packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
-    ok | {error, any()}.
+    {ok, router_device:device()} | {error, any()}.
 validate_packet_offer(Offer, _Pid) ->
     #routing_information_pb{data = {devaddr, DevAddr0}} = blockchain_state_channel_offer_v1:routing(
         Offer
@@ -332,7 +330,7 @@ validate_packet_offer(Offer, _Pid) ->
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
                             case check_device_balance(PayloadSize, Device) of
                                 {error, _Reason} = Error -> Error;
-                                ok -> ok
+                                ok -> {ok, Device}
                             end
                     end
             end
@@ -390,17 +388,31 @@ lookup_replay(PHash) ->
             {error, not_found}
     end.
 
--spec maybe_multi_buy(blockchain_state_channel_offer_v1:offer(), non_neg_integer()) ->
-    ok | {error, any()}.
+-spec maybe_multi_buy(
+    blockchain_state_channel_offer_v1:offer(),
+    non_neg_integer(),
+    router_device:device()
+) -> ok | {error, any()}.
 %% Handle an issue with worker (so we dont stay lin a loop)
-maybe_multi_buy(_Offer, 0) ->
+maybe_multi_buy(_Offer, 0, _Device) ->
     {error, ?MB_TOO_MANY_ATTEMPTS};
-maybe_multi_buy(Offer, Attempts) ->
+maybe_multi_buy(Offer, Attempts, Device) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of
         [] ->
-            timer:sleep(10),
-            maybe_multi_buy(Offer, Attempts - 1);
+            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
+            case MultiBuyValue > 1 of
+                true ->
+                    ?MODULE:accept_more(PHash, MultiBuyValue);
+                false ->
+                    case router_device:queue(Device) of
+                        [] ->
+                            timer:sleep(10),
+                            maybe_multi_buy(Offer, Attempts - 1, Device);
+                        _ ->
+                            ?MODULE:accept_more(PHash)
+                    end
+            end;
         [{PHash, ?MB_UNLIMITED, _Curr}] ->
             ok;
         [{PHash, 0, -1}] ->
@@ -736,11 +748,11 @@ multi_buy_test() ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
 
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
-    ?assertEqual(ok, deny_more(Packet)),
+    ?assertEqual(ok, deny_more(PHash)),
     ?assertEqual([{PHash, 0, -1}], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
-    ?assertEqual(ok, accept_more(Packet)),
+    ?assertEqual(ok, accept_more(PHash)),
     ?assertEqual([{PHash, ?PACKET_MAX, 1}], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
@@ -864,28 +876,32 @@ handle_packet_offer_test() ->
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
 
+    NewOffer = fun(Payload) ->
+        Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, Payload),
+        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
+        {Offer, PHash}
+    end,
+
     %% Deny more packets after first
-    Packet0 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload0">>),
-    Offer0 = blockchain_state_channel_offer_v1:from_packet(Packet0, <<"hotspot">>, 'REGION'),
+    {Offer0, PHash0} = NewOffer(<<"payload0">>),
     ?assertEqual(ok, handle_offer(Offer0, self())),
-    ok = ?MODULE:deny_more(Packet0),
+    ok = ?MODULE:deny_more(PHash0),
     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
     ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
 
     %% Accept MAX packets
-    Packet1 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload1">>),
-    Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, <<"hotspot">>, 'REGION'),
+    {Offer1, PHash1} = NewOffer(<<"payload1">>),
     ?assertEqual(ok, handle_offer(Offer1, self())),
-    ok = ?MODULE:accept_more(Packet1),
+    ok = ?MODULE:accept_more(PHash1),
     ?assertEqual(ok, handle_offer(Offer1, self())),
     ?assertEqual(ok, handle_offer(Offer1, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
 
     %% Accept more than MAX packets
-    Packet2 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload2">>),
-    Offer2 = blockchain_state_channel_offer_v1:from_packet(Packet2, <<"hotspot">>, 'REGION'),
-    ok = ?MODULE:accept_more(Packet2, ?PACKET_MAX * 2),
+    {Offer2, PHash2} = NewOffer(<<"payload2">>),
+    ok = ?MODULE:accept_more(PHash2, ?PACKET_MAX * 2),
     ?assertEqual(ok, handle_offer(Offer2, self())),
     ?assertEqual(ok, handle_offer(Offer2, self())),
     ?assertEqual(ok, handle_offer(Offer2, self())),
@@ -895,9 +911,8 @@ handle_packet_offer_test() ->
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer2, self())),
 
     %% Accept Unlimited Packets
-    Packet3 = blockchain_helium_packet_v1:new({devaddr, DevAddr}, <<"payload3">>),
-    Offer3 = blockchain_state_channel_offer_v1:from_packet(Packet3, <<"hotspot">>, 'REGION'),
-    ok = ?MODULE:accept_more(Packet3, ?MB_UNLIMITED),
+    {Offer3, PHash3} = NewOffer(<<"paylaod3">>),
+    ok = ?MODULE:accept_more(PHash3, ?MB_UNLIMITED),
     ?assertEqual(ok, handle_offer(Offer3, self())),
     ?assertEqual(ok, handle_offer(Offer3, self())),
     ?assertEqual(ok, handle_offer(Offer3, self())),

@@ -313,7 +313,8 @@ handle_cast(
         is_active = false
     } = State
 ) ->
-    _ = router_device_routing:deny_more(Packet),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    _ = router_device_routing:deny_more(PHash),
     ok = router_device_utils:report_status_inactive(Device),
     {noreply, State};
 handle_cast(
@@ -327,13 +328,14 @@ handle_cast(
         adr_cache = ADRCache0
     } = State
 ) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
     case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
         {error, {not_enough_dc, _Reason, Device1}} ->
             ok = router_device_utils:report_status_no_dc(Device0),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
-            _ = router_device_routing:deny_more(Packet0),
+            _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
-                blockchain_helium_packet_v1:packet_hash(Packet0),
+                PHash,
                 PubKeyBin,
                 erlang:system_time(millisecond),
                 packet,
@@ -341,9 +343,9 @@ handle_cast(
             ),
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
-            _ = router_device_routing:deny_more(Packet0),
+            _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
-                blockchain_helium_packet_v1:packet_hash(Packet0),
+                PHash,
                 PubKeyBin,
                 erlang:system_time(millisecond),
                 packet,
@@ -355,11 +357,11 @@ handle_cast(
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
             case MultiBuyValue > 1 of
                 true ->
-                    router_device_routing:accept_more(Packet0, MultiBuyValue);
+                    router_device_routing:accept_more(PHash, MultiBuyValue);
                 false ->
                     case router_device:queue(Device1) =/= [] orelse FrameAck == 1 of
-                        false -> router_device_routing:deny_more(Packet0);
-                        true -> router_device_routing:accept_more(Packet0)
+                        false -> router_device_routing:deny_more(PHash);
+                        true -> router_device_routing:accept_more(PHash)
                     end
             end,
             Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},

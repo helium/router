@@ -368,7 +368,7 @@ handle_cast(
             %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
-                    ok = router_device_channels_worker:handle_data(
+                    ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
                         Device1,
                         Data,

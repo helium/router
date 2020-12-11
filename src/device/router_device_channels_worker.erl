@@ -18,7 +18,7 @@
     start_link/1,
     handle_join/1,
     handle_device_update/2,
-    handle_data/4,
+    handle_frame/4,
     report_status/3,
     handle_downlink/3,
     state/1
@@ -79,14 +79,14 @@ state(Pid) ->
 handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
--spec handle_data(
+-spec handle_frame(
     pid(),
     router_device:device(),
     {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()},
     {non_neg_integer(), non_neg_integer()}
 ) -> ok.
-handle_data(Pid, Device, Data, {Balance, Nonce}) ->
-    gen_server:cast(Pid, {handle_data, Device, Data, {Balance, Nonce}}).
+handle_frame(Pid, Device, Data, {Balance, Nonce}) ->
+    gen_server:cast(Pid, {handle_frame, Device, Data, {Balance, Nonce}}).
 
 -spec report_status(pid(), reference(), map()) -> ok.
 report_status(Pid, Ref, Map) ->
@@ -166,7 +166,8 @@ handle_cast(handle_join, State) ->
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_data, Device, {PubKeyBin, Packet, Frame, _Region, _Time} = Data, {Balance, Nonce} = BN},
+    {handle_frame, Device, {PubKeyBin, Packet, Frame, _Region, _Time} = Data,
+        {Balance, Nonce} = BN},
     #state{data_cache = DataCache0, balance_cache = BalanceCache0, fcnt = CurrFCnt} = State
 ) ->
     FCnt = router_device:fcnt(Device),

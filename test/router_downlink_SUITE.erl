@@ -160,7 +160,7 @@ http_downlink_test(Config) ->
         <<"channels">> => [
             #{
                 <<"id">> => <<"console_websocket">>,
-                <<"name">> => <<"Console websocket">>,
+                <<"name">> => <<"Console downlink tool">>,
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
@@ -177,7 +177,8 @@ http_downlink_test(Config) ->
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,

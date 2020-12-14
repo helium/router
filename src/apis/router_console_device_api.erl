@@ -42,6 +42,7 @@
 -define(TICK, '__router_console_device_api_tick').
 -define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
+-define(MULTI_BUY_DEFAULT, 1).
 
 -type uuid_v4() :: binary().
 -type request_body() :: maps:map().
@@ -78,7 +79,8 @@ get_device(DeviceID) ->
             AppEui = kvc:path([<<"app_eui">>], JSONDevice),
             Metadata = #{
                 labels => kvc:path([<<"labels">>], JSONDevice),
-                organization_id => kvc:path([<<"organization_id">>], JSONDevice)
+                organization_id => kvc:path([<<"organization_id">>], JSONDevice),
+                multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, ?MULTI_BUY_DEFAULT)
             },
             IsActive = kvc:path([<<"active">>], JSONDevice),
             DeviceUpdates = [
@@ -126,7 +128,12 @@ get_devices(DevEui, AppEui) ->
                             ),
                             Metadata = #{
                                 labels => kvc:path([<<"labels">>], JSONDevice),
-                                organization_id => kvc:path([<<"organization_id">>], JSONDevice)
+                                organization_id => kvc:path([<<"organization_id">>], JSONDevice),
+                                multi_buy => kvc:path(
+                                    [<<"multi_buy">>],
+                                    JSONDevice,
+                                    ?MULTI_BUY_DEFAULT
+                                )
                             },
                             IsActive = kvc:path([<<"active">>], JSONDevice),
                             DeviceUpdates = [
@@ -419,7 +426,15 @@ handle_info(
     lager:info("sending downlink ~p for devices ~p", [BinaryPayload, DeviceIDs]),
     lists:foreach(
         fun(DeviceID) ->
-            ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, console_ws)
+            Channel = router_channel:new(
+                <<"console_websocket">>,
+                websocket,
+                <<"Console downlink tool">>,
+                #{},
+                DeviceID,
+                self()
+            ),
+            ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, Channel)
         end,
         DeviceIDs
     ),

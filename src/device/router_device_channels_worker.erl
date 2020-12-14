@@ -21,7 +21,8 @@
     handle_frame/4,
     report_status/3,
     handle_downlink/3,
-    state/1
+    state/1,
+    new_data_cache/5
 ]).
 
 %% ------------------------------------------------------------------
@@ -46,6 +47,14 @@
 -define(DATA_TIMEOUT, timer:seconds(1)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
+-record(data_cache, {
+    pub_key :: libp2p_crypto:pubkey_bin(),
+    packet :: #packet_pb{},
+    frame :: #frame{},
+    region :: atom(),
+    time :: integer()
+}).
+
 -record(state, {
     chain = blockchain:blockchain(),
     event_mgr :: pid(),
@@ -53,7 +62,8 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: map(),
+    %%                  #{frame_cnt => #{pub_key                       => #data_cache{}}}
+    data_cache = #{} :: #{integer() => #{libp2p_crypto:pubkey_to_bin() => #data_cache{}}},
     balance_cache = #{} :: map(),
     fcnt :: integer(),
     channels_resp_cache = #{} :: map()
@@ -82,11 +92,11 @@ handle_device_update(Pid, Device) ->
 -spec handle_frame(
     pid(),
     router_device:device(),
-    {libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()},
+    #data_cache{},
     {non_neg_integer(), non_neg_integer()}
 ) -> ok.
-handle_frame(Pid, Device, Data, {Balance, Nonce}) ->
-    gen_server:cast(Pid, {handle_frame, Device, Data, {Balance, Nonce}}).
+handle_frame(Pid, Device, DataCache, {Balance, Nonce}) ->
+    gen_server:cast(Pid, {handle_frame, Device, DataCache, {Balance, Nonce}}).
 
 -spec report_status(pid(), reference(), map()) -> ok.
 report_status(Pid, Ref, Map) ->
@@ -136,6 +146,17 @@ handle_downlink(DeviceID, BinaryPayload, Channel) when is_binary(DeviceID) ->
             end
     end.
 
+-spec new_data_cache(libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()) ->
+    #data_cache{}.
+new_data_cache(PubKeyBin, Packet, Frame, Region, Time) ->
+    #data_cache{
+        pub_key = PubKeyBin,
+        packet = Packet,
+        frame = Frame,
+        region = Region,
+        time = Time
+    }.
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -166,7 +187,7 @@ handle_cast(handle_join, State) ->
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_frame, Device, {PubKeyBin, Packet, Frame, _Region, _Time} = Data,
+    {handle_frame, Device, #data_cache{pub_key = PubKeyBin, packet = Packet, frame = Frame} = Data,
         {Balance, Nonce} = BN},
     #state{data_cache = DataCache0, balance_cache = BalanceCache0, fcnt = CurrFCnt} = State
 ) ->
@@ -191,7 +212,7 @@ handle_cast(
                         case maps:get(PubKeyBin, CachedData0, undefined) of
                             undefined ->
                                 maps:put(FCnt, CachedData1, DataCache0);
-                            {_, #packet_pb{signal_strength = RSSI}, _, _, _} ->
+                            #data_cache{packet = #packet_pb{signal_strength = RSSI}} ->
                                 case Packet#packet_pb.signal_strength > RSSI of
                                     true ->
                                         maps:put(FCnt, CachedData1, DataCache0);
@@ -485,21 +506,20 @@ downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
 -spec send_to_channel(
-    [{string(), #packet_pb{}, #frame{}}],
-    {non_neg_integer(), non_neg_integer()},
-    router_device:device(),
-    pid(),
-    blockchain:blockchain()
+    CachedData :: [#data_cache{}],
+    BN :: {non_neg_integer(), non_neg_integer()},
+    Device :: router_device:device(),
+    EventMgrRef :: pid(),
+    Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
 send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) ->
-    FoldFun = fun({PubKeyBin, Packet, _, Region, Time}, Acc) ->
-        [
-            router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
-            | Acc
-        ]
+    FormatHotspot = fun(
+        #data_cache{pub_key = PubKeyBin, packet = Packet, region = Region, time = Time}
+    ) ->
+        router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
     end,
-    [{_, _, #frame{data = Data, fport = Port, fcnt = FCnt, devaddr = DevAddr}, _Region, Time} | _] =
-        CachedData,
+    [#data_cache{frame = Frame, time = Time} | _] = CachedData,
+    #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     Map = #{
         id => router_device:id(Device),
         name => router_device:name(Device),
@@ -508,15 +528,15 @@ send_to_channel(CachedData, {Balance, Nonce}, Device, EventMgrRef, Blockchain) -
         metadata => router_device:metadata(Device),
         fcnt => FCnt,
         reported_at => Time,
-        payload => Data,
-        payload_size => erlang:byte_size(Data),
+        payload => Payload,
+        payload_size => erlang:byte_size(Payload),
         port =>
             case Port of
                 undefined -> 0;
                 _ -> Port
             end,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
-        hotspots => lists:foldr(FoldFun, [], CachedData),
+        hotspots => lists:map(FormatHotspot, CachedData),
         dc => #{balance => Balance, nonce => Nonce}
     },
     ok = router_channel:handle_data(EventMgrRef, Map, FCnt),

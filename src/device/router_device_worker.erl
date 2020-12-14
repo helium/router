@@ -364,10 +364,16 @@ handle_cast(
                         true -> router_device_routing:accept_more(PHash)
                     end
             end,
-            Data = {PubKeyBin, Packet0, Frame, Region, erlang:system_time(second)},
             %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
+                    Data = router_device_channels_worker:new_data_cache(
+                        PubKeyBin,
+                        Packet0,
+                        Frame,
+                        Region,
+                        erlang:system_time(second)
+                    ),
                     ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
                         Device1,

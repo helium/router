@@ -15,7 +15,6 @@
 -define(METRICS_CONSOLE_API_TIME, router_console_api_duration).
 -define(METRICS_DOWNLINK, router_device_downlink_packet).
 -define(METRICS_WS, router_ws_state).
--define(METRICS_DEVICE_DATA, router_device_data).
 
 -define(METRICS, [
     {?METRICS_SC_ACTIVE, [], "Active State Channel balance"},

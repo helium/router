@@ -27,6 +27,7 @@
 
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
+-define(MAX_16_BITS, erlang:trunc(math:pow(2, 16) - 1)).
 
 -define(ETS, router_device_routing_ets).
 
@@ -436,7 +437,6 @@ check_device_is_active(Device) ->
             ok
     end.
 
-%% TODO: This function is not very optimized...
 -spec check_device_balance(non_neg_integer(), router_device:device()) -> ok | {error, any()}.
 check_device_balance(PayloadSize, Device) ->
     Chain = get_chain(),
@@ -521,8 +521,8 @@ packet(
 packet(
     #packet_pb{
         payload =
-            <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
-                FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:FOptsLen/binary,
+            <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1,
+                _RFU:1, FOptsLen:4, _FCnt:16/little-unsigned-integer, _FOpts:FOptsLen/binary,
                 PayloadAndMIC/binary>> = Payload
     } = Packet,
     PacketTime,
@@ -530,7 +530,6 @@ packet(
     Region,
     Pid
 ) ->
-    Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     case DevAddr of
@@ -561,75 +560,58 @@ packet(
                     of
                         true ->
                             %% ok device is in one of our subnets
-                            find_device(
+                            send_to_device_worker(
                                 Packet,
                                 PacketTime,
                                 Pid,
                                 PubKeyBin,
                                 Region,
                                 DevAddr,
-                                <<(router_utils:b0(
-                                        MType band 1,
-                                        <<DevAddr:4/binary>>,
-                                        FCnt,
-                                        erlang:byte_size(Msg)
-                                    ))/binary,
-                                    Msg/binary>>,
-                                MIC
+                                MIC,
+                                Payload
                             );
                         false ->
-                            {error, {unknown_device, DevAddr}}
+                            {error, {?DEVADDR_NOT_IN_SUBNET, DevAddr}}
                     end;
                 _ ->
+                    %% TODO: Should fail here
                     %% no subnets
-                    find_device(
+                    send_to_device_worker(
                         Packet,
                         PacketTime,
                         Pid,
                         PubKeyBin,
                         Region,
                         DevAddr,
-                        <<(router_utils:b0(
-                                MType band 1,
-                                <<DevAddr:4/binary>>,
-                                FCnt,
-                                erlang:byte_size(Msg)
-                            ))/binary,
-                            Msg/binary>>,
-                        MIC
+                        MIC,
+                        Payload
                     )
             catch
                 _:_ ->
+                    %% TODO: Should fail here
                     %% no subnets
-                    find_device(
+                    send_to_device_worker(
                         Packet,
                         PacketTime,
                         Pid,
                         PubKeyBin,
                         Region,
                         DevAddr,
-                        <<(router_utils:b0(
-                                MType band 1,
-                                <<DevAddr:4/binary>>,
-                                FCnt,
-                                erlang:byte_size(Msg)
-                            ))/binary,
-                            Msg/binary>>,
-                        MIC
+                        MIC,
+                        Payload
                     )
             end;
         _ ->
             %% wrong devaddr prefix
-            {error, {unknown_device, DevAddr}}
+            {error, {?DEVADDR_MALFORMED, DevAddr}}
     end;
 packet(#packet_pb{payload = Payload}, _PacketTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
-find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
-    Devices = get_and_sort_devices(DevAddr, PubKeyBin),
-    case get_device_by_mic(B0, MIC, Devices) of
-        undefined ->
-            {error, {unknown_device, DevAddr}};
+send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, Payload) ->
+    case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+        {error, _Reason1} = Error ->
+            Error;
         Device ->
             DeviceID = router_device:id(Device),
             case maybe_start_worker(DeviceID) of
@@ -647,6 +629,18 @@ find_device(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, B0, MIC) ->
             end
     end.
 
+find_device(PubKeyBin, DevAddr, MIC, Payload) ->
+    Devices = get_and_sort_devices(DevAddr, PubKeyBin),
+    B0 = b0_from_payload(Payload, 16),
+    case get_device_by_mic(B0, MIC, Payload, Devices) of
+        {error, _} = Error ->
+            Error;
+        undefined ->
+            {error, {unknown_device, DevAddr}};
+        Device ->
+            Device
+    end.
+
 get_and_sort_devices(DevAddr, PubKeyBin) ->
     {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
     {Time2, Devices1} = timer:tc(router_device_devaddr, sort_devices, [Devices0, PubKeyBin]),
@@ -654,32 +648,65 @@ get_and_sort_devices(DevAddr, PubKeyBin) ->
     router_metrics:function_observe('router_device_devaddr:sort_devices', Time2),
     Devices1.
 
--spec get_device_by_mic(binary(), binary(), [router_device:device()]) ->
-    router_device:device() | undefined.
-get_device_by_mic(_Bin, _MIC, []) ->
+-spec get_device_by_mic(binary(), binary(), binary(), [router_device:device()]) ->
+    router_device:device() | undefined | {error, any()}.
+get_device_by_mic(_B0, _MIC, _Payload, []) ->
     undefined;
-get_device_by_mic(Bin, MIC, [Device | Devices]) ->
+get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
+    DeviceID = router_device:id(Device),
     case router_device:nwk_s_key(Device) of
         undefined ->
-            DeviceID = router_device:id(Device),
             lager:warning("device ~p did not have a nwk_s_key, deleting", [DeviceID]),
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             ok = router_device:delete(DB, CF, DeviceID),
-            get_device_by_mic(Bin, MIC, Devices);
+            ok = router_device_cache:delete(DeviceID),
+            get_device_by_mic(B0, MIC, Payload, Devices);
         NwkSKey ->
             try
-                case crypto:cmac(aes_cbc128, NwkSKey, Bin, 4) of
+                case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
                     MIC ->
                         Device;
                     _ ->
-                        get_device_by_mic(Bin, MIC, Devices)
+                        %% Try 32 bits b0 if fcnt close to 65k
+                        case router_device:fcnt(Device) > ?MAX_16_BITS - 100 of
+                            true ->
+                                B0_32 = b0_from_payload(Payload, 32),
+                                case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
+                                    MIC ->
+                                        lager:warning("device ~p went over max 16bits fcnt size", [
+                                            DeviceID
+                                        ]),
+                                        {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+                                        ok = router_device:delete(DB, CF, DeviceID),
+                                        ok = router_device_cache:delete(DeviceID),
+                                        {error, {unsupported_fcnt, DeviceID}};
+                                    _ ->
+                                        get_device_by_mic(B0, MIC, Payload, Devices)
+                                end;
+                            false ->
+                                get_device_by_mic(B0, MIC, Payload, Devices)
+                        end
                 end
             catch
                 _:_ ->
                     lager:warning("skipping invalid device ~p", [Device]),
-                    get_device_by_mic(Bin, MIC, Devices)
+                    get_device_by_mic(B0, MIC, Payload, Devices)
             end
     end.
+
+-spec b0_from_payload(binary(), non_neg_integer()) -> binary().
+b0_from_payload(Payload, FCntSize) ->
+    <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, _FOpts:FOptsLen/binary,
+        _PayloadAndMIC/binary>> = Payload,
+    Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
+    <<(router_utils:b0(
+            MType band 1,
+            <<DevAddr:4/binary>>,
+            FCnt,
+            erlang:byte_size(Msg)
+        ))/binary,
+        Msg/binary>>.
 
 %%%-------------------------------------------------------------------
 %% @doc

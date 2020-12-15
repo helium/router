@@ -235,6 +235,7 @@ handle_cast(
                         rssi = NewRSSI,
                         reply = Reply,
                         packet_selected = {Packet0, PubKeyBin, Region},
+                        packet_time = PacketTime,
                         device = Device1,
                         pid = Pid
                     },
@@ -297,6 +298,7 @@ handle_cast(
                                 JoinCache1#join_cache{
                                     rssi = NewRSSI,
                                     packet_selected = {Packet0, PubKeyBin, Region},
+                                    packet_time = PacketTime,
                                     packets = NewPackets,
                                     pid = Pid
                                 },
@@ -388,6 +390,7 @@ handle_cast(
             FrameCache = #frame_cache{
                 rssi = RSSI0,
                 packet = Packet0,
+                packet_time = PacketTime,
                 pubkey_bin = PubKeyBin,
                 frame = Frame,
                 pid = Pid,
@@ -425,7 +428,7 @@ handle_cast(
                                 blockchain_state_channel_response_v1:new(true)
                             ),
                             ok = router_metrics:packet_trip_observe_end(
-                                blockchain_helium_packet_v1:packet_hash(Packet0),
+                                PHash,
                                 PubKeyBin,
                                 erlang:system_time(millisecond),
                                 packet,

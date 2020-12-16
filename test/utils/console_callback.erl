@@ -212,7 +212,8 @@ websocket_info(_Req, {downlink, Payload}, State) ->
         <<"device:all:downlink:devices">>,
         #{
             <<"devices">> => [?CONSOLE_DEVICE_ID],
-            <<"payload">> => Payload
+            <<"payload">> => Payload,
+            <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME
         }
     ),
     {reply, {text, Data}, State};

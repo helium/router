@@ -43,6 +43,8 @@
 -define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 -define(MULTI_BUY_DEFAULT, 1).
+-define(DOWNLINK_TOOL_ORIGIN, #{<<"from">> := <<"console_downlink_queue">>}).
+-define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
 -type uuid_v4() :: binary().
 -type request_body() :: maps:map().
@@ -419,17 +421,29 @@ handle_info(
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
         <<"devices">> := DeviceIDs,
-        <<"payload">> := BinaryPayload
+        <<"payload">> := BinaryPayload,
+        <<"channel_name">> := ProvidedChannelName
     }},
     State
 ) ->
-    lager:info("sending downlink ~p for devices ~p", [BinaryPayload, DeviceIDs]),
+    ChannelName =
+        case jsx:decode(BinaryPayload, [return_maps]) of
+            ?DOWNLINK_TOOL_ORIGIN ->
+                ?DOWNLINK_TOOL_CHANNEL_NAME;
+            _ ->
+                ProvidedChannelName
+        end,
+    lager:info("sending downlink ~p for devices ~p from channel ~p", [
+        BinaryPayload,
+        DeviceIDs,
+        ChannelName
+    ]),
     lists:foreach(
         fun(DeviceID) ->
             Channel = router_channel:new(
                 <<"console_websocket">>,
                 websocket,
-                <<"Console downlink tool">>,
+                ChannelName,
                 #{},
                 DeviceID,
                 self()

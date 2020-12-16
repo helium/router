@@ -32,7 +32,8 @@
         iso8601,
         clique,
         inet_cidr,
-        grpcbox
+        grpcbox,
+        grpc_client
     ]},
     {included_applications, [blockchain]},
     {env, []},

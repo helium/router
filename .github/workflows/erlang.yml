@@ -23,10 +23,10 @@ jobs:
         env:
           SANITIZE_ERLANG_NIFS: 1
         run: ./rebar3 compile
-      
+
       - name: Check formatting
         run: ./rebar3 fmt --verbose --check rebar.config && ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && ./rebar3 fmt --verbose --check "config/sys.{config,config.src}"
-      
+
       - name: Run xref
         run: ./rebar3 xref
 
@@ -45,3 +45,6 @@ jobs:
 
       - name: Run Dialyzer
         run: ./rebar3 dialyzer
+
+      - name: Check Documentation
+        run: ./rebar3 edoc

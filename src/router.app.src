@@ -30,9 +30,9 @@
         elli,
         bbmustache,
         iso8601,
-        lib_http2_handler,
         clique,
-        inet_cidr
+        inet_cidr,
+        grpcbox
     ]},
     {included_applications, [blockchain]},
     {env, []},

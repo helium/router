@@ -146,8 +146,13 @@ handle_downlink(DeviceID, BinaryPayload, Channel) when is_binary(DeviceID) ->
             end
     end.
 
--spec new_data_cache(libp2p_crypto:pubkey_bin(), #packet_pb{}, #frame{}, atom(), integer()) ->
-    #data_cache{}.
+-spec new_data_cache(
+    libp2p_crypto:pubkey_bin(),
+    #packet_pb{},
+    #frame{},
+    atom(),
+    non_neg_integer()
+) -> #data_cache{}.
 new_data_cache(PubKeyBin, Packet, Frame, Region, Time) ->
     #data_cache{
         pub_key = PubKeyBin,

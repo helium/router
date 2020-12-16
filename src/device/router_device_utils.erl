@@ -10,7 +10,8 @@
     report_status_inactive/1,
     report_join_status/4,
     get_router_oui/0,
-    mtype_to_ack/1
+    mtype_to_ack/1,
+    milli_to_sec/1
 ]).
 
 -include("lorawan_vars.hrl").
@@ -23,7 +24,7 @@
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
-    blockchain_helium_packet_v1:packet(),
+    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
     binary() | undefined,
     #frame{},
     blockchain:blockchain()
@@ -35,7 +36,7 @@ report_frame_status(
     PubKeybin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     Frame,
     Blockchain
@@ -47,7 +48,7 @@ report_frame_status(
         PubKeybin,
         Region,
         Device,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Frame,
         Blockchain,
@@ -61,7 +62,7 @@ report_frame_status(
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
-    blockchain_helium_packet_v1:packet(),
+    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
     binary() | undefined,
     #frame{},
     blockchain:blockchain(),
@@ -74,7 +75,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr, fport = FPort},
     Blockchain,
@@ -89,7 +90,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         FPort,
         DevAddr,
@@ -103,7 +104,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr, fport = FPort},
     Blockchain,
@@ -118,7 +119,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         FPort,
         DevAddr,
@@ -132,7 +133,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr},
     Blockchain,
@@ -147,7 +148,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Port,
         DevAddr,
@@ -161,7 +162,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr},
     Blockchain,
@@ -176,7 +177,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Port,
         DevAddr,
@@ -190,7 +191,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr},
     Blockchain,
@@ -205,7 +206,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Port,
         DevAddr,
@@ -219,7 +220,7 @@ report_frame_status(
     PubKeyBin,
     Region,
     Device,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     #frame{devaddr = DevAddr},
     Blockchain,
@@ -234,7 +235,7 @@ report_frame_status(
         success,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Port,
         DevAddr,
@@ -250,7 +251,7 @@ report_frame_status(
     success | error,
     libp2p_crypto:pubkey_bin(),
     atom(),
-    blockchain_helium_packet_v1:packet(),
+    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
     binary() | undefined,
     non_neg_integer(),
     any(),
@@ -263,7 +264,7 @@ report_status(
     Status,
     PubKeyBin,
     Region,
-    Packet,
+    PacketAndPacketTime,
     ReplyPayload,
     Port,
     DevAddr,
@@ -276,7 +277,7 @@ report_status(
         Status,
         PubKeyBin,
         Region,
-        Packet,
+        PacketAndPacketTime,
         ReplyPayload,
         Port,
         DevAddr,
@@ -292,7 +293,7 @@ report_status(
     success | error,
     libp2p_crypto:pubkey_bin(),
     atom(),
-    blockchain_helium_packet_v1:packet(),
+    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
     binary() | undefined,
     non_neg_integer(),
     binary(),
@@ -306,7 +307,7 @@ report_status(
     Status,
     PubKeyBin,
     Region,
-    Packet,
+    {Packet, PacketTime},
     ReplyPayload,
     Port,
     DevAddr,
@@ -321,7 +322,7 @@ report_status(
     Report = #{
         category => Category,
         description => Desc,
-        reported_at => erlang:system_time(seconds),
+        reported_at => ?MODULE:milli_to_sec(PacketTime),
         payload => base64:encode(Payload),
         payload_size => erlang:byte_size(Payload),
         port => Port,
@@ -332,7 +333,7 @@ report_status(
                 PubKeyBin,
                 Packet,
                 Region,
-                erlang:system_time(seconds),
+                ?MODULE:milli_to_sec(PacketTime),
                 Status
             )
         ],
@@ -385,7 +386,12 @@ report_status_inactive(Device) ->
     },
     ok = router_device_api:report_status(Device, Report).
 
-report_join_status(Device, {_, PubKeyBinSelected, _} = PacketSelected, Packets, Blockchain) ->
+report_join_status(
+    Device,
+    {_, PubKeyBinSelected, _, PacketTimeSelected} = PacketSelected,
+    Packets,
+    Blockchain
+) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
     DevAddr = router_device:devaddr(Device),
@@ -393,13 +399,13 @@ report_join_status(Device, {_, PubKeyBinSelected, _} = PacketSelected, Packets, 
         <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     Hotspots = lists:foldl(
-        fun({Packet, PubKeyBin, Region}, Acc) ->
+        fun({Packet, PubKeyBin, Region, PacketTime}, Acc) ->
             H = router_utils:format_hotspot(
                 Blockchain,
                 PubKeyBin,
                 Packet,
                 Region,
-                erlang:system_time(seconds),
+                ?MODULE:milli_to_sec(PacketTime),
                 <<"success">>
             ),
             [maps:put(selected, PubKeyBin == PubKeyBinSelected, H) | Acc]
@@ -410,7 +416,7 @@ report_join_status(Device, {_, PubKeyBinSelected, _} = PacketSelected, Packets, 
     Report = #{
         category => activation,
         description => Desc,
-        reported_at => erlang:system_time(seconds),
+        reported_at => ?MODULE:milli_to_sec(PacketTimeSelected),
         payload => <<>>,
         payload_size => 0,
         port => 0,
@@ -435,6 +441,10 @@ get_router_oui() ->
 -spec mtype_to_ack(integer()) -> 0 | 1.
 mtype_to_ack(?CONFIRMED_UP) -> 1;
 mtype_to_ack(_) -> 0.
+
+-spec milli_to_sec(non_neg_integer()) -> non_neg_integer().
+milli_to_sec(Time) ->
+    erlang:trunc(Time / 1000).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

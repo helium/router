@@ -15,9 +15,13 @@
 -record(join_cache, {
     rssi :: float(),
     reply :: binary(),
-    packet_selected :: {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()},
-    packet_time :: pos_integer(),
-    packets = [] :: [{blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom()}],
+    packet_selected ::
+        {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
+            non_neg_integer()},
+    packets = [] :: [
+        {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
+            non_neg_integer()}
+    ],
     device :: router_device:device(),
     pid :: pid()
 }).
@@ -26,7 +30,6 @@
     rssi :: float(),
     count = 1 :: pos_integer(),
     packet :: blockchain_helium_packet_v1:packet(),
-    packet_time :: pos_integer(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     frame :: #frame{},
     pid :: pid(),

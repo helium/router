@@ -234,7 +234,7 @@ handle_cast(
                     JoinCache = #join_cache{
                         rssi = NewRSSI,
                         reply = Reply,
-                        packet_selected = {Packet0, PubKeyBin, Region},
+                        packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
                         device = Device1,
                         pid = Pid
                     },
@@ -253,7 +253,7 @@ handle_cast(
                     }};
                 #join_cache{
                     rssi = OldRSSI,
-                    packet_selected = {OldPacket, _, _} = OldSelected,
+                    packet_selected = {OldPacket, _, _, _} = OldSelected,
                     packets = OldPackets,
                     pid = OldPid
                 } = JoinCache1 ->
@@ -277,7 +277,10 @@ handle_cast(
                             Cache1 = maps:put(
                                 JoinNonce,
                                 JoinCache1#join_cache{
-                                    packets = [{Packet0, PubKeyBin, Region} | OldPackets]
+                                    packets = [
+                                        {Packet0, PubKeyBin, Region, PacketTime}
+                                        | OldPackets
+                                    ]
                                 },
                                 Cache0
                             ),
@@ -296,7 +299,7 @@ handle_cast(
                                 JoinNonce,
                                 JoinCache1#join_cache{
                                     rssi = NewRSSI,
-                                    packet_selected = {Packet0, PubKeyBin, Region},
+                                    packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
                                     packets = NewPackets,
                                     pid = Pid
                                 },
@@ -329,7 +332,7 @@ handle_cast(
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    case validate_frame(Packet0, PubKeyBin, Region, Device0, Blockchain) of
+    case validate_frame(Packet0, PacketTime, PubKeyBin, Region, Device0, Blockchain) of
         {error, {not_enough_dc, _Reason, Device1}} ->
             ok = router_device_utils:report_status_no_dc(Device0),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
@@ -372,7 +375,7 @@ handle_cast(
                         Packet0,
                         Frame,
                         Region,
-                        erlang:system_time(second)
+                        router_device_utils:milli_to_sec(PacketTime)
                     ),
                     ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
@@ -385,7 +388,7 @@ handle_cast(
             end,
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device1),
-            FrameCache = #frame_cache{
+            NewFrameCache = #frame_cache{
                 rssi = RSSI0,
                 packet = Packet0,
                 pubkey_bin = PubKeyBin,
@@ -410,50 +413,47 @@ handle_cast(
                         self(),
                         {frame_timeout, FCnt, PacketTime}
                     ),
-                    Cache1 = maps:put(FCnt, FrameCache, Cache0),
                     {noreply, State#state{
                         device = Device1,
-                        frame_cache = Cache1,
+                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
                         downlink_handled_at = FCnt,
                         adr_cache = ADRCache1
                     }};
-                #frame_cache{rssi = RSSI1, pid = Pid2, count = Count} = FrameCache0 ->
-                    case RSSI0 > RSSI1 of
+                #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
+                    case RSSI0 > OldRSSI of
                         false ->
                             catch blockchain_state_channel_handler:send_response(
                                 Pid,
                                 blockchain_state_channel_response_v1:new(true)
                             ),
                             ok = router_metrics:packet_trip_observe_end(
-                                blockchain_helium_packet_v1:packet_hash(Packet0),
+                                PHash,
                                 PubKeyBin,
                                 erlang:system_time(millisecond),
                                 packet,
                                 false
                             ),
-                            Cache1 = maps:put(
-                                FCnt,
-                                FrameCache0#frame_cache{count = Count + 1},
-                                Cache0
-                            ),
                             {noreply, State#state{
                                 device = Device1,
-                                frame_cache = Cache1,
+                                frame_cache = maps:put(
+                                    FCnt,
+                                    OldFrameCache#frame_cache{count = Count + 1},
+                                    Cache0
+                                ),
                                 adr_cache = ADRCache1
                             }};
                         true ->
                             catch blockchain_state_channel_handler:send_response(
-                                Pid2,
+                                OldPid,
                                 blockchain_state_channel_response_v1:new(true)
-                            ),
-                            Cache1 = maps:put(
-                                FCnt,
-                                FrameCache#frame_cache{count = Count + 1},
-                                Cache0
                             ),
                             {noreply, State#state{
                                 device = Device1,
-                                frame_cache = Cache1,
+                                frame_cache = maps:put(
+                                    FCnt,
+                                    NewFrameCache#frame_cache{count = Count + 1},
+                                    Cache0
+                                ),
                                 adr_cache = ADRCache1
                             }}
                     end
@@ -480,7 +480,7 @@ handle_info(
         device = Device0,
         pid = Pid
     } = maps:get(JoinNonce, JoinCache),
-    {Packet, PubKeyBin, Region} = PacketSelected,
+    {Packet, PubKeyBin, Region, _PacketTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         JoinNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),
@@ -543,7 +543,18 @@ handle_info(
     ok = router_device_routing:clear_multi_buy(Packet),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
     DeviceID = router_device:id(Device),
-    case handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) of
+    case
+        handle_frame_timeout(
+            Packet,
+            PacketTime,
+            PubKeyBin,
+            Region,
+            Device,
+            Frame,
+            Count,
+            Blockchain
+        )
+    of
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             catch blockchain_state_channel_handler:send_response(
@@ -795,6 +806,7 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
 %%%-------------------------------------------------------------------
 -spec validate_frame(
     blockchain_helium_packet_v1:packet(),
+    non_neg_integer(),
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
@@ -802,7 +814,7 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
 ) ->
     {ok, #frame{}, router_device:device(), boolean(), {non_neg_integer(), non_neg_integer()}}
     | {error, any()}.
-validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -896,7 +908,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                         success,
                         PubKeyBin,
                         Region,
-                        Packet,
+                        {Packet, PacketTime},
                         undefined,
                         0,
                         DevAddr,
@@ -924,7 +936,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
                         error,
                         PubKeyBin,
                         Region,
-                        Packet,
+                        {Packet, PacketTime},
                         undefined,
                         0,
                         DevAddr,
@@ -996,6 +1008,7 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
 
 -spec handle_frame_timeout(
     blockchain_helium_packet_v1:packet(),
+    non_neg_integer(),
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
@@ -1006,9 +1019,10 @@ validate_frame(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     noop
     | {ok, router_device:device()}
     | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain) ->
+handle_frame_timeout(Packet, PacketTime, PubKeyBin, Region, Device, Frame, Count, Blockchain) ->
     handle_frame_timeout(
         Packet,
+        PacketTime,
         PubKeyBin,
         Region,
         Device,
@@ -1020,6 +1034,7 @@ handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain
 
 -spec handle_frame_timeout(
     blockchain_helium_packet_v1:packet(),
+    non_neg_integer(),
     libp2p_crypto:pubkey_bin(),
     atom(),
     router_device:device(),
@@ -1031,7 +1046,7 @@ handle_frame_timeout(Packet, PubKeyBin, Region, Device, Frame, Count, Blockchain
     noop
     | {ok, router_device:device()}
     | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
+handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
     ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -1097,7 +1112,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                 PubKeyBin,
                 Region,
                 Device1,
-                Packet1,
+                {Packet1, PacketTime},
                 undefined,
                 Frame,
                 Blockchain
@@ -1114,7 +1129,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
         _ ->
             noop
     end;
-handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [
+handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [
     #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
     | T
 ]) ->
@@ -1195,7 +1210,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                 PubKeyBin,
                 Region,
                 Device1,
-                Packet1,
+                {Packet1, PacketTime},
                 ReplyPayload,
                 Frame,
                 Blockchain,
@@ -1216,7 +1231,7 @@ handle_frame_timeout(Packet0, PubKeyBin, Region, Device0, Frame, Count, Blockcha
                 PubKeyBin,
                 Region,
                 Device1,
-                Packet1,
+                {Packet1, PacketTime},
                 ReplyPayload,
                 Frame,
                 Blockchain,

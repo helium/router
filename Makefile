@@ -9,18 +9,19 @@ else
 endif
 
 compile:
-	$(REBAR) compile && $(REBAR) format
+	$(REBAR) compile
+	$(REBAR) format
 
 clean:
 	git clean -dXfffffffffff
 
 test:
-	$(REBAR) fmt --verbose --check rebar.config && \
-	$(REBAR) fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" && \
-	$(REBAR) fmt --verbose --check "config/sys.{config,config.src}" && \
-	$(REBAR) xref && \
-	$(REBAR) dialyzer && \
-	$(REBAR) eunit && \
+	$(REBAR) fmt --verbose --check rebar.config
+	$(REBAR) fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}"
+	$(REBAR) fmt --verbose --check "config/sys.{config,config.src}"
+	$(REBAR) xref
+	$(REBAR) dialyzer
+	$(REBAR) eunit
 	$(REBAR) ct
 
 rel:

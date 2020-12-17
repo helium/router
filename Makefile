@@ -29,3 +29,7 @@ rel:
 
 run:
 	_build/default/rel/router/bin/router foreground
+
+# Pass all unknown targets straight to rebar3 (e.g. `make dialyzer`)
+%:
+	$(REBAR) $@

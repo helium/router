@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([http_downlink_test/1]).
+-export([http_downlink_test/1, console_tool_downlink_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -32,7 +32,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [http_downlink_test].
+    [http_downlink_test, console_tool_downlink_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -51,6 +51,22 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 http_downlink_test(Config) ->
+    Payload = <<"httpdownlink">>,
+    Message = jsx:encode(#{payload_raw => base64:encode(Payload)}),
+    test_downlink_message_for_channel(Config, Payload, Message, ?CONSOLE_HTTP_CHANNEL_NAME).
+
+console_tool_downlink_test(Config) ->
+    %% Downlinks queued from the downlink tool will come with a 'from' key in
+    %% their payload. The channel name will not be reported as the Channel the
+    %% message was queued against to help with debugging for users.
+    Payload = <<"console_tool_downlink">>,
+    Message = jsx:encode(#{
+        payload_raw => base64:encode(Payload),
+        from => <<"console_downlink_queue">>
+    }),
+    test_downlink_message_for_channel(Config, Payload, Message, <<"Console downlink tool">>).
+
+test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, ExpectedChannelName) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
@@ -115,8 +131,6 @@ http_downlink_test(Config) ->
             {websocket_init, P} -> P
         after 2500 -> ct:fail(websocket_init_timeout)
         end,
-    DownlinkPayload = <<"httpdownlink">>,
-    DownlinkMessage = jsx:encode(#{payload_raw => base64:encode(DownlinkPayload)}),
     WSPid ! {downlink, DownlinkMessage},
 
     %% Send UNCONFIRMED_UP frame packet
@@ -160,7 +174,7 @@ http_downlink_test(Config) ->
         <<"channels">> => [
             #{
                 <<"id">> => <<"console_websocket">>,
-                <<"name">> => <<"Console downlink tool">>,
+                <<"name">> => ExpectedChannelName,
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'

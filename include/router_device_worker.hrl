@@ -36,14 +36,6 @@
     region :: atom()
 }).
 
--record(adr_cache, {
-    hotspot :: libp2p_crypto:pubkey_bin(),
-    rssi :: float() | undefined,
-    snr :: float() | undefined,
-    packet_size :: integer(),
-    packet_hash :: binary()
-}).
-
 -record(downlink, {
     confirmed :: boolean(),
     port :: non_neg_integer(),

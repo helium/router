@@ -6,6 +6,10 @@ on:
     tags: '*'
   pull_request:
     branches: master
+  # Run every day at midnight PST (0800 UTC)
+  # https://crontab.guru/#0_8_*_*_*
+  schedule:
+    - cron: '0 8 * * *'
 
 jobs:
   CI:

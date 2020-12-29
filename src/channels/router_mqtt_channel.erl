@@ -399,12 +399,11 @@ connect(URI, DeviceID, Name) ->
             {ok, C} = emqtt:start_link(EmqttOpts),
             case emqtt:connect(C) of
                 {ok, _Props} ->
-                    lager:info("connect returned ~p", [_Props]),
+                    lager:info("connect returned ~p ~p", [_Props, EmqttOpts]),
                     {ok, C};
                 {error, Reason} ->
-                    lager:info("Failed to connect to ~p ~p : ~p", [
-                        Host,
-                        Port,
+                    lager:info("Failed to connect to ~p : ~p", [
+                        EmqttOpts,
                         Reason
                     ]),
                     {error, Reason}

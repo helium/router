@@ -126,8 +126,10 @@ charge(Device, PayloadSize, Chain) ->
 -spec current_balance(OrgID :: binary()) -> {non_neg_integer(), non_neg_integer()}.
 current_balance(OrgID) ->
     case lookup(OrgID) of
-        {error, not_found} -> {0, 0};
-        {ok, Balance, Nonce} -> {Balance, Nonce}
+        {error, not_found} ->
+            fetch_and_save_org_balance(OrgID);
+        {ok, Balance, Nonce} ->
+            {Balance, Nonce}
     end.
 
 %% ------------------------------------------------------------------
@@ -329,12 +331,16 @@ charge_test() ->
 
 current_balance_test() ->
     _ = ets:new(?ETS, [public, named_table, set]),
+    meck:new(router_console_device_api, [passthrough]),
+    meck:expect(router_console_device_api, get_org, fun(_OrgID) -> {error, 0} end),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
     ?assertEqual({0, 0}, current_balance(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({100, 1}, current_balance(OrgID)),
+    ?assert(meck:validate(router_console_device_api)),
+    meck:unload(router_console_device_api),
     ets:delete(?ETS),
     ok.
 

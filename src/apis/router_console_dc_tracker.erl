@@ -18,6 +18,19 @@
 ]).
 
 %% ------------------------------------------------------------------
+%% Router CLI Exports
+%% ------------------------------------------------------------------
+-export([
+    lookup/1,
+    lookup_balance_less_than/1,
+    lookup_all/0,
+    fetch_and_save_org_balance/1
+]).
+
+%% ets:fun2ms(fun ({_, {Balance, _}}=R) when Balance < Amount -> R end).
+-define(LESS_THAN_FUN(Amount), [{{'_', {'$1', '_'}}, [{'<', '$1', Amount}], ['$_']}]).
+
+%% ------------------------------------------------------------------
 %% gen_server Function Exports
 %% ------------------------------------------------------------------
 -export([
@@ -251,6 +264,16 @@ lookup(OrgID) ->
         [{OrgID, {Balance, Nonce}}] -> {ok, Balance, Nonce}
     end.
 
+-spec lookup_balance_less_than(non_neg_integer()) ->
+    [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].
+lookup_balance_less_than(Amount) ->
+    ets:select(?ETS, ?LESS_THAN_FUN(Amount)).
+
+-spec lookup_all() ->
+    [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].
+lookup_all() ->
+    ets:tab2list(?ETS).
+
 -spec insert(binary(), non_neg_integer(), non_neg_integer()) -> ok.
 insert(OrgID, Balance, Nonce) ->
     true = ets:insert(?ETS, {OrgID, {Balance, Nonce}}),
@@ -335,6 +358,17 @@ current_balance_test() ->
     ?assertEqual({0, 0}, current_balance(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({100, 1}, current_balance(OrgID)),
+    ets:delete(?ETS),
+    ok.
+
+lookup_balance_less_than_test() ->
+    _ = ets:new(?ETS, [public, named_table, set]),
+    OrgID = <<"ORG_ID">>,
+    Nonce = 1,
+    Balance = 100,
+    ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
+    ?assertEqual(ok, refill(<<"ANOTHER_ORG">>, 1, 999)),
+    ?assertEqual([{OrgID, {Balance, Nonce}}], lookup_balance_less_than(500)),
     ets:delete(?ETS),
     ok.
 

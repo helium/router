@@ -46,6 +46,13 @@
 -define(DOWNLINK_TOOL_ORIGIN, #{<<"from">> := <<"console_downlink_queue">>}).
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
+-define(GET_ORG_CACHE_NAME, router_console_device_api_get_org).
+-define(GET_DEVICES_CACHE_NAME, router_console_device_api_get_devices).
+%% E2QC durations are in seconds while our eviction handling is milliseconds
+-define(GET_ORG_LIFETIME, 300).
+-define(GET_DEVICES_LIFETIME, 10).
+-define(GET_ORG_EVICTION_TIMEOUT, timer:seconds(10)).
+
 -type uuid_v4() :: binary().
 -type request_body() :: maps:map().
 -type pending() :: #{uuid_v4() => request_body()}.
@@ -98,62 +105,27 @@ get_device(DeviceID) ->
 -spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
 get_devices(DevEui, AppEui) ->
     e2qc:cache(
-        router_console_device_api_get_devices,
+        ?GET_DEVICES_CACHE_NAME,
         {DevEui, AppEui},
-        10,
+        ?GET_DEVICES_LIFETIME,
         fun() ->
-            {Endpoint, Token} = token_lookup(),
-            Url =
-                <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
-                    (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
-                    (lorawan_utils:binary_to_hex(AppEui))/binary>>,
-            lager:debug("get ~p", [Url]),
-            Opts = [
-                with_body,
-                {pool, ?POOL},
-                {connect_timeout, timer:seconds(2)},
-                {recv_timeout, timer:seconds(2)}
-            ],
-            Start = erlang:system_time(millisecond),
-            case
-                hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts)
-            of
-                {ok, 200, _Headers, Body} ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(get_devices, ok, End - Start),
-                    Devices = lists:map(
-                        fun(JSONDevice) ->
-                            ID = kvc:path([<<"id">>], JSONDevice),
-                            Name = kvc:path([<<"name">>], JSONDevice),
-                            AppKey = lorawan_utils:hex_to_binary(
-                                kvc:path([<<"app_key">>], JSONDevice)
-                            ),
-                            Metadata = #{
-                                labels => kvc:path([<<"labels">>], JSONDevice),
-                                organization_id => kvc:path([<<"organization_id">>], JSONDevice),
-                                multi_buy => kvc:path(
-                                    [<<"multi_buy">>],
-                                    JSONDevice,
-                                    ?MULTI_BUY_DEFAULT
-                                )
-                            },
-                            IsActive = kvc:path([<<"active">>], JSONDevice),
-                            DeviceUpdates = [
-                                {name, Name},
-                                {dev_eui, DevEui},
-                                {app_eui, AppEui},
-                                {metadata, Metadata},
-                                {is_active, IsActive}
-                            ],
-                            {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
-                        end,
-                        jsx:decode(Body, [return_maps])
-                    ),
-                    Devices;
-                _Other ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(get_devices, error, End - Start),
-                    []
+            get_devices_(DevEui, AppEui)
+        end
+    ).
+
+-spec get_org(OrgID :: binary()) -> {ok, map()} | {error, any()}.
+get_org(OrgID) ->
+    e2qc:cache(
+        ?GET_ORG_CACHE_NAME,
+        OrgID,
+        ?GET_ORG_LIFETIME,
+        fun() ->
+            case get_org_(OrgID) of
+                {error, Reason} = Error ->
+                    ok = schedule_org_eviction(OrgID, Reason),
+                    Error;
+                Value ->
+                    Value
             end
         end
     ).
@@ -270,44 +242,6 @@ get_downlink_url(Channel, DeviceID) ->
                 DeviceID/binary>>
     end.
 
--spec get_org(binary()) -> {ok, map()} | {error, any()}.
-get_org(OrgID) ->
-    e2qc:cache(
-        router_console_device_api_get_org,
-        OrgID,
-        300,
-        fun() ->
-            {Endpoint, Token} = token_lookup(),
-            Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
-            lager:debug("get ~p", [Url]),
-            Opts = [
-                with_body,
-                {pool, ?POOL},
-                {connect_timeout, timer:seconds(2)},
-                {recv_timeout, timer:seconds(2)}
-            ],
-            Start = erlang:system_time(millisecond),
-            case
-                hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts)
-            of
-                {ok, 200, _Headers, Body} ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(get_org, ok, End - Start),
-                    lager:debug("Body for ~p ~p", [Url, Body]),
-                    {ok, jsx:decode(Body, [return_maps])};
-                {ok, 404, _ResponseHeaders, _ResponseBody} ->
-                    lager:debug("org ~p not found", [OrgID]),
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(get_org, not_found, End - Start),
-                    {error, not_found};
-                _Other ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(get_org, error, End - Start),
-                    {error, {get_org_failed, _Other}}
-            end
-        end
-    ).
-
 -spec organizations_burned(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
 organizations_burned(Memo, HNTAmount, DCAmount) ->
     Body = #{
@@ -381,6 +315,17 @@ handle_info(?TICK, #state{db = DB, pending_burns = P, inflight = I} = State) ->
     ok = store_pending_burns(DB, P),
     Tref = schedule_next_tick(),
     {noreply, State#state{inflight = GCI ++ NewInflight, tref = Tref}};
+handle_info({evict_org, OrgId, EvictionReason}, State) ->
+    case e2qc:evict(?GET_ORG_CACHE_NAME, OrgId) of
+        ok ->
+            lager:info("Evicted ~p from cache early because ~p", [OrgId, EvictionReason]);
+        notfound ->
+            lager:info("~p not found in cache for early eviction because ~p", [
+                OrgId,
+                EvictionReason
+            ])
+    end,
+    {noreply, State};
 handle_info({hnt_burn, success, Uuid}, #state{pending_burns = P, inflight = I} = State) ->
     {noreply, State#state{
         pending_burns = maps:remove(Uuid, P),
@@ -723,6 +668,89 @@ get_device_(Endpoint, Token, Device) ->
             {error, {get_device_failed, _Other}}
     end.
 
+-spec get_devices_(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
+get_devices_(DevEui, AppEui) ->
+    {Endpoint, Token} = token_lookup(),
+    Url =
+        <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
+            (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
+            (lorawan_utils:binary_to_hex(AppEui))/binary>>,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_devices, ok, End - Start),
+            Devices = lists:map(
+                fun(JSONDevice) ->
+                    ID = kvc:path([<<"id">>], JSONDevice),
+                    Name = kvc:path([<<"name">>], JSONDevice),
+                    AppKey = lorawan_utils:hex_to_binary(
+                        kvc:path([<<"app_key">>], JSONDevice)
+                    ),
+                    Metadata = #{
+                        labels => kvc:path([<<"labels">>], JSONDevice),
+                        organization_id => kvc:path([<<"organization_id">>], JSONDevice),
+                        multi_buy => kvc:path(
+                            [<<"multi_buy">>],
+                            JSONDevice,
+                            ?MULTI_BUY_DEFAULT
+                        )
+                    },
+                    IsActive = kvc:path([<<"active">>], JSONDevice),
+                    DeviceUpdates = [
+                        {name, Name},
+                        {dev_eui, DevEui},
+                        {app_eui, AppEui},
+                        {metadata, Metadata},
+                        {is_active, IsActive}
+                    ],
+                    {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
+                end,
+                jsx:decode(Body, [return_maps])
+            ),
+            Devices;
+        _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_devices, error, End - Start),
+            []
+    end.
+
+-spec get_org_(OrgID :: binary()) -> {ok, map()} | {error, any()}.
+get_org_(OrgID) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_org, ok, End - Start),
+            lager:debug("Body for ~p ~p", [Url, Body]),
+            {ok, jsx:decode(Body, [return_maps])};
+        {ok, 404, _ResponseHeaders, _ResponseBody} ->
+            lager:debug("org ~p not found", [OrgID]),
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_org, not_found, End - Start),
+            {error, not_found};
+        _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_org, error, End - Start),
+            {error, {get_org_failed, _Other}}
+    end.
+
 -spec token_lookup() -> {binary(), binary()}.
 token_lookup() ->
     case ets:lookup(?ETS, token) of
@@ -755,6 +783,11 @@ debug_delete(DeviceID) ->
 -spec schedule_next_tick() -> reference().
 schedule_next_tick() ->
     erlang:send_after(?TICK_INTERVAL, self(), ?TICK).
+
+-spec schedule_org_eviction(OrgID :: binary(), Reason :: any()) -> ok.
+schedule_org_eviction(OrgID, Reason) ->
+    _ = erlang:send_after(?GET_ORG_EVICTION_TIMEOUT, self(), {evict_org, OrgID, Reason}),
+    ok.
 
 -spec store_pending_burns(
     DB :: rocksdb:db_handle(),

@@ -107,7 +107,7 @@ terminate(_Reason, #state{vm = VM} = _State) ->
 
 -spec schedule_vm_check() -> ok.
 schedule_vm_check() ->
-    _ = erlang:send_after(?VM_CHECK_TIMER, self(), ?VM_CHECK_TICK),
+    {ok, _} = timer:send_interval(?VM_CHECK_TIMER, self(), ?VM_CHECK_TICK),
     ok.
 
 %% ------------------------------------------------------------------

@@ -30,7 +30,8 @@
         elli,
         bbmustache,
         iso8601,
-        lib_http2_handler
+        lib_http2_handler,
+        clique
     ]},
     {included_applications, [blockchain]},
     {env, []},

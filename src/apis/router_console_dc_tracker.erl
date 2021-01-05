@@ -24,11 +24,17 @@
     lookup/1,
     lookup_balance_less_than/1,
     lookup_all/0,
-    fetch_and_save_org_balance/1
+    fetch_and_save_org_balance/1,
+    lookup_nonce/1,
+    lookup_balance/1
 ]).
 
 %% ets:fun2ms(fun ({_, {Balance, _}}=R) when Balance < Amount -> R end).
 -define(LESS_THAN_FUN(Amount), [{{'_', {'$1', '_'}}, [{'<', '$1', Amount}], ['$_']}]).
+%% ets:fun2ms(fun ({_, {Balance, _}}=R) when Balance == Amount -> R end).
+-define(BALANCE_EQUALS_FUN(Balance), [{{'_', {'$1', '_'}}, [{'==', '$1', Balance}], ['$_']}]).
+%% ets:fun2ms(fun ({_, {_, Nonce}}=R) when Nonce == Amount -> R end).
+-define(NONCE_EQUALS_FUN(Nonce), [{{'_', {'_', '$1'}}, [{'==', '$1', Nonce}], ['$_']}]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -270,6 +276,16 @@ lookup(OrgID) ->
     [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].
 lookup_balance_less_than(Amount) ->
     ets:select(?ETS, ?LESS_THAN_FUN(Amount)).
+
+-spec lookup_nonce(non_neg_integer()) ->
+    [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].
+lookup_nonce(Amount) ->
+    ets:select(?ETS, ?NONCE_EQUALS_FUN(Amount)).
+
+-spec lookup_balance(non_neg_integer()) ->
+    [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].
+lookup_balance(Amount) ->
+    ets:select(?ETS, ?BALANCE_EQUALS_FUN(Amount)).
 
 -spec lookup_all() ->
     [{Org :: binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}].

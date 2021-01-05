@@ -1,12 +1,6 @@
-.PHONY: compile test typecheck ci
+.PHONY: compile clean test rel run
 
 REBAR=./rebar3
-ifeq ($(BUILDKITE), true)
-  # get branch name and replace any forward slashes it may contain
-  CIBRANCH=$(subst /,-,$(BUILDKITE_BRANCH))
-else
-  CIBRANCH=$(shell git rev-parse --abbrev-ref HEAD | sed 's/\//-/')
-endif
 
 compile:
 	$(REBAR) compile

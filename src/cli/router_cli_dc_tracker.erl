@@ -38,7 +38,7 @@ register_all_cmds() ->
 
 dc_usage() ->
     [
-        ["dc"],
+        ["dc_tracker"],
         [
             "DC Tracker commands\n\n",
             "  info all [--less 42] [--refetch]                 - Display DC for all Orgs\n",
@@ -54,7 +54,7 @@ dc_usage() ->
 
 dc_cmd() ->
     [
-        [["dc"], [], [], ?USAGE]
+        [["dc_tracker"], [], [], ?USAGE]
     ].
 
 %%--------------------------------------------------------------------
@@ -63,7 +63,7 @@ dc_cmd() ->
 
 dc_info_usage() ->
     [
-        ["dc", "info"],
+        ["dc_tracker", "info"],
         [
             "Info commands (all commands have [--refetch] flag)\n\n",
             "  info all [--less 42]   - Display DC for all Orgs\n",
@@ -83,7 +83,7 @@ dc_info_usage() ->
 dc_info_cmd() ->
     [
         [
-            ["dc", "info", "all"],
+            ["dc_tracker", "info", "all"],
             [],
             [
                 {less_than, [
@@ -94,11 +94,11 @@ dc_info_cmd() ->
             ],
             fun dc_info_all/3
         ],
-        [["dc", "info", "nonce", '*'], [], [refetch_flag()], fun dc_info_by_nonce/3],
-        [["dc", "info", "balance", '*'], [], [refetch_flag()], fun dc_info_by_balance/3],
-        [["dc", "info", "no-nonce"], [], [refetch_flag()], fun dc_info_no_nonce/3],
-        [["dc", "info", "no-balance"], [], [refetch_flag()], fun dc_info_no_balance/3],
-        [["dc", "info", '*'], [], [refetch_flag()], fun dc_info_single/3]
+        [["dc_tracker", "info", "nonce", '*'], [], [refetch_flag()], fun dc_info_by_nonce/3],
+        [["dc_tracker", "info", "balance", '*'], [], [refetch_flag()], fun dc_info_by_balance/3],
+        [["dc_tracker", "info", "no-nonce"], [], [refetch_flag()], fun dc_info_no_nonce/3],
+        [["dc_tracker", "info", "no-balance"], [], [refetch_flag()], fun dc_info_no_balance/3],
+        [["dc_tracker", "info", '*'], [], [refetch_flag()], fun dc_info_single/3]
     ].
 
 refetch_flag() ->
@@ -107,21 +107,21 @@ refetch_flag() ->
         {datatype, boolean}
     ]}.
 
-dc_info_by_nonce(["dc", "info", "nonce", Nonce], [], Flags) ->
+dc_info_by_nonce(["dc_tracker", "info", "nonce", Nonce], [], Flags) ->
     N = list_to_integer(Nonce),
     list_orgs_maybe_refetch(lookup_nonce(N), Flags).
 
-dc_info_by_balance(["dc", "info", "balance", Balance], [], Flags) ->
+dc_info_by_balance(["dc_tracker", "info", "balance", Balance], [], Flags) ->
     B = list_to_integer(Balance),
     list_orgs_maybe_refetch(lookup_nonce(B), Flags).
 
-dc_info_no_nonce(["dc", "info", "no-nonce"], [], Flags) ->
+dc_info_no_nonce(["dc_tracker", "info", "no-nonce"], [], Flags) ->
     list_orgs_maybe_refetch(lookup_nonce(0), Flags).
 
-dc_info_no_balance(["dc", "info", "no-balance"], [], Flags) ->
+dc_info_no_balance(["dc_tracker", "info", "no-balance"], [], Flags) ->
     list_orgs_maybe_refetch(lookup_balance(0), Flags).
 
-dc_info_all(["dc", "info", "all"], [], Flags) ->
+dc_info_all(["dc_tracker", "info", "all"], [], Flags) ->
     Amount = proplists:get_value(less_than, Flags),
     Orgs =
         case proplists:get_value(less_than, Flags) of
@@ -130,7 +130,7 @@ dc_info_all(["dc", "info", "all"], [], Flags) ->
         end,
     list_orgs_maybe_refetch(Orgs, Flags).
 
-dc_info_single(["dc", "info", Org], [], Flags) ->
+dc_info_single(["dc_tracker", "info", Org], [], Flags) ->
     OrgId = erlang:list_to_binary(Org),
     Refetch = proplists:is_defined(refetch, Flags),
 
@@ -173,7 +173,7 @@ list_orgs_maybe_refetch(Orgs, Flags) ->
 
 dc_refill_usage() ->
     [
-        ["dc", "refill"],
+        ["dc_tracker", "refill"],
         [
             "Refill commmands\n\n",
             "  refill <org_id> -b <balance> -n <nonce> [--dry-run --force]     - Refill Org\n\n",
@@ -187,9 +187,9 @@ dc_refill_usage() ->
 
 dc_refill_cmd() ->
     [
-        [["dc", "refill"], [], [], ?USAGE],
+        [["dc_tracker", "refill"], [], [], ?USAGE],
         [
-            ["dc", "refill", '*'],
+            ["dc_tracker", "refill", '*'],
             [],
             [
                 {balance, [
@@ -217,7 +217,7 @@ dc_refill_cmd() ->
 
 refill_cmd(_, [], []) ->
     usage;
-refill_cmd(["dc", "refill", Org], [], Flags) ->
+refill_cmd(["dc_tracker", "refill", Org], [], Flags) ->
     OrgId = erlang:list_to_binary(Org),
     refill_org(
         OrgId,

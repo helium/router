@@ -3,5 +3,5 @@ if [ -t 0 ] ; then
     export CLIQUE_COLUMNS=`stty size 2>/dev/null | cut -d ' ' -f 2`
 fi
 
-relx_nodetool rpc router_console command dc $@
+relx_nodetool rpc router_console command dc_tracker $@
 exit $?

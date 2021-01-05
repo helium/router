@@ -109,7 +109,7 @@
   0},
  {<<"libp2p">>,
   {git,"https://github.com/helium/erlang-libp2p.git",
-       {ref,"edf8e052b99a13656c4d847cb30adb8bf21003df"}},
+       {ref,"4d86e0a6b2e235a996bbae9da27e61b6b75a3035"}},
   1},
  {<<"libp2p_crypto">>,{pkg,<<"libp2p_crypto">>,<<"1.1.0">>},2},
  {<<"meck">>,{pkg,<<"meck">>,<<"0.8.12">>},1},

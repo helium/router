@@ -394,4 +394,30 @@ lookup_balance_less_than_test() ->
     ets:delete(?ETS),
     ok.
 
+lookup_nonce_test() ->
+    _ = ets:new(?ETS, [public, named_table, set]),
+
+    ?assertEqual(ok, refill(<<"ONE">>, 1, 1)),
+    ?assertEqual(ok, refill(<<"TWO">>, 2, 2)),
+    ?assertEqual(ok, refill(<<"THREE">>, 1, 2)),
+
+    ?assertEqual([{<<"THREE">>, {2, 1}}, {<<"ONE">>, {1, 1}}], lookup_nonce(1)),
+    ?assertEqual([{<<"TWO">>, {2, 2}}], lookup_nonce(2)),
+
+    ets:delete(?ETS),
+    ok.
+
+lookup_balance_test() ->
+    _ = ets:new(?ETS, [public, named_table, set]),
+
+    ?assertEqual(ok, refill(<<"ONE">>, 1, 1)),
+    ?assertEqual(ok, refill(<<"TWO">>, 2, 2)),
+    ?assertEqual(ok, refill(<<"THREE">>, 1, 2)),
+
+    ?assertEqual([{<<"ONE">>, {1, 1}}], lookup_balance(1)),
+    ?assertEqual([{<<"THREE">>, {2, 1}}, {<<"TWO">>, {2, 2}}], lookup_balance(2)),
+
+    ets:delete(?ETS),
+    ok.
+
 -endif.

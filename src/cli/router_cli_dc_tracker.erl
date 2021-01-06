@@ -5,8 +5,6 @@
 -export([register_cli/0]).
 
 -define(USAGE, fun(_, _, _) -> usage end).
-%% ets:fun2ms(fun ({_, {Balance, _}}=R) when Balance < Amount -> R end).
--define(LT_FUN(Amount), [{{'_', {'$1', '_'}}, [{'<', '$1', Amount}], ['$_']}]).
 
 -type balance_nonce() :: {non_neg_integer(), non_neg_integer()}.
 
@@ -40,18 +38,23 @@ register_all_cmds() ->
 
 dc_usage() ->
     [
-        ["dc"],
+        ["dc_tracker"],
         [
-            "DC commands\n\n",
-            "  info all      - Dispaly DC for all Orgs as a list\n",
-            "  info <org_id> - Display info for single Org\n",
-            "  refill <org_id> balance=<balance> nonce=<nonce> - Refill Org\n\n"
+            "DC Tracker commands\n\n",
+            "  info all [--less 42] [--refetch]                 - Display DC for all Orgs\n",
+            "  info <org_id> [--refetch]                        - Display info for single Org\n",
+            "  info no-nonce                                    - List all Orgs with a nonce of 0 (zero)\n",
+            "  info no-balance                                  - List all Orgs with a balance of 0 (zero)\n",
+            "  info nonce <amount>                              - List Orgs with <nonce>\n",
+            "  info balance <amount>                            - List Orgs with <balance>\n"
+            "  info <org_id>                                    - Display info for single Org\n",
+            "  refill <org_id> balance=<balance> nonce=<nonce>  - Refill Org\n\n"
         ]
     ].
 
 dc_cmd() ->
     [
-        [["dc"], [], [], ?USAGE]
+        [["dc_tracker"], [], [], ?USAGE]
     ].
 
 %%--------------------------------------------------------------------
@@ -60,11 +63,15 @@ dc_cmd() ->
 
 dc_info_usage() ->
     [
-        ["dc", "info"],
+        ["dc_tracker", "info"],
         [
-            "Info commands\n\n",
-            "  info all [--less 42] [--refetch]      - Dispaly DC for all Orgs\n",
-            "  info <org_id> [--refetch]             - Display info for single Org\n\n",
+            "Info commands (all commands have [--refetch] flag)\n\n",
+            "  info all [--less 42]   - Display DC for all Orgs\n",
+            "  info <org_id>          - Display info for single Org\n",
+            "  info no-nonce          - List all Orgs with a nonce of 0 (zero)\n",
+            "  info no-balance        - List all Orgs with a balance of 0 (zero)\n",
+            "  info nonce <amount>    - List Orgs with <nonce>\n",
+            "  info balance <amount>  - List Orgs with <balance>\n\n"
             "Options:\n\n",
             "  --less\n",
             "      Filter for balances less than amount\n",
@@ -76,30 +83,71 @@ dc_info_usage() ->
 dc_info_cmd() ->
     [
         [
-            ["dc", "info", "all"],
+            ["dc_tracker", "info", "all"],
             [],
             [
                 {less_than, [
                     {longname, "less"},
                     {datatype, integer}
                 ]},
-                {refetch, [
-                    {longname, "refetch"},
-                    {datatype, boolean}
-                ]}
+                refetch_flag()
             ],
             fun dc_info_all/3
         ],
-        [["dc", "info", '*'], [], [], fun dc_info_single/3]
+        [["dc_tracker", "info", "nonce", '*'], [], [refetch_flag()], fun dc_info_by_nonce/3],
+        [["dc_tracker", "info", "balance", '*'], [], [refetch_flag()], fun dc_info_by_balance/3],
+        [["dc_tracker", "info", "no-nonce"], [], [refetch_flag()], fun dc_info_no_nonce/3],
+        [["dc_tracker", "info", "no-balance"], [], [refetch_flag()], fun dc_info_no_balance/3],
+        [["dc_tracker", "info", '*'], [], [refetch_flag()], fun dc_info_single/3]
     ].
 
-dc_info_all(["dc", "info", "all"], [], []) ->
-    c_list([format_org_balance(Entry) || Entry <- lookup_all()]);
-dc_info_all(["dc", "info", "all"], [], Flags) ->
+refetch_flag() ->
+    {refetch, [
+        {longname, "refetch"},
+        {datatype, boolean}
+    ]}.
+
+dc_info_by_nonce(["dc_tracker", "info", "nonce", Nonce], [], Flags) ->
+    N = list_to_integer(Nonce),
+    list_orgs_maybe_refetch(lookup_nonce(N), Flags).
+
+dc_info_by_balance(["dc_tracker", "info", "balance", Balance], [], Flags) ->
+    B = list_to_integer(Balance),
+    list_orgs_maybe_refetch(lookup_nonce(B), Flags).
+
+dc_info_no_nonce(["dc_tracker", "info", "no-nonce"], [], Flags) ->
+    list_orgs_maybe_refetch(lookup_nonce(0), Flags).
+
+dc_info_no_balance(["dc_tracker", "info", "no-balance"], [], Flags) ->
+    list_orgs_maybe_refetch(lookup_balance(0), Flags).
+
+dc_info_all(["dc_tracker", "info", "all"], [], Flags) ->
     Amount = proplists:get_value(less_than, Flags),
+    Orgs =
+        case proplists:get_value(less_than, Flags) of
+            undefined -> lookup_all();
+            Amount -> lookup_balance_less_than(Amount)
+        end,
+    list_orgs_maybe_refetch(Orgs, Flags).
+
+dc_info_single(["dc_tracker", "info", Org], [], Flags) ->
+    OrgId = erlang:list_to_binary(Org),
     Refetch = proplists:is_defined(refetch, Flags),
 
-    case {lookup_balance_less_than(Amount), Refetch} of
+    case {lookup(OrgId), Refetch} of
+        {{error, not_found}, _} ->
+            c_text("Org named ~s not found", [OrgId]);
+        {{ok, Match}, false} ->
+            c_text(format_org_balance({OrgId, Match}));
+        {{ok, Old}, true} ->
+            New = refetch(OrgId),
+            c_text(format_refetched_balance(OrgId, Old, New))
+    end.
+
+-spec list_orgs_maybe_refetch([{binary(), balance_nonce()}], list()) -> any().
+list_orgs_maybe_refetch(Orgs, Flags) ->
+    Refetch = proplists:is_defined(refetch, Flags),
+    case {Orgs, Refetch} of
         {[], _} ->
             c_text("no matches");
         {Matches, false} ->
@@ -119,27 +167,13 @@ dc_info_all(["dc", "info", "all"], [], Flags) ->
             c_list(Matches1)
     end.
 
-dc_info_single(["dc", "info", Org], [], Flags) ->
-    OrgId = erlang:list_to_binary(Org),
-    Refetch = proplists:is_defined(refetch, Flags),
-
-    case {lookup(OrgId), Refetch} of
-        {{error, not_found}, _} ->
-            c_text("Org named ~s not found", [OrgId]);
-        {{ok, Match}, false} ->
-            c_text(format_org_balance({OrgId, Match}));
-        {{ok, Old}, true} ->
-            New = refetch(OrgId),
-            c_text(format_refetched_balance(OrgId, Old, New))
-    end.
-
 %%--------------------------------------------------------------------
 %% dc refill
 %%--------------------------------------------------------------------
 
 dc_refill_usage() ->
     [
-        ["dc", "refill"],
+        ["dc_tracker", "refill"],
         [
             "Refill commmands\n\n",
             "  refill <org_id> -b <balance> -n <nonce> [--dry-run --force]     - Refill Org\n\n",
@@ -153,9 +187,9 @@ dc_refill_usage() ->
 
 dc_refill_cmd() ->
     [
-        [["dc", "refill"], [], [], ?USAGE],
+        [["dc_tracker", "refill"], [], [], ?USAGE],
         [
-            ["dc", "refill", '*'],
+            ["dc_tracker", "refill", '*'],
             [],
             [
                 {balance, [
@@ -183,7 +217,7 @@ dc_refill_cmd() ->
 
 refill_cmd(_, [], []) ->
     usage;
-refill_cmd(["dc", "refill", Org], [], Flags) ->
+refill_cmd(["dc_tracker", "refill", Org], [], Flags) ->
     OrgId = erlang:list_to_binary(Org),
     refill_org(
         OrgId,
@@ -256,6 +290,14 @@ lookup_all() ->
 -spec lookup_balance_less_than(non_neg_integer()) -> list({binary(), balance_nonce()}).
 lookup_balance_less_than(Amount) ->
     router_console_dc_tracker:lookup_balance_less_than(Amount).
+
+-spec lookup_balance(non_neg_integer()) -> list({binary(), balance_nonce()}).
+lookup_balance(Amount) ->
+    router_console_dc_tracker:lookup_balance(Amount).
+
+-spec lookup_nonce(non_neg_integer()) -> list({binary(), balance_nonce()}).
+lookup_nonce(Amount) ->
+    router_console_dc_tracker:lookup_nonce(Amount).
 
 -spec refetch(binary()) -> balance_nonce().
 refetch(Org) ->

@@ -15,7 +15,13 @@
 %%====================================================================
 
 start(_StartType, _StartArgs) ->
-    router_sup:start_link().
+    case router_sup:start_link() of
+        {error, _} = Error ->
+            Error;
+        Ok ->
+            router_cli_registry:register_cli(),
+            Ok
+    end.
 
 %%--------------------------------------------------------------------
 stop(_State) ->

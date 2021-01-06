@@ -31,6 +31,7 @@ ADD c_src/ c_src/
 ADD include/ include/
 ADD src/ src/
 ADD test/ test/
+ADD scripts/ scripts/
 RUN make
 
 ADD config/vm.args config/vm.args

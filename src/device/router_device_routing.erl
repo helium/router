@@ -404,13 +404,17 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
             case MultiBuyValue > 1 of
                 true ->
+                    lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
                     ?MODULE:accept_more(PHash, MultiBuyValue);
                 false ->
                     case router_device:queue(Device) of
                         [] ->
                             timer:sleep(10),
                             maybe_multi_buy(Offer, Attempts - 1, Device);
-                        _ ->
+                        _Queue ->
+                            lager:debug("Accepting more packets [queue_length: ~p]", [
+                                length(_Queue)
+                            ]),
                             ?MODULE:accept_more(PHash)
                     end
             end;

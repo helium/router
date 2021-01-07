@@ -406,7 +406,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
         type = lorawan,
         payload = Payload1,
         frequency = 923.3,
-        datarate = <<"SF8BW125">>,
+        datarate = maps:get(datarate, Options, <<"SF8BW125">>),
         signal_strength = maps:get(rssi, Options, 0.0),
         snr = maps:get(snr, Options, 0.0)
     },
@@ -419,15 +419,17 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
 frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    MHDRRFU = 0,
-    Major = 0,
-    ADR = 0,
-    ADRACKReq = 0,
-    ACK =
-        case maps:get(should_ack, Options, false) of
+    OptionsBoolToBit = fun(Key) ->
+        case maps:get(Key, Options, false) of
             true -> 1;
             false -> 0
-        end,
+        end
+    end,
+    MHDRRFU = 0,
+    Major = 0,
+    ADR = OptionsBoolToBit(wants_adr),
+    ADRACKReq = OptionsBoolToBit(wants_adr_ack),
+    ACK = OptionsBoolToBit(wants_ack),
     RFU = 0,
     FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),

@@ -494,12 +494,16 @@ adr_test(Config) ->
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
+    %% ---------------------------------------------------------------
+    %% Device can join
+    %%
+
     %% Device sends a join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for report device status on that join request
+    %% Console reports join
     test_utils:wait_for_console_event(<<"activation">>, #{
         <<"category">> => <<"activation">>,
         <<"description">> => '_',
@@ -548,6 +552,10 @@ adr_test(Config) ->
         self()
     ),
 
+    %%
+    %% Device can join
+    %% ---------------------------------------------------------------
+
     %% Queue unconfirmed downlink message for device
     Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     router_device_worker:queue_message(WorkerPid, Msg0),
@@ -569,10 +577,15 @@ adr_test(Config) ->
                 PubKeyBin,
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
-                0
+                0,
+                #{
+                    wants_adr => true,
+                    datarate => <<"SF10BW125">>,
+                    snr => 20.0
+                }
             )},
 
-    %% Waiting for data from HTTP channel
+    %% Wait HTTP channel data
     test_utils:wait_channel_data(#{
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -599,8 +612,8 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"snr">> => 20.0,
+                <<"spreading">> => <<"SF10BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
@@ -609,7 +622,7 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Unconfirmed downlink being sent to device
+    %% Unconfirmed downlink sent to device
     test_utils:wait_for_console_event(<<"down">>, #{
         <<"category">> => <<"down">>,
         <<"description">> => '_',
@@ -647,7 +660,7 @@ adr_test(Config) ->
         ]
     }),
 
-    %% Wait for unconfirmed up from device
+    %% Unconfirmed uplink from device
     test_utils:wait_for_console_event(<<"up">>, #{
         <<"category">> => <<"up">>,
         <<"description">> => '_',
@@ -666,8 +679,8 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"snr">> => 20.0,
+                <<"spreading">> => <<"SF10BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
@@ -707,10 +720,16 @@ adr_test(Config) ->
                 PubKeyBin,
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
-                1
+                1,
+                #{
+                    wants_adr => true,
+                    snr => 20.0
+                }
             )},
 
+    %% ---------------------------------------------------------------
     %% Waiting for data from HTTP channel
+    %% ---------------------------------------------------------------
     test_utils:wait_channel_data(#{
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -737,7 +756,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -747,7 +766,9 @@ adr_test(Config) ->
         ]
     }),
 
+    %% ---------------------------------------------------------------
     %% Waiting for ack cause we sent a CONFIRMED_UP
+    %% ---------------------------------------------------------------
     test_utils:wait_for_console_event(<<"ack">>, #{
         <<"category">> => <<"ack">>,
         <<"description">> => '_',
@@ -804,7 +825,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -823,7 +844,9 @@ adr_test(Config) ->
         ]
     }),
 
+    %% ---------------------------------------------------------------
     %% Device received confirmed down
+    %% ---------------------------------------------------------------
     {ok, Reply2} = test_utils:wait_state_channel_message(
         Msg1,
         Device0,
@@ -837,8 +860,10 @@ adr_test(Config) ->
     %% check we're still getting ADR commands
     true = lists:keymember(link_adr_req, 1, Reply2#frame.fopts),
 
+    %% ---------------------------------------------------------------
     %% check we get the second downlink again because we didn't ACK it
     %% also ack the ADR adjustments
+    %% ---------------------------------------------------------------
     Stream !
         {send,
             test_utils:frame_packet(
@@ -847,7 +872,11 @@ adr_test(Config) ->
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
                 2,
-                #{fopts => [{link_adr_ans, 1, 1, 1}]}
+                #{
+                    wants_adr => true,
+                    snr => 20.0,
+                    fopts => [{link_adr_ans, 1, 1, 1}]
+                }
             )},
 
     %% Waiting for data from HTTP channel
@@ -877,7 +906,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -945,7 +974,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -987,7 +1016,11 @@ adr_test(Config) ->
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
                 3,
-                #{should_ack => true}
+                #{
+                    wants_adr => true,
+                    snr => 20.0,
+                    wants_ack => true
+                }
             )},
 
     %% Waiting for data from HTTP channel
@@ -1017,7 +1050,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -1046,7 +1079,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -1085,7 +1118,12 @@ adr_test(Config) ->
                 PubKeyBin,
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
-                4
+                4,
+                #{
+                    snr => 20.0,
+                    wants_adr => true,
+                    wants_adr_ack => true
+                }
             )},
 
     %% Waiting for data from HTTP channel
@@ -1115,7 +1153,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -1144,7 +1182,7 @@ adr_test(Config) ->
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
+                <<"snr">> => 20.0,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
@@ -1206,7 +1244,10 @@ adr_test(Config) ->
         2
     ),
 
-    %% check NOT we're still getting ADR commands
+    %% Router requests device to set ADR parameters.
+    %%
+    %% NOTE: this will fail in the future when we implement the
+    %%       ability to set `should_adr' in `#router_device.metadata'
     false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
     ok.
 

@@ -373,10 +373,10 @@ handle_info(
 ) ->
     ChannelName =
         case maps:get(<<"from">>, MapPayload, undefined) of
-            undefined ->
-                ProvidedChannelName;
-            <<"console_downlink_tool">> ->
-                ?DOWNLINK_TOOL_CHANNEL_NAME
+            ?DOWNLINK_TOOL_ORIGIN ->
+                ?DOWNLINK_TOOL_CHANNEL_NAME;
+            _ ->
+                ProvidedChannelName
         end,
     lager:info("sending downlink ~p for devices ~p from channel ~p", [
         MapPayload,

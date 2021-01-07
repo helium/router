@@ -393,7 +393,11 @@ handle_info(
                 DeviceID,
                 self()
             ),
-            ok = router_device_channels_worker:handle_downlink(DeviceID, MapPayload, Channel)
+            ok = router_device_channels_worker:handle_console_downlink(
+                DeviceID,
+                MapPayload,
+                Channel
+            )
         end,
         DeviceIDs
     ),

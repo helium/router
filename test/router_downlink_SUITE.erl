@@ -52,7 +52,7 @@ end_per_testcase(TestCase, Config) ->
 
 http_downlink_test(Config) ->
     Payload = <<"httpdownlink">>,
-    Message = jsx:encode(#{payload_raw => base64:encode(Payload)}),
+    Message = #{payload_raw => base64:encode(Payload)},
     test_downlink_message_for_channel(Config, Payload, Message, ?CONSOLE_HTTP_CHANNEL_NAME).
 
 console_tool_downlink_test(Config) ->
@@ -60,10 +60,10 @@ console_tool_downlink_test(Config) ->
     %% their payload. The channel name will not be reported as the Channel the
     %% message was queued against to help with debugging for users.
     Payload = <<"console_tool_downlink">>,
-    Message = jsx:encode(#{
+    Message = #{
         payload_raw => base64:encode(Payload),
         from => <<"console_downlink_queue">>
-    }),
+    },
     test_downlink_message_for_channel(Config, Payload, Message, <<"Console downlink tool">>).
 
 test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, ExpectedChannelName) ->

@@ -43,7 +43,7 @@
 -define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 -define(MULTI_BUY_DEFAULT, 1).
--define(DOWNLINK_TOOL_ORIGIN, #{<<"from">> := <<"console_downlink_queue">>}).
+-define(DOWNLINK_TOOL_ORIGIN, <<"console_downlink_queue">>).
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
 -define(GET_ORG_CACHE_NAME, router_console_device_api_get_org).
@@ -366,20 +366,20 @@ handle_info(
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
         <<"devices">> := DeviceIDs,
-        <<"payload">> := BinaryPayload,
+        <<"payload">> := MapPayload,
         <<"channel_name">> := ProvidedChannelName
     }},
     State
 ) ->
     ChannelName =
-        case jsx:decode(BinaryPayload, [return_maps]) of
-            ?DOWNLINK_TOOL_ORIGIN ->
-                ?DOWNLINK_TOOL_CHANNEL_NAME;
-            _ ->
-                ProvidedChannelName
+        case maps:get(<<"from">>, MapPayload, undefined) of
+            undefined ->
+                ProvidedChannelName;
+            <<"console_downlink_tool">> ->
+                ?DOWNLINK_TOOL_CHANNEL_NAME
         end,
     lager:info("sending downlink ~p for devices ~p from channel ~p", [
-        BinaryPayload,
+        MapPayload,
         DeviceIDs,
         ChannelName
     ]),
@@ -393,7 +393,7 @@ handle_info(
                 DeviceID,
                 self()
             ),
-            ok = router_device_channels_worker:handle_downlink(DeviceID, BinaryPayload, Channel)
+            ok = router_device_channels_worker:handle_downlink(DeviceID, MapPayload, Channel)
         end,
         DeviceIDs
     ),

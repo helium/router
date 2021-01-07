@@ -367,10 +367,10 @@ handle_cast(
                         {[], false} ->
                             lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
                             router_device_routing:deny_more(PHash);
-                        {_Queue, true} ->
+                        {_Queue, _Ack} ->
                             lager:debug(
-                                "Accepting more packets [queue_length: ~p] [frame_ack: 1]",
-                                [length(_Queue)]
+                                "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
+                                [length(_Queue), _Ack]
                             ),
                             router_device_routing:accept_more(PHash)
                     end

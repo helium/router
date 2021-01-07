@@ -360,11 +360,19 @@ handle_cast(
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
             case MultiBuyValue > 1 of
                 true ->
+                    lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
                     router_device_routing:accept_more(PHash, MultiBuyValue);
                 false ->
-                    case router_device:queue(Device1) =/= [] orelse FrameAck == 1 of
-                        false -> router_device_routing:deny_more(PHash);
-                        true -> router_device_routing:accept_more(PHash)
+                    case {router_device:queue(Device1), FrameAck == 1} of
+                        {[], false} ->
+                            lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
+                            router_device_routing:deny_more(PHash);
+                        {_Queue, true} ->
+                            lager:debug(
+                                "Accepting more packets [queue_length: ~p] [frame_ack: 1]",
+                                [length(_Queue)]
+                            ),
+                            router_device_routing:accept_more(PHash)
                     end
             end,
             %% TODO: Maybe move this down a little?

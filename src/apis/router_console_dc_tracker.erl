@@ -83,40 +83,29 @@ refill(OrgID, Nonce, Balance) ->
     blockchain:blockchain()
 ) -> {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
 has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
-    case enabled() of
-        false ->
-            case lookup(OrgID) of
-                {error, not_found} ->
-                    {B, N} = fetch_and_save_org_balance(OrgID),
-                    {ok, OrgID, B, N};
-                {ok, B, N} ->
-                    {ok, OrgID, B, N}
-            end;
-        true ->
-            Ledger = blockchain:ledger(Chain),
-            case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
-                {error, _Reason} ->
-                    lager:warning("failed to calculate dc amount ~p", [_Reason]),
-                    {error, failed_calculate_dc};
-                DCAmount ->
-                    {Balance0, Nonce} =
-                        case lookup(OrgID) of
-                            {error, not_found} ->
-                                fetch_and_save_org_balance(OrgID);
-                            {ok, 0, _N} ->
-                                fetch_and_save_org_balance(OrgID);
-                            {ok, B, N} ->
-                                {B, N}
-                        end,
-                    Balance1 = Balance0 - DCAmount,
-                    case {Balance1 >= 0, Nonce > 0} of
-                        {false, _} ->
-                            {error, {not_enough_dc, Balance0, DCAmount}};
-                        {_, false} ->
-                            {error, bad_nonce};
-                        {true, true} ->
-                            {ok, OrgID, Balance1, Nonce}
-                    end
+    Ledger = blockchain:ledger(Chain),
+    case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+        {error, _Reason} ->
+            lager:warning("failed to calculate dc amount ~p", [_Reason]),
+            {error, failed_calculate_dc};
+        DCAmount ->
+            {Balance0, Nonce} =
+                case lookup(OrgID) of
+                    {error, not_found} ->
+                        fetch_and_save_org_balance(OrgID);
+                    {ok, 0, _N} ->
+                        fetch_and_save_org_balance(OrgID);
+                    {ok, B, N} ->
+                        {B, N}
+                end,
+            Balance1 = Balance0 - DCAmount,
+            case {Balance1 >= 0, Nonce > 0} of
+                {false, _} ->
+                    {error, {not_enough_dc, Balance0, DCAmount}};
+                {_, false} ->
+                    {error, bad_nonce};
+                {true, true} ->
+                    {ok, OrgID, Balance1, Nonce}
             end
     end;
 has_enough_dc(Device, PayloadSize, Chain) ->
@@ -231,13 +220,6 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec enabled() -> boolean().
-enabled() ->
-    case application:get_env(router, dc_tracker) of
-        {ok, "enabled"} -> true;
-        _ -> false
-    end.
-
 -spec txn_filter_fun(blockchain_txn:txn()) -> boolean().
 txn_filter_fun(Txn) ->
     case blockchain_txn:type(Txn) == blockchain_txn_token_burn_v1 of
@@ -314,7 +296,6 @@ refill_test() ->
     ok.
 
 has_enough_dc_test() ->
-    ok = application:set_env(router, dc_tracker, "enabled"),
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
@@ -341,7 +322,6 @@ has_enough_dc_test() ->
     ok.
 
 charge_test() ->
-    ok = application:set_env(router, dc_tracker, "enabled"),
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),

@@ -38,8 +38,8 @@
 
 init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
-    ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, port, 3615),
+    ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
+    ok = application:set_env(blockchain, port, 3615),
     ok = application:set_env(router, oui, 1),
     ok = application:set_env(router, router_console_device_api, [
         {endpoint, ?CONSOLE_URL},
@@ -48,8 +48,6 @@ init_per_testcase(TestCase, Config) ->
     ]),
     ok = application:set_env(router, metrics, [{reporters, []}]),
     ok = application:set_env(router, max_v8_context, 1),
-    ok = application:set_env(router, dc_tracker, "enabled"),
-    ok = application:set_env(router, router_http_channel_url_check, false),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->

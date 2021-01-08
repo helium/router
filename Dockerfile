@@ -36,6 +36,7 @@ RUN make
 
 ADD config/vm.args config/vm.args
 ADD config/sys.config.src config/sys.config.src
+ADD priv/genesis priv/genesis
 RUN make rel
 
 CMD ["make", "run"]

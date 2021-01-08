@@ -23,6 +23,11 @@ jobs:
           profile: minimal
           toolchain: stable
 
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.5.0
+        with:
+          access_token: ${{ github.token }}
+
       - name: Build
         env:
           SANITIZE_ERLANG_NIFS: 1
@@ -39,11 +44,13 @@ jobs:
 
       - name: Run EUnit tests
         env:
+          SANITIZE_ERLANG_NIFS: 1
           ASAN_OPTIONS: detect_leaks=0
         run: LD_PRELOAD="$(cc --print-file libasan.so)" ./rebar3 eunit
 
       - name: Run CT tests
         env:
+          SANITIZE_ERLANG_NIFS: 1
           # We turn off leak detection to reduce noise from leaking
           # processes that rebar exec()s before it actually runs the
           # tests.

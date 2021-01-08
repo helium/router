@@ -6,7 +6,6 @@
 -module(router_console_device_api).
 
 -behavior(gen_server).
--behavior(router_device_api_behavior).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -150,7 +149,7 @@ get_channels(Device, DeviceWorkerPid) ->
             Channels1
     end.
 
--spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
+-spec report_status(Device :: router_device:device(), Map :: map()) -> ok.
 report_status(Device, Map) ->
     erlang:spawn(
         fun() ->

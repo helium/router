@@ -339,7 +339,7 @@ report_status(
         ],
         channels => Channels
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_device_api:report_status(Device, Report).
 
 -spec report_status_max_size(router_device:device(), binary(), non_neg_integer()) -> ok.
 report_status_max_size(Device, Payload, Port) ->
@@ -354,7 +354,7 @@ report_status_max_size(Device, Payload, Port) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_device_api:report_status(Device, Report).
 
 -spec report_status_no_dc(router_device:device()) -> ok.
 report_status_no_dc(Device) ->
@@ -369,7 +369,7 @@ report_status_no_dc(Device) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_device_api:report_status(Device, Report).
 
 -spec report_status_inactive(router_device:device()) -> ok.
 report_status_inactive(Device) ->
@@ -384,7 +384,7 @@ report_status_inactive(Device) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_device_api:report_status(Device, Report).
 
 report_join_status(
     Device,
@@ -425,7 +425,7 @@ report_join_status(
         hotspots => Hotspots,
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_device_api:report_status(Device, Report).
 
 -spec get_router_oui() -> non_neg_integer().
 get_router_oui() ->

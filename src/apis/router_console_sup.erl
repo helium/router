@@ -35,11 +35,10 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 init([]) ->
-    DeviceAPIModule = router_device_api:module(),
-    DeviceAPIData = maps:from_list(application:get_env(router, DeviceAPIModule, [])),
+    DeviceAPIData = maps:from_list(application:get_env(router, router_console_device_api, [])),
     {ok,
         {?FLAGS, [
-            ?WORKER(DeviceAPIModule, [DeviceAPIData]),
+            ?WORKER(router_console_device_api, [DeviceAPIData]),
             ?WORKER(router_console_dc_tracker, [#{}])
         ]}}.
 

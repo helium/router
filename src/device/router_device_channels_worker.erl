@@ -315,7 +315,7 @@ handle_info(
                 fcnt => maps:get(fcnt, Data),
                 dc => maps:get(dc, Data)
             },
-            ok = router_device_api:report_status(Device, ReportsMap),
+            ok = router_console_device_api:report_status(Device, ReportsMap),
             {noreply, State#state{channels_resp_cache = maps:remove(FCnt, Cache0)}}
     end;
 handle_info(
@@ -328,7 +328,7 @@ handle_info(
             maps:put(ID, Channel, Acc)
         end,
         #{},
-        router_device_api:get_channels(Device, self())
+        router_console_device_api:get_channels(Device, self())
     ),
     Channels1 =
         case maps:size(APIChannels) == 0 of
@@ -447,7 +447,7 @@ handle_info(
                             }
                         ]
                     },
-                    router_device_api:report_status(Device, Report),
+                    router_console_device_api:report_status(Device, Report),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                         {ok, Backoffs1} ->
                             {noreply, State#state{
@@ -592,7 +592,7 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
                     }
                 ]
             },
-            router_device_api:report_status(Device, Report),
+            router_console_device_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),
@@ -638,7 +638,7 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
                     }
                 ]
             },
-            router_device_api:report_status(Device, Report),
+            router_console_device_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),

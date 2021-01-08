@@ -41,7 +41,6 @@ init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, port, 3615),
-    ok = application:set_env(router, router_device_api_module, router_console_device_api),
     ok = application:set_env(router, router_console_device_api, [
         {endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},

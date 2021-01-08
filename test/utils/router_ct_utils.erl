@@ -146,11 +146,6 @@ router_config_result(LogDir, BaseDir, Port, SeedNodes, RouterKeys) ->
             ct_rpc:call(Router, application, set_env, [router, oui, 1]),
             ct_rpc:call(Router, application, set_env, [
                 router,
-                router_device_api_module,
-                router_console_device_api
-            ]),
-            ct_rpc:call(Router, application, set_env, [
-                router,
                 router_console_device_api,
                 [
                     {endpoint, ?CONSOLE_URL},

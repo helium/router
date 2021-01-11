@@ -48,30 +48,42 @@ init_per_testcase(TestCase, Config) ->
     ]),
     ok = application:set_env(router, metrics, [{reporters, []}]),
     ok = application:set_env(router, max_v8_context, 1),
+    FormatStr = [
+        "[",
+        date,
+        " ",
+        time,
+        "] ",
+        pid,
+        " [",
+        severity,
+        "]",
+        {device_id, [" [", device_id, "]"], ""},
+        " [",
+        {module, ""},
+        {function, [":", function], ""},
+        {line, [":", line], ""},
+        "] ",
+        message,
+        "\n"
+    ],
     filelib:ensure_dir(BaseDir ++ "/log"),
+    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    ok = application:set_env(lager, crash_log, "crash.log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->
-            FormatStr = [
-                "[",
-                date,
-                " ",
-                time,
-                "] ",
-                pid,
-                " [",
-                severity,
-                "]",
-                {device_id, [" [", device_id, "]"], ""},
-                " [",
-                {module, ""},
-                {function, [":", function], ""},
-                {line, [":", line], ""},
-                "] ",
-                message,
-                "\n"
-            ],
             ok = application:set_env(lager, handlers, [
                 {lager_console_backend, [
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "router.log"},
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "device.log"},
                     {level, error},
                     {formatter_config, FormatStr}
                 ]}
@@ -79,10 +91,12 @@ init_per_testcase(TestCase, Config) ->
             ok = application:set_env(lager, traces, [
                 {lager_console_backend, [{application, router}], debug},
                 {lager_console_backend, [{module, router_console_device_api}], debug},
-                {lager_console_backend, [{module, router_device_routing}], debug}
+                {lager_console_backend, [{module, router_device_routing}], debug},
+                {{lager_file_backend, "router.log"}, [{application, router}], debug},
+                {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug}
             ]);
         _ ->
-            ok = application:set_env(lager, log_root, BaseDir ++ "/log")
+            ok
     end,
     Tab = ets:new(TestCase, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),

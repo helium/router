@@ -154,10 +154,11 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _Device, _, _, _, Pid, _, _, _ADRCache, _IsActive} = sys:get_state(
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _OUI, ChannelsWorkerPid, _JoinChache,
+        _FrameCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
-    Pid.
+    ChannelsWorkerPid.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),
@@ -193,7 +194,7 @@ wait_for_console_event(Category, Expected) ->
             ct:fail("wait_for_console_event ~p failed", [Category])
     end.
 
-wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
+wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->
     receive
         {client_data, PubKeyBin, Data} ->
             try
@@ -206,7 +207,7 @@ wait_for_join_resp(PubKeyBin, AppKey, JoinNonce) ->
                     #blockchain_state_channel_response_v1_pb{accepted = true, downlink = Packet} =
                         Resp,
                     ct:pal("packet ~p", [Packet]),
-                    Frame = deframe_join_packet(Packet, JoinNonce, AppKey),
+                    Frame = deframe_join_packet(Packet, DevNonce, AppKey),
                     ct:pal("Join response ~p", [Frame]),
                     Frame
             catch

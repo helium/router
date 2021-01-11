@@ -53,7 +53,6 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = -1 :: integer(),
-    join_nonce_handled_at = <<>> :: binary(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
     join_cache = #{} :: #{integer() => #join_cache{}},
@@ -211,7 +210,6 @@ handle_cast(
         cf = CF,
         device = Device0,
         join_cache = Cache0,
-        join_nonce_handled_at = JoinNonceHandledAt,
         oui = OUI,
         channels_worker = ChannelsWorker
     } = State0
@@ -223,14 +221,19 @@ handle_cast(
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State0};
-        {ok, Device1, JoinNonce, Reply} ->
+        {ok, Device1, DevNonce, Reply} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
-            case maps:get(JoinNonce, Cache0, undefined) of
-                undefined when JoinNonceHandledAt == JoinNonce ->
-                    lager:debug("got a late join: ~p (old: ~p)", [JoinNonce, JoinNonceHandledAt]),
+            LastDevNonce =
+                case router_device:dev_nonces(Device0) of
+                    [D | _] -> D;
+                    [] -> <<>>
+                end,
+            case maps:get(DevNonce, Cache0, undefined) of
+                undefined when LastDevNonce == DevNonce ->
+                    lager:debug("got a late join: ~p (old: ~p)", [DevNonce, LastDevNonce]),
                     {noreply, State0};
                 undefined ->
-                    lager:debug("got a first join: ~p", [JoinNonce]),
+                    lager:debug("got a first join: ~p", [DevNonce]),
                     JoinCache = #join_cache{
                         rssi = NewRSSI,
                         reply = Reply,
@@ -238,17 +241,16 @@ handle_cast(
                         device = Device1,
                         pid = Pid
                     },
-                    Cache1 = maps:put(JoinNonce, JoinCache, Cache0),
+                    Cache1 = maps:put(DevNonce, JoinCache, Cache0),
                     State1 = State0#state{device = Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(
                         max(0, ?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime)),
                         self(),
-                        {join_timeout, JoinNonce}
+                        {join_timeout, DevNonce}
                     ),
                     {noreply, State1#state{
                         join_cache = Cache1,
-                        join_nonce_handled_at = JoinNonce,
                         downlink_handled_at = -1
                     }};
                 #join_cache{
@@ -260,7 +262,7 @@ handle_cast(
                     case NewRSSI > OldRSSI of
                         false ->
                             lager:debug("got another join for ~p with worst RSSI ~p", [
-                                JoinNonce,
+                                DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
                             catch blockchain_state_channel_handler:send_response(
@@ -275,7 +277,7 @@ handle_cast(
                                 false
                             ),
                             Cache1 = maps:put(
-                                JoinNonce,
+                                DevNonce,
                                 JoinCache1#join_cache{
                                     packets = [
                                         {Packet0, PubKeyBin, Region, PacketTime}
@@ -287,7 +289,7 @@ handle_cast(
                             {noreply, State0#state{join_cache = Cache1}};
                         true ->
                             lager:debug("got a another join for ~p with better RSSI ~p", [
-                                JoinNonce,
+                                DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
                             catch blockchain_state_channel_handler:send_response(
@@ -296,7 +298,7 @@ handle_cast(
                             ),
                             NewPackets = [OldSelected | lists:keydelete(OldPacket, 1, OldPackets)],
                             Cache1 = maps:put(
-                                JoinNonce,
+                                DevNonce,
                                 JoinCache1#join_cache{
                                     rssi = NewRSSI,
                                     packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
@@ -472,7 +474,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(
-    {join_timeout, JoinNonce},
+    {join_timeout, DevNonce},
     #state{
         chain = Blockchain,
         db = DB,
@@ -487,10 +489,10 @@ handle_info(
         packets = Packets,
         device = Device0,
         pid = Pid
-    } = maps:get(JoinNonce, JoinCache),
+    } = maps:get(DevNonce, JoinCache),
     {Packet, PubKeyBin, Region, _PacketTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
-        JoinNonce,
+        DevNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),
         erlang:length(Packets) + 1
     ]),
@@ -523,11 +525,12 @@ handle_info(
         join,
         true
     ),
-    Device1 = router_device:join_nonce(JoinNonce, Device0),
+    DevNonceHistory = router_device:dev_nonces(Device0),
+    Device1 = router_device:dev_nonces([DevNonce | DevNonceHistory], Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     ok = router_device_utils:report_join_status(Device1, PacketSelected, Packets, Blockchain),
-    {noreply, State#state{device = Device1, join_cache = maps:remove(JoinNonce, JoinCache)}};
+    {noreply, State#state{device = Device1, join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
     #state{
@@ -665,8 +668,8 @@ limit_adr_cache(ADRCache0) ->
 validate_join(
     #packet_pb{
         payload =
-            <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary, Nonce:2/binary,
-                _MIC:4/binary>> = Payload
+            <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
+                DevNonce:2/binary, _MIC:4/binary>> = Payload
     } = Packet,
     PubKeyBin,
     Region,
@@ -681,7 +684,7 @@ validate_join(
         {error, _} = Error ->
             Error;
         {ok, _, _} ->
-            case Nonce == router_device:join_nonce(Device) of
+            case lists:member(DevNonce, router_device:dev_nonces(Device)) of
                 true ->
                     {error, bad_nonce};
                 false ->
@@ -709,8 +712,8 @@ validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, 
 handle_join(
     #packet_pb{
         payload =
-            <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary,
-                JoinNonce:2/binary, _MIC:4/binary>>
+            <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary,
+                _MIC:4/binary>>
     },
     PubKeyBin,
     Region,
@@ -723,12 +726,12 @@ handle_join(
     NwkSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, JoinNonce/binary>>)
+        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
     AppSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, JoinNonce/binary>>)
+        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
     DevAddr =
         case router_device_devaddr:allocate(Device0, PubKeyBin) of
@@ -764,11 +767,11 @@ handle_join(
         [
             lorawan_utils:binary_to_hex(DevEUI),
             lorawan_utils:binary_to_hex(AppEUI),
-            JoinNonce,
+            DevNonce,
             blockchain_utils:addr2name(PubKeyBin)
         ]
     ),
-    {ok, Device1, JoinNonce, Reply}.
+    {ok, Device1, DevNonce, Reply}.
 
 -spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().
 craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->

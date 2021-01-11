@@ -94,17 +94,42 @@ terminate(_Reason, _State) ->
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->
-    try hackney:request(Method, URL, Headers, Payload, [with_body]) of
-        Res -> Res
-    catch
-        _What:_Why:_Stacktrace ->
-            lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
-                {Method, URL, Headers, Payload},
-                _What,
-                _Why,
-                _Stacktrace
-            ]),
-            {error, http_req_failed}
+    case check_url(URL) of
+        {error, _Reason} = Error ->
+            Error;
+        ok ->
+            try hackney:request(Method, URL, Headers, Payload, [with_body]) of
+                Res -> Res
+            catch
+                _What:_Why:_Stacktrace ->
+                    lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
+                        {Method, URL, Headers, Payload},
+                        _What,
+                        _Why,
+                        _Stacktrace
+                    ]),
+                    {error, http_req_failed}
+            end
+    end.
+
+-spec check_url(URL :: binary()) -> ok | {error, any()}.
+check_url(URL) ->
+    Opts = [
+        {scheme_defaults, [{http, 80}, {https, 443}]},
+        {fragment, false}
+    ],
+    case http_uri:parse(URL, Opts) of
+        {error, _Reason} ->
+            lager:info("got bad URL ~p ~p", [URL, _Reason]),
+            {error, bad_url};
+        {ok, {_Scheme, _UserInfo, Host, _Port, _Path, _Query}} ->
+            case inet_res:resolve(erlang:binary_to_list(Host), any, a) of
+                {error, _Reason} ->
+                    lager:info("got bad dns record ~p ~p", [Host, _Reason]),
+                    {error, bad_dns};
+                {ok, _} ->
+                    ok
+            end
     end.
 
 -spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.

@@ -1,0 +1,10 @@
+version: '3'
+services:
+  router:
+    build: .
+    image: helium/router:local
+    container_name: helium_router
+    env_file: .env
+    network_mode: host
+    volumes:
+      - ./data:/var/data

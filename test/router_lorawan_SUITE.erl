@@ -124,7 +124,7 @@ lw_join_test(Config) ->
     end,
 
     %% Send join packet
-    JoinNonce = <<5, 0>>,
+    DevNonce = <<5, 0>>,
     receive
         joining -> ok
     end,
@@ -167,7 +167,7 @@ lw_join_test(Config) ->
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(
         PubKeyBin0,
         AppKey,
-        JoinNonce
+        DevNonce
     ),
 
     %% Check that device is in cache now
@@ -177,7 +177,7 @@ lw_join_test(Config) ->
 
     NwkSKey = router_device:nwk_s_key(Device0),
     AppSKey = router_device:app_s_key(Device0),
-    JoinNonce = router_device:join_nonce(Device0),
+    [DevNonce | _] = router_device:dev_nonces(Device0),
 
     Channel = router_channel:new(
         <<"fake_lorawan_channel">>,

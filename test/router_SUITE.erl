@@ -74,8 +74,8 @@ dupes_test(Config) ->
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -380,10 +380,10 @@ join_test(Config) ->
     end,
 
     %% Send join packets where PubKeyBin1 has better rssi
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -100)},
     timer:sleep(500),
-    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
+    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce, -80)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
@@ -435,7 +435,7 @@ join_test(Config) ->
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(
         PubKeyBin1,
         AppKey,
-        JoinNonce
+        DevNonce
     ),
 
     %% Check that device is in cache now
@@ -445,7 +445,7 @@ join_test(Config) ->
 
     ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
     ?assertEqual(router_device:app_s_key(Device0), AppSKey),
-    ?assertEqual(router_device:join_nonce(Device0), JoinNonce),
+    ?assertEqual(router_device:dev_nonces(Device0), [DevNonce]),
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
@@ -467,8 +467,8 @@ adr_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Device sends a join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request

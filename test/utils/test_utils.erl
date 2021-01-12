@@ -49,6 +49,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, metrics, [{reporters, []}]),
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
+    ok = application:set_env(router, router_http_channel_url_check, false),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->
@@ -73,9 +74,12 @@ init_per_testcase(TestCase, Config) ->
             ],
             ok = application:set_env(lager, handlers, [
                 {lager_console_backend, [
-                    {level, debug},
+                    {level, error},
                     {formatter_config, FormatStr}
                 ]}
+            ]),
+            ok = application:set_env(lager, traces, [
+                {lager_console_backend, [{application, router}], debug}
             ]);
         _ ->
             ok = application:set_env(lager, log_root, BaseDir ++ "/log")

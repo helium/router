@@ -94,7 +94,7 @@ terminate(_Reason, _State) ->
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->
-    case check_url(URL) of
+    case check_url(URL, application:get_env(router, router_http_channel_url_check, true)) of
         {error, _Reason} = Error ->
             Error;
         ok ->
@@ -112,8 +112,10 @@ make_http_req(Method, URL, Headers, Payload) ->
             end
     end.
 
--spec check_url(URL :: binary()) -> ok | {error, any()}.
-check_url(URL) ->
+-spec check_url(URL :: binary(), boolean()) -> ok | {error, any()}.
+check_url(_URL, false) ->
+    ok;
+check_url(URL, true) ->
     Opts = [
         {scheme_defaults, [{http, 80}, {https, 443}]},
         {fragment, false}
@@ -122,13 +124,51 @@ check_url(URL) ->
         {error, _Reason} ->
             lager:info("got bad URL ~p ~p", [URL, _Reason]),
             {error, bad_url};
-        {ok, {_Scheme, _UserInfo, Host, _Port, _Path, _Query}} ->
-            case inet_res:resolve(erlang:binary_to_list(Host), any, a) of
+        {ok, {_Scheme, _UserInfo, BinHost, _Port, _Path, _Query}} ->
+            Host = erlang:binary_to_list(BinHost),
+            case is_non_local_address(Host) of
                 {error, _Reason} ->
-                    lager:info("got bad dns record ~p ~p", [Host, _Reason]),
-                    {error, bad_dns};
-                {ok, _} ->
+                    lager:info("got bad Host ~p ~p", [Host, _Reason]),
+                    {error, bad_host};
+                ok ->
+                    case inet_res:resolve(Host, any, a) of
+                        {error, _Reason} ->
+                            lager:info("got bad dns record ~p ~p", [Host, _Reason]),
+                            {error, bad_dns};
+                        {ok, _} ->
+                            ok
+                    end
+            end
+    end.
+
+-spec is_non_local_address(Host :: list()) -> ok | {error, any()}.
+is_non_local_address(Host) ->
+    case inet:parse_address(Host) of
+        {error, _Reason} = Error ->
+            Error;
+        {ok, {127, _, _, _}} ->
+            {error, local_address};
+        {ok, {10, _, _, _}} ->
+            {error, local_address};
+        {ok, {192, 168, _, _}} ->
+            {error, local_address};
+        {ok, {169, 254, _, _}} ->
+            {error, local_address};
+        {ok, {172, Byte2, _, _}} ->
+            case lists:member(Byte2, lists:seq(16, 31)) of
+                true ->
+                    {error, local_address};
+                false ->
                     ok
+            end;
+        {ok, {_, _, _, _, _, _, _, _} = IPV6} ->
+            case
+                inet_cidr:contains(inet_cidr:parse("::1/128"), IPV6) orelse
+                    inet_cidr:contains(inet_cidr:parse("fe80::/10"), IPV6) orelse
+                    inet_cidr:contains(inet_cidr:parse("fc00::/7"), IPV6)
+            of
+                true -> {error, local_address};
+                false -> ok
             end
     end.
 

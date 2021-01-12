@@ -610,6 +610,7 @@ replay_joins_test(Config) ->
         router_device:dev_nonces(Device)
     ),
 
+    %% we are sending another join with an already used nonce. Router should discard it.
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1)},
     timer:sleep(?JOIN_DELAY),
 

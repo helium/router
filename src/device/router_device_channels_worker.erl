@@ -22,7 +22,6 @@
     report_status/3,
     handle_downlink/3,
     handle_console_downlink/3,
-    state/1,
     new_data_cache/5
 ]).
 
@@ -69,8 +68,6 @@
     channels_resp_cache = #{} :: map()
 }).
 
--type state() :: #state{}.
-
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
@@ -80,10 +77,6 @@ start_link(Args) ->
 -spec handle_join(pid()) -> ok.
 handle_join(Pid) ->
     gen_server:cast(Pid, handle_join).
-
--spec state(Pid :: pid()) -> state().
-state(Pid) ->
-    gen_server:call(Pid, state, infinity).
 
 -spec handle_device_update(pid(), router_device:device()) -> ok.
 handle_device_update(Pid, Device) ->
@@ -185,8 +178,6 @@ init(Args) ->
         fcnt = -1
     }}.
 
-handle_call(state, _From, State) ->
-    {reply, State, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

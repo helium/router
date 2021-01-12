@@ -43,31 +43,38 @@
 
 -export_type([channel/0]).
 
--spec new(binary(), atom(), binary(), map(), binary(), pid()) -> channel().
+-spec new(
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid()
+) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid) ->
     new(ID, Handler, Name, Args, DeviceID, Pid, undefined).
 
 -spec new(
-    binary(),
-    atom(),
-    binary(),
-    map(),
-    binary(),
-    pid(),
-    undefined | router_decoder:decoder()
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid(),
+    Decoder :: undefined | router_decoder:decoder()
 ) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid, Decoder) ->
     new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, undefined).
 
 -spec new(
-    binary(),
-    atom(),
-    binary(),
-    map(),
-    binary(),
-    pid(),
-    undefined | router_decoder:decoder(),
-    undefined | binary()
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid(),
+    Decoder :: undefined | router_decoder:decoder(),
+    Template :: undefined | binary()
 ) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template) ->
     #channel{

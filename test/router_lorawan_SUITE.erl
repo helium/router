@@ -177,7 +177,6 @@ lw_join_test(Config) ->
 
     NwkSKey = router_device:nwk_s_key(Device0),
     AppSKey = router_device:app_s_key(Device0),
-    [DevNonce | _] = router_device:dev_nonces(Device0),
 
     Channel = router_channel:new(
         <<"fake_lorawan_channel">>,

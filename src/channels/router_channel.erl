@@ -139,7 +139,7 @@ start_link() ->
 -spec add(pid(), channel(), router_device:device()) -> ok | {'EXIT', term()} | {error, term()}.
 add(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
-    gen_event:add_sup_handler(Pid, Handler, {[Channel, Device], ok}).
+    gen_event:add_sup_handler(Pid, Handler, {Channel, Device}).
 
 -spec delete(pid(), channel()) -> ok.
 delete(Pid, Channel) ->

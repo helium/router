@@ -709,18 +709,3 @@ replay_joins_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-% rcv_loop(0) ->
-%     ok;
-% rcv_loop(X) ->
-%     receive
-%         {client_data, _PubKeyBin, Data} ->
-%             ct:pal("~p", [Data]),
-%             client_data;
-%         {console_event, Category, Got} ->
-%             ct:pal("~p ~p", [Category, Got]),
-%             console_event;
-%         _ ->
-%             rcv_loop(X - 1)
-%     after 4250 -> ok
-%     end.

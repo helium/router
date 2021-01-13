@@ -181,10 +181,18 @@ handle_cast(
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
-handle_cast(clear_queue, #state{db = DB, cf = CF, device = Device0} = State) ->
+handle_cast(
+    clear_queue,
+    #state{
+        db = DB,
+        cf = CF,
+        device = Device0,
+        channels_worker = ChannelsWorkerPid
+    } = State
+) ->
     lager:debug("Cleared queue"),
     Device1 = router_device:queue([], Device0),
-    ok = save_and_update(DB, CF, self(), Device1),
+    ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
     {noreply, State#state{device = Device1}};
 handle_cast(
     {queue_message, #downlink{port = Port, payload = Payload} = Downlink},

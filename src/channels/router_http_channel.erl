@@ -19,6 +19,10 @@
     code_change/3
 ]).
 
+-define(IPV6_128, inet_cidr:parse("::1/128")).
+-define(IPV6_10, inet_cidr:parse("fe80::/10")).
+-define(IPV6_7, inet_cidr:parse("fc00::/7")).
+
 -record(state, {
     channel :: router_channel:channel(),
     url :: binary(),
@@ -163,9 +167,9 @@ is_non_local_address(Host) ->
             end;
         {ok, {_, _, _, _, _, _, _, _} = IPV6} ->
             case
-                inet_cidr:contains(inet_cidr:parse("::1/128"), IPV6) orelse
-                    inet_cidr:contains(inet_cidr:parse("fe80::/10"), IPV6) orelse
-                    inet_cidr:contains(inet_cidr:parse("fc00::/7"), IPV6)
+                inet_cidr:contains(?IPV6_128, IPV6) orelse
+                    inet_cidr:contains(?IPV6_10, IPV6) orelse
+                    inet_cidr:contains(?IPV6_7, IPV6)
             of
                 true -> {error, local_address};
                 false -> ok

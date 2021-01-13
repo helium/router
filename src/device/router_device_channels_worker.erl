@@ -22,7 +22,8 @@
     report_status/3,
     handle_downlink/3,
     handle_console_downlink/3,
-    new_data_cache/5
+    new_data_cache/5,
+    refresh_channels/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -157,6 +158,11 @@ new_data_cache(PubKeyBin, Packet, Frame, Region, Time) ->
         time = Time
     }.
 
+-spec refresh_channels(Pid :: pid()) -> ok.
+refresh_channels(Pid) ->
+    Pid ! refresh_channels,
+    ok.
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -167,7 +173,7 @@ init(Args) ->
     {ok, EventMgrRef} = router_channel:start_link(),
     %% We are doing this because of trap_exit in gen_event
     _ = erlang:monitor(process, DeviceWorkerPid),
-    self() ! refresh_channels,
+    ?MODULE:refresh_channels(self()),
     lager:md([{device_id, router_device:id(Device)}]),
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{

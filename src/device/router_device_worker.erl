@@ -162,7 +162,7 @@ handle_cast(
             {noreply, State};
         {ok, APIDevice} ->
             lager:info("device updated: ~p", [APIDevice]),
-            ChannelsWorker ! refresh_channels,
+            router_device_channels_worker:refresh_channels(ChannelsWorker),
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},

@@ -84,6 +84,7 @@ join_grpc_test(Config) ->
     ?assertEqual(HttpStatus, <<"200">>),
     ?assertEqual(ResponseMsg, ResponseMsg#{accepted := true}),
 
+    libp2p_swarm:stop(Swarm0),
     ok.
 
 %% send a packet from an unknown device
@@ -93,7 +94,7 @@ join_from_unknown_device_grpc_test(Config) ->
     BaseDir = proplists:get_value(base_dir, Config),
     RouterSwarm = blockchain_swarm:swarm(),
     [_Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm0, 0),
+    {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm1, 0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
 
     %% create a join packet
@@ -121,6 +122,7 @@ join_from_unknown_device_grpc_test(Config) ->
     ?assertEqual(StatusMsg, <<"no response">>),
     ?assertEqual(Result, #{}),
 
+    libp2p_swarm:stop(Swarm0),
     ok.
 
 %% ------------------------------------------------------------------

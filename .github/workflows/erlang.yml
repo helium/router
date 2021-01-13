@@ -31,12 +31,17 @@ jobs:
       - name: Build
         env:
           SANITIZE_ERLANG_NIFS: 1
-        run: ./rebar3 compile
+        run: |
+          ./rebar3 get-deps
+          mkdir -p "_build/default/lib/router/ebin"
+          REBAR_CONFIG="config/grpc_server_gen.config" ./rebar3 grpc gen
+          REBAR_CONFIG="config/grpc_client_gen.config" ./rebar3 grpc gen
+          ./rebar3 compile
 
       - name: Check formatting
         run: |
           ./rebar3 fmt --verbose --check rebar.config
-          ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}"
+          ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" --exclude-files "src/grpc/autogen/**/*"
           ./rebar3 fmt --verbose --check "config/sys.{config,config.src}"
 
       - name: Run xref

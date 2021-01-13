@@ -39,12 +39,13 @@ docker-run:
 	tail -F data/log/router.log
 
 grpc:
-	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen && \
+	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
 	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen
 
 $(grpc_services_directory):
 	@echo "grpc service directory $(directory) does not exist, generating services"
 	$(REBAR) get-deps
+	mkdir -p "_build/default/lib/router/ebin"
 	$(MAKE) grpc
 
 # Pass all unknown targets straight to rebar3 (e.g. `make dialyzer`)

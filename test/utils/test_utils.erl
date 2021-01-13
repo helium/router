@@ -5,6 +5,7 @@
     end_per_testcase/2,
     start_swarm/3,
     get_device_channels_worker/1,
+    get_last_dev_nonce/1,
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
@@ -73,9 +74,14 @@ init_per_testcase(TestCase, Config) ->
             ],
             ok = application:set_env(lager, handlers, [
                 {lager_console_backend, [
-                    {level, debug},
+                    {level, error},
                     {formatter_config, FormatStr}
                 ]}
+            ]),
+            ok = application:set_env(lager, traces, [
+                {lager_console_backend, [{application, router}], debug},
+                {lager_console_backend, [{module, router_console_device_api}], debug},
+                {lager_console_backend, [{module, router_device_routing}], debug}
             ]);
         _ ->
             ok = application:set_env(lager, log_root, BaseDir ++ "/log")
@@ -154,11 +160,19 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _OUI, ChannelsWorkerPid, _JoinChache,
-        _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _OUI, ChannelsWorkerPid, _LastDevNonce,
+        _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
+
+get_last_dev_nonce(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _OUI, _ChannelsWorkerPid, LastDevNonce,
+        _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
+    LastDevNonce.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),

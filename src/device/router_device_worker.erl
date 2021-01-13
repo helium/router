@@ -21,7 +21,7 @@
     start_link/1,
     handle_offer/2,
     handle_join/8,
-    handle_frame/6,
+    handle_frame/7,
     queue_message/2,
     device_update/1
 ]).
@@ -55,6 +55,7 @@
     downlink_handled_at = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
+    last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     adr_cache = queue:new() :: queue:queue(#adr_cache{}),
@@ -89,14 +90,15 @@ handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey,
 
 -spec handle_frame(
     pid(),
+    binary(),
     blockchain_helium_packet_v1:packet(),
     pos_integer(),
     libp2p_crypto:pubkey_bin(),
     atom(),
     pid()
 ) -> ok.
-handle_frame(WorkerPid, Packet, PacketTime, PubKeyBin, Region, Pid) ->
-    gen_server:cast(WorkerPid, {frame, Packet, PacketTime, PubKeyBin, Region, Pid}).
+handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid) ->
+    gen_server:cast(WorkerPid, {frame, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid}).
 
 -spec queue_message(pid(), #downlink{}) -> ok.
 queue_message(Pid, #downlink{} = Downlink) ->
@@ -212,7 +214,7 @@ handle_cast(
         join_cache = Cache0,
         oui = OUI,
         channels_worker = ChannelsWorker
-    } = State0
+    } = State
 ) ->
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
@@ -220,7 +222,7 @@ handle_cast(
     case validate_join(Packet0, PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, Chain) of
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
-            {noreply, State0};
+            {noreply, State};
         {ok, Device1, DevNonce, Reply} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             LastDevNonce =
@@ -230,8 +232,8 @@ handle_cast(
                 end,
             case maps:get(DevNonce, Cache0, undefined) of
                 undefined when LastDevNonce == DevNonce ->
-                    lager:debug("got a late join: ~p (old: ~p)", [DevNonce, LastDevNonce]),
-                    {noreply, State0};
+                    lager:debug("got a late join: ~p", [DevNonce]),
+                    {noreply, State};
                 undefined ->
                     lager:debug("got a first join: ~p", [DevNonce]),
                     JoinCache = #join_cache{
@@ -242,14 +244,15 @@ handle_cast(
                         pid = Pid
                     },
                     Cache1 = maps:put(DevNonce, JoinCache, Cache0),
-                    State1 = State0#state{device = Device1},
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(
                         max(0, ?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime)),
                         self(),
                         {join_timeout, DevNonce}
                     ),
-                    {noreply, State1#state{
+                    {noreply, State#state{
+                        device = Device1,
+                        last_dev_nonce = DevNonce,
                         join_cache = Cache1,
                         downlink_handled_at = -1
                     }};
@@ -286,7 +289,7 @@ handle_cast(
                                 },
                                 Cache0
                             ),
-                            {noreply, State0#state{join_cache = Cache1}};
+                            {noreply, State#state{join_cache = Cache1}};
                         true ->
                             lager:debug("got a another join for ~p with better RSSI ~p", [
                                 DevNonce,
@@ -307,12 +310,12 @@ handle_cast(
                                 },
                                 Cache0
                             ),
-                            {noreply, State0#state{join_cache = Cache1}}
+                            {noreply, State#state{join_cache = Cache1}}
                     end
             end
     end;
 handle_cast(
-    {frame, Packet, _PacketTime, _PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, _PacketTime, _PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
@@ -323,20 +326,48 @@ handle_cast(
     ok = router_device_utils:report_status_inactive(Device),
     {noreply, State};
 handle_cast(
-    {frame, Packet0, PacketTime, PubKeyBin, Region, Pid},
+    {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},
     #state{
         chain = Blockchain,
         device = Device0,
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
         channels_worker = ChannelsWorker,
+        last_dev_nonce = LastDevNonce,
         adr_cache = ADRCache0
     } = State
 ) ->
+    Device1 =
+        case LastDevNonce == undefined of
+            true ->
+                Device0;
+            %% this is our first good uplink after join lets cleanup keys and update dev_nonces
+            false ->
+                %% if our keys are not matching we can assume that last dev nonce is bad
+                %% and we should not save it
+                DevNonces =
+                    case UsedNwkSKey == router_device:nwk_s_key(Device0) of
+                        false -> router_device:dev_nonces(Device0);
+                        true -> [LastDevNonce | router_device:dev_nonces(Device0)]
+                    end,
+                DeviceUpdates = [
+                    {keys,
+                        lists:filter(
+                            fun({NwkSKey, _}) -> NwkSKey == UsedNwkSKey end,
+                            router_device:keys(Device0)
+                        )},
+                    {dev_nonces, DevNonces}
+                ],
+                lager:info("we got our first uplink after join dev nonce=~p and key=~p", [
+                    LastDevNonce,
+                    UsedNwkSKey
+                ]),
+                router_device:update(DeviceUpdates, Device0)
+        end,
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    case validate_frame(Packet0, PacketTime, PubKeyBin, Region, Device0, Blockchain) of
-        {error, {not_enough_dc, _Reason, Device1}} ->
-            ok = router_device_utils:report_status_no_dc(Device0),
+    case validate_frame(Packet0, PacketTime, PubKeyBin, Region, Device1, Blockchain) of
+        {error, {not_enough_dc, _Reason, Device2}} ->
+            ok = router_device_utils:report_status_no_dc(Device2),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
@@ -346,7 +377,7 @@ handle_cast(
                 packet,
                 false
             ),
-            {noreply, State#state{device = Device1}};
+            {noreply, State#state{device = Device2}};
         {error, _Reason} ->
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
@@ -357,15 +388,15 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device1, SendToChannels, {Balance, Nonce}} ->
+        {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
             FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
-            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
+            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device2), 1),
             case MultiBuyValue > 1 of
                 true ->
                     lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
                     router_device_routing:accept_more(PHash, MultiBuyValue);
                 false ->
-                    case {router_device:queue(Device1), FrameAck == 1} of
+                    case {router_device:queue(Device2), FrameAck == 1} of
                         {[], false} ->
                             lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
                             router_device_routing:deny_more(PHash);
@@ -389,7 +420,7 @@ handle_cast(
                     ),
                     ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
-                        Device1,
+                        Device2,
                         Data,
                         {Balance, Nonce}
                     );
@@ -397,7 +428,7 @@ handle_cast(
                     ok
             end,
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
-            FCnt = router_device:fcnt(Device1),
+            FCnt = router_device:fcnt(Device2),
             NewFrameCache = #frame_cache{
                 rssi = RSSI0,
                 packet = Packet0,
@@ -424,7 +455,7 @@ handle_cast(
                         {frame_timeout, FCnt, PacketTime}
                     ),
                     {noreply, State#state{
-                        device = Device1,
+                        device = Device2,
                         frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
                         downlink_handled_at = FCnt,
                         adr_cache = ADRCache1
@@ -444,7 +475,7 @@ handle_cast(
                                 false
                             ),
                             {noreply, State#state{
-                                device = Device1,
+                                device = Device2,
                                 frame_cache = maps:put(
                                     FCnt,
                                     OldFrameCache#frame_cache{count = Count + 1},
@@ -458,7 +489,7 @@ handle_cast(
                                 blockchain_state_channel_response_v1:new(true)
                             ),
                             {noreply, State#state{
-                                device = Device1,
+                                device = Device2,
                                 frame_cache = maps:put(
                                     FCnt,
                                     NewFrameCache#frame_cache{count = Count + 1},
@@ -477,8 +508,6 @@ handle_info(
     {join_timeout, DevNonce},
     #state{
         chain = Blockchain,
-        db = DB,
-        cf = CF,
         channels_worker = ChannelsWorker,
         join_cache = JoinCache
     } = State
@@ -525,19 +554,16 @@ handle_info(
         join,
         true
     ),
-    DevNonceHistory = router_device:dev_nonces(Device0),
-    Device1 = router_device:dev_nonces([DevNonce | DevNonceHistory], Device0),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
-    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-    ok = router_device_utils:report_join_status(Device1, PacketSelected, Packets, Blockchain),
-    {noreply, State#state{device = Device1, join_cache = maps:remove(DevNonce, JoinCache)}};
+    ok = router_device_utils:report_join_status(Device0, PacketSelected, Packets, Blockchain),
+    {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
     #state{
         chain = Blockchain,
         db = DB,
         cf = CF,
-        device = Device,
+        device = Device0,
         channels_worker = ChannelsWorker,
         frame_cache = Cache0
     } = State
@@ -552,15 +578,15 @@ handle_info(
     } = maps:get(FCnt, Cache0),
     Cache1 = maps:remove(FCnt, Cache0),
     ok = router_device_routing:clear_multi_buy(Packet),
-    lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device, router_device)]),
-    DeviceID = router_device:id(Device),
+    lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
+    DeviceID = router_device:id(Device0),
     case
         handle_frame_timeout(
             Packet,
             PacketTime,
             PubKeyBin,
             Region,
-            Device,
+            Device0,
             Frame,
             Count,
             Blockchain
@@ -580,7 +606,11 @@ handle_info(
                 packet,
                 false
             ),
-            {noreply, State#state{device = Device1, frame_cache = Cache1}};
+            {noreply, State#state{
+                device = Device1,
+                last_dev_nonce = undefined,
+                frame_cache = Cache1
+            }};
         {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
@@ -599,7 +629,11 @@ handle_info(
                 packet,
                 true
             ),
-            {noreply, State#state{device = Device1, frame_cache = Cache1}};
+            {noreply, State#state{
+                device = Device1,
+                last_dev_nonce = undefined,
+                frame_cache = Cache1
+            }};
         noop ->
             catch blockchain_state_channel_handler:send_response(
                 Pid,
@@ -613,7 +647,7 @@ handle_info(
                 packet,
                 false
             ),
-            {noreply, State#state{frame_cache = Cache1}}
+            {noreply, State#state{last_dev_nonce = undefined, frame_cache = Cache1}}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -751,8 +785,7 @@ handle_join(
         {name, DeviceName},
         {dev_eui, DevEUI},
         {app_eui, AppEUI},
-        {app_s_key, AppSKey},
-        {nwk_s_key, NwkSKey},
+        {keys, [{NwkSKey, AppSKey} | router_device:keys(Device0)]},
         {devaddr, DevAddr},
         {fcntdown, 0},
         %% only do channel correction for 915 right now
@@ -780,11 +813,12 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     CFList =
         case Region of
             'EU868' ->
-                %% In this case the CFList is a list of five channel frequencies for the channels three to seven
-                %% whereby each frequency is encoded as a 24 bits unsigned integer (three octets). All these
-                %% channels are usable for DR0 to DR5 125kHz LoRa modulation. The list of frequencies is
-                %% followed by a single CFListType octet for a total of 16 octets. The CFListType SHALL be equal
-                %% to zero (0) to indicate that the CFList contains a list of frequencies.
+                %% In this case the CFList is a list of five channel frequencies for the channels
+                %% three to seven whereby each frequency is encoded as a 24 bits unsigned integer
+                %% (three octets). All these channels are usable for DR0 to DR5 125kHz LoRa
+                %% modulation. The list of frequencies is followed by a single CFListType octet
+                %% for a total of 16 octets. The CFListType SHALL be equal to zero (0) to indicate
+                %% that the CFList contains a list of frequencies.
                 %%
                 %% The actual channel frequency in Hz is 100 x frequency whereby values representing
                 %% frequencies below 100 MHz are reserved for future use.

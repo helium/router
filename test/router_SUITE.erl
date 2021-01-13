@@ -437,15 +437,42 @@ join_test(Config) ->
         AppKey,
         DevNonce
     ),
-
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
-    ?assertEqual(router_device:app_s_key(Device0), AppSKey),
-    ?assertEqual(router_device:dev_nonces(Device0), [DevNonce]),
+    Stream0 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin0,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"channels">> => fun erlang:is_list/1
+    }),
+
+    {ok, Device1} = router_device:get_by_id(DB, CF, WorkerID),
+
+    ?assertEqual(NwkSKey, router_device:nwk_s_key(Device1)),
+    ?assertEqual(AppSKey, router_device:app_s_key(Device1)),
+    ?assertEqual([DevNonce], router_device:dev_nonces(Device1)),
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),

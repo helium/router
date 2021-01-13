@@ -447,7 +447,7 @@ ensure_thing(AWS, DeviceID) ->
 -spec ensure_certificate(pid(), router_device:device()) -> {ok, any(), string()} | {error, any()}.
 ensure_certificate(AWS, Device) ->
     DeviceID = router_device:id(Device),
-    Key = router_device:keys(Device),
+    Key = router_device:ecc_compact(Device),
     case get_principals(AWS, DeviceID) of
         [] ->
             CSR = create_csr(

@@ -522,99 +522,187 @@ replay_joins_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
-    {ok, DB, [_, CF]} = router_db:get(),
     DeviceID = ?CONSOLE_DEVICE_ID,
-    ?assertMatch({ok, _}, router_device:get_by_id(DB, CF, DeviceID)),
+    {ok, Device0} = router_device_cache:get(DeviceID),
 
-    %% Send join packet
+    ?assertEqual(
+        DevNonce1,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    {ok, Device1} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device1)
+    ),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device1))
+    ),
+    ?assertEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device1)
+    ),
+    ?assertEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device1)
+    ),
+    ?assertEqual(
+        undefined,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    %% We ignore the channel correction  and down messages
+    ok = test_utils:ignore_messages(),
+
+    %% This will act as an old valid nonce cause we have the right app key
     DevNonce2 = crypto:strong_rand_bytes(2),
+    %% we are sending another join with an already used nonce to try to DOS the device
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
     timer:sleep(?JOIN_DELAY),
 
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
-
-    %% Waiting for reply from router to hotspot
-    test_utils:wait_state_channel_message(1250),
-
-    %% Send join packet
-    DevNonce3 = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
-    timer:sleep(?JOIN_DELAY),
-
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
-
-    %% Waiting for reply from router to hotspot
-    test_utils:wait_state_channel_message(1250),
-
-    {ok, Device} = router_device_cache:get(DeviceID),
+    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    {ok, Device2} = router_device_cache:get(DeviceID),
     ?assertEqual(
-        [DevNonce3, DevNonce2, DevNonce1],
-        router_device:dev_nonces(Device)
+        [DevNonce1],
+        router_device:dev_nonces(Device2)
+    ),
+    ?assertEqual(
+        2,
+        erlang:length(router_device:keys(Device2))
+    ),
+    ?assertNotEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device2)
+    ),
+    ?assertNotEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device2)
+    ),
+    ?assertEqual(
+        DevNonce2,
+        test_utils:get_last_dev_nonce(DeviceID)
     ),
 
-    %% we are sending another join with an already used nonce. Router should discard it.
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1)},
-    timer:sleep(?JOIN_DELAY),
+    %% The device then sends another normal packet linked to dev nonce 1
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1
+            )},
 
-    ?assertEqual(ok, rcv_loop(10)),
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    %% We are not making sure that we nuke those fake join keys
+    {ok, Device3} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device3)
+    ),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device3))
+    ),
+    ?assertEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device3)
+    ),
+    ?assertEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device3)
+    ),
+    ?assertEqual(
+        undefined,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
 
     ok.
 
@@ -622,17 +710,17 @@ replay_joins_test(Config) ->
 %% Helper functions
 %% ------------------------------------------------------------------
 
-rcv_loop(0) ->
-    ok;
-rcv_loop(X) ->
-    receive
-        {client_data, _PubKeyBin, Data} ->
-            ct:log("~p", [Data]),
-            client_data;
-        {console_event, Category, Got} ->
-            ct:log("~p ~p", [Category, Got]),
-            console_event;
-        _ ->
-            rcv_loop(X - 1)
-    after 4250 -> ok
-    end.
+% rcv_loop(0) ->
+%     ok;
+% rcv_loop(X) ->
+%     receive
+%         {client_data, _PubKeyBin, Data} ->
+%             ct:pal("~p", [Data]),
+%             client_data;
+%         {console_event, Category, Got} ->
+%             ct:pal("~p ~p", [Category, Got]),
+%             console_event;
+%         _ ->
+%             rcv_loop(X - 1)
+%     after 4250 -> ok
+%     end.

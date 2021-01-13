@@ -33,6 +33,7 @@
     downlink_handled_at = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
+    last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     adr_cache = queue:new() :: queue:queue(#adr_cache{}),

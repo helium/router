@@ -1,5 +1,32 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Router Channel ==
+%%%
+%%% Event Manager for router_---_channels to add themselves as handlers.
+%%%
+%%% Started from router_device_channels_worker:init/1
+%%%
+%%% Handlers are added from router_device_channels_worker:start_channel/4
+%%%  and router_device_channels_worker:maybe_start_no_channel/2
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_channel).
 
+%% ------------------------------------------------------------------
+%% gen_event Exports
+%% ------------------------------------------------------------------
+-export([
+    start_link/0,
+    add/3,
+    delete/2,
+    update/3,
+    handle_data/3
+]).
+
+%% ------------------------------------------------------------------
+%% router_channel type exports
+%% ------------------------------------------------------------------
 -export([
     new/6, new/7, new/8,
     id/1,
@@ -15,14 +42,10 @@
     to_map/1
 ]).
 
--export([
-    start_link/0,
-    add/3,
-    delete/2,
-    update/3,
-    handle_data/3,
-    encode_data/2
-]).
+%% ------------------------------------------------------------------
+%% router_channel_handler API
+%% ------------------------------------------------------------------
+-export([encode_data/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -42,6 +65,53 @@
 -type channel() :: #channel{}.
 
 -export_type([channel/0]).
+
+%% ------------------------------------------------------------------
+%% Gen Event functions
+%% ------------------------------------------------------------------
+
+-spec start_link() -> {ok, EventManagerPid :: pid()} | {error, any()}.
+start_link() ->
+    gen_event:start_link().
+
+-spec add(
+    EventManagerPid :: pid(),
+    Channel :: channel(),
+    Device :: router_device:device()
+) -> ok | {'EXIT', term()} | {error, term()}.
+add(Pid, Channel, Device) ->
+    Handler = ?MODULE:handler(Channel),
+    gen_event:add_sup_handler(Pid, Handler, {Channel, Device}).
+
+-spec delete(
+    EventManagerPid :: pid(),
+    Channel :: channel()
+) -> ok.
+delete(Pid, Channel) ->
+    Handler = ?MODULE:handler(Channel),
+    _ = gen_event:delete_handler(Pid, Handler, []),
+    ok.
+
+-spec update(
+    EventManagerPid :: pid(),
+    Channel :: channel(),
+    Device :: router_device:device()
+) -> ok | {error, term()}.
+update(Pid, Channel, Device) ->
+    Handler = ?MODULE:handler(Channel),
+    gen_event:call(Pid, Handler, {update, Channel, Device}).
+
+-spec handle_data(
+    EventManagerPid :: pid(),
+    Data :: map(),
+    Ref :: reference()
+) -> ok.
+handle_data(Pid, Data, Ref) ->
+    ok = gen_event:notify(Pid, {data, Ref, Data}).
+
+%% ------------------------------------------------------------------
+%% Channel Functions
+%% ------------------------------------------------------------------
 
 -spec new(
     ID :: binary(),
@@ -132,40 +202,20 @@ hash(Channel0) ->
     Channel1 = Channel0#channel{controller = undefined},
     crypto:hash(sha256, erlang:term_to_binary(Channel1)).
 
--spec start_link() -> {ok, pid()} | {error, any()}.
-start_link() ->
-    gen_event:start_link().
-
--spec add(pid(), channel(), router_device:device()) -> ok | {'EXIT', term()} | {error, term()}.
-add(Pid, Channel, Device) ->
-    Handler = ?MODULE:handler(Channel),
-    gen_event:add_sup_handler(Pid, Handler, {Channel, Device}).
-
--spec delete(pid(), channel()) -> ok.
-delete(Pid, Channel) ->
-    Handler = ?MODULE:handler(Channel),
-    _ = gen_event:delete_handler(Pid, Handler, []),
-    ok.
-
--spec update(pid(), channel(), router_device:device()) -> ok | {error, term()}.
-update(Pid, Channel, Device) ->
-    Handler = ?MODULE:handler(Channel),
-    gen_event:call(Pid, Handler, {update, Channel, Device}).
-
--spec handle_data(pid(), map(), any()) -> ok.
-handle_data(Pid, Data, Ref) ->
-    ok = gen_event:notify(Pid, {data, Ref, Data}).
-
--spec encode_data(channel(), map()) -> binary().
-encode_data(Channel, Map) ->
-    encode_data(?MODULE:decoder(Channel), Map, Channel).
-
 -spec to_map(channel()) -> map().
 to_map(Channel) ->
     #{
         id => ?MODULE:id(Channel),
         name => ?MODULE:name(Channel)
     }.
+
+%% ------------------------------------------------------------------
+%% Channel Handler Functions
+%% ------------------------------------------------------------------
+
+-spec encode_data(channel(), map()) -> binary().
+encode_data(Channel, TemplateArgs) ->
+    encode_data(?MODULE:decoder(Channel), TemplateArgs, Channel).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

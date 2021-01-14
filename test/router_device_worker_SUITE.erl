@@ -633,6 +633,37 @@ replay_joins_test(Config) ->
         test_utils:get_last_dev_nonce(DeviceID)
     ),
 
+    %% We repeat again to add a second "bad" attempt
+
+    %% This will act as an old valid nonce cause we have the right app key
+    DevNonce3 = crypto:strong_rand_bytes(2),
+    %% we are sending another join with an already used nonce to try to DOS the device
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    {ok, Device3} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device3)
+    ),
+    ?assertEqual(
+        3,
+        erlang:length(router_device:keys(Device3))
+    ),
+    ?assertNotEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device3)
+    ),
+    ?assertNotEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device3)
+    ),
+    ?assertEqual(
+        DevNonce3,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
     %% The device then sends another normal packet linked to dev nonce 1
     Stream !
         {send,
@@ -683,22 +714,22 @@ replay_joins_test(Config) ->
     }),
 
     %% We are not making sure that we nuke those fake join keys
-    {ok, Device3} = router_device_cache:get(DeviceID),
+    {ok, Device4} = router_device_cache:get(DeviceID),
     ?assertEqual(
         [DevNonce1],
-        router_device:dev_nonces(Device3)
+        router_device:dev_nonces(Device4)
     ),
     ?assertEqual(
         1,
-        erlang:length(router_device:keys(Device3))
+        erlang:length(router_device:keys(Device4))
     ),
     ?assertEqual(
         router_device:nwk_s_key(Device0),
-        router_device:nwk_s_key(Device3)
+        router_device:nwk_s_key(Device4)
     ),
     ?assertEqual(
         router_device:app_s_key(Device0),
-        router_device:app_s_key(Device3)
+        router_device:app_s_key(Device4)
     ),
     ?assertEqual(
         undefined,

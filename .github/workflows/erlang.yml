@@ -33,7 +33,6 @@ jobs:
           SANITIZE_ERLANG_NIFS: 1
         run: |
           ./rebar3 get-deps
-          mkdir -p "_build/default/lib/router/ebin"
           REBAR_CONFIG="config/grpc_server_gen.config" ./rebar3 grpc gen
           REBAR_CONFIG="config/grpc_client_gen.config" ./rebar3 grpc gen
           ./rebar3 compile

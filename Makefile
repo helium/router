@@ -45,7 +45,6 @@ grpc:
 $(grpc_services_directory):
 	@echo "grpc service directory $(directory) does not exist, generating services"
 	$(REBAR) get-deps
-	mkdir -p "_build/default/lib/router/ebin"
 	$(MAKE) grpc
 
 # Pass all unknown targets straight to rebar3 (e.g. `make dialyzer`)

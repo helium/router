@@ -31,7 +31,8 @@
         bbmustache,
         iso8601,
         lib_http2_handler,
-        clique
+        clique,
+        inet_cidr
     ]},
     {included_applications, [blockchain]},
     {env, []},

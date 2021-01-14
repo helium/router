@@ -48,6 +48,7 @@ init_per_testcase(TestCase, Config) ->
         {secret, <<>>}
     ]),
     ok = application:set_env(router, metrics, [{reporters, []}]),
+    ok = application:set_env(router, router_http_channel_url_check, false),
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     Tab = ets:new(?ETS, [public, set]),

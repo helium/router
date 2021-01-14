@@ -50,6 +50,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(router, metrics, [{reporters, []}]),
     ok = application:set_env(router, max_v8_context, 1),
     ok = application:set_env(router, dc_tracker, "enabled"),
+    ok = application:set_env(router, router_http_channel_url_check, false),
     filelib:ensure_dir(BaseDir ++ "/log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->

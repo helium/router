@@ -23,7 +23,8 @@
     handle_join/8,
     handle_frame/7,
     queue_message/2,
-    device_update/1
+    device_update/1,
+    clear_queue/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -104,6 +105,10 @@ handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid) ->
 queue_message(Pid, #downlink{} = Downlink) ->
     gen_server:cast(Pid, {queue_message, Downlink}).
 
+-spec clear_queue(Pid :: pid()) -> ok.
+clear_queue(Pid) ->
+    gen_server:call(Pid, clear_queue).
+
 -spec device_update(Pid :: pid()) -> ok.
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
@@ -177,6 +182,19 @@ handle_cast(
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
+handle_cast(
+    clear_queue,
+    #state{
+        db = DB,
+        cf = CF,
+        device = Device0,
+        channels_worker = ChannelsWorkerPid
+    } = State
+) ->
+    lager:debug("Cleared queue"),
+    Device1 = router_device:queue([], Device0),
+    ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
+    {noreply, State#state{device = Device1}};
 handle_cast(
     {queue_message, #downlink{port = Port, payload = Payload} = Downlink},
     #state{

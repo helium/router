@@ -19,6 +19,10 @@
     code_change/3
 ]).
 
+-define(IPV6_128, inet_cidr:parse("::1/128")).
+-define(IPV6_10, inet_cidr:parse("fe80::/10")).
+-define(IPV6_7, inet_cidr:parse("fc00::/7")).
+
 -record(state, {
     channel :: router_channel:channel(),
     url :: binary(),
@@ -94,17 +98,82 @@ terminate(_Reason, _State) ->
 
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->
-    try hackney:request(Method, URL, Headers, Payload, [with_body]) of
-        Res -> Res
-    catch
-        _What:_Why:_Stacktrace ->
-            lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
-                {Method, URL, Headers, Payload},
-                _What,
-                _Why,
-                _Stacktrace
-            ]),
-            {error, http_req_failed}
+    case check_url(URL, application:get_env(router, router_http_channel_url_check, true)) of
+        {error, _Reason} = Error ->
+            Error;
+        ok ->
+            try hackney:request(Method, URL, Headers, Payload, [with_body]) of
+                Res -> Res
+            catch
+                _What:_Why:_Stacktrace ->
+                    lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
+                        {Method, URL, Headers, Payload},
+                        _What,
+                        _Why,
+                        _Stacktrace
+                    ]),
+                    {error, http_req_failed}
+            end
+    end.
+
+-spec check_url(URL :: binary(), boolean()) -> ok | {error, any()}.
+check_url(_URL, false) ->
+    ok;
+check_url(URL, true) ->
+    Opts = [
+        {scheme_defaults, [{http, 80}, {https, 443}]},
+        {fragment, false}
+    ],
+    case http_uri:parse(URL, Opts) of
+        {error, _Reason} ->
+            lager:info("got bad URL ~p ~p", [URL, _Reason]),
+            {error, bad_url};
+        {ok, {_Scheme, _UserInfo, BinHost, _Port, _Path, _Query}} ->
+            Host = erlang:binary_to_list(BinHost),
+            case is_non_local_address(Host) of
+                {error, _Reason} ->
+                    lager:info("got bad Host ~p ~p", [Host, _Reason]),
+                    {error, bad_host};
+                ok ->
+                    case inet_res:resolve(Host, any, a) of
+                        {error, _Reason} ->
+                            lager:info("got bad dns record ~p ~p", [Host, _Reason]),
+                            {error, bad_dns};
+                        {ok, _} ->
+                            ok
+                    end
+            end
+    end.
+
+-spec is_non_local_address(Host :: list()) -> ok | {error, any()}.
+is_non_local_address(Host) ->
+    case inet:parse_address(Host) of
+        {error, _Reason} = Error ->
+            Error;
+        {ok, {127, _, _, _}} ->
+            {error, local_address};
+        {ok, {10, _, _, _}} ->
+            {error, local_address};
+        {ok, {192, 168, _, _}} ->
+            {error, local_address};
+        {ok, {169, 254, _, _}} ->
+            {error, local_address};
+        {ok, {172, Byte2, _, _}} ->
+            case lists:member(Byte2, lists:seq(16, 31)) of
+                true ->
+                    {error, local_address};
+                false ->
+                    ok
+            end;
+        {ok, {_, _, _, _, _, _, _, _} = IPV6} ->
+            case
+                inet_cidr:contains(?IPV6_128, IPV6) orelse
+                    inet_cidr:contains(?IPV6_10, IPV6) orelse
+                    inet_cidr:contains(?IPV6_7, IPV6)
+            of
+                true -> {error, local_address};
+                false -> ok
+            end
     end.
 
 -spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.

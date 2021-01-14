@@ -222,18 +222,18 @@ encode_data(Channel, TemplateArgs) ->
 %% ------------------------------------------------------------------
 
 -spec encode_data(router_decoder:decoder() | undefined, map(), channel()) -> binary().
-encode_data(undefined, #{payload := Payload} = Map, Channel) ->
+encode_data(undefined, #{payload := Payload} = TemplateArgs, Channel) ->
     maybe_apply_template(
         ?MODULE:payload_template(Channel),
-        maps:put(payload, base64:encode(Payload), Map)
+        maps:put(payload, base64:encode(Payload), TemplateArgs)
     );
-encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
+encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel) ->
     DecoderID = router_decoder:id(Decoder),
     case router_decoder:decode(DecoderID, Payload, Port) of
         {ok, DecodedPayload} ->
             maybe_apply_template(
                 ?MODULE:payload_template(Channel),
-                maps:merge(Map, #{
+                maps:merge(TemplateArgs, #{
                     decoded => #{
                         status => success,
                         payload => DecodedPayload
@@ -248,7 +248,7 @@ encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
             ),
             maybe_apply_template(
                 ?MODULE:payload_template(Channel),
-                maps:merge(Map, #{
+                maps:merge(TemplateArgs, #{
                     decoded => #{
                         status => error,
                         error => Reason
@@ -259,10 +259,10 @@ encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
     end.
 
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
-maybe_apply_template(undefined, Map) ->
-    jsx:encode(Map);
-maybe_apply_template(Template, Map) ->
-    NormalMap = jsx:decode(jsx:encode(Map), [return_maps]),
+maybe_apply_template(undefined, Data) ->
+    jsx:encode(Data);
+maybe_apply_template(Template, TemplateArgs) ->
+    NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
     Data = mk_data_fun(NormalMap, []),
     try bbmustache:render(Template, Data, [{key_type, binary}]) of
         Res -> Res

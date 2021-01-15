@@ -136,7 +136,6 @@ handle_info(
             {ok, State#state{
                 connection = Conn,
                 connection_backoff = Backoff1,
-                endpoint = Endpoint,
                 ping = ping(ChannelID)
             }};
         {error, _ConnReason} ->
@@ -175,7 +174,6 @@ handle_info(
                     {ok, State#state{
                         connection = Conn,
                         connection_backoff = Backoff1,
-                        endpoint = Endpoint,
                         ping = ping(ChannelID)
                     }};
                 {error, _SubReason} ->

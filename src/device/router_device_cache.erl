@@ -37,7 +37,7 @@ get(DeviceID) ->
 
 -spec get_by_devaddr(binary()) -> [router_device:device()].
 get_by_devaddr(DevAddr) ->
-    MS = ets:fun2ms(fun({_, D}) when D#device_v4.devaddr == DevAddr -> D end),
+    MS = ets:fun2ms(fun({_, D}) when D#device_v5.devaddr == DevAddr -> D end),
     ets:select(?ETS, MS).
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.
@@ -117,7 +117,7 @@ get_by_devaddr_test() ->
             ID = uuid_v4(),
             true = ets:insert(
                 ?ETS,
-                {ID, #device_v4{
+                {ID, #device_v5{
                     id = ID,
                     devaddr = <<(I rem 2):25/integer-unsigned-little, 72:7/integer>>
                 }}

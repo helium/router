@@ -22,3 +22,4 @@ src/pb/
 .env
 prometheus.yml
 doc/
+.DS_Store

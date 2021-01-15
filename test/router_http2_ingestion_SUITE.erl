@@ -63,8 +63,8 @@ join_http2_test(Config) ->
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
 
     %% create a join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Packet = test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -40),
+    DevNonce = crypto:strong_rand_bytes(2),
+    Packet = test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -40),
 
     {ok, ConnPid} = gun:open("localhost", 8080, #{
         transport => tcp,
@@ -113,9 +113,9 @@ join_http2_negative_test(Config) ->
     {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm1, 0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
 
-    JoinNonce = crypto:strong_rand_bytes(2),
+    DevNonce = crypto:strong_rand_bytes(2),
 
-    Packet = test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -40),
+    Packet = test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -40),
 
     {ok, ConnPid} = gun:open("localhost", 8080, #{
         transport => tcp,
@@ -169,13 +169,13 @@ join_http2_timeout_test(Config) ->
     {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm2, 0),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
 
-    JoinNonce = crypto:strong_rand_bytes(2),
+    DevNonce = crypto:strong_rand_bytes(2),
 
     Packet = test_utils:join_packet(
         PubKeyBin0,
         <<16#00, 16#00, 16#00, 16#FE, 16#72, 16#84, 16#17, 16#78, 16#04, 16#37, 16#45, 16#E1, 16#AC,
             16#62, 16#D2, 16#22>>,
-        JoinNonce,
+        DevNonce,
         -40
     ),
 

@@ -74,8 +74,8 @@ dupes_test(Config) ->
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -380,10 +380,10 @@ join_test(Config) ->
     end,
 
     %% Send join packets where PubKeyBin1 has better rssi
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, JoinNonce, -100)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -100)},
     timer:sleep(500),
-    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce, -80)},
+    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce, -80)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
@@ -435,17 +435,44 @@ join_test(Config) ->
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(
         PubKeyBin1,
         AppKey,
-        JoinNonce
+        DevNonce
     ),
-
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    ?assertEqual(router_device:nwk_s_key(Device0), NwkSKey),
-    ?assertEqual(router_device:app_s_key(Device0), AppSKey),
-    ?assertEqual(router_device:join_nonce(Device0), JoinNonce),
+    Stream0 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin0,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"channels">> => fun erlang:is_list/1
+    }),
+
+    {ok, Device1} = router_device:get_by_id(DB, CF, WorkerID),
+
+    ?assertEqual(NwkSKey, router_device:nwk_s_key(Device1)),
+    ?assertEqual(AppSKey, router_device:app_s_key(Device1)),
+    ?assertEqual([DevNonce], router_device:dev_nonces(Device1)),
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
@@ -467,8 +494,8 @@ adr_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Device sends a join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request

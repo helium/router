@@ -9,7 +9,8 @@
 -export([
     device_update_test/1,
     drop_downlink_test/1,
-    adr_cache_test/1
+    adr_cache_test/1,
+    replay_joins_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -30,9 +31,9 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = -1 :: integer(),
-    join_nonce_handled_at = <<>> :: binary(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
+    last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     adr_cache = queue:new() :: queue:queue(#adr_cache{}),
@@ -50,7 +51,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [device_update_test, drop_downlink_test, adr_cache_test].
+    [device_update_test, drop_downlink_test, adr_cache_test, replay_joins_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -84,8 +85,8 @@ device_update_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -162,8 +163,8 @@ drop_downlink_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -247,8 +248,8 @@ adr_cache_test(Config) ->
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -465,6 +466,276 @@ adr_cache_test(Config) ->
         Item3
     ),
     ?assertEqual({empty, ADRCache3}, queue:out_r(ADRCache3)),
+    ok.
+
+replay_joins_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    DevNonce1 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"activation">>, #{
+        <<"category">> => <<"activation">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device_cache:get(DeviceID),
+
+    ?assertEqual(
+        DevNonce1,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    {ok, Device1} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device1)
+    ),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device1))
+    ),
+    ?assertEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device1)
+    ),
+    ?assertEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device1)
+    ),
+    ?assertEqual(
+        undefined,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    %% We ignore the channel correction  and down messages
+    ok = test_utils:ignore_messages(),
+
+    %% This will act as an old valid nonce cause we have the right app key
+    DevNonce2 = crypto:strong_rand_bytes(2),
+    %% we are sending another join with an already used nonce to try to DOS the device
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    {ok, Device2} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device2)
+    ),
+    ?assertEqual(
+        2,
+        erlang:length(router_device:keys(Device2))
+    ),
+    ?assertNotEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device2)
+    ),
+    ?assertNotEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device2)
+    ),
+    ?assertEqual(
+        DevNonce2,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    %% We repeat again to add a second "bad" attempt
+
+    %% This will act as an old valid nonce cause we have the right app key
+    DevNonce3 = crypto:strong_rand_bytes(2),
+    %% we are sending another join with an already used nonce to try to DOS the device
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    {ok, Device3} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device3)
+    ),
+    ?assertEqual(
+        3,
+        erlang:length(router_device:keys(Device3))
+    ),
+    ?assertNotEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device3)
+    ),
+    ?assertNotEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device3)
+    ),
+    ?assertEqual(
+        DevNonce3,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    %% The device then sends another normal packet linked to dev nonce 1
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    %% We are not making sure that we nuke those fake join keys
+    {ok, Device4} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device4)
+    ),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device4))
+    ),
+    ?assertEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device4)
+    ),
+    ?assertEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device4)
+    ),
+    ?assertEqual(
+        undefined,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
     ok.
 
 %% ------------------------------------------------------------------

@@ -373,8 +373,8 @@ late_packet_test(Config) ->
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request

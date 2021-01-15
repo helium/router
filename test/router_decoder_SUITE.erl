@@ -71,8 +71,8 @@ decode_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -188,8 +188,8 @@ template_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -267,8 +267,8 @@ timeout_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request
@@ -396,8 +396,8 @@ too_many_test(Config) ->
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packet
-    JoinNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, JoinNonce)},
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(?JOIN_DELAY),
 
     %% Waiting for report device status on that join request

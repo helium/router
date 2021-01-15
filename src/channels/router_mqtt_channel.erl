@@ -1,6 +1,9 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router MQTT Channel ==
+%%
+%% Connects and publishes messages to User's MQTT instance.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_mqtt_channel).

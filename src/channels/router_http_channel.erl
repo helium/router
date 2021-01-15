@@ -148,8 +148,8 @@ check_url(URL, true) ->
 -spec is_non_local_address(Host :: list()) -> ok | {error, any()}.
 is_non_local_address(Host) ->
     case inet:parse_address(Host) of
-        {error, _Reason} = Error ->
-            Error;
+        {error, _Reason} ->
+            ok;
         {ok, {127, _, _, _}} ->
             {error, local_address};
         {ok, {10, _, _, _}} ->

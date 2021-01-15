@@ -348,8 +348,17 @@ setup_aws(Channel, Device) ->
     DeviceID = router_channel:device_id(Channel),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
     httpc_aws:set_region(AWS, Region),
-    Funs = [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2],
-    case ensure(Funs, AWS, DeviceID) of
+    PassesAll =
+        lists:foldl(
+            fun
+                (_, {error, _} = Err) -> Err;
+                (Fn, ok) when is_function(Fn, 1) -> Fn(AWS);
+                (Fn, ok) when is_function(Fn, 2) -> Fn(AWS, DeviceID)
+            end,
+            ok,
+            [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2]
+        ),
+    case PassesAll of
         {error, _} = Error ->
             Error;
         ok ->
@@ -365,20 +374,6 @@ setup_aws(Channel, Device) ->
                     end
             end
     end.
-
--spec ensure([function()], pid(), binary()) -> ok | {error, any()}.
-ensure(Funs, AWS, DeviceID) ->
-    ensure(Funs, AWS, DeviceID, ok).
-
--spec ensure([function()], pid(), binary(), ok | {error, any()}) -> ok | {error, any()}.
-ensure([], _AWS, _DeviceID, Acc) ->
-    Acc;
-ensure(_Funs, _AWS, _DeviceID, {error, _} = Error) ->
-    Error;
-ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 1) ->
-    ensure(Funs, AWS, DeviceID, Fun(AWS));
-ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 2) ->
-    ensure(Funs, AWS, DeviceID, Fun(AWS, DeviceID)).
 
 -spec ensure_policy(pid()) -> ok | {error, any()}.
 ensure_policy(AWS) ->

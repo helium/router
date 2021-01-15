@@ -1,6 +1,10 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router AWS Channel ==
+%%
+%% Handles connection with AWS.
+%% Publishes messages to AWS MQTT
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_aws_channel).

@@ -52,7 +52,7 @@ init({Channel, Device}) ->
         downlink_topic := DownlinkTemplate
     } = router_channel:args(Channel),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! {?MODULE, connect, ChannelID},
+    send_connect_after(ChannelID, 0),
     {ok, #state{
         channel = Channel,
         channel_id = ChannelID,
@@ -315,10 +315,14 @@ publish(
 ping(ChannelID) ->
     erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
 
+-spec send_connect_after(ChannelID :: binary(), Delay :: integer()) -> reference().
+send_connect_after(ChannelID, Delay) ->
+    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}).
+
 -spec reconnect(binary(), backoff:backoff()) -> backoff:backoff().
 reconnect(ChannelID, Backoff0) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}),
+    send_connect_after(ChannelID, Delay),
     Backoff1.
 
 -spec cleanup_connection(pid()) -> ok.

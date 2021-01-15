@@ -461,6 +461,7 @@ ensure_certificate(AWS, Device) ->
     Keys = router_device:ecc_compact(Device),
     case get_principals(AWS, DeviceID) of
         [] ->
+            %% FIXME: Does this need to become configurable for open sourcing?
             CSR = create_csr(
                 Keys,
                 <<"US">>,

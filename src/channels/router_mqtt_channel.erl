@@ -402,6 +402,7 @@ connect(URI, DeviceID, Name) ->
             {ok, C} = emqtt:start_link(EmqttOpts),
             case emqtt:connect(C) of
                 {ok, _Props} ->
+                    %% FIXME: Are we logging peoples usernames and passwords?
                     lager:info("connect returned ~p ~p", [_Props, EmqttOpts]),
                     {ok, C};
                 {error, Reason} ->

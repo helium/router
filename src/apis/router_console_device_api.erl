@@ -33,6 +33,11 @@
     code_change/3
 ]).
 
+%% ------------------------------------------------------------------
+%% Channel Function Exports
+%% ------------------------------------------------------------------
+-export([debug_active_for_device/1]).
+
 -define(SERVER, ?MODULE).
 -define(POOL, router_console_device_api_pool).
 -define(ETS, router_console_debug_ets).
@@ -254,6 +259,13 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+%% ------------------------------------------------------------------
+%% Channel Function Definitions
+%% ------------------------------------------------------------------
+
+debug_active_for_device(DeviceID) ->
+    debug_lookup(DeviceID) > 0.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

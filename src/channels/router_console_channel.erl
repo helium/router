@@ -1,6 +1,10 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router Console Channel ==
+%%
+%% Publishes events to Console when Debug Panel is open and has been
+%% `Limit' (currently: 10) has not been exceeded.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_console_channel).
@@ -19,8 +23,6 @@
     code_change/3
 ]).
 
--define(ETS, router_console_debug_ets).
-
 -record(state, {
     channel :: router_channel:channel(),
     device :: router:device()
@@ -35,7 +37,9 @@ init({Channel, Device}) ->
     {ok, #state{channel = Channel, device = Device}}.
 
 handle_event({data, Ref, Data}, #state{channel = Channel, device = Device} = State) ->
-    case debug_lookup(router_device:id(Device)) of
+    DeviceID = router_device:id(Device),
+    DebugActive = router_console_device_api:debug_active_for_device(DeviceID),
+    case DebugActive of
         false ->
             ok;
         true ->
@@ -74,10 +78,3 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec debug_lookup(binary()) -> boolean().
-debug_lookup(DeviceID) ->
-    case ets:lookup(?ETS, DeviceID) of
-        [] -> false;
-        [{DeviceID, Limit}] -> Limit > 0
-    end.

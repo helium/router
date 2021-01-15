@@ -105,7 +105,7 @@ handle_info(
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
-                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [
+                    lager:info("[~s] connected to : ~p (~p) and subscribed to ~p", [
                         ChannelID,
                         Endpoint,
                         Conn,

@@ -127,7 +127,7 @@ handle_info(
     ChannelName = router_channel:name(Channel),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            lager:info("[~s] conencted to : ~p (~p)", [
+            lager:info("[~s] connected to : ~p (~p)", [
                 ChannelID,
                 Endpoint,
                 Conn
@@ -165,7 +165,7 @@ handle_info(
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
-                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [
+                    lager:info("[~s] connected to : ~p (~p) and subscribed to ~p", [
                         ChannelID,
                         Endpoint,
                         Conn,
@@ -232,7 +232,7 @@ handle_info(
     } = State
 ) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
-    lager:error("[~s] got a EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
+    lager:error("[~s] got an EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
     Backoff1 = reconnect(ChannelID, Backoff0),
     {ok, State#state{connection_backoff = Backoff1}};
 handle_info({disconnected, _Type, _Reason}, #state{channel_id = ChannelID} = State) ->

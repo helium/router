@@ -255,7 +255,7 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec publish(any(), map(), #state{}) -> {ok, #state{}}.
+-spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
 publish(
     Ref,
     Data,
@@ -362,7 +362,8 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
         end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
--spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
+-spec connect(URI :: binary(), DeviceID :: binary(), Name :: binary()) ->
+    {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
     Opts = [
         {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
@@ -417,7 +418,10 @@ connect(URI, DeviceID, Name) ->
             {error, invalid_mqtt_uri}
     end.
 
--spec render_topic(binary() | undefined, router_device:device()) -> binary() | undefined.
+-spec render_topic(
+    Template :: binary() | undefined,
+    Device :: router_device:device()
+) -> binary() | undefined.
 render_topic(undefined, _Device) ->
     undefined;
 render_topic(Template, Device) ->

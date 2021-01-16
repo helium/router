@@ -264,6 +264,7 @@ handle_cast(
                         device = Device1,
                         last_dev_nonce = DevNonce,
                         join_cache = Cache1,
+                        adr_engine = undefined,
                         downlink_handled_at = -1
                     }};
                 #join_cache{

@@ -172,8 +172,8 @@ metadata(Device) ->
     Device#device_v5.metadata.
 
 -spec metadata(map(), device()) -> device().
-metadata(Meta, Device) ->
-    Device#device_v5{metadata = Meta}.
+metadata(Meta1, #device_v5{metadata = Meta0} = Device) ->
+    Device#device_v5{metadata = maps:merge(Meta0, Meta1)}.
 
 -spec is_active(device()) -> boolean().
 is_active(Device) ->

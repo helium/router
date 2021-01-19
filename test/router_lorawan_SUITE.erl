@@ -212,7 +212,8 @@ lw_join_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false
         },
         <<"fcnt">> => 1,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -332,7 +333,8 @@ lw_join_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false
         },
         <<"fcnt">> => 2,
         <<"downlink_url">> => fun erlang:is_binary/1,

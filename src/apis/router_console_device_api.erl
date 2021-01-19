@@ -43,6 +43,7 @@
 -define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 -define(MULTI_BUY_DEFAULT, 1).
+-define(ADR_ALLOWED_DEFAULT, false).
 -define(DOWNLINK_TOOL_ORIGIN, <<"console_downlink_queue">>).
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
@@ -89,7 +90,8 @@ get_device(DeviceID) ->
             Metadata = #{
                 labels => kvc:path([<<"labels">>], JSONDevice),
                 organization_id => kvc:path([<<"organization_id">>], JSONDevice),
-                multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, ?MULTI_BUY_DEFAULT)
+                multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, ?MULTI_BUY_DEFAULT),
+                adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ?ADR_ALLOWED_DEFAULT)
             },
             IsActive = kvc:path([<<"active">>], JSONDevice),
             DeviceUpdates = [
@@ -699,13 +701,7 @@ get_devices_(DevEui, AppEui) ->
                         kvc:path([<<"app_key">>], JSONDevice)
                     ),
                     Metadata = #{
-                        labels => kvc:path([<<"labels">>], JSONDevice),
-                        organization_id => kvc:path([<<"organization_id">>], JSONDevice),
-                        multi_buy => kvc:path(
-                            [<<"multi_buy">>],
-                            JSONDevice,
-                            ?MULTI_BUY_DEFAULT
-                        )
+                        organization_id => kvc:path([<<"organization_id">>], JSONDevice)
                     },
                     IsActive = kvc:path([<<"active">>], JSONDevice),
                     DeviceUpdates = [

@@ -14,7 +14,9 @@
 -export([precise_universal_time/0, time_to_gps/0, time_to_gps/1, time_to_unix/0, time_to_unix/1]).
 -export([ms_diff/2, datetime_to_timestamp/1, apply_offset/2]).
 -export([throw_info/2, throw_info/3, throw_warning/2, throw_warning/3, throw_error/2, throw_error/3]).
--export([extract_frame_port_payload/1, cipher/5, mtype/1, padded/2]).
+-export([extract_frame_port_payload/1, cipher/5, mtype/1, padded/2, parse_datarate/1]).
+
+-export_type([spreading/0, bandwidth/0]).
 
 -include("lorawan.hrl").
 -include("lorawan_vars.hrl").
@@ -262,5 +264,23 @@ time_test_() ->
             apply_offset({{1989, 11, 17}, {18, 0, 10.001}}, {-1, -1, 0})
         )
     ].
+
+%% Spreading Factor
+-type spreading() :: 7..12.
+
+%% Bandwidth in kHz.
+-type bandwidth() :: 125 | 500.
+
+%% @doc returns a tuple of {SpreadingFactor, Bandwidth} from strings like "SFdBWddd"
+%%
+%% Example: `{7, 125} = scratch:parse_datarate("SF7BW125")'
+-spec parse_datarate(string()) -> {spreading(), integer()}.
+parse_datarate(Datarate) ->
+    case Datarate of
+        [$S, $F, SF1, SF2, $B, $W, BW1, BW2, BW3] ->
+            {erlang:list_to_integer([SF1, SF2]), erlang:list_to_integer([BW1, BW2, BW3])};
+        [$S, $F, SF1, $B, $W, BW1, BW2, BW3] ->
+            {erlang:list_to_integer([SF1]), erlang:list_to_integer([BW1, BW2, BW3])}
+    end.
 
 % end of file

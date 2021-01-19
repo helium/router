@@ -15,6 +15,7 @@
 -export([set_channels/3]).
 -export([tx_time/2, tx_time/3]).
 -export([f2uch/2]).
+-export([uplink_power_table/1]).
 
 -include("lorawan_db.hrl").
 
@@ -271,6 +272,82 @@ datar_to_tuple(DataRate) when is_integer(DataRate) ->
 codr_to_tuple(CodingRate) ->
     [A, B] = binary:split(CodingRate, [<<"/">>], [global, trim_all]),
     {binary_to_integer(A), binary_to_integer(B)}.
+
+-type tx_power_table_entry() :: {Index :: pos_integer(), DBm :: number()}
+%% A tuple of `{TableIndex, dBm}'.
+.
+
+-type tx_power_table() :: list(tx_power_table_entry())
+%% A table of available transmit powers, specific to a region.
+.
+
+-spec uplink_power_table(Region :: atom()) -> tx_power_table().
+uplink_power_table('US915') ->
+    [
+        {0, 30},
+        {1, 28},
+        {2, 26},
+        {3, 24},
+        {4, 22},
+        {5, 20},
+        {6, 18},
+        {7, 16},
+        {8, 14},
+        {9, 12},
+        {10, 10}
+    ];
+uplink_power_table('AU915') ->
+    uplink_power_table('US915');
+uplink_power_table('CN470') ->
+    [
+        {0, 17},
+        {1, 16},
+        {2, 14},
+        {3, 12},
+        {4, 10},
+        {5, 7},
+        {6, 5},
+        {7, 2}
+    ];
+uplink_power_table('CN779') ->
+    [
+        {0, 10},
+        {1, 7},
+        {2, 4},
+        {3, 1},
+        {4, -2},
+        {5, -5}
+    ];
+uplink_power_table('AS923') ->
+    %% NOTE: AS923's power levels are relative the device's max power;
+    %%       they are dB, not dBm.
+    [
+        {0, 0},
+        {1, -2},
+        {2, -4},
+        {3, -6},
+        {4, -8},
+        {5, -10}
+    ];
+uplink_power_table('KR920') ->
+    [
+        {0, 20},
+        {1, 14},
+        {2, 10},
+        {3, 8},
+        {4, 5},
+        {5, 2},
+        {6, 0}
+    ];
+uplink_power_table('EU868') ->
+    [
+        {0, 20},
+        {1, 14},
+        {2, 11},
+        {3, 8},
+        {4, 5},
+        {5, 2}
+    ].
 
 %% static channel plan parameters
 freq('EU868') ->

@@ -11,6 +11,7 @@
 -include_lib("public_key/include/public_key.hrl").
 
 -include("router_device_worker.hrl").
+-include("lorawan_adr.hrl").
 -include("lorawan_vars.hrl").
 -include("lorawan_db.hrl").
 
@@ -46,8 +47,6 @@
 -define(MAX_DOWNLINK_SIZE, 242).
 -define(NET_ID, <<"He2">>).
 
--define(MAX_ADR_CACHE_SIZE, 50).
-
 -record(state, {
     chain :: blockchain:blockchain(),
     db :: rocksdb:db_handle(),
@@ -59,7 +58,7 @@
     last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
-    adr_cache = queue:new() :: queue:queue(#adr_cache{}),
+    adr_engine :: undefined | lorawan_adr:handle(),
     is_active = true :: boolean()
 }).
 
@@ -144,16 +143,9 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({handle_offer, Offer}, #state{adr_cache = ADRCache0} = State) ->
-    Item = #adr_cache{
-        hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-        rssi = undefined,
-        snr = undefined,
-        packet_size = blockchain_state_channel_offer_v1:payload_size(Offer),
-        packet_hash = blockchain_state_channel_offer_v1:packet_hash(Offer)
-    },
-    ADRCache1 = limit_adr_cache(queue:in_r(Item, ADRCache0)),
-    {noreply, State#state{adr_cache = ADRCache1}};
+handle_cast({handle_offer, Offer}, #state{device = Device, adr_engine = ADREngine0} = State) ->
+    ADREngine1 = maybe_track_adr_offer(Device, ADREngine0, Offer),
+    {noreply, State#state{adr_engine = ADREngine1}};
 handle_cast(
     device_update,
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
@@ -272,6 +264,7 @@ handle_cast(
                         device = Device1,
                         last_dev_nonce = DevNonce,
                         join_cache = Cache1,
+                        adr_engine = undefined,
                         downlink_handled_at = -1
                     }};
                 #join_cache{
@@ -351,8 +344,7 @@ handle_cast(
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
         channels_worker = ChannelsWorker,
-        last_dev_nonce = LastDevNonce,
-        adr_cache = ADRCache0
+        last_dev_nonce = LastDevNonce
     } = State
 ) ->
     Device1 =
@@ -455,7 +447,7 @@ handle_cast(
                 pid = Pid,
                 region = Region
             },
-            ADRCache1 = add_to_adr_cache(ADRCache0, PubKeyBin, Packet0),
+
             case maps:get(FCnt, Cache0, undefined) of
                 undefined when
                     FCnt =< DownlinkHandledAt andalso
@@ -465,7 +457,7 @@ handle_cast(
                 ->
                     %% late packet
                     lager:debug("got a late packet @ ~p", [FCnt]),
-                    {noreply, State#state{adr_cache = ADRCache1}};
+                    {noreply, State};
                 undefined ->
                     _ = erlang:send_after(
                         max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)),
@@ -475,8 +467,7 @@ handle_cast(
                     {noreply, State#state{
                         device = Device2,
                         frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
-                        downlink_handled_at = FCnt,
-                        adr_cache = ADRCache1
+                        downlink_handled_at = FCnt
                     }};
                 #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
                     case RSSI0 > OldRSSI of
@@ -498,8 +489,7 @@ handle_cast(
                                     FCnt,
                                     OldFrameCache#frame_cache{count = Count + 1},
                                     Cache0
-                                ),
-                                adr_cache = ADRCache1
+                                )
                             }};
                         true ->
                             catch blockchain_state_channel_handler:send_response(
@@ -512,8 +502,7 @@ handle_cast(
                                     FCnt,
                                     NewFrameCache#frame_cache{count = Count + 1},
                                     Cache0
-                                ),
-                                adr_cache = ADRCache1
+                                )
                             }}
                     end
             end
@@ -583,9 +572,11 @@ handle_info(
         cf = CF,
         device = Device0,
         channels_worker = ChannelsWorker,
-        frame_cache = Cache0
+        frame_cache = Cache0,
+        adr_engine = ADREngine0
     } = State
 ) ->
+    FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
         packet = Packet,
         pubkey_bin = PubKeyBin,
@@ -593,10 +584,11 @@ handle_info(
         count = Count,
         pid = Pid,
         region = Region
-    } = maps:get(FCnt, Cache0),
+    } = FrameCache,
     Cache1 = maps:remove(FCnt, Cache0),
     ok = router_device_routing:clear_multi_buy(Packet),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
+    {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),
     case
         handle_frame_timeout(
@@ -607,7 +599,8 @@ handle_info(
             Device0,
             Frame,
             Count,
-            Blockchain
+            Blockchain,
+            ADRAdjustment
         )
     of
         {ok, Device1} ->
@@ -627,6 +620,7 @@ handle_info(
             {noreply, State#state{
                 device = Device1,
                 last_dev_nonce = undefined,
+                adr_engine = ADREngine1,
                 frame_cache = Cache1
             }};
         {send, Device1, DownlinkPacket} ->
@@ -650,6 +644,7 @@ handle_info(
             {noreply, State#state{
                 device = Device1,
                 last_dev_nonce = undefined,
+                adr_engine = ADREngine1,
                 frame_cache = Cache1
             }};
         noop ->
@@ -665,7 +660,11 @@ handle_info(
                 packet,
                 false
             ),
-            {noreply, State#state{last_dev_nonce = undefined, frame_cache = Cache1}}
+            {noreply, State#state{
+                last_dev_nonce = undefined,
+                frame_cache = Cache1,
+                adr_engine = ADREngine1
+            }}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -680,32 +679,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec add_to_adr_cache(
-    queue:queue(),
-    libp2p_crypto:pubkey_bin(),
-    blockchain_helium_packet_v1:packet()
-) -> queue:queue().
-add_to_adr_cache(ADRCache, PubKeyBin, Packet) ->
-    Item = #adr_cache{
-        hotspot = PubKeyBin,
-        rssi = blockchain_helium_packet_v1:signal_strength(Packet),
-        snr = blockchain_helium_packet_v1:snr(Packet),
-        packet_size = erlang:byte_size(blockchain_helium_packet_v1:payload(Packet)),
-        packet_hash = blockchain_helium_packet_v1:packet_hash(Packet)
-    },
-    limit_adr_cache(queue:in_r(Item, ADRCache)).
-
--spec limit_adr_cache(queue:queue()) -> queue:queue().
-limit_adr_cache(ADRCache0) ->
-    case queue:len(ADRCache0) > ?MAX_ADR_CACHE_SIZE of
-        false ->
-            ADRCache0;
-        true ->
-            {{value, V}, ADRCache1} = queue:out_r(ADRCache0),
-            lager:debug("dropped ~p", [V]),
-            ADRCache1
-    end.
 
 -spec validate_join(
     blockchain_helium_packet_v1:packet(),
@@ -1077,12 +1050,23 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
     router_device:device(),
     #frame{},
     pos_integer(),
-    blockchain:blockchain()
+    blockchain:blockchain(),
+    lorwan_adr:adjustment()
 ) ->
     noop
     | {ok, router_device:device()}
     | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(Packet, PacketTime, PubKeyBin, Region, Device, Frame, Count, Blockchain) ->
+handle_frame_timeout(
+    Packet,
+    PacketTime,
+    PubKeyBin,
+    Region,
+    Device,
+    Frame,
+    Count,
+    Blockchain,
+    ADRAdjustment
+) ->
     handle_frame_timeout(
         Packet,
         PacketTime,
@@ -1092,6 +1076,7 @@ handle_frame_timeout(Packet, PacketTime, PubKeyBin, Region, Device, Frame, Count
         Frame,
         Count,
         Blockchain,
+        ADRAdjustment,
         router_device:queue(Device)
     ).
 
@@ -1104,12 +1089,24 @@ handle_frame_timeout(Packet, PacketTime, PubKeyBin, Region, Device, Frame, Count
     #frame{},
     pos_integer(),
     blockchain:blockchain(),
+    lorwan_adr:adjustment(),
     [#downlink{}]
 ) ->
     noop
     | {ok, router_device:device()}
     | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Count, Blockchain, []) ->
+handle_frame_timeout(
+    Packet0,
+    PacketTime,
+    PubKeyBin,
+    Region,
+    Device0,
+    Frame,
+    Count,
+    Blockchain,
+    ADRAdjustment,
+    []
+) ->
     ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
@@ -1118,14 +1115,19 @@ handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Cou
         Region,
         Device0,
         Frame,
-        Count
+        Count,
+        ADRAdjustment
     ),
-    lager:info("downlink with no queue, ACK ~p, Fopts ~p and channels corrected ~p -> ~p", [
-        ACK,
-        FOpts1,
-        ChannelCorrection,
-        WereChannelsCorrected
-    ]),
+    lager:info(
+        "downlink with no queue, ACK ~p, Fopts ~p, channels corrected ~p -> ~p, ADR adjustment ~p",
+        [
+            ACK,
+            FOpts1,
+            ChannelCorrection,
+            WereChannelsCorrected,
+            ADRAdjustment
+        ]
+    ),
     case ACK of
         _ when ACK == 1 orelse FOpts1 /= [] ->
             ConfirmedDown = false,
@@ -1192,29 +1194,43 @@ handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Cou
         _ ->
             noop
     end;
-handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Count, Blockchain, [
-    #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
-    | T
-]) ->
+handle_frame_timeout(
+    Packet0,
+    PacketTime,
+    PubKeyBin,
+    Region,
+    Device0,
+    Frame,
+    Count,
+    Blockchain,
+    ADRAdjustment,
+    [
+        #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
+        | T
+    ]
+) ->
     ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
-    lager:info(
-        "downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p",
-        [
-            ReplyPayload,
-            ConfirmedDown,
-            Port,
-            ACK,
-            router_device:channel_correction(Device0) orelse WereChannelsCorrected
-        ]
-    ),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
         Region,
         Device0,
         Frame,
-        Count
+        Count,
+        ADRAdjustment
+    ),
+    lager:info(
+        "downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p, ADR adjustment ~p, FOpts ~p",
+        [
+            ReplyPayload,
+            ConfirmedDown,
+            Port,
+            ACK,
+            router_device:channel_correction(Device0) orelse WereChannelsCorrected,
+            ADRAdjustment,
+            FOpts1
+        ]
     ),
     FCntDown = router_device:fcntdown(Device0),
     FPending =
@@ -1303,26 +1319,63 @@ handle_frame_timeout(Packet0, PacketTime, PubKeyBin, Region, Device0, Frame, Cou
             {send, Device1, Packet1}
     end.
 
+%% TODO: we need `link_adr_answer' for ADR. Suggest refactoring this.
 -spec channel_correction_and_fopts(
     blockchain_helium_packet_v1:packet(),
     atom(),
     router_device:device(),
     #frame{},
-    pos_integer()
+    pos_integer(),
+    lorawan_adr:adjustment()
 ) -> {boolean(), list()}.
-channel_correction_and_fopts(Packet, Region, Device, Frame, Count) ->
+channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
     ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRate = blockchain_helium_packet_v1:datarate(Packet),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
+    %% begin-needs-refactor
+    %%
+    %% TODO: I don't know if we track these channel lists elsewhere,
+    %%       but since they were already hardcoded for 'US915' below,
+    %%       here's a few more.
+    Channels =
+        case Region of
+            'US915' ->
+                {8, 15};
+            'AU915' ->
+                {8, 15};
+            _ ->
+                AssumedChannels = {0, 7},
+                lager:warning("Confirm channel plan for region ~p, assuming ~p", [
+                    Region,
+                    AssumedChannels
+                ]),
+                AssumedChannels
+        end,
+    %% end-needs-refactor
     FOpts1 =
-        case ChannelCorrectionNeeded andalso not ChannelsCorrected of
+        case {ChannelCorrectionNeeded, ChannelsCorrected, ADRAdjustment} of
             %% TODO this is going to be different for each region, we can't simply pass the region into this function
             %% Some regions allow the channel list to be sent in the join response as well, so we may need to do that there as well
-            true ->
+            {true, false, _} ->
                 lorawan_mac_region:set_channels(
                     Region,
-                    {0, erlang:list_to_binary(DataRate), [{8, 15}]},
+                    {0, erlang:list_to_binary(DataRate), [Channels]},
+                    []
+                );
+            {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
+                %% begin-needs-refactor
+                %%
+                %% This is silly because `NewDr' is converted right
+                %% back to the value `NewDataRateIdx' inside
+                %% `lorwan_mac_region'.  But `set_channels' wants data
+                %% rate in the form of "SFdd?BWddd?" so that's what
+                %% we'll give it.
+                NewDr = lorawan_mac_region:dr_to_datar(Region, NewDataRateIdx),
+                %% end-needs-refactor
+                lorawan_mac_region:set_channels(
+                    Region,
+                    {NewTxPowerIdx, NewDr, [Channels]},
                     []
                 );
             _ ->
@@ -1343,6 +1396,13 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count) ->
         end,
     {ChannelsCorrected orelse ChannelCorrection, FOpts2}.
 
+%% TODO: with ADR implemented, this function, or at least its name,
+%%       doesn't make much sense anymore; it may return true for any
+%%       or all of these reasons:
+%%
+%%       - accepts new data rate
+%%       - accepts new transmit power
+%%       - accepts new channel mask
 were_channels_corrected(Frame, 'US915') ->
     FOpts0 = Frame#frame.fopts,
     case lists:keyfind(link_adr_ans, 1, FOpts0) of
@@ -1463,4 +1523,104 @@ get_device(DB, CF, ID) ->
     case router_device:get_by_id(DB, CF, ID) of
         {ok, D} -> D;
         _ -> router_device:new(ID)
+    end.
+
+-spec maybe_construct_adr_engine(undefined | lorawan_adr:handle(), atom()) -> lorawan_adr:handle().
+maybe_construct_adr_engine(Other, Region) ->
+    case Other of
+        undefined ->
+            lorawan_adr:new(Region);
+        _ ->
+            Other
+    end.
+
+-spec maybe_track_adr_offer(
+    Device :: router_device:device(),
+    ADREngine0 :: undefined | lorawan_adr:handle(),
+    Offer :: blockchain_state_channel_offer_v1:offer()
+) -> undefined | lorawan_adr:handle().
+maybe_track_adr_offer(Device, ADREngine0, Offer) ->
+    Metadata = router_device:metadata(Device),
+    case maps:get(adr_allowed, Metadata, false) of
+        false ->
+            undefined;
+        true ->
+            Region = blockchain_state_channel_offer_v1:region(Offer),
+            ADREngine1 = maybe_construct_adr_engine(ADREngine0, Region),
+            AdrOffer = #adr_offer{
+                hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+                packet_hash = blockchain_state_channel_offer_v1:packet_hash(Offer)
+            },
+            lorawan_adr:track_offer(ADREngine1, AdrOffer)
+    end.
+
+-spec maybe_track_adr_packet(
+    Device :: router_device:device(),
+    ADREngine0 :: undefined | lorawan_adr:handle(),
+    FrameCache :: #frame_cache{}
+) -> {undefined | lorawan_adr:handle(), lorawan_adr:adjustment()}.
+maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
+    Metadata = router_device:metadata(Device),
+    case maps:get(adr_allowed, Metadata, false) of
+        %% The device owner can disable ADR (wants_adr == false) and
+        %% supersede the device's desire to be ADR controlled.
+        false ->
+            {undefined, hold};
+        true ->
+            #frame_cache{
+                rssi = RSSI,
+                packet = Packet,
+                pubkey_bin = PubKeyBin,
+                frame = Frame,
+                region = Region
+            } = FrameCache,
+            #frame{fopts = FOpts, adr = ADRBit, adrackreq = ADRAckReqBit} = Frame,
+            ADREngine1 = maybe_construct_adr_engine(ADREngine0, Region),
+            AlreadyHasChannelCorrection = router_device:channel_correction(Device),
+            ADRAns = lists:keyfind(link_adr_ans, 1, FOpts),
+            ADREngine2 =
+                case {AlreadyHasChannelCorrection, ADRAns} of
+                    %% We are not waiting for a channel correction AND got an
+                    %% ADR answer. Inform ADR about that.
+                    {true, {link_adr_ans, ChannelMaskAck, DatarateAck, PowerAck}} ->
+                        N2B = fun(N) ->
+                            case N of
+                                0 -> false;
+                                1 -> true
+                            end
+                        end,
+                        ADRAnswer = #adr_answer{
+                            channel_mask_ack = N2B(ChannelMaskAck),
+                            datarate_ack = N2B(DatarateAck),
+                            power_ack = N2B(PowerAck)
+                        },
+                        lorawan_adr:track_adr_answer(ADREngine1, ADRAnswer);
+                    {false, {link_adr_ans, _, _, _}} ->
+                        lager:info("ignoring ADR answer while waiting for channel correction ~p", [
+                            ADRAns
+                        ]),
+                        ADREngine1;
+                    %% Either we're waiting for a channel correction, or this
+                    %% is not an ADRAns, so do nothing.
+                    _ ->
+                        ADREngine1
+                end,
+
+            %% TODO: when purchasing multiple packets, is the best SNR/RSSI
+            %%       packet reported here? If not, may need to refactor to do so.
+            DataRate = blockchain_helium_packet_v1:datarate(Packet),
+            DataRateConfig = lorawan_utils:parse_datarate(DataRate),
+            AdrPacket = #adr_packet{
+                packet_hash = blockchain_helium_packet_v1:packet_hash(Packet),
+                wants_adr = ADRBit == 1,
+                wants_adr_ack = ADRAckReqBit == 1,
+                datarate_config = DataRateConfig,
+                snr = blockchain_helium_packet_v1:snr(Packet),
+                rssi = RSSI,
+                hotspot = PubKeyBin
+            },
+            lorawan_adr:track_packet(
+                ADREngine2,
+                AdrPacket
+            )
     end.

@@ -108,7 +108,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"labels">> => ?CONSOLE_LABELS,
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
-        <<"multi_buy">> => 1
+        <<"multi_buy">> => 1,
+        <<"adr_allowed">> => false
     },
     case NotFound of
         true ->

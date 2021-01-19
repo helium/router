@@ -1,5 +1,8 @@
 -module(router_decoder).
 
+%% ------------------------------------------------------------------
+%% Decoder API Exports
+%% ------------------------------------------------------------------
 -export([
     new/3,
     id/1,
@@ -7,6 +10,9 @@
     args/1
 ]).
 
+%% ------------------------------------------------------------------
+%% API Exports
+%% ------------------------------------------------------------------
 -export([
     init_ets/0,
     add/1,
@@ -30,6 +36,10 @@
 
 -export_type([decoder/0]).
 
+%% ------------------------------------------------------------------
+%% Decoder Type Functions
+%% ------------------------------------------------------------------
+
 -spec new(binary(), atom(), map()) -> decoder().
 new(ID, Type, Args) ->
     #decoder{id = ID, type = Type, args = Args}.
@@ -46,8 +56,14 @@ type(Decoder) ->
 args(Decoder) ->
     Decoder#decoder.args.
 
+%% ------------------------------------------------------------------
+%% API functions
+%% ------------------------------------------------------------------
+
+-spec init_ets() -> ok.
 init_ets() ->
-    ets:new(?ETS, [public, named_table, set]).
+    ?ETS = ets:new(?ETS, [public, named_table, set]),
+    ok.
 
 -spec add(decoder()) -> ok | {error, any()}.
 add(Decoder) ->
@@ -58,10 +74,14 @@ delete(ID) ->
     true = ets:delete(?ETS, ID),
     ok.
 
--spec decode(binary(), binary(), integer()) -> {ok, any()} | {error, any()}.
-decode(ID, Payload, Port) ->
+-spec decode(
+    DecoderID :: binary(),
+    Payload :: binary(),
+    Port :: integer()
+) -> {ok, any()} | {error, any()}.
+decode(DecoderID, Payload, Port) ->
     Start = erlang:system_time(millisecond),
-    try decode_(ID, Payload, Port) of
+    try decode_(DecoderID, Payload, Port) of
         {Type, {ok, _} = OK} ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:decoder_observe(Type, ok, End - Start),
@@ -75,7 +95,7 @@ decode(ID, Payload, Port) ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:decoder_observe(decoder_crashed, error, End - Start),
             lager:error("decoder ~p crashed: ~p (~p) stacktrace ~p", [
-                ID,
+                DecoderID,
                 _Reason,
                 Payload,
                 _Stacktrace
@@ -83,9 +103,14 @@ decode(ID, Payload, Port) ->
             {error, decoder_crashed}
     end.
 
--spec decode_(binary(), binary(), integer()) -> {atom(), {ok, any()}} | {atom(), {error, any()}}.
-decode_(ID, Payload, Port) ->
-    case lookup(ID) of
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
+
+-spec decode_(DecoderID :: binary(), Payload :: binary(), Port :: integer()) ->
+    {DecoderType :: atom(), {ok, DecodedPayload :: any()}} | {atom(), {error, any()}}.
+decode_(DecoderID, Payload, Port) ->
+    case lookup(DecoderID) of
         {error, not_found} ->
             {unknown_decoder, {error, unknown_decoder}};
         {ok, #decoder{type = custom} = Decoder} ->
@@ -100,10 +125,6 @@ decode_(ID, Payload, Port) ->
             {unhandled_decoder, {error, unhandled_decoder}}
     end.
 
-%% ------------------------------------------------------------------
-%% Internal Function Definitions
-%% ------------------------------------------------------------------
-
 -spec add(atom(), decoder()) -> ok | {error, any()}.
 add(custom, Decoder) ->
     case router_decoder_custom_sup:add(Decoder) of
@@ -117,11 +138,11 @@ add(browan_object_locator, Decoder) ->
 add(_Type, _Decoder) ->
     {error, unhandled_decoder}.
 
--spec lookup(binary()) -> {ok, decoder()} | {error, not_found}.
-lookup(ID) ->
-    case ets:lookup(?ETS, ID) of
+-spec lookup(DecoderID :: binary()) -> {ok, decoder()} | {error, not_found}.
+lookup(DecoderID) ->
+    case ets:lookup(?ETS, DecoderID) of
         [] -> {error, not_found};
-        [{ID, Decoder}] -> {ok, Decoder}
+        [{DecoderID, Decoder}] -> {ok, Decoder}
     end.
 
 -spec insert(decoder()) -> ok.

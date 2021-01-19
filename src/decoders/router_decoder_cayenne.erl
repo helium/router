@@ -1,3 +1,15 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Cayenne Decoder ==
+%%%
+%%% LPP = Low Power Payload
+%%% MyDevices Cayenne LPP Docs [https://developers.mydevices.com/cayenne/docs/lora/#lora-cayenne-low-power-payload]
+%%% Test Vectors [https://github.com/myDevicesIoT/CayenneLPP]
+%%%
+%%% `last' key is added to last map in collection for json templating
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_decoder_cayenne).
 
 -export([decode/3]).

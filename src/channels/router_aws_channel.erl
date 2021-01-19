@@ -49,7 +49,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init({Channel, Device}) ->
+init({[Channel, Device], _}) ->
     lager:md([{device_id, router_device:id(Device)}]),
     ChannelID = router_channel:id(Channel),
     DeviceID = router_device:id(Device),

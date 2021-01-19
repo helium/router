@@ -81,7 +81,7 @@ start_link() ->
 ) -> ok | {'EXIT', term()} | {error, term()}.
 add(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
-    gen_event:add_sup_handler(Pid, Handler, {Channel, Device}).
+    gen_event:add_sup_handler(Pid, Handler, {[Channel, Device], ok}).
 
 -spec delete(
     EventManagerPid :: pid(),

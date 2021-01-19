@@ -37,7 +37,7 @@
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init({Channel, Device}) ->
+init({[Channel, Device], _}) ->
     lager:md([{device_id, router_device:id(Device)}]),
     lager:info("init with ~p", [Channel]),
     #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),

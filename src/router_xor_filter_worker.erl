@@ -88,18 +88,18 @@ handle_info(
             lager:info("filters are still update to date"),
             ok = schedule_check_filters(),
             {noreply, State};
-        {new, Routing, LeftOverBinDevices} ->
+        {new, Routing, NewDeviceDevEuiAppEuis} ->
             lager:info("adding new filter"),
-            {Filter, _} = xor16:new(LeftOverBinDevices, ?HASH_FUN),
+            {Filter, _} = xor16:new(NewDeviceDevEuiAppEuis, ?HASH_FUN),
             Txn = craft_new_filter_txn(Chain, OUI, Filter, Routing),
             Hash = submit_txn(Txn),
             lager:info("new filter txn submitted ~p", [
                 lager:pr(Txn, blockchain_txn_routing_v1)
             ]),
             {noreply, State#state{pending_txns = maps:put(Hash, Txn, Pendings)}};
-        {update, Routing, Index, LeftOverBinDevices} ->
+        {update, Routing, Index, NewDeviceDevEuiAppEuis} ->
             lager:info("updating filter @ index ~p", [Index]),
-            {Filter, _} = xor16:new(LeftOverBinDevices, ?HASH_FUN),
+            {Filter, _} = xor16:new(NewDeviceDevEuiAppEuis, ?HASH_FUN),
             Txn = craft_update_filter_txn(Chain, OUI, Filter, Routing, Index),
             Hash = submit_txn(Txn),
             lager:info("updating filter txn submitted ~p", [
@@ -170,15 +170,15 @@ should_update_filters(Chain, OUI) ->
             case maps:get(0, ContainedMap, []) of
                 [] ->
                     noop;
-                LeftOverDeviceDevEuiAppEuis ->
+                NewDeviceDevEuiAppEuis ->
                     {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
                     case erlang:length(BinFilters) < MaxXorFilter of
                         true ->
-                            {new, Routing, LeftOverDeviceDevEuiAppEuis};
+                            {new, Routing, NewDeviceDevEuiAppEuis};
                         false ->
                             {Index, SmallestDeviceDevEuiAppEuis} = find_smallest(ContainedMap),
                             {update, Routing, Index,
-                                LeftOverDeviceDevEuiAppEuis ++ SmallestDeviceDevEuiAppEuis}
+                                NewDeviceDevEuiAppEuis ++ SmallestDeviceDevEuiAppEuis}
                     end
             end
     end.
@@ -298,6 +298,7 @@ should_update_filters_test() ->
 
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> ledger end),
+    %% This set the max xor filter chain var
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
     meck:new(router_console_device_api, [passthrough]),
     meck:expect(router_console_device_api, get_all_devices, fun() -> {error, any} end),
@@ -343,6 +344,7 @@ should_update_filters_test() ->
         should_update_filters(chain, OUI)
     ),
 
+    %% This set the max xor filter chain var
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, Routing}

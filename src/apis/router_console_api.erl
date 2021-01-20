@@ -944,6 +944,11 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
             [with_body, {pool, ?POOL}]
         )
     of
+        {ok, 200, _Headers, _Reply} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(org_burn, ok, End - Start),
+            lager:debug("Burn notification successful"),
+            ReplyPid ! {hnt_burn, success, Uuid};
         {ok, 204, _Headers, _Reply} ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(org_burn, ok, End - Start),
@@ -957,7 +962,7 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
         Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(org_burn, error, End - Start),
-            lager:debug("Burn notification failed", [Other]),
+            lager:debug("Burn notification failed ~p", [Other]),
             timer:sleep(Delay),
             %% fibonacci delay timer
             do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)

@@ -88,7 +88,7 @@ format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
 ) -> non_neg_integer() | undefined.
 find_oui(PubkeyBin, Ledger) ->
     MyOUIs = blockchain_ledger_v1:find_router_ouis(PubkeyBin, Ledger),
-    case application:get_env(router, oui, undefined) of
+    case router_device_utils:get_router_oui() of
         undefined ->
             %% still check on chain
             case MyOUIs of
@@ -96,10 +96,6 @@ find_oui(PubkeyBin, Ledger) ->
                 [OUI] -> OUI;
                 [H | _T] -> H
             end;
-        OUI0 when is_list(OUI0) ->
-            %% app env comes in as a string
-            OUI = list_to_integer(OUI0),
-            check_oui_on_chain(OUI, MyOUIs);
         OUI ->
             check_oui_on_chain(OUI, MyOUIs)
     end.

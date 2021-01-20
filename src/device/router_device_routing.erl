@@ -342,15 +342,7 @@ validate_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI =
-                case application:get_env(router, oui, undefined) of
-                    undefined ->
-                        undefined;
-                    OUI0 when is_list(OUI0) ->
-                        list_to_integer(OUI0);
-                    OUI0 ->
-                        OUI0
-                end,
+            OUI = router_device_utils:get_router_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -539,15 +531,7 @@ packet(
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI =
-                case application:get_env(router, oui, undefined) of
-                    undefined ->
-                        undefined;
-                    OUI0 when is_list(OUI0) ->
-                        list_to_integer(OUI0);
-                    OUI0 ->
-                        OUI0
-                end,
+            OUI = router_device_utils:get_router_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),

@@ -427,13 +427,14 @@ report_join_status(
     },
     ok = router_console_device_api:report_status(Device, Report).
 
--spec get_router_oui() -> non_neg_integer().
+-spec get_router_oui() -> undefined | non_neg_integer().
 get_router_oui() ->
     case application:get_env(router, oui, undefined) of
         undefined ->
             undefined;
+        %% app env comes in as a string
         OUI0 when is_list(OUI0) ->
-            list_to_integer(OUI0);
+            erlang:list_to_integer(OUI0);
         OUI0 ->
             OUI0
     end.

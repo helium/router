@@ -1,6 +1,14 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router Device Routing ==
+%%
+%% - Offer packet bloomfilter
+%% - Replays
+%% - Multibuy
+%% - Validating
+%%   - packet offers
+%%   - devaddrs
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_device_routing).
@@ -386,7 +394,7 @@ lookup_replay(PHash) ->
     non_neg_integer(),
     router_device:device()
 ) -> ok | {error, any()}.
-%% Handle an issue with worker (so we dont stay lin a loop)
+%% Handle an issue with worker (so we dont stay in a loop)
 maybe_multi_buy(_Offer, 0, _Device) ->
     {error, ?MB_TOO_MANY_ATTEMPTS};
 maybe_multi_buy(Offer, Attempts, Device) ->
@@ -462,11 +470,11 @@ lookup_bf(Key) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec packet(
-    blockchain_helium_packet_v1:packet(),
-    pos_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    pid()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: pos_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Pid :: pid()
 ) -> ok | {error, any()}.
 packet(
     #packet_pb{

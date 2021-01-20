@@ -1,6 +1,11 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router Device Devaddr ==
+%%
+%% - Process registers itself to the blockchain as an event handler.
+%% - Allocates DevAddrs
+%% - Helpers for router_devices
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_device_devaddr).

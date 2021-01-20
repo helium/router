@@ -19,6 +19,8 @@
 -include("utils/console_test.hrl").
 
 -define(HASH_FUN, fun xxhash:hash64/1).
+-define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 -record(state, {
     chain :: undefined | blockchain:blockchain(),
@@ -83,9 +85,10 @@ publish_xor_test(Config) ->
     {ok, PubKey, SignFun, _} = blockchain_swarm:keys(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
+    %% Create and submit OUI txn with an empty filter
     OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
+    {BinFilter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], BinFilter, 8),
     OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
     OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
     OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
@@ -99,11 +102,13 @@ publish_xor_test(Config) ->
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
+    %% Wait until xor filter worker started properly
     test_utils:wait_until(fun() ->
         State = sys:get_state(router_xor_filter_worker),
         State#state.chain =/= undefined andalso State#state.oui =/= undefined
     end),
 
+    %% After start xor filter worker  should have pushed a new filter to the chain
     ok = test_utils:wait_until(fun() -> {ok, 3} == blockchain:height(Chain) end),
 
     State0 = sys:get_state(router_xor_filter_worker),
@@ -113,6 +118,12 @@ publish_xor_test(Config) ->
     {ok, Routing} = blockchain_ledger_v1:find_routing(OUI1, Ledger),
     Filters = blockchain_ledger_routing_v1:filters(Routing),
     ?assertEqual(2, erlang:length(Filters)),
+
+    [Filter1, Filter2] = Filters,
+    DeviceDevEuiAppEui = <<?DEVEUI/binary, ?APPEUI/binary>>,
+
+    ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiAppEui)),
+    ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiAppEui)),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

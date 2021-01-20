@@ -453,4 +453,4 @@ milli_to_sec(Time) ->
 
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->
-    erlang:list_to_binary(erlang:integer_to_list(Int)).
+    erlang:integer_to_binary(Int).

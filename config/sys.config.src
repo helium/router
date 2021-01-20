@@ -92,7 +92,9 @@
             ]}
         ]},
         {traces, [
-            {{lager_file_backend, "router.log"}, [{application, router}], debug}
+            {{lager_file_backend, "router.log"}, [{application, router}], debug},
+            {{lager_file_backend, "router.log"}, [{module, router_console_device_api}], debug},
+            {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug}
         ]}
     ]}
 ].

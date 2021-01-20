@@ -147,6 +147,7 @@ init_per_testcase(TestCase, Config) ->
     ].
 
 end_per_testcase(_TestCase, Config) ->
+    libp2p_swarm:stop(proplists:get_value(swarm, Config)),
     Pid = proplists:get_value(elli, Config),
     {ok, Acceptors} = elli:get_acceptors(Pid),
     ok = elli:stop(Pid),

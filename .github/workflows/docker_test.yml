@@ -1,0 +1,41 @@
+name: TEST
+
+on:
+  pull_request:
+    branches: master
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.5.0
+        with:
+          access_token: ${{ github.token }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: checkout
+        uses: actions/checkout@v2
+
+      - name: Build
+        uses: docker/build-push-action@v2
+        id: docker_build
+        with:
+          context: .
+          file: Dockerfile-local
+          push: false
+          tags: helium/router:test
+
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
+      
+      - name: Tests
+        uses: addnab/docker-run-action@v1
+        with:
+          image: helium/router:test
+          run: make test

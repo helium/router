@@ -58,6 +58,7 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
         1,
         0
     ),
+
     Txs =
         InitialVars ++
             GenPaymentTxs ++

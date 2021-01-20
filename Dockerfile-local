@@ -37,4 +37,8 @@ ADD config/ config/
 ADD priv/ priv/
 RUN make rel
 
+# This is only to fetch tests dependencies
+ADD test/ test/
+RUN ./rebar3 as test compile
+
 CMD ["make", "run"]

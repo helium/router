@@ -1,7 +1,9 @@
 version: '3'
 services:
   router:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile-local
     image: helium/router:local
     container_name: helium_router
     env_file: .env

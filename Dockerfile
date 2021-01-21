@@ -20,13 +20,13 @@ RUN apt-get install -y autoconf automake libtool flex bison libgmp-dev cmake bui
 RUN git clone -b stable https://github.com/jedisct1/libsodium.git
 RUN cd libsodium && ./configure --prefix=/usr && make check && make install && cd ..
 
-ADD Makefile Makefile
 ADD rebar3 rebar3
 ADD rebar.config rebar.config
 ADD rebar.lock rebar.lock
 RUN ./rebar3 get-deps
-RUN make
+RUN ./rebar3 compile
 
+ADD Makefile Makefile
 ADD c_src/ c_src/
 ADD include/ include/
 ADD src/ src/

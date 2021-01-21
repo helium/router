@@ -194,7 +194,7 @@ handle_info(
                                 HNTAmount,
                                 DCAmount
                             ]),
-                            ok = router_console_device_api:organizations_burned(
+                            ok = router_console_api:organizations_burned(
                                 Memo,
                                 HNTAmount,
                                 DCAmount
@@ -233,7 +233,7 @@ txn_filter_fun(Txn) ->
 
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.
 fetch_and_save_org_balance(OrgID) ->
-    case router_console_device_api:get_org(OrgID) of
+    case router_console_api:get_org(OrgID) of
         {error, _} ->
             {0, 0};
         {ok, Map} ->
@@ -301,8 +301,8 @@ has_enough_dc_test() ->
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
     meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_) -> {error, deal_with_it} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_) -> {error, deal_with_it} end),
 
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
@@ -313,8 +313,8 @@ has_enough_dc_test() ->
     ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize, chain)),
 
     ets:delete(?ETS),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_utils)),
@@ -327,8 +327,8 @@ charge_test() ->
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
     meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_) -> {error, deal_with_it} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_) -> {error, deal_with_it} end),
 
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
@@ -340,8 +340,8 @@ charge_test() ->
     ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize, chain)),
 
     ets:delete(?ETS),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_utils)),
@@ -350,16 +350,16 @@ charge_test() ->
 
 current_balance_test() ->
     _ = ets:new(?ETS, [public, named_table, set]),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_OrgID) -> {error, 0} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_OrgID) -> {error, 0} end),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
     ?assertEqual({0, 0}, current_balance(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({100, 1}, current_balance(OrgID)),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ets:delete(?ETS),
     ok.
 

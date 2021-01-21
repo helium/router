@@ -151,7 +151,7 @@ handle_cast(
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
 ) ->
     DeviceID = router_device:id(Device0),
-    case router_console_device_api:get_device(DeviceID) of
+    case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),

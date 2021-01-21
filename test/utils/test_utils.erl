@@ -39,7 +39,7 @@
 init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, router_console_device_api, [
+    ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
@@ -86,9 +86,11 @@ init_per_testcase(TestCase, Config) ->
             ]),
             ok = application:set_env(lager, traces, [
                 {lager_console_backend, [{application, router}], debug},
-                {lager_console_backend, [{module, router_console_device_api}], debug},
+                {lager_console_backend, [{module, router_console_api}], debug},
                 {lager_console_backend, [{module, router_device_routing}], debug},
                 {{lager_file_backend, "router.log"}, [{application, router}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
                 {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug}
             ]);
         _ ->
@@ -142,8 +144,8 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
-    e2qc:teardown(router_console_device_api_get_devices),
-    e2qc:teardown(router_console_device_api_get_org),
+    e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
+    e2qc:teardown(router_console_api_get_org),
     application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),

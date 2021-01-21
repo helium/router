@@ -20,7 +20,7 @@
         {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
         {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
         {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
-        {router_console_device_api, [
+        {router_console_api, [
             {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
             {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
             {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
@@ -93,7 +93,7 @@
         ]},
         {traces, [
             {{lager_file_backend, "router.log"}, [{application, router}], debug},
-            {{lager_file_backend, "router.log"}, [{module, router_console_device_api}], debug},
+            {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
             {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug}
         ]}
     ]}

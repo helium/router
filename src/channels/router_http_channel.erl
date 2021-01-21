@@ -49,7 +49,7 @@ handle_event(
     #state{channel = Channel, url = URL, headers = Headers, method = Method} = State
 ) ->
     lager:debug("got data: ~p", [Data]),
-    DownlinkURL = router_console_device_api:get_downlink_url(Channel, maps:get(id, Data)),
+    DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
     Res = make_http_req(Method, URL, Headers, Body),
     lager:debug("published: ~p result: ~p", [Body, Res]),

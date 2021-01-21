@@ -38,7 +38,7 @@ init({[Channel, Device], _}) ->
 
 handle_event({data, Ref, Data}, #state{channel = Channel, device = Device} = State) ->
     DeviceID = router_device:id(Device),
-    DebugActive = router_console_device_api:debug_active_for_device(DeviceID),
+    DebugActive = router_console_api:debug_active_for_device(DeviceID),
     case DebugActive of
         false ->
             ok;

@@ -40,7 +40,7 @@ all() -> [lw_join_test].
 init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, router_console_device_api, [
+    ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}

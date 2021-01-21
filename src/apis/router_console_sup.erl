@@ -35,10 +35,10 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 init([]) ->
-    DeviceAPIData = maps:from_list(application:get_env(router, router_console_device_api, [])),
+    DeviceAPIData = maps:from_list(application:get_env(router, router_console_api, [])),
     {ok,
         {?FLAGS, [
-            ?WORKER(router_console_device_api, [DeviceAPIData]),
+            ?WORKER(router_console_api, [DeviceAPIData]),
             ?WORKER(router_console_dc_tracker, [#{}])
         ]}}.
 

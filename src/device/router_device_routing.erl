@@ -606,7 +606,7 @@ packet(#packet_pb{payload = Payload}, _PacketTime, AName, _Region, _Pid) ->
 
 -spec get_devices(binary(), binary()) -> {ok, [router_device:device()]} | {error, any()}.
 get_devices(DevEUI, AppEUI) ->
-    case router_console_device_api:get_devices(DevEUI, AppEUI) of
+    case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
         [] -> {error, api_not_found};
         KeysAndDevices -> {ok, [Device || {_, Device} <- KeysAndDevices]}
     end.
@@ -614,7 +614,7 @@ get_devices(DevEUI, AppEUI) ->
 -spec get_device(binary(), binary(), binary(), binary()) ->
     {ok, router_device:device(), binary()} | {error, any()}.
 get_device(DevEUI, AppEUI, Msg, MIC) ->
-    case router_console_device_api:get_devices(DevEUI, AppEUI) of
+    case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
         [] ->
             {error, api_not_found};
         KeysAndDevices ->
@@ -896,8 +896,8 @@ false_positive_test() ->
 handle_join_offer_test() ->
     ok = init(),
     application:ensure_all_started(lager),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_devices, fun(_, _) ->
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_devices_by_deveui_appeui, fun(_, _) ->
         [{key, router_device:new(<<"id">>)}]
     end),
     meck:new(blockchain_worker, [passthrough]),
@@ -921,8 +921,8 @@ handle_join_offer_test() ->
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
 
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),

@@ -1,4 +1,4 @@
--module(router_console_device_api_SUITE).
+-module(router_console_api_SUITE).
 
 -export([
     all/0,

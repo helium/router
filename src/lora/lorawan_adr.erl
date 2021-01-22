@@ -197,9 +197,10 @@
 %%       this make sense?
 %%
 %% [{DataRate, {Spreading, Bandwidth}}]
--type regional_datarates() :: list(
-    {DataRate :: pos_integer(), datarate_config()}
-).
+-type regional_datarates() ::
+    list(
+        {DataRate :: pos_integer(), datarate_config()}
+    ).
 
 -record(device, {
     %% The region who's rules this device is operating under. Not

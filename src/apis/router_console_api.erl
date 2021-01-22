@@ -445,7 +445,9 @@ handle_info(
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{<<"devices">> := DeviceIDs}},
+    {ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{
+        <<"devices">> := DeviceIDs
+    }},
     #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),

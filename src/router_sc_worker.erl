@@ -152,13 +152,15 @@ handle_info(
     end;
 handle_info({sc_open_success, Id}, #state{is_active = false} = State) ->
     lager:error(
-        "Got an sc_open_success though the sc_worker is inactive. This should never happen. txn id: ~p",
+        "Got an sc_open_success though the sc_worker is inactive." ++
+            " This should never happen. txn id: ~p",
         [Id]
     ),
     {noreply, State};
 handle_info({sc_open_failure, Id}, #state{is_active = false} = State) ->
     lager:error(
-        "Got an sc_open_failure though the sc_worker is inactive. This should never happen. txn id: ~p",
+        "Got an sc_open_failure though the sc_worker is inactive." ++
+            " This should never happen. txn id: ~p",
         [Id]
     ),
     {noreply, State};
@@ -254,8 +256,8 @@ open_next_state_channel(#state{oui = OUI, chain = Chain}) ->
                 %% Just set it to expiration_interval
                 get_sc_expiration_interval();
             {ok, ActiveSCExpiration} ->
-                %% We set the next SC expiration to the difference between current chain height and active
-                %% plus the expiration_interval
+                %% We set the next SC expiration to the difference between
+                %% current chain height and active plus the expiration_interval
                 abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
         end,
 

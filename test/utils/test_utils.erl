@@ -114,11 +114,23 @@ init_per_testcase(TestCase, Config) ->
 
     {ok, _} = application:ensure_all_started(router),
 
-    {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
-    #{public := PubKey, secret := PrivKey} = Keys,
+    SwarmKey = filename:join([
+        application:get_env(router, base_dir, "data"),
+        "router",
+        "swarm_key"
+    ]),
+    ok = filelib:ensure_dir(SwarmKey),
+    {ok, RouterKeys} = libp2p_crypto:load_keys(SwarmKey),
+    #{public := RouterPubKey, secret := RouterPrivKey} = RouterKeys,
+
+    HotspotDir = BaseDir ++ "/hotspot",
+    filelib:ensure_dir(HotspotDir),
+    {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(HotspotDir, TestCase, 0),
+    #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
+
     {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        {PrivKey, PubKey},
+        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}],
         true
     ),
 
@@ -129,8 +141,8 @@ init_per_testcase(TestCase, Config) ->
         {ets, Tab},
         {elli, Pid},
         {base_dir, BaseDir},
-        {swarm, Swarm},
-        {keys, Keys},
+        {swarm, HotspotSwarm},
+        {keys, HotspotKeys},
         {consensus_member, ConsensusMembers}
         | Config
     ].

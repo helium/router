@@ -100,7 +100,8 @@ open_db(Dir) ->
                 ["default"]
         end,
 
-    {ok, DB, OpenedCFs} = rocksdb:open_with_cf(DBDir, DBOptions, [{CF, CFOpts} || CF <- ExistingCFs]),
+    {ok, DB, OpenedCFs} =
+        rocksdb:open_with_cf(DBDir, DBOptions, [{CF, CFOpts} || CF <- ExistingCFs]),
 
     L1 = lists:zip(ExistingCFs, OpenedCFs),
     L2 = lists:map(

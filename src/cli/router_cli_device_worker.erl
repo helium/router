@@ -40,9 +40,11 @@ device_usage() ->
             "  device <id> queue clear                  - Empties the devices queue\n",
             "  device <id> queue add [see Msg Options]  - Adds Msg to end of device queue\n\n",
             "Msg Options:\n\n",
-            "  --payload=<content>    - Content for message [default: \"Test cli downlink message\"]"
+            "  --payload=<content>    - Content for message " ++
+                "[default: \"Test cli downlink message\"]\n",
             "  --ack                  - Require confirmation from the device [default: false]\n",
-            "  --channel-name=<name>  - Channel name to show up in console [default: \"CLI custom channel\"]\n",
+            "  --channel-name=<name>  - Channel name to show up in console " ++
+                "[default: \"CLI custom channel\"]\n",
             "  --port\n               - Port for frame [default: 1]\n\n"
         ]
     ].

@@ -440,7 +440,8 @@ replay_joins_test(Config) ->
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
     timer:sleep(?JOIN_DELAY),
 
-    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    %% We are not making sure that we maintain multiple keys and nonce in
+    %% device just in case last join was valid
     {ok, Device2} = router_device_cache:get(DeviceID),
     ?assertEqual(
         [DevNonce1],
@@ -471,7 +472,8 @@ replay_joins_test(Config) ->
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
     timer:sleep(?JOIN_DELAY),
 
-    %% We are not making sure that we maintain multiple keys and nonce in device just in case last join was valid
+    %% We are not making sure that we maintain multiple keys and
+    %% nonce in device just in case last join was valid
     {ok, Device3} = router_device_cache:get(DeviceID),
     ?assertEqual(
         [DevNonce1],

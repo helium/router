@@ -81,7 +81,10 @@ decode_lpp(
         #{channel => Channel, type => ?LUMINANCE, value => Value, unit => lux, name => luminance}
         | Acc
     ]);
-decode_lpp(<<Channel:8/unsigned-integer, ?PRESENCE:8/integer, Value:8/integer, Rest/binary>>, Acc) ->
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?PRESENCE:8/integer, Value:8/integer, Rest/binary>>,
+    Acc
+) ->
     %% TODO value is 0 or 1
     decode_lpp(Rest, [
         #{channel => Channel, type => ?PRESENCE, value => Value, name => presence}

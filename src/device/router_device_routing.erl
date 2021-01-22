@@ -53,7 +53,14 @@
 
 %% Multi Buy
 -define(MB_ETS, router_device_routing_mb_ets).
--define(MB_FUN(Hash), [{{Hash, '$1', '$2'}, [{'<', '$2', '$1'}], [{{Hash, '$1', {'+', '$2', 1}}}]}]).
+-define(MB_FUN(Hash), [
+    {
+        {Hash, '$1', '$2'},
+        [{'<', '$2', '$1'}],
+        [{{Hash, '$1', {'+', '$2', 1}}}]
+    }
+]).
+
 -define(MB_MAX_PACKET, multi_buy_max_packet).
 -define(MB_TOO_MANY_ATTEMPTS, multi_buy_too_many_attempts).
 -define(MB_DENY_MORE, multi_buy_deny_more).
@@ -138,7 +145,8 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             ok
     end;
 handle_packet(Packet, PacketTime, PubKeyBin) ->
-    %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
+    %% TODO - come back to this, defaulting to US915 here.
+    %% Need to verify what packets are being handled here
     Start = erlang:system_time(millisecond),
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
         {error, Reason} = E ->
@@ -222,9 +230,9 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 join_offer(Offer, _Pid) ->
     %% TODO: Replace this with getter
-    #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} = blockchain_state_channel_offer_v1:routing(
-        Offer
-    ),
+    #routing_information_pb{
+        data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}
+    } = blockchain_state_channel_offer_v1:routing(Offer),
     DevEUI1 = eui_to_bin(DevEUI0),
     AppEUI1 = eui_to_bin(AppEUI0),
     case get_devices(DevEUI1, AppEUI1) of
@@ -296,7 +304,8 @@ packet_offer(Offer, Pid) ->
                                     ]),
                                     ok;
                                 false ->
-                                    %% This is probably a late packet we should still use the multi buy
+                                    %% This is probably a late packet
+                                    %% we should still use the multi buy
                                     lager:debug("most likely a late packet for ~p multi buying", [
                                         _DeviceID
                                     ]),
@@ -517,7 +526,8 @@ packet(
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
-                "Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
+                "Device ~s with AppEUI ~s tried to join through ~s " ++
+                    "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]
             ),
             {error, bad_mic}

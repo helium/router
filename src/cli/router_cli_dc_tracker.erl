@@ -43,8 +43,10 @@ dc_usage() ->
             "DC Tracker commands\n\n",
             "  info all [--less 42] [--refetch]                 - Display DC for all Orgs\n",
             "  info <org_id> [--refetch]                        - Display info for single Org\n",
-            "  info no-nonce                                    - List all Orgs with a nonce of 0 (zero)\n",
-            "  info no-balance                                  - List all Orgs with a balance of 0 (zero)\n",
+            "  info no-nonce                                    " ++
+                "- List all Orgs with a nonce of 0 (zero)\n",
+            "  info no-balance                                  " ++
+                "- List all Orgs with a balance of 0 (zero)\n",
             "  info nonce <amount>                              - List Orgs with <nonce>\n",
             "  info balance <amount>                            - List Orgs with <balance>\n"
             "  info <org_id>                                    - Display info for single Org\n",

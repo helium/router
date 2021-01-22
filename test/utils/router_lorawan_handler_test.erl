@@ -123,11 +123,14 @@ handle_info(
     },
     Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
     {noreply, State, blockchain_state_channel_v1_pb:encode_msg(Msg)};
-%handle_info(client, {Port, {data,{eol,<<"###### ===== JOINED ==== ######">>}}}, State = #state{port=Port}) ->
-%{noreply, State#state{joined=true}};
-%handle_info(client, {Port, {data,{eol,<<"###### ===== JOINED ==== ######">>}}}, State = #state{port=Port}) ->
-%{noreply, State#state{joined=true}};
-%handle_info(client, {Port, {data,{eol,<<"Radio Rx with timeout 0">>}}}, State = #state{port=Port, joined=true}) ->
+%% handle_info(client, {Port, {data,{eol,<<"###### ===== JOINED ==== ######">>}}},
+%%             State = #state{port=Port}) ->
+%% {noreply, State#state{joined=true}};
+%% handle_info(client, {Port, {data,{eol,<<"###### ===== JOINED ==== ######">>}}},
+%%             State = #state{port=Port}) ->
+%% {noreply, State#state{joined=true}};
+%% handle_info(client, {Port, {data,{eol,<<"Radio Rx with timeout 0">>}}},
+%%            State = #state{port=Port, joined=true}) ->
 handle_info(client, unblock, State) ->
     lager:info("unblocking"),
     port_command(State#state.port, <<"\r\n">>),
@@ -145,7 +148,7 @@ handle_info(client, {Port, {data, {eol, LogMsg}}}, State = #state{port = Port}) 
                 State;
             <<"CHANNEL MASK: ", A:4/binary, " ", B:4/binary, " ", C:4/binary, " ", D:4/binary, " ",
                 E:4/binary, _/binary>> ->
-                %%              0,8,             16,24,           32,40,           48,56,           64,72
+                %% 0,8,16,24,32,40,48,56,64,72
                 Mask = parse_channel_mask(<<A/binary, B/binary, C/binary, D/binary, E/binary>>),
                 lager:info("channel mask ~w", [Mask]),
                 State#state{channel_mask = Mask};

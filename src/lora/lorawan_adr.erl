@@ -531,7 +531,8 @@ track_packet(
         accepted_adjustments = AcceptedAdjustments1
     },
     lager:info(
-        "~p, ADR ~p, ADRAck ~p, SNR ~p, RSSI ~p, diversity ~p, pend adj len ~p, history len ~p, adjustment ~p",
+        "~p, ADR ~p, ADRAck ~p, SNR ~p, RSSI ~p, diversity ~p," ++
+            " pend adj len ~p, history len ~p, adjustment ~p",
         [
             datarate_entry(Device0, DataRateConfig),
             true,
@@ -626,7 +627,8 @@ datarate_entry(
 -spec track_adr_answer(Device :: handle(), Answer :: #adr_answer{}) -> handle().
 track_adr_answer(#device{pending_adjustments = []} = Device, _Answer) ->
     lager:warning(
-        "Device firmware bug or DoS attempt: received an ADR answer with no outstanding ADR requests"
+        "Device firmware bug or DoS attempt: received an ADR answer" ++
+            " with no outstanding ADR requests"
     ),
     Device;
 track_adr_answer(Device0, Answer) ->
@@ -649,7 +651,8 @@ track_adr_answer(Device0, Answer) ->
     %% NOTE: channel mask is handled outside of this module. All we
     %%       know is if it was accepted.
     lager:info(
-        "device ~s DataRate ~p, ~s TxPower ~p, and ~s ChannelMask with ~p previously unanswered adjustments",
+        "device ~s DataRate ~p, ~s TxPower ~p, and ~s ChannelMask" ++
+            " with ~p previously unanswered adjustments",
         [
             Acceptance(DataRateAck),
             AcceptedDataRate,

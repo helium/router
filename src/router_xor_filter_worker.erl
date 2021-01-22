@@ -118,9 +118,8 @@ handle_info(
                 lager:pr(Txn, blockchain_txn_routing_v1)
             ]),
             %% Transaction submitted successfully so we are scheduling next check normally
-            %% and incrementing Index if need bed
-            ok = schedule_check_filters(),
-            {noreply, State#state{pending_txns = maps:remove(Hash, Pendings)}};
+            %% and incrementing Index if need be
+            ok = schedule_check_filters();
         _ ->
             lager:error("failed to submit txn: ~p / ~p", [
                 lager:pr(Txn, blockchain_txn_routing_v1),
@@ -129,8 +128,9 @@ handle_info(
             %% Transaction failed so we are scheduling next check right away to try to correct
             %% We are still cleaning txn to avoid conflicts
             self() ! ?CHECK_FILTERS_TICK,
-            {noreply, State#state{pending_txns = maps:remove(Hash, Pendings)}}
-    end;
+            ok
+    end,
+    {noreply, State#state{pending_txns = maps:remove(Hash, Pendings)}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -190,32 +190,20 @@ should_update_filters(Chain, OUI) ->
 ) -> #{non_neg_integer() => list(device_dev_eui_app_eui())}.
 contained_map(DeviceDevEuiAppEuis, BinFilters) ->
     BinFiltersWithIndex = lists:zip(lists:seq(1, erlang:length(BinFilters)), BinFilters),
-    lists:foldl(
-        fun(BinDevice, Acc) ->
-            case
-                lists:foldl(
-                    fun
-                        ({_Index, _Filter}, {true, _} = True) ->
-                            True;
-                        ({Index, Filter}, _) ->
-                            case xor16:contain({Filter, ?HASH_FUN}, BinDevice) of
-                                true -> {true, Index};
-                                false -> false
-                            end
-                    end,
-                    false,
-                    BinFiltersWithIndex
-                )
-            of
-                false ->
-                    maps:put(0, maps:get(0, Acc, []) ++ [BinDevice], Acc);
-                {true, Index} ->
-                    maps:put(Index, maps:get(Index, Acc, []) ++ [BinDevice], Acc)
-            end
-        end,
-        #{},
-        DeviceDevEuiAppEuis
-    ).
+    ContainedBy = fun(Filter) -> fun(Bin) -> xor16:contain({Filter, ?HASH_FUN}, Bin) end end,
+    {Map, Unused} =
+        lists:foldl(
+            fun({Index, Filter}, {Acc, ToCheck}) ->
+                {InFilter, Leftover} = lists:partition(ContainedBy(Filter), ToCheck),
+                {maps:put(Index, InFilter, Acc), Leftover}
+            end,
+            {#{}, DeviceDevEuiAppEuis},
+            BinFiltersWithIndex
+        ),
+    case Unused of
+        [] -> Map;
+        _ -> maps:put(0, Unused, Map)
+    end.
 
 -spec find_smallest(ContainedMap :: #{non_neg_integer() => list(device_dev_eui_app_eui())}) ->
     {non_neg_integer(), list(device_dev_eui_app_eui())}.

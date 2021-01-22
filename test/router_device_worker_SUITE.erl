@@ -106,48 +106,32 @@ device_worker_stop_children_test(Config) ->
     }),
 
     GetPids = fun() ->
-        {ok, DevicePid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
-        DeviceState = sys:get_state(DevicePid),
+        {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
+        DeviceState = sys:get_state(DeviceWorkerPid),
 
-        ChannelWorkerPid = element(8, DeviceState),
-        ChannelWorkerState = sys:get_state(ChannelWorkerPid),
+        ChannelsWorkerPid = element(8, DeviceState),
+        ChannelsWorkerState = sys:get_state(ChannelsWorkerPid),
 
-        EventManagerPid = element(3, ChannelWorkerState),
+        EventManagerPid = element(3, ChannelsWorkerState),
 
-        {DevicePid, ChannelWorkerPid, EventManagerPid}
+        {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid}
     end,
 
-    {DPid, CPid, EPid} = GetPids(),
+    {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid} = GetPids(),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
 
-    Report = fun(One, Two, Three) ->
-        ct:print(
-            "Before:~n"
-            "Device    PID: ~p [alive: ~p]~n"
-            "Channel   PID: ~p [alive: ~p]~n"
-            "Event MGR PID: ~p [alive: ~p]~n",
-            [
-                One,
-                erlang:is_process_alive(One),
-                Two,
-                erlang:is_process_alive(Two),
-                Three,
-                erlang:is_process_alive(Three)
-            ]
-        )
-    end,
+    ?assert(erlang:is_process_alive(DeviceWorkerPid)),
+    ?assert(erlang:is_process_alive(ChannelsWorkerPid)),
+    ?assert(erlang:is_process_alive(EventManagerPid)),
+    gen_server:stop(DeviceWorkerPid),
 
-    Report(DPid, CPid, EPid),
-    true = erlang:is_process_alive(DPid),
-    true = erlang:is_process_alive(CPid),
-    true = erlang:is_process_alive(EPid),
-    gen_server:stop(DPid),
-    Report(DPid, CPid, EPid),
-    false = erlang:is_process_alive(DPid),
-    false = erlang:is_process_alive(CPid),
-    false = erlang:is_process_alive(EPid),
+    test_utils:wait_until(fun() ->
+        erlang:is_process_alive(DeviceWorkerPid) == false andalso
+            erlang:is_process_alive(ChannelsWorkerPid) == false andalso
+            erlang:is_process_alive(EventManagerPid)
+    end),
 
     ok.
 

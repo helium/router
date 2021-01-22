@@ -63,7 +63,6 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    %%                  #{frame_cnt => #{pub_key                       => #data_cache{}}}
     data_cache = #{} :: #{integer() => #{libp2p_crypto:pubkey_to_bin() => #data_cache{}}},
     balance_cache = #{} :: map(),
     fcnt :: integer(),
@@ -169,17 +168,19 @@ new_data_cache(PubKeyBin, Packet, Frame, Region, Time) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
-    lager:info("~p init with ~p", [?SERVER, Args]),
     Blockchain = maps:get(blockchain, Args),
-    DeviceWorker = maps:get(device_worker, Args),
+    DeviceWorkerPid = maps:get(device_worker, Args),
     Device = maps:get(device, Args),
-    lager:md([{device_id, router_device:id(Device)}]),
     {ok, EventMgrRef} = router_channel:start_link(),
+    %% We are doing this because of trap_exit in gen_event
+    _ = erlang:monitor(process, DeviceWorkerPid),
     self() ! refresh_channels,
+    lager:md([{device_id, router_device:id(Device)}]),
+    lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{
         chain = Blockchain,
         event_mgr = EventMgrRef,
-        device_worker = DeviceWorker,
+        device_worker = DeviceWorkerPid,
         device = Device,
         fcnt = -1
     }}.
@@ -461,6 +462,12 @@ handle_info(
                     end
             end
     end;
+handle_info(
+    {'DOWN', _MonitorRef, process, Pid, Info},
+    #state{device_worker = Pid} = State
+) ->
+    lager:info("device worker ~p went down (~p) shutting down also", [Pid, Info]),
+    {stop, normal, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -469,6 +476,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
+    lager:info("terminate ~p", [_Reason]),
     ok.
 
 %% ------------------------------------------------------------------

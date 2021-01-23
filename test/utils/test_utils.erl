@@ -115,8 +115,8 @@ init_per_testcase(TestCase, Config) ->
     {ok, _} = application:ensure_all_started(router),
 
     SwarmKey = filename:join([
-        application:get_env(router, base_dir, "data"),
-        "router",
+        application:get_env(blockchain, base_dir, "data"),
+        "blockchain",
         "swarm_key"
     ]),
     ok = filelib:ensure_dir(SwarmKey),
@@ -130,8 +130,7 @@ init_per_testcase(TestCase, Config) ->
 
     {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}],
-        true
+        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
     ),
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),

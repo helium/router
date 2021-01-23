@@ -79,16 +79,20 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
     ?assertEqual({ok, 1}, blockchain:height(Chain)),
     {ok, GenesisMembers, ConsensusMembers, Keys}.
 
-init_chain(Balance, {PrivKey, PubKey}, InConsensus, ExtraVars) ->
+init_chain(Balance, Keys, InConsensus, ExtraVars) ->
     % Generate fake blockchains (just the keys)
     GenesisMembers =
         case InConsensus of
             true ->
                 RandomKeys = ?MODULE:generate_keys(10),
-                Address = libp2p_crypto:pubkey_to_bin(PubKey),
-                [
-                    {Address, {PubKey, PrivKey, libp2p_crypto:mk_sig_fun(PrivKey)}}
-                ] ++ RandomKeys;
+                lists:foldl(
+                    fun({PrivKey, PubKey}, Acc) ->
+                        Address = libp2p_crypto:pubkey_to_bin(PubKey),
+                        [{Address, {PubKey, PrivKey, libp2p_crypto:mk_sig_fun(PrivKey)}} | Acc]
+                    end,
+                    RandomKeys,
+                    Keys
+                );
             false ->
                 ?MODULE:generate_keys(11)
         end,

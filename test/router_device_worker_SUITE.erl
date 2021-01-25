@@ -9,7 +9,8 @@
 -export([
     device_update_test/1,
     drop_downlink_test/1,
-    replay_joins_test/1
+    replay_joins_test/1,
+    device_worker_stop_children_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -35,7 +36,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [device_update_test, drop_downlink_test, replay_joins_test].
+    [device_worker_stop_children_test, device_update_test, drop_downlink_test, replay_joins_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -52,6 +53,87 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+device_worker_stop_children_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
+    timer:sleep(?JOIN_DELAY),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"activation">>, #{
+        <<"category">> => <<"activation">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
+
+    GetPids = fun() ->
+        {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
+        DeviceState = sys:get_state(DeviceWorkerPid),
+
+        ChannelsWorkerPid = element(8, DeviceState),
+        ChannelsWorkerState = sys:get_state(ChannelsWorkerPid),
+
+        EventManagerPid = element(3, ChannelsWorkerState),
+
+        {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid}
+    end,
+
+    {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid} = GetPids(),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    ?assert(erlang:is_process_alive(DeviceWorkerPid)),
+    ?assert(erlang:is_process_alive(ChannelsWorkerPid)),
+    ?assert(erlang:is_process_alive(EventManagerPid)),
+    gen_server:stop(DeviceWorkerPid),
+
+    test_utils:wait_until(fun() ->
+        erlang:is_process_alive(DeviceWorkerPid) == false andalso
+            erlang:is_process_alive(ChannelsWorkerPid) == false andalso
+            erlang:is_process_alive(EventManagerPid)
+    end),
+
+    ok.
 
 device_update_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),

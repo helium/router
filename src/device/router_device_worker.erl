@@ -116,7 +116,6 @@ device_update(Pid) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(#{db := DB, cf := CF, id := ID} = Args) ->
-    lager:info("~p init with ~p", [?SERVER, Args]),
     Blockchain = blockchain_worker:blockchain(),
     OUI = router_device_utils:get_router_oui(),
     Device = get_device(DB, CF, ID),
@@ -129,6 +128,7 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
     IsActive = router_device:is_active(Device),
     lager:md([{device_id, router_device:id(Device)}]),
     ok = ?MODULE:device_update(self()),
+    lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{
         chain = Blockchain,
         db = DB,
@@ -154,6 +154,7 @@ handle_cast(
     case router_device_api:get_device(DeviceID) of
         {error, not_found} ->
             ok = router_device:delete(DB, CF, DeviceID),
+            ok = router_device_cache:delete(DeviceID),
             lager:info("device was removed, removing from DB and shutting down"),
             {stop, normal, State};
         {error, _Reason} ->
@@ -674,6 +675,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
+    lager:info("terminate ~p", [_Reason]),
     ok.
 
 %% ------------------------------------------------------------------

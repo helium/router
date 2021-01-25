@@ -25,7 +25,8 @@
 -record(state, {
     chain :: undefined | blockchain:blockchain(),
     oui :: undefined | non_neg_integer(),
-    pending_txns = #{} :: #{blockchain_txn:hash() => blockchain_txn_routing_v1:txn_routing()}
+    pending_txns = #{} :: #{blockchain_txn:hash() => blockchain_txn_routing_v1:txn_routing()},
+    filter_to_devices = #{} :: map()
 }).
 
 %%--------------------------------------------------------------------
@@ -103,9 +104,11 @@ publish_xor_test(Config) ->
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     %% Wait until xor filter worker started properly
+    DeviceDevEuiAppEui = <<?DEVEUI/binary, ?APPEUI/binary>>,
     test_utils:wait_until(fun() ->
         State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso State#state.oui =/= undefined
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
     end),
 
     %% After start xor filter worker  should have pushed a new filter to the chain
@@ -113,6 +116,7 @@ publish_xor_test(Config) ->
 
     State0 = sys:get_state(router_xor_filter_worker),
     ?assertEqual(#{}, State0#state.pending_txns),
+    ?assertEqual(#{2 => [DeviceDevEuiAppEui]}, State0#state.filter_to_devices),
 
     Ledger = blockchain:ledger(Chain),
     {ok, Routing} = blockchain_ledger_v1:find_routing(OUI1, Ledger),
@@ -120,10 +124,10 @@ publish_xor_test(Config) ->
     ?assertEqual(2, erlang:length(Filters)),
 
     [Filter1, Filter2] = Filters,
-    DeviceDevEuiAppEui = <<?DEVEUI/binary, ?APPEUI/binary>>,
-
     ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiAppEui)),
     ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiAppEui)),
+
+    timer:sleep(5000),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

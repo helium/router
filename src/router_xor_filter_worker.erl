@@ -94,7 +94,7 @@ handle_info(
 ) ->
     case should_update_filters(Chain, OUI, FilterToDevices) of
         noop ->
-            lager:info("filters are still update to date"),
+            lager:info("filters are still up to date"),
             ok = schedule_check_filters(?CHECK_FILTERS_TIMER),
             {noreply, State};
         {Routing, Updates} ->

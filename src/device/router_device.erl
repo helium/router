@@ -1,3 +1,8 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Router Device ==
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_device).
 
 -ifdef(TEST).
@@ -7,6 +12,9 @@
 -include("router_device.hrl").
 -include("router_device_worker.hrl").
 
+%% ------------------------------------------------------------------
+%% router_device Type Exports
+%% ------------------------------------------------------------------
 -export([
     new/1,
     id/1,
@@ -29,7 +37,13 @@
     is_active/1, is_active/2,
     update/2,
     serialize/1,
-    deserialize/1,
+    deserialize/1
+]).
+
+%% ------------------------------------------------------------------
+%% RocksDB Device Exports
+%% ------------------------------------------------------------------
+-export([
     get/2, get/3,
     get_by_id/3,
     save/3,
@@ -39,6 +53,10 @@
 -type device() :: #device_v5{}.
 
 -export_type([device/0]).
+
+%% ------------------------------------------------------------------
+%% Device Functions
+%% ------------------------------------------------------------------
 
 -spec new(binary()) -> device().
 new(ID) ->
@@ -326,6 +344,10 @@ deserialize(Binary) ->
             }
     end.
 
+%% ------------------------------------------------------------------
+%% RocksDB Device Functions
+%% ------------------------------------------------------------------
+
 -spec get(rocksdb:db_handle(), rocksdb:cf_handle()) -> [device()].
 get(DB, CF) ->
     ?MODULE:get(DB, CF, fun(_) -> true end).
@@ -368,12 +390,12 @@ get_fold(DB, CF, FilterFun) ->
     Acc.
 
 -spec get_fold(
-    rocksdb:db_handle(),
-    rocksdb:cf_handle(),
-    rocksdb:itr_handle(),
-    any(),
-    function(),
-    list()
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    Iterator :: rocksdb:itr_handle(),
+    RocksDBEntry :: any(),
+    FilterFun :: function(),
+    Accumulator :: list()
 ) -> [device()].
 get_fold(DB, CF, Itr, {ok, _K, Bin}, FilterFun, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),

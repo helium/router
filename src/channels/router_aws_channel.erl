@@ -1,6 +1,10 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router AWS Channel ==
+%%
+%% Handles connection with AWS.
+%% Publishes messages to AWS MQTT
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_aws_channel).
@@ -38,8 +42,8 @@
     downlink_topic :: binary(),
     ping :: reference() | undefined,
     aws :: pid(),
-    key :: any(),
-    cert :: any()
+    key :: map(),
+    cert :: string()
 }).
 
 %% ------------------------------------------------------------------
@@ -55,9 +59,9 @@ init({[Channel, Device], _}) ->
     case setup_aws(Channel, Device) of
         {error, Reason} ->
             {error, Reason};
-        {ok, AWS, Endpoint, Key, Cert} ->
+        {ok, AWS, Endpoint, Keys, Cert} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-            self() ! {?MODULE, connect, ChannelID},
+            send_connect_after(ChannelID, 0),
             {ok, #state{
                 channel = Channel,
                 channel_id = ChannelID,
@@ -67,7 +71,7 @@ init({[Channel, Device], _}) ->
                 uplink_topic = UplinkTopic,
                 downlink_topic = DownlinkTopic,
                 aws = AWS,
-                key = Key,
+                key = Keys,
                 cert = Cert
             }}
     end.
@@ -105,7 +109,7 @@ handle_info(
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
-                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [
+                    lager:info("[~s] connected to : ~p (~p) and subscribed to ~p", [
                         ChannelID,
                         Endpoint,
                         Conn,
@@ -195,7 +199,7 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec publish(any(), map(), #state{}) -> {ok, #state{}}.
+-spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
 publish(
     Ref,
     Data,
@@ -255,10 +259,14 @@ publish(
 ping(ChannelID) ->
     erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
 
+-spec send_connect_after(ChannelId :: binary(), Delay :: non_neg_integer()) -> reference().
+send_connect_after(ChannelId, Delay) ->
+    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelId}).
+
 -spec reconnect(binary(), backoff:backoff()) -> backoff:backoff().
 reconnect(ChannelID, Backoff0) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}),
+    send_connect_after(ChannelID, Delay),
     Backoff1.
 
 -spec cleanup_connection(pid()) -> ok.
@@ -298,7 +306,12 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
         end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
--spec connect(binary(), binary(), any(), any()) -> {ok, pid()} | {error, any()}.
+-spec connect(
+    DeviceID :: binary(),
+    Hostname :: binary(),
+    Keys :: map(),
+    Cert :: any()
+) -> {ok, MQTTConn :: pid()} | {error, any()}.
 connect(DeviceID, Hostname, Key, Cert) ->
     #{secret := {ecc_compact, PrivKey}} = Key,
     EncodedPrivKey = public_key:der_encode('ECPrivateKey', PrivKey),
@@ -320,6 +333,7 @@ connect(DeviceID, Hostname, Key, Cert) ->
         {error, Reason} -> {error, Reason}
     end.
 
+-spec der_encode_cert(string()) -> binary().
 der_encode_cert(PEMCert) ->
     Cert = public_key:pem_entry_decode(hd(public_key:pem_decode(list_to_binary(PEMCert)))),
     public_key:der_encode('Certificate', Cert).
@@ -327,7 +341,7 @@ der_encode_cert(PEMCert) ->
 -spec setup_aws(
     router_channel:channel(),
     router_device:device()
-) -> {ok, pid(), binary(), any(), any()} | {error, any()}.
+) -> {ok, AWSPid :: pid(), Endpoint :: binary(), Key :: map(), Cert :: any()} | {error, any()}.
 setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
     #{
@@ -338,8 +352,17 @@ setup_aws(Channel, Device) ->
     DeviceID = router_channel:device_id(Channel),
     httpc_aws:set_credentials(AWS, AccessKey, SecretKey),
     httpc_aws:set_region(AWS, Region),
-    Funs = [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2],
-    case ensure(Funs, AWS, DeviceID) of
+    PassesAll =
+        lists:foldl(
+            fun
+                (_, {error, _} = Err) -> Err;
+                (Fn, ok) when is_function(Fn, 1) -> Fn(AWS);
+                (Fn, ok) when is_function(Fn, 2) -> Fn(AWS, DeviceID)
+            end,
+            ok,
+            [fun ensure_policy/1, fun ensure_thing_type/1, fun ensure_thing/2]
+        ),
+    case PassesAll of
         {error, _} = Error ->
             Error;
         ok ->
@@ -350,25 +373,11 @@ setup_aws(Channel, Device) ->
                     case ensure_certificate(AWS, Device) of
                         {error, _} = Error ->
                             Error;
-                        {ok, Key, Cert} ->
-                            {ok, AWS, erlang:list_to_binary(Endpoint), Key, Cert}
+                        {ok, Keys, Cert} ->
+                            {ok, AWS, erlang:list_to_binary(Endpoint), Keys, Cert}
                     end
             end
     end.
-
--spec ensure([function()], pid(), binary()) -> ok | {error, any()}.
-ensure(Funs, AWS, DeviceID) ->
-    ensure(Funs, AWS, DeviceID, ok).
-
--spec ensure([function()], pid(), binary(), ok | {error, any()}) -> ok | {error, any()}.
-ensure([], _AWS, _DeviceID, Acc) ->
-    Acc;
-ensure(_Funs, _AWS, _DeviceID, {error, _} = Error) ->
-    Error;
-ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 1) ->
-    ensure(Funs, AWS, DeviceID, Fun(AWS));
-ensure([Fun | Funs], AWS, DeviceID, _Acc) when is_function(Fun, 2) ->
-    ensure(Funs, AWS, DeviceID, Fun(AWS, DeviceID)).
 
 -spec ensure_policy(pid()) -> ok | {error, any()}.
 ensure_policy(AWS) ->
@@ -444,14 +453,15 @@ ensure_thing(AWS, DeviceID) ->
             ok
     end.
 
--spec ensure_certificate(pid(), router_device:device()) -> {ok, any(), string()} | {error, any()}.
+-spec ensure_certificate(pid(), router_device:device()) ->
+    {ok, Keys :: map(), Cert :: string()} | {error, any()}.
 ensure_certificate(AWS, Device) ->
     DeviceID = router_device:id(Device),
-    Key = router_device:ecc_compact(Device),
+    Keys = router_device:ecc_compact(Device),
     case get_principals(AWS, DeviceID) of
         [] ->
             CSR = create_csr(
-                Key,
+                Keys,
                 <<"US">>,
                 <<"California">>,
                 <<"San Francisco">>,
@@ -475,25 +485,26 @@ ensure_certificate(AWS, Device) ->
                         ok ->
                             case get_certificate_from_arn(AWS, CertificateArn) of
                                 {error, _} = Error -> Error;
-                                {ok, Cert} -> {ok, Key, Cert}
+                                {ok, Cert} -> {ok, Keys, Cert}
                             end
                     end
             end;
         [CertificateArn] ->
             case get_certificate_from_arn(AWS, CertificateArn) of
                 {error, _} = Error -> Error;
-                {ok, Cert} -> {ok, Key, Cert}
+                {ok, Cert} -> {ok, Keys, Cert}
             end
     end.
 
--spec get_iot_endpoint(pid()) -> {ok, string()} | {error, any()}.
+-spec get_iot_endpoint(AWSPid :: pid()) -> {ok, Hostname :: string()} | {error, any()}.
 get_iot_endpoint(AWS) ->
     case httpc_aws:get(AWS, "iot", "/endpoint", []) of
         {error, _Reason, _} -> {error, {get_endpoint_failed, _Reason}};
         {ok, {_, [{"endpointAddress", Hostname}]}} -> {ok, Hostname}
     end.
 
--spec get_certificate_from_arn(pid(), string()) -> {ok, string()} | {error, any()}.
+-spec get_certificate_from_arn(AWSPid :: pid(), CertArn :: string()) ->
+    {ok, Cert :: string()} | {error, any()}.
 get_certificate_from_arn(AWS, CertificateArn) ->
     ["arn", _Partition, "iot", _Region, _Account, Resource] = string:tokens(CertificateArn, ":"),
     ["cert", CertificateId] = string:tokens(Resource, "/"),
@@ -533,6 +544,7 @@ attach_certificate(AWS, DeviceID, CertificateArn) ->
             end
     end.
 
+-spec get_principals(AWSPid :: pid(), DeviceID :: binary()) -> list().
 get_principals(AWS, DeviceID) ->
     case
         httpc_aws:get(AWS, "iot", binary_to_list(<<"/things/", DeviceID/binary, "/principals">>))
@@ -541,6 +553,16 @@ get_principals(AWS, DeviceID) ->
         {ok, {_, Data}} -> proplists:get_value("principals", Data, [])
     end.
 
+-spec create_csr(
+    Keys :: map(),
+    Country :: binary(),
+    State :: binary(),
+    Location :: binary(),
+    Organization :: binary(),
+    CommonName :: binary()
+) ->
+    {'CertificationRequest', CertRequestInfo :: tuple(), CertRequestSigAlgorithm :: tuple(),
+        Signature :: binary()}.
 create_csr(
     #{
         secret := {ecc_compact, PrivKey},
@@ -573,9 +595,11 @@ create_csr(
         {'CertificationRequest_signatureAlgorithm', {1, 2, 840, 10045, 4, 3, 2}, asn1_NOVALUE},
         Signature}.
 
+-spec pack_country(binary()) -> binary().
 pack_country(Bin) when size(Bin) == 2 ->
     <<19, 2, Bin:2/binary>>.
 
+-spec pack_string(binary()) -> binary().
 pack_string(Bin) ->
     Size = byte_size(Bin),
     <<12, Size:8/integer-unsigned, Bin/binary>>.

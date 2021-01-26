@@ -1,6 +1,9 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router MQTT Channel ==
+%%
+%% Connects and publishes messages to User's MQTT instance.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_mqtt_channel).
@@ -52,7 +55,7 @@ init({[Channel, Device], _}) ->
         downlink_topic := DownlinkTemplate
     } = router_channel:args(Channel),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! {?MODULE, connect, ChannelID},
+    send_connect_after(ChannelID, 0),
     {ok, #state{
         channel = Channel,
         channel_id = ChannelID,
@@ -127,7 +130,7 @@ handle_info(
     ChannelName = router_channel:name(Channel),
     case connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
-            lager:info("[~s] conencted to : ~p (~p)", [
+            lager:info("[~s] connected to : ~p (~p)", [
                 ChannelID,
                 Endpoint,
                 Conn
@@ -136,7 +139,6 @@ handle_info(
             {ok, State#state{
                 connection = Conn,
                 connection_backoff = Backoff1,
-                endpoint = Endpoint,
                 ping = ping(ChannelID)
             }};
         {error, _ConnReason} ->
@@ -165,7 +167,7 @@ handle_info(
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
-                    lager:info("[~s] conencted to : ~p (~p) and subscribed to ~p", [
+                    lager:info("[~s] connected to : ~p (~p) and subscribed to ~p", [
                         ChannelID,
                         Endpoint,
                         Conn,
@@ -175,7 +177,6 @@ handle_info(
                     {ok, State#state{
                         connection = Conn,
                         connection_backoff = Backoff1,
-                        endpoint = Endpoint,
                         ping = ping(ChannelID)
                     }};
                 {error, _SubReason} ->
@@ -232,7 +233,7 @@ handle_info(
     } = State
 ) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
-    lager:error("[~s] got a EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
+    lager:error("[~s] got an EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
     Backoff1 = reconnect(ChannelID, Backoff0),
     {ok, State#state{connection_backoff = Backoff1}};
 handle_info({disconnected, _Type, _Reason}, #state{channel_id = ChannelID} = State) ->
@@ -255,7 +256,7 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec publish(any(), map(), #state{}) -> {ok, #state{}}.
+-spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
 publish(
     Ref,
     Data,
@@ -315,10 +316,14 @@ publish(
 ping(ChannelID) ->
     erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
 
+-spec send_connect_after(ChannelID :: binary(), Delay :: integer()) -> reference().
+send_connect_after(ChannelID, Delay) ->
+    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}).
+
 -spec reconnect(binary(), backoff:backoff()) -> backoff:backoff().
 reconnect(ChannelID, Backoff0) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}),
+    send_connect_after(ChannelID, Delay),
     Backoff1.
 
 -spec cleanup_connection(pid()) -> ok.
@@ -358,7 +363,8 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
         end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
 
--spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
+-spec connect(URI :: binary(), DeviceID :: binary(), Name :: binary()) ->
+    {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
     Opts = [
         {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
@@ -413,7 +419,10 @@ connect(URI, DeviceID, Name) ->
             {error, invalid_mqtt_uri}
     end.
 
--spec render_topic(binary() | undefined, router_device:device()) -> binary() | undefined.
+-spec render_topic(
+    Template :: binary() | undefined,
+    Device :: router_device:device()
+) -> binary() | undefined.
 render_topic(undefined, _Device) ->
     undefined;
 render_topic(Template, Device) ->

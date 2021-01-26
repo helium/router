@@ -1,3 +1,11 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Browan Object Locator Decoder ==
+%%%
+%%% Browan Docs PDF [https://www.browan.com/download/DBk/stream]
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_decoder_browan_object_locator).
 
 -export([decode/3]).

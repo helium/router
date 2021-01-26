@@ -151,7 +151,7 @@ handle_cast(
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
 ) ->
     DeviceID = router_device:id(Device0),
-    case router_device_api:get_device(DeviceID) of
+    case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
@@ -162,7 +162,7 @@ handle_cast(
             {noreply, State};
         {ok, APIDevice} ->
             lager:info("device updated: ~p", [APIDevice]),
-            ChannelsWorker ! refresh_channels,
+            router_device_channels_worker:refresh_channels(ChannelsWorker),
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
@@ -987,7 +987,8 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                         lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)
                     ),
                     lager:info(
-                        "~s packet from ~s ~s with ACK ~p fopts ~p fcnt ~p and data ~p received by ~s",
+                        "~s packet from ~s ~s with ACK ~p fopts ~p " ++
+                            "fcnt ~p and data ~p received by ~s",
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
@@ -1191,7 +1192,8 @@ handle_frame_timeout(
                     {send, Device1, Packet1}
             end;
         _ when ChannelCorrection == false andalso WereChannelsCorrected == true ->
-            %% we corrected the channels but don't have anything else to send so just update the device
+            %% we corrected the channels but don't have anything else to send
+            %% so just update the device
             {ok, router_device:channel_correction(true, Device0)};
         _ ->
             noop
@@ -1223,7 +1225,8 @@ handle_frame_timeout(
         ADRAdjustment
     ),
     lager:info(
-        "downlink with ~p, confirmed ~p port ~p ACK ~p and channels corrected ~p, ADR adjustment ~p, FOpts ~p",
+        "downlink with ~p, confirmed ~p port ~p ACK ~p and" ++
+            " channels corrected ~p, ADR adjustment ~p, FOpts ~p",
         [
             ReplyPayload,
             ConfirmedDown,
@@ -1357,8 +1360,10 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
     %% end-needs-refactor
     FOpts1 =
         case {ChannelCorrectionNeeded, ChannelsCorrected, ADRAdjustment} of
-            %% TODO this is going to be different for each region, we can't simply pass the region into this function
-            %% Some regions allow the channel list to be sent in the join response as well, so we may need to do that there as well
+            %% TODO this is going to be different for each region,
+            %% we can't simply pass the region into this function
+            %% Some regions allow the channel list to be sent in the join response as well,
+            %% so we may need to do that there as well
             {true, false, _} ->
                 lorawan_mac_region:set_channels(
                     Region,
@@ -1411,7 +1416,8 @@ were_channels_corrected(Frame, 'US915') ->
         {link_adr_ans, 1, 1, 1} ->
             true;
         {link_adr_ans, TxPowerACK, DataRateACK, ChannelMaskACK} ->
-            %% consider any answer good enough, if the device wants to reject things, nothing we can so
+            %% consider any answer good enough, if the device wants to reject things,
+            %% nothing we can so
             lager:info("device rejected ADR: TxPower: ~p DataRate: ~p, Channel Mask: ~p", [
                 TxPowerACK == 1,
                 DataRateACK == 1,

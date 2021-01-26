@@ -3,10 +3,9 @@
 %% == Router Device Channels Worker ==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_console_device_api).
+-module(router_console_api).
 
 -behavior(gen_server).
--behavior(router_device_api_behavior).
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -14,7 +13,7 @@
 -export([
     start_link/1,
     get_device/1,
-    get_devices/2,
+    get_devices_by_deveui_appeui/2,
     get_channels/2,
     report_status/2,
     get_downlink_url/2,
@@ -34,21 +33,26 @@
     code_change/3
 ]).
 
+%% ------------------------------------------------------------------
+%% Channel Function Exports
+%% ------------------------------------------------------------------
+-export([debug_active_for_device/1]).
+
 -define(SERVER, ?MODULE).
--define(POOL, router_console_device_api_pool).
+-define(POOL, router_console_api_pool).
 -define(ETS, router_console_debug_ets).
 -define(TOKEN_CACHE_TIME, timer:hours(23)).
 -define(TICK_INTERVAL, 1000).
--define(TICK, '__router_console_device_api_tick').
--define(PENDING_KEY, <<"router_console_device_api.PENDING_KEY">>).
+-define(TICK, '__router_console_api_tick').
+-define(PENDING_KEY, <<"router_console_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
 -define(MULTI_BUY_DEFAULT, 1).
 -define(ADR_ALLOWED_DEFAULT, false).
 -define(DOWNLINK_TOOL_ORIGIN, <<"console_downlink_queue">>).
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
--define(GET_ORG_CACHE_NAME, router_console_device_api_get_org).
--define(GET_DEVICES_CACHE_NAME, router_console_device_api_get_devices).
+-define(GET_ORG_CACHE_NAME, router_console_api_get_org).
+-define(GET_DEVICES_CACHE_NAME, router_console_api_get_devices_by_deveui_appeui).
 %% E2QC durations are in seconds while our eviction handling is milliseconds
 -define(GET_ORG_LIFETIME, 300).
 -define(GET_DEVICES_LIFETIME, 10).
@@ -76,7 +80,7 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
--spec get_device(binary()) -> {ok, router_device:device()} | {error, any()}.
+-spec get_device(DeviceID :: binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
     {Endpoint, Token} = token_lookup(),
     Device = router_device:new(DeviceID),
@@ -104,14 +108,15 @@ get_device(DeviceID) ->
             {ok, router_device:update(DeviceUpdates, Device)}
     end.
 
--spec get_devices(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
-get_devices(DevEui, AppEui) ->
+-spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->
+    [{binary(), router_device:device()}].
+get_devices_by_deveui_appeui(DevEui, AppEui) ->
     e2qc:cache(
         ?GET_DEVICES_CACHE_NAME,
         {DevEui, AppEui},
         ?GET_DEVICES_LIFETIME,
         fun() ->
-            get_devices_(DevEui, AppEui)
+            get_devices_by_deveui_appeui_(DevEui, AppEui)
         end
     ).
 
@@ -150,7 +155,7 @@ get_channels(Device, DeviceWorkerPid) ->
             Channels1
     end.
 
--spec report_status(Device :: router_device:device(), Map :: #{}) -> ok.
+-spec report_status(Device :: router_device:device(), Map :: map()) -> ok.
 report_status(Device, Map) ->
     erlang:spawn(
         fun() ->
@@ -232,7 +237,7 @@ report_status(Device, Map) ->
     ),
     ok.
 
--spec get_downlink_url(router_channel:channel(), binary()) -> binary().
+-spec get_downlink_url(Channel :: router_channel:channel(), DeviceID :: binary()) -> binary().
 get_downlink_url(Channel, DeviceID) ->
     case maps:get(downlink_token, router_channel:args(Channel), undefined) of
         undefined ->
@@ -244,7 +249,11 @@ get_downlink_url(Channel, DeviceID) ->
                 DeviceID/binary>>
     end.
 
--spec organizations_burned(non_neg_integer(), non_neg_integer(), non_neg_integer()) -> ok.
+-spec organizations_burned(
+    Memo :: non_neg_integer(),
+    HNTAmount :: non_neg_integer(),
+    DCAmount :: non_neg_integer()
+) -> ok.
 organizations_burned(Memo, HNTAmount, DCAmount) ->
     Body = #{
         memo => Memo,
@@ -255,6 +264,13 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+%% ------------------------------------------------------------------
+%% Channel Function Definitions
+%% ------------------------------------------------------------------
+-spec debug_active_for_device(DeviceID :: binary()) -> boolean().
+debug_active_for_device(DeviceID) ->
+    debug_lookup(DeviceID) > 0.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -429,7 +445,9 @@ handle_info(
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{<<"devices">> := DeviceIDs}},
+    {ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{
+        <<"devices">> := DeviceIDs
+    }},
     #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
@@ -450,7 +468,11 @@ terminate(_Reason, #state{db = DB, pending_burns = P}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec update_devices(rocksdb:db_handle(), rocksdb:cf_handle(), [binary()]) -> pid().
+-spec update_devices(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    DeviceIDs :: [binary()]
+) -> pid().
 update_devices(DB, CF, DeviceIDs) ->
     erlang:spawn(
         fun() ->
@@ -473,7 +495,11 @@ update_devices(DB, CF, DeviceIDs) ->
         end
     ).
 
--spec update_device_record(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> ok.
+-spec update_device_record(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    DeviceID :: binary()
+) -> ok.
 update_device_record(DB, CF, DeviceID) ->
     case ?MODULE:get_device(DeviceID) of
         {error, _Reason} ->
@@ -497,13 +523,13 @@ update_device_record(DB, CF, DeviceID) ->
             ok
     end.
 
--spec check_devices(rocksdb:db_handle(), rocksdb:cf_handle()) -> pid().
+-spec check_devices(DB :: rocksdb:db_handle(), CF :: rocksdb:cf_handle()) -> pid().
 check_devices(DB, CF) ->
     lager:info("checking all devices in DB"),
     DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],
     update_devices(DB, CF, DeviceIDs).
 
--spec start_ws(binary(), binary()) -> pid().
+-spec start_ws(WSEndpoint :: binary(), Token :: binary()) -> pid().
 start_ws(WSEndpoint, Token) ->
     Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
     {ok, Pid} = router_console_ws_handler:start_link(#{
@@ -513,7 +539,7 @@ start_ws(WSEndpoint, Token) ->
     }),
     Pid.
 
--spec convert_channel(router_device:device(), pid(), map()) ->
+-spec convert_channel(Device :: router_device:device(), Pid :: pid(), JSONChannel :: map()) ->
     false | {true, router_channel:channel()}.
 convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
@@ -585,7 +611,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"console">>} = JSONChannel) ->
 convert_channel(_Device, _Pid, _Channel) ->
     false.
 
--spec convert_decoder(map()) -> undefined | router_decoder:decoder().
+-spec convert_decoder(JSONChannel :: map()) -> undefined | router_decoder:decoder().
 convert_decoder(JSONChannel) ->
     case kvc:path([<<"function">>], JSONChannel, undefined) of
         undefined ->
@@ -616,14 +642,14 @@ convert_decoder(JSONChannel) ->
             end
     end.
 
--spec convert_template(map()) -> undefined | binary().
+-spec convert_template(JSONChannel :: map()) -> undefined | binary().
 convert_template(JSONChannel) ->
     case kvc:path([<<"payload_template">>], JSONChannel, null) of
         null -> undefined;
         Template -> router_utils:to_bin(Template)
     end.
 
--spec get_token(binary(), binary()) -> binary().
+-spec get_token(Endpoint :: binary(), Secret :: binary()) -> binary().
 get_token(Endpoint, Secret) ->
     Start = erlang:system_time(millisecond),
     case
@@ -645,7 +671,8 @@ get_token(Endpoint, Secret) ->
             erlang:throw(get_token)
     end.
 
--spec get_device_(binary(), binary(), router_device:device()) -> {ok, map()} | {error, any()}.
+-spec get_device_(Endpoint :: binary(), Token :: binary(), Device :: router_device:device()) ->
+    {ok, map()} | {error, any()}.
 get_device_(Endpoint, Token, Device) ->
     DeviceId = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
@@ -674,8 +701,9 @@ get_device_(Endpoint, Token, Device) ->
             {error, {get_device_failed, _Other}}
     end.
 
--spec get_devices_(DevEui :: binary(), AppEui :: binary()) -> [{binary(), router_device:device()}].
-get_devices_(DevEui, AppEui) ->
+-spec get_devices_by_deveui_appeui_(DevEui :: binary(), AppEui :: binary()) ->
+    [{binary(), router_device:device()}].
+get_devices_by_deveui_appeui_(DevEui, AppEui) ->
     {Endpoint, Token} = token_lookup(),
     Url =
         <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
@@ -692,7 +720,7 @@ get_devices_(DevEui, AppEui) ->
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
             End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_devices, ok, End - Start),
+            ok = router_metrics:console_api_observe(get_devices_by_deveui_appeui, ok, End - Start),
             Devices = lists:map(
                 fun(JSONDevice) ->
                     ID = kvc:path([<<"id">>], JSONDevice),
@@ -718,7 +746,11 @@ get_devices_(DevEui, AppEui) ->
             Devices;
         _Other ->
             End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_devices, error, End - Start),
+            ok = router_metrics:console_api_observe(
+                get_devices_by_deveui_appeui,
+                error,
+                End - Start
+            ),
             []
     end.
 
@@ -758,19 +790,19 @@ token_lookup() ->
         [{token, EndpointToken}] -> EndpointToken
     end.
 
--spec token_insert(binary(), binary()) -> ok.
+-spec token_insert(Endpoint :: binary(), Token :: binary()) -> ok.
 token_insert(Endpoint, Token) ->
     true = ets:insert(?ETS, {token, {Endpoint, Token}}),
     ok.
 
--spec debug_lookup(binary()) -> integer().
+-spec debug_lookup(DeviceID :: binary()) -> non_neg_integer().
 debug_lookup(DeviceID) ->
     case ets:lookup(?ETS, DeviceID) of
         [] -> 0;
         [{DeviceID, Limit}] -> Limit
     end.
 
--spec debug_insert(binary(), integer()) -> ok.
+-spec debug_insert(DeviceID :: binary(), Limit :: non_neg_integer()) -> ok.
 debug_insert(DeviceID, Limit) ->
     true = ets:insert(?ETS, {DeviceID, Limit}),
     ok.

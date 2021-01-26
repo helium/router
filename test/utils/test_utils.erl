@@ -38,54 +38,63 @@
 
 init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
-    ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, port, 3615),
-    ok = application:set_env(router, oui, 1),
-    ok = application:set_env(router, router_device_api_module, router_console_device_api),
-    ok = application:set_env(router, router_console_device_api, [
+    ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
+    ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
     ]),
-    ok = application:set_env(router, metrics, [{reporters, []}]),
-    ok = application:set_env(router, max_v8_context, 1),
-    ok = application:set_env(router, dc_tracker, "enabled"),
-    ok = application:set_env(router, router_http_channel_url_check, false),
+    FormatStr = [
+        "[",
+        date,
+        " ",
+        time,
+        "] ",
+        pid,
+        " [",
+        severity,
+        "]",
+        {device_id, [" [", device_id, "]"], ""},
+        " [",
+        {module, ""},
+        {function, [":", function], ""},
+        {line, [":", line], ""},
+        "] ",
+        message,
+        "\n"
+    ],
     filelib:ensure_dir(BaseDir ++ "/log"),
+    ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    ok = application:set_env(lager, crash_log, "crash.log"),
     case os:getenv("CT_LAGER", "NONE") of
         "DEBUG" ->
-            FormatStr = [
-                "[",
-                date,
-                " ",
-                time,
-                "] ",
-                pid,
-                " [",
-                severity,
-                "]",
-                {device_id, [" [", device_id, "]"], ""},
-                " [",
-                {module, ""},
-                {function, [":", function], ""},
-                {line, [":", line], ""},
-                "] ",
-                message,
-                "\n"
-            ],
             ok = application:set_env(lager, handlers, [
                 {lager_console_backend, [
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "router.log"},
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "device.log"},
                     {level, error},
                     {formatter_config, FormatStr}
                 ]}
             ]),
             ok = application:set_env(lager, traces, [
                 {lager_console_backend, [{application, router}], debug},
-                {lager_console_backend, [{module, router_console_device_api}], debug},
-                {lager_console_backend, [{module, router_device_routing}], debug}
+                {lager_console_backend, [{module, router_console_api}], debug},
+                {lager_console_backend, [{module, router_device_routing}], debug},
+                {{lager_file_backend, "router.log"}, [{application, router}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
+                {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug}
             ]);
         _ ->
-            ok = application:set_env(lager, log_root, BaseDir ++ "/log")
+            ok
     end,
     Tab = ets:new(TestCase, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),
@@ -105,12 +114,23 @@ init_per_testcase(TestCase, Config) ->
 
     {ok, _} = application:ensure_all_started(router),
 
-    {Swarm, Keys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
-    #{public := PubKey, secret := PrivKey} = Keys,
+    SwarmKey = filename:join([
+        application:get_env(blockchain, base_dir, "data"),
+        "blockchain",
+        "swarm_key"
+    ]),
+    ok = filelib:ensure_dir(SwarmKey),
+    {ok, RouterKeys} = libp2p_crypto:load_keys(SwarmKey),
+    #{public := RouterPubKey, secret := RouterPrivKey} = RouterKeys,
+
+    HotspotDir = BaseDir ++ "/hotspot",
+    filelib:ensure_dir(HotspotDir),
+    {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(HotspotDir, TestCase, 0),
+    #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
+
     {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        {PrivKey, PubKey},
-        true
+        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
     ),
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
@@ -120,8 +140,8 @@ init_per_testcase(TestCase, Config) ->
         {ets, Tab},
         {elli, Pid},
         {base_dir, BaseDir},
-        {swarm, Swarm},
-        {keys, Keys},
+        {swarm, HotspotSwarm},
+        {keys, HotspotKeys},
         {consensus_member, ConsensusMembers}
         | Config
     ].
@@ -135,8 +155,8 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
-    e2qc:teardown(router_console_device_api_get_devices),
-    e2qc:teardown(router_console_device_api_get_org),
+    e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
+    e2qc:teardown(router_console_api_get_org),
     application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),

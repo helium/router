@@ -13,7 +13,12 @@
 -export([index_of/2]).
 -export([precise_universal_time/0, time_to_gps/0, time_to_gps/1, time_to_unix/0, time_to_unix/1]).
 -export([ms_diff/2, datetime_to_timestamp/1, apply_offset/2]).
--export([throw_info/2, throw_info/3, throw_warning/2, throw_warning/3, throw_error/2, throw_error/3]).
+-export([
+    throw_info/2, throw_info/3,
+    throw_warning/2, throw_warning/3,
+    throw_error/2, throw_error/3
+]).
+
 -export([extract_frame_port_payload/1, cipher/5, mtype/1, padded/2, parse_datarate/1]).
 
 -export_type([spreading/0, bandwidth/0]).

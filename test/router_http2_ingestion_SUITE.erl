@@ -98,8 +98,9 @@ join_http2_test(Config) ->
                         ct:fail(" failed to decode response msg ~p ~p", [Body, {_E, _R}])
                 end,
 
-            %% assert the response msg here...which should be record type blockchain_state_channel_response_v1_pb
-            %% this test isnt really interested in the data within this record, just that we get the record response
+            %% assert the response msg here...which should be record type
+            %% blockchain_state_channel_response_v1_pb this test isnt really
+            %% interested in the data within this record, just that we get the record response
             ?assert(is_record(ResponseMsg, blockchain_state_channel_response_v1_pb))
     end,
 
@@ -134,7 +135,8 @@ join_http2_negative_test(Config) ->
             ?assertEqual(400, Status1)
     end,
 
-    %% send a request with an invalid body which does not decode to a SC msg body, should fail with a 400 error
+    %% send a request with an invalid body which does not decode to a SC msg body,
+    %% should fail with a 400 error
     StreamRef2 = gun:post(
         ConnPid,
         "/v1/router/message",

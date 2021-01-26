@@ -1,6 +1,10 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router no Channel ==
+%%
+%% Reports packets to Console when no integrations
+%% are configured for a device.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_no_channel).

@@ -1,6 +1,10 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router HTTP Channel ==
+%%
+%% Send packet data to a User's Http endpoint.
+%% Responses are queued as downlinks for their device.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_http_channel).
@@ -37,11 +41,7 @@ init({[Channel, Device], _}) ->
     lager:md([{device_id, router_device:id(Device)}]),
     lager:info("init with ~p", [Channel]),
     #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
-    Headers1 = lists:ukeymerge(
-        1,
-        lists:ukeysort(1, Headers0),
-        [{<<"Content-Type">>, <<"application/json">>}]
-    ),
+    Headers1 = content_type_or_default(Headers0),
     {ok, #state{channel = Channel, url = URL, headers = Headers1, method = Method}}.
 
 handle_event(
@@ -49,7 +49,7 @@ handle_event(
     #state{channel = Channel, url = URL, headers = Headers, method = Method} = State
 ) ->
     lager:debug("got data: ~p", [Data]),
-    DownlinkURL = router_device_api:get_downlink_url(Channel, maps:get(id, Data)),
+    DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
     Res = make_http_req(Method, URL, Headers, Body),
     lager:debug("published: ~p result: ~p", [Body, Res]),
@@ -69,11 +69,7 @@ handle_event(_Msg, State) ->
 
 handle_call({update, Channel, _Device}, State) ->
     #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
-    Headers1 = lists:ukeymerge(
-        1,
-        lists:ukeysort(1, Headers0),
-        [{<<"Content-Type">>, <<"application/json">>}]
-    ),
+    Headers1 = content_type_or_default(Headers0),
     {ok, ok, State#state{channel = Channel, url = URL, headers = Headers1, method = Method}};
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
@@ -214,6 +210,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
                     description => ResponseBody
                 });
             {ok, StatusCode, ResponseHeaders, ResponseBody} ->
+                SCBin = erlang:integer_to_binary(StatusCode),
                 maps:merge(Result0, #{
                     debug => maps:merge(Debug, #{
                         res => #{
@@ -223,9 +220,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
                         }
                     }),
                     status => failure,
-                    description =>
-                        <<"ResponseCode: ", (list_to_binary(integer_to_list(StatusCode)))/binary,
-                            " Body ", ResponseBody/binary>>
+                    description => <<"ResponseCode: ", SCBin/binary, " Body ", ResponseBody/binary>>
                 });
             {error, Reason} ->
                 maps:merge(Result0, #{
@@ -235,3 +230,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
                 })
         end,
     router_device_channels_worker:report_status(Pid, Ref, Result1).
+
+-spec content_type_or_default(list()) -> list().
+content_type_or_default(Headers) ->
+    lists:ukeysort(1, Headers ++ [{<<"Content-Type">>, <<"application/json">>}]).

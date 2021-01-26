@@ -1,8 +1,15 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Custom Decoder Supervisor ==
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_decoder_custom_sup).
 
 -behaviour(supervisor).
 
-%% API
+%% ------------------------------------------------------------------
+%% API Exports
+%% ------------------------------------------------------------------
 -export([
     start_link/0,
     add/1,
@@ -10,7 +17,9 @@
     decode/3
 ]).
 
-%% Supervisor callbacks
+%% ------------------------------------------------------------------
+%% Supervisor Callback Exports
+%% ------------------------------------------------------------------
 -export([init/1]).
 
 -ifdef(TEST).
@@ -45,9 +54,9 @@
 
 -type custom_decoder() :: #custom_decoder{}.
 
-%%====================================================================
+%% ------------------------------------------------------------------
 %% API functions
-%%====================================================================
+%% ------------------------------------------------------------------
 
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
@@ -64,7 +73,7 @@ delete(ID) ->
     true = ets:delete(?ETS, ID),
     ok.
 
--spec decode(router_decoder:decoder(), list(), integer()) -> {ok, any()} | {error, any()}.
+-spec decode(router_decoder:decoder(), string(), integer()) -> {ok, any()} | {error, any()}.
 decode(Decoder, Payload, Port) ->
     ID = router_decoder:id(Decoder),
     case lookup(ID) of
@@ -80,9 +89,9 @@ decode(Decoder, Payload, Port) ->
             router_decoder_custom_worker:decode(Pid, Payload, Port)
     end.
 
-%%====================================================================
+%% ------------------------------------------------------------------
 %% Supervisor callbacks
-%%====================================================================
+%% ------------------------------------------------------------------
 
 init([]) ->
     ets:new(?ETS, [public, named_table, set]),
@@ -92,7 +101,7 @@ init([]) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec add(binary(), binary()) -> {ok, pid()} | {error, any()}.
+-spec add(DecoderID :: binary(), Function :: binary()) -> {ok, pid()} | {error, any()}.
 add(ID, Function) ->
     case binary:match(Function, <<"function Decoder(bytes, port)">>) of
         nomatch ->
@@ -112,7 +121,8 @@ add(ID, Function) ->
             end
     end.
 
--spec start_worker(binary(), binary(), binary()) -> {ok, pid()} | {error, any()}.
+-spec start_worker(DecoderID :: binary(), Hash :: binary(), Function :: binary()) ->
+    {ok, pid()} | {error, any()}.
 start_worker(ID, Hash, Function) ->
     {ok, VM} = router_v8:get(),
     Args = #{id => ID, vm => VM, function => Function},

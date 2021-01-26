@@ -1,6 +1,11 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Router v8 Context==
+%% == Custom Decoder Worker ==
+%%
+%% Decodes payloads with javascript functions using erlang_v8.
+%%
+%% If a Decoder has not been used in a while, it will decommission itself.
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_decoder_custom_worker).
@@ -51,7 +56,7 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec decode(pid(), list(), integer()) -> {ok, any()} | {error, any()}.
+-spec decode(pid(), string(), integer()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port) ->
     gen_server:call(Pid, {decode, Payload, Port}, ?MAX_EXECUTION).
 
@@ -100,13 +105,18 @@ terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec init_context(pid(), binary()) -> any().
+-spec init_context(VMPid :: pid(), Function :: binary()) -> any().
 init_context(VM, Function) ->
     {ok, Context} = erlang_v8:create_context(VM),
     {ok, _} = erlang_v8:eval(VM, Context, Function),
     Context.
 
--spec decode(binary(), non_neg_integer(), state(), non_neg_integer()) -> {any(), state()}.
+-spec decode(
+    Payload :: string(),
+    Port :: non_neg_integer(),
+    State :: state(),
+    Retries :: non_neg_integer()
+) -> {any(), state()}.
 decode(_Payload, _Port, State, 0) ->
     {{error, failed_too_many_times}, State};
 decode(Payload, Port, #state{vm = VM, context = Context0, function = Function} = State, Retry) ->

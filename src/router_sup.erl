@@ -64,19 +64,19 @@ start_link() ->
 %% Before OTP 18 tuples must be used to specify a child. e.g.
 %% Child :: {Id,StartFunc,Restart,Shutdown,Type,Modules}
 init([]) ->
-    _ = router_decoder:init_ets(),
+    ok = router_decoder:init_ets(),
 
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
     SeedNodes =
-        case application:get_env(router, seed_nodes) of
+        case application:get_env(blockchain, seed_nodes) of
             {ok, ""} -> [];
             {ok, Seeds} -> string:split(Seeds, ",", all);
             _ -> []
         end,
-    BaseDir = application:get_env(router, base_dir, "data"),
-    SwarmKey = filename:join([BaseDir, "router", "swarm_key"]),
+    BaseDir = application:get_env(blockchain, base_dir, "data"),
+    SwarmKey = filename:join([BaseDir, "blockchain", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
     Key =
         case libp2p_crypto:load_keys(SwarmKey) of
@@ -94,9 +94,9 @@ init([]) ->
         {key, Key},
         {seed_nodes, SeedNodes},
         {max_inbound_connections, 10},
-        {port, application:get_env(router, port, 0)},
+        {port, application:get_env(blockchain, port, 0)},
         {base_dir, BaseDir},
-        {update_dir, application:get_env(router, update_dir, undefined)}
+        {update_dir, application:get_env(blockchain, update_dir, undefined)}
     ],
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],

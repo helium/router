@@ -83,40 +83,29 @@ refill(OrgID, Nonce, Balance) ->
     blockchain:blockchain()
 ) -> {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
 has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
-    case enabled() of
-        false ->
-            case lookup(OrgID) of
-                {error, not_found} ->
-                    {B, N} = fetch_and_save_org_balance(OrgID),
-                    {ok, OrgID, B, N};
-                {ok, B, N} ->
-                    {ok, OrgID, B, N}
-            end;
-        true ->
-            Ledger = blockchain:ledger(Chain),
-            case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
-                {error, _Reason} ->
-                    lager:warning("failed to calculate dc amount ~p", [_Reason]),
-                    {error, failed_calculate_dc};
-                DCAmount ->
-                    {Balance0, Nonce} =
-                        case lookup(OrgID) of
-                            {error, not_found} ->
-                                fetch_and_save_org_balance(OrgID);
-                            {ok, 0, _N} ->
-                                fetch_and_save_org_balance(OrgID);
-                            {ok, B, N} ->
-                                {B, N}
-                        end,
-                    Balance1 = Balance0 - DCAmount,
-                    case {Balance1 >= 0, Nonce > 0} of
-                        {false, _} ->
-                            {error, {not_enough_dc, Balance0, DCAmount}};
-                        {_, false} ->
-                            {error, bad_nonce};
-                        {true, true} ->
-                            {ok, OrgID, Balance1, Nonce}
-                    end
+    Ledger = blockchain:ledger(Chain),
+    case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+        {error, _Reason} ->
+            lager:warning("failed to calculate dc amount ~p", [_Reason]),
+            {error, failed_calculate_dc};
+        DCAmount ->
+            {Balance0, Nonce} =
+                case lookup(OrgID) of
+                    {error, not_found} ->
+                        fetch_and_save_org_balance(OrgID);
+                    {ok, 0, _N} ->
+                        fetch_and_save_org_balance(OrgID);
+                    {ok, B, N} ->
+                        {B, N}
+                end,
+            Balance1 = Balance0 - DCAmount,
+            case {Balance1 >= 0, Nonce > 0} of
+                {false, _} ->
+                    {error, {not_enough_dc, Balance0, DCAmount}};
+                {_, false} ->
+                    {error, bad_nonce};
+                {true, true} ->
+                    {ok, OrgID, Balance1, Nonce}
             end
     end;
 has_enough_dc(Device, PayloadSize, Chain) ->
@@ -205,7 +194,7 @@ handle_info(
                                 HNTAmount,
                                 DCAmount
                             ]),
-                            ok = router_console_device_api:organizations_burned(
+                            ok = router_console_api:organizations_burned(
                                 Memo,
                                 HNTAmount,
                                 DCAmount
@@ -231,13 +220,6 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec enabled() -> boolean().
-enabled() ->
-    case application:get_env(router, dc_tracker) of
-        {ok, "enabled"} -> true;
-        _ -> false
-    end.
-
 -spec txn_filter_fun(blockchain_txn:txn()) -> boolean().
 txn_filter_fun(Txn) ->
     case blockchain_txn:type(Txn) == blockchain_txn_token_burn_v1 of
@@ -251,7 +233,7 @@ txn_filter_fun(Txn) ->
 
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.
 fetch_and_save_org_balance(OrgID) ->
-    case router_console_device_api:get_org(OrgID) of
+    case router_console_api:get_org(OrgID) of
         {error, _} ->
             {0, 0};
         {ok, Map} ->
@@ -314,14 +296,13 @@ refill_test() ->
     ok.
 
 has_enough_dc_test() ->
-    ok = application:set_env(router, dc_tracker, "enabled"),
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
     meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_) -> {error, deal_with_it} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_) -> {error, deal_with_it} end),
 
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
@@ -332,8 +313,8 @@ has_enough_dc_test() ->
     ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize, chain)),
 
     ets:delete(?ETS),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_utils)),
@@ -341,14 +322,13 @@ has_enough_dc_test() ->
     ok.
 
 charge_test() ->
-    ok = application:set_env(router, dc_tracker, "enabled"),
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
     meck:new(blockchain_utils, [passthrough]),
     meck:expect(blockchain_utils, calculate_dc_amount, fun(_, _) -> 2 end),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_) -> {error, deal_with_it} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_) -> {error, deal_with_it} end),
 
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
@@ -360,8 +340,8 @@ charge_test() ->
     ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize, chain)),
 
     ets:delete(?ETS),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_utils)),
@@ -370,16 +350,16 @@ charge_test() ->
 
 current_balance_test() ->
     _ = ets:new(?ETS, [public, named_table, set]),
-    meck:new(router_console_device_api, [passthrough]),
-    meck:expect(router_console_device_api, get_org, fun(_OrgID) -> {error, 0} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_org, fun(_OrgID) -> {error, 0} end),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
     ?assertEqual({0, 0}, current_balance(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({100, 1}, current_balance(OrgID)),
-    ?assert(meck:validate(router_console_device_api)),
-    meck:unload(router_console_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ets:delete(?ETS),
     ok.
 

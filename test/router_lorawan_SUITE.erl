@@ -39,16 +39,12 @@ all() -> [lw_join_test].
 
 init_per_testcase(TestCase, Config) ->
     BaseDir = erlang:atom_to_list(TestCase),
-    ok = application:set_env(router, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, port, 3615),
-    ok = application:set_env(router, router_device_api_module, router_console_device_api),
-    ok = application:set_env(router, router_console_device_api, [
+    ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
+    ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
     ]),
-    ok = application:set_env(router, metrics, [{reporters, []}]),
-    ok = application:set_env(router, router_http_channel_url_check, false),
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
     Tab = ets:new(?ETS, [public, set]),
@@ -73,8 +69,7 @@ init_per_testcase(TestCase, Config) ->
     #{public := PubKey, secret := PrivKey} = Keys,
     {ok, _GenesisMembers, _ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        {PrivKey, PubKey},
-        true
+        [{PrivKey, PubKey}]
     ),
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),

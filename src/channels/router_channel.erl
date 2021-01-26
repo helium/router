@@ -1,5 +1,32 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Router Channel ==
+%%%
+%%% Event Manager for router_---_channels to add themselves as handlers.
+%%%
+%%% Started from router_device_channels_worker:init/1
+%%%
+%%% Handlers are added from router_device_channels_worker:start_channel/4
+%%%  and router_device_channels_worker:maybe_start_no_channel/2
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_channel).
 
+%% ------------------------------------------------------------------
+%% gen_event Exports
+%% ------------------------------------------------------------------
+-export([
+    start_link/0,
+    add/3,
+    delete/2,
+    update/3,
+    handle_data/3
+]).
+
+%% ------------------------------------------------------------------
+%% router_channel type exports
+%% ------------------------------------------------------------------
 -export([
     new/6, new/7, new/8,
     id/1,
@@ -15,14 +42,10 @@
     to_map/1
 ]).
 
--export([
-    start_link/0,
-    add/3,
-    delete/2,
-    update/3,
-    handle_data/3,
-    encode_data/2
-]).
+%% ------------------------------------------------------------------
+%% router_channel_handler API
+%% ------------------------------------------------------------------
+-export([encode_data/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -43,31 +66,85 @@
 
 -export_type([channel/0]).
 
--spec new(binary(), atom(), binary(), map(), binary(), pid()) -> channel().
+%% ------------------------------------------------------------------
+%% Gen Event functions
+%% ------------------------------------------------------------------
+
+-spec start_link() -> {ok, EventManagerPid :: pid()} | {error, any()}.
+start_link() ->
+    gen_event:start_link().
+
+-spec add(
+    EventManagerPid :: pid(),
+    Channel :: channel(),
+    Device :: router_device:device()
+) -> ok | {'EXIT', term()} | {error, term()}.
+add(Pid, Channel, Device) ->
+    Handler = ?MODULE:handler(Channel),
+    gen_event:add_sup_handler(Pid, Handler, {[Channel, Device], ok}).
+
+-spec delete(
+    EventManagerPid :: pid(),
+    Channel :: channel()
+) -> ok.
+delete(Pid, Channel) ->
+    Handler = ?MODULE:handler(Channel),
+    _ = gen_event:delete_handler(Pid, Handler, []),
+    ok.
+
+-spec update(
+    EventManagerPid :: pid(),
+    Channel :: channel(),
+    Device :: router_device:device()
+) -> ok | {error, term()}.
+update(Pid, Channel, Device) ->
+    Handler = ?MODULE:handler(Channel),
+    gen_event:call(Pid, Handler, {update, Channel, Device}).
+
+-spec handle_data(
+    EventManagerPid :: pid(),
+    Data :: map(),
+    Ref :: reference()
+) -> ok.
+handle_data(Pid, Data, Ref) ->
+    ok = gen_event:notify(Pid, {data, Ref, Data}).
+
+%% ------------------------------------------------------------------
+%% Channel Functions
+%% ------------------------------------------------------------------
+
+-spec new(
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid()
+) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid) ->
     new(ID, Handler, Name, Args, DeviceID, Pid, undefined).
 
 -spec new(
-    binary(),
-    atom(),
-    binary(),
-    map(),
-    binary(),
-    pid(),
-    undefined | router_decoder:decoder()
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid(),
+    Decoder :: undefined | router_decoder:decoder()
 ) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid, Decoder) ->
     new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, undefined).
 
 -spec new(
-    binary(),
-    atom(),
-    binary(),
-    map(),
-    binary(),
-    pid(),
-    undefined | router_decoder:decoder(),
-    undefined | binary()
+    ID :: binary(),
+    Handler :: atom(),
+    Name :: binary(),
+    Args :: map(),
+    DeviceID :: binary(),
+    Pid :: pid(),
+    Decoder :: undefined | router_decoder:decoder(),
+    Template :: undefined | binary()
 ) -> channel().
 new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template) ->
     #channel{
@@ -125,34 +202,6 @@ hash(Channel0) ->
     Channel1 = Channel0#channel{controller = undefined},
     crypto:hash(sha256, erlang:term_to_binary(Channel1)).
 
--spec start_link() -> {ok, pid()} | {error, any()}.
-start_link() ->
-    gen_event:start_link().
-
--spec add(pid(), channel(), router_device:device()) -> ok | {'EXIT', term()} | {error, term()}.
-add(Pid, Channel, Device) ->
-    Handler = ?MODULE:handler(Channel),
-    gen_event:add_sup_handler(Pid, Handler, {[Channel, Device], ok}).
-
--spec delete(pid(), channel()) -> ok.
-delete(Pid, Channel) ->
-    Handler = ?MODULE:handler(Channel),
-    _ = gen_event:delete_handler(Pid, Handler, []),
-    ok.
-
--spec update(pid(), channel(), router_device:device()) -> ok | {error, term()}.
-update(Pid, Channel, Device) ->
-    Handler = ?MODULE:handler(Channel),
-    gen_event:call(Pid, Handler, {update, Channel, Device}).
-
--spec handle_data(pid(), map(), any()) -> ok.
-handle_data(Pid, Data, Ref) ->
-    ok = gen_event:notify(Pid, {data, Ref, Data}).
-
--spec encode_data(channel(), map()) -> binary().
-encode_data(Channel, Map) ->
-    encode_data(?MODULE:decoder(Channel), Map, Channel).
-
 -spec to_map(channel()) -> map().
 to_map(Channel) ->
     #{
@@ -161,22 +210,30 @@ to_map(Channel) ->
     }.
 
 %% ------------------------------------------------------------------
+%% Channel Handler Functions
+%% ------------------------------------------------------------------
+
+-spec encode_data(channel(), map()) -> binary().
+encode_data(Channel, TemplateArgs) ->
+    encode_data(?MODULE:decoder(Channel), TemplateArgs, Channel).
+
+%% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
 -spec encode_data(router_decoder:decoder() | undefined, map(), channel()) -> binary().
-encode_data(undefined, #{payload := Payload} = Map, Channel) ->
+encode_data(undefined, #{payload := Payload} = TemplateArgs, Channel) ->
     maybe_apply_template(
         ?MODULE:payload_template(Channel),
-        maps:put(payload, base64:encode(Payload), Map)
+        maps:put(payload, base64:encode(Payload), TemplateArgs)
     );
-encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
+encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel) ->
     DecoderID = router_decoder:id(Decoder),
     case router_decoder:decode(DecoderID, Payload, Port) of
         {ok, DecodedPayload} ->
             maybe_apply_template(
                 ?MODULE:payload_template(Channel),
-                maps:merge(Map, #{
+                maps:merge(TemplateArgs, #{
                     decoded => #{
                         status => success,
                         payload => DecodedPayload
@@ -191,7 +248,7 @@ encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
             ),
             maybe_apply_template(
                 ?MODULE:payload_template(Channel),
-                maps:merge(Map, #{
+                maps:merge(TemplateArgs, #{
                     decoded => #{
                         status => error,
                         error => Reason
@@ -202,10 +259,10 @@ encode_data(Decoder, #{payload := Payload, port := Port} = Map, Channel) ->
     end.
 
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
-maybe_apply_template(undefined, Map) ->
-    jsx:encode(Map);
-maybe_apply_template(Template, Map) ->
-    NormalMap = jsx:decode(jsx:encode(Map), [return_maps]),
+maybe_apply_template(undefined, Data) ->
+    jsx:encode(Data);
+maybe_apply_template(Template, TemplateArgs) ->
+    NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
     Data = mk_data_fun(NormalMap, []),
     try bbmustache:render(Template, Data, [{key_type, binary}]) of
         Res -> Res

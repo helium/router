@@ -1,6 +1,14 @@
 %%%-------------------------------------------------------------------
 %% @doc
 %% == Router Device Routing ==
+%%
+%% - Offer packet bloomfilter
+%% - Replays
+%% - Multibuy
+%% - Validating
+%%   - packet offers
+%%   - devaddrs
+%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_device_routing).
@@ -45,7 +53,14 @@
 
 %% Multi Buy
 -define(MB_ETS, router_device_routing_mb_ets).
--define(MB_FUN(Hash), [{{Hash, '$1', '$2'}, [{'<', '$2', '$1'}], [{{Hash, '$1', {'+', '$2', 1}}}]}]).
+-define(MB_FUN(Hash), [
+    {
+        {Hash, '$1', '$2'},
+        [{'<', '$2', '$1'}],
+        [{{Hash, '$1', {'+', '$2', 1}}}]
+    }
+]).
+
 -define(MB_MAX_PACKET, multi_buy_max_packet).
 -define(MB_TOO_MANY_ATTEMPTS, multi_buy_too_many_attempts).
 -define(MB_DENY_MORE, multi_buy_deny_more).
@@ -130,7 +145,8 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             ok
     end;
 handle_packet(Packet, PacketTime, PubKeyBin) ->
-    %% TODO - come back to this, defaulting to US915 here.  Need to verify what packets are being handled here
+    %% TODO - come back to this, defaulting to US915 here.
+    %% Need to verify what packets are being handled here
     Start = erlang:system_time(millisecond),
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
         {error, Reason} = E ->
@@ -214,12 +230,12 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 join_offer(Offer, _Pid) ->
     %% TODO: Replace this with getter
-    #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} = blockchain_state_channel_offer_v1:routing(
-        Offer
-    ),
+    #routing_information_pb{
+        data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}
+    } = blockchain_state_channel_offer_v1:routing(Offer),
     DevEUI1 = eui_to_bin(DevEUI0),
     AppEUI1 = eui_to_bin(AppEUI0),
-    case router_device_api:get_devices(DevEUI1, AppEUI1) of
+    case get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
             lager:debug("did not find any device matching ~p/~p", [
                 {DevEUI1, DevEUI0},
@@ -288,7 +304,8 @@ packet_offer(Offer, Pid) ->
                                     ]),
                                     ok;
                                 false ->
-                                    %% This is probably a late packet we should still use the multi buy
+                                    %% This is probably a late packet
+                                    %% we should still use the multi buy
                                     lager:debug("most likely a late packet for ~p multi buying", [
                                         _DeviceID
                                     ]),
@@ -342,15 +359,7 @@ validate_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI =
-                case application:get_env(router, oui, undefined) of
-                    undefined ->
-                        undefined;
-                    OUI0 when is_list(OUI0) ->
-                        list_to_integer(OUI0);
-                    OUI0 ->
-                        OUI0
-                end,
+            OUI = router_device_utils:get_router_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -394,7 +403,7 @@ lookup_replay(PHash) ->
     non_neg_integer(),
     router_device:device()
 ) -> ok | {error, any()}.
-%% Handle an issue with worker (so we dont stay lin a loop)
+%% Handle an issue with worker (so we dont stay in a loop)
 maybe_multi_buy(_Offer, 0, _Device) ->
     {error, ?MB_TOO_MANY_ATTEMPTS};
 maybe_multi_buy(Offer, Attempts, Device) ->
@@ -470,11 +479,11 @@ lookup_bf(Key) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec packet(
-    blockchain_helium_packet_v1:packet(),
-    pos_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    pid()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: pos_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Pid :: pid()
 ) -> ok | {error, any()}.
 packet(
     #packet_pb{
@@ -490,7 +499,7 @@ packet(
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     AName = blockchain_utils:addr2name(PubKeyBin),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
-    case router_device_api:get_device(DevEUI, AppEUI, Msg, MIC) of
+    case get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->
             DeviceID = router_device:id(APIDevice),
             case maybe_start_worker(DeviceID) of
@@ -517,7 +526,8 @@ packet(
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
-                "Device ~s with AppEUI ~s tried to join through ~s but had a bad Message Intregity Code~n",
+                "Device ~s with AppEUI ~s tried to join through ~s " ++
+                    "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]
             ),
             {error, bad_mic}
@@ -539,15 +549,7 @@ packet(
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI =
-                case application:get_env(router, oui, undefined) of
-                    undefined ->
-                        undefined;
-                    OUI0 when is_list(OUI0) ->
-                        list_to_integer(OUI0);
-                    OUI0 ->
-                        OUI0
-                end,
+            OUI = router_device_utils:get_router_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -611,6 +613,35 @@ packet(
     end;
 packet(#packet_pb{payload = Payload}, _PacketTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
+
+-spec get_devices(binary(), binary()) -> {ok, [router_device:device()]} | {error, any()}.
+get_devices(DevEUI, AppEUI) ->
+    case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
+        [] -> {error, api_not_found};
+        KeysAndDevices -> {ok, [Device || {_, Device} <- KeysAndDevices]}
+    end.
+
+-spec get_device(binary(), binary(), binary(), binary()) ->
+    {ok, router_device:device(), binary()} | {error, any()}.
+get_device(DevEUI, AppEUI, Msg, MIC) ->
+    case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
+        [] ->
+            {error, api_not_found};
+        KeysAndDevices ->
+            find_device(Msg, MIC, KeysAndDevices)
+    end.
+
+-spec find_device(binary(), binary(), [{binary(), router_device:device()}]) ->
+    {ok, router_device:device(), binary()} | {error, not_found}.
+find_device(_Msg, _MIC, []) ->
+    {error, not_found};
+find_device(Msg, MIC, [{AppKey, Device} | T]) ->
+    case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
+        MIC ->
+            {ok, Device, AppKey};
+        _ ->
+            find_device(Msg, MIC, T)
+    end.
 
 send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, Payload) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload) of
@@ -875,8 +906,10 @@ false_positive_test() ->
 handle_join_offer_test() ->
     ok = init(),
     application:ensure_all_started(lager),
-    meck:new(router_device_api, [passthrough]),
-    meck:expect(router_device_api, get_devices, fun(_, _) -> {ok, [router_device:new(<<"id">>)]} end),
+    meck:new(router_console_api, [passthrough]),
+    meck:expect(router_console_api, get_devices_by_deveui_appeui, fun(_, _) ->
+        [{key, router_device:new(<<"id">>)}]
+    end),
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
@@ -898,8 +931,8 @@ handle_join_offer_test() ->
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
     ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
 
-    ?assert(meck:validate(router_device_api)),
-    meck:unload(router_device_api),
+    ?assert(meck:validate(router_console_api)),
+    meck:unload(router_console_api),
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),

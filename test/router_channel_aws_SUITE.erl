@@ -54,7 +54,8 @@ end_per_testcase(TestCase, Config) ->
 %% - setup credential (aws_access_key, aws_secret_key)
 %% - sub to helium/#
 %% - Detach certificate for thing yolo_id (?CONSOLE_DEVICE_ID)
-%% - Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/yolo_id/down
+%% - Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="}
+%%      helium/devices/yolo_id/down
 aws_test(Config) ->
     %% Set console to AWS channel mode
     Tab = proplists:get_value(ets, Config),
@@ -170,7 +171,8 @@ aws_test(Config) ->
     %% We ignore the channel correction messages
     ok = test_utils:ignore_messages(),
 
-    %% Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="} helium/devices/yolo_id/down
+    %% Go to aws console and send message {"payload_raw":"bXF0dHBheWxvYWQ="}
+    %% helium/devices/yolo_id/down
     DownlinkPayload = <<"mqttpayload">>,
     timer:sleep(timer:seconds(45)),
 

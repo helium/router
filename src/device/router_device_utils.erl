@@ -1,3 +1,11 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% == Router Device Utils ==
+%%%
+%%% Send different types of reports to Console
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(router_device_utils).
 
 -export([
@@ -18,16 +26,16 @@
 -include("router_device_worker.hrl").
 
 -spec report_frame_status(
-    0 | 1,
-    boolean(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
-    binary() | undefined,
-    #frame{},
-    blockchain:blockchain()
+    Ack :: 0 | 1,
+    Confirmed :: boolean(),
+    Port :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    PacketAndTime :: {blockchain_helium_packet_v1:packet(), non_neg_integer()},
+    ReplyPayload :: binary() | undefined,
+    Frame :: #frame{},
+    Blockchain :: blockchain:blockchain()
 ) -> ok.
 report_frame_status(
     Ack,
@@ -56,17 +64,17 @@ report_frame_status(
     ).
 
 -spec report_frame_status(
-    0 | 1,
-    boolean(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
-    binary() | undefined,
-    #frame{},
-    blockchain:blockchain(),
-    [map()]
+    Ack :: 0 | 1,
+    Confirmed :: boolean(),
+    Port :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    PacketAndTime :: {blockchain_helium_packet_v1:packet(), non_neg_integer()},
+    ReplyPayload :: binary() | undefined,
+    Frame :: #frame{},
+    Blockchain :: blockchain:blockchain(),
+    Channels :: [map()]
 ) -> ok.
 report_frame_status(
     0 = _Ack,
@@ -244,18 +252,17 @@ report_frame_status(
     ).
 
 -spec report_status(
-    % ack | up | down,
-    atom(),
-    binary(),
-    router_device:device(),
-    success | error,
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
-    binary() | undefined,
-    non_neg_integer(),
-    any(),
-    blockchain:blockchain()
+    Category :: ack | up | down,
+    Description :: binary(),
+    Device :: router_device:device(),
+    Status :: success | error,
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    PacketAndTime :: {blockchain_helium_packet_v1:packet(), non_neg_integer()},
+    ReplyPayload :: binary() | undefined,
+    Port :: non_neg_integer(),
+    DevAddr :: binary(),
+    Blockchain :: blockchain:blockchain()
 ) -> ok.
 report_status(
     Category,
@@ -286,19 +293,18 @@ report_status(
     ).
 
 -spec report_status(
-    % ack | up | down,
-    atom(),
-    binary(),
-    router_device:device(),
-    success | error,
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    {blockchain_helium_packet_v1:packet(), non_neg_integer()},
-    binary() | undefined,
-    non_neg_integer(),
-    binary(),
-    blockchain:blockchain(),
-    [map()]
+    Category :: ack | up | down,
+    Description :: binary(),
+    Device :: router_device:device(),
+    Status :: success | error,
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    PacketAndTime :: {blockchain_helium_packet_v1:packet(), non_neg_integer()},
+    ReplyPayload :: binary() | undefined,
+    Port :: non_neg_integer(),
+    DevAddr :: binary(),
+    Blockchain :: blockchain:blockchain(),
+    Channels :: [map()]
 ) -> ok.
 report_status(
     Category,
@@ -339,7 +345,7 @@ report_status(
         ],
         channels => Channels
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_api:report_status(Device, Report).
 
 -spec report_status_max_size(router_device:device(), binary(), non_neg_integer()) -> ok.
 report_status_max_size(Device, Payload, Port) ->
@@ -354,7 +360,7 @@ report_status_max_size(Device, Payload, Port) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_api:report_status(Device, Report).
 
 -spec report_status_no_dc(router_device:device()) -> ok.
 report_status_no_dc(Device) ->
@@ -369,7 +375,7 @@ report_status_no_dc(Device) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_api:report_status(Device, Report).
 
 -spec report_status_inactive(router_device:device()) -> ok.
 report_status_inactive(Device) ->
@@ -384,8 +390,14 @@ report_status_inactive(Device) ->
         hotspots => [],
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_api:report_status(Device, Report).
 
+-spec report_join_status(
+    Device :: router_device:device(),
+    PacketSelected :: tuple(),
+    Packets :: list(tuple()),
+    Blockchain :: blockchain:blockchain()
+) -> ok.
 report_join_status(
     Device,
     {_, PubKeyBinSelected, _, PacketTimeSelected} = PacketSelected,
@@ -425,15 +437,16 @@ report_join_status(
         hotspots => Hotspots,
         channels => []
     },
-    ok = router_device_api:report_status(Device, Report).
+    ok = router_console_api:report_status(Device, Report).
 
--spec get_router_oui() -> non_neg_integer().
+-spec get_router_oui() -> undefined | non_neg_integer().
 get_router_oui() ->
     case application:get_env(router, oui, undefined) of
         undefined ->
             undefined;
+        %% app env comes in as a string
         OUI0 when is_list(OUI0) ->
-            list_to_integer(OUI0);
+            erlang:list_to_integer(OUI0);
         OUI0 ->
             OUI0
     end.
@@ -452,4 +465,4 @@ milli_to_sec(Time) ->
 
 -spec int_to_bin(integer()) -> binary().
 int_to_bin(Int) ->
-    erlang:list_to_binary(erlang:integer_to_list(Int)).
+    erlang:integer_to_binary(Int).

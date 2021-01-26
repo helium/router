@@ -96,7 +96,8 @@
 }).
 
 -define(CONSOLE_TEMPLATE,
-    <<"{{#decoded}}{{#payload}}{\"battery\":{{battery_percent}},\"lat\":{{latitude}},\"long\":{{longitude}}}{{/payload}}{{/decoded}}">>
+    <<"{{#decoded}}{{#payload}}{\"battery\":{{battery_percent}},",
+        "\"lat\":{{latitude}},\"long\":{{longitude}}}{{/payload}}{{/decoded}}">>
 ).
 
 -define(CONSOLE_CONSOLE_CHANNEL_ID, <<"1617181920">>).
@@ -135,7 +136,8 @@
         "                                         var txc2 = t * c2;\n"
         "                                         var txc2_tpc1 = txc2 / tpc1;\n"
         "\n"
-        "                                         var tdew = c1 * (lnh + txc2_tpc1) / (c2 - lnh - txc2_tpc1);\n"
+        "                                         var tdew = c1 * (lnh + txc2_tpc1) / \n"
+        "                                                    (c2 - lnh - txc2_tpc1);\n"
         "                                         return tdew;\n"
         "                                         }\n"
         "\n"

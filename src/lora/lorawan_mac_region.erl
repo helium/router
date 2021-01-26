@@ -83,8 +83,9 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
     tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
-%% TODO: original file does not have rx1_rf function to handle EU868 and other, is support required ?
-%%rx1_rf('EU868' = Region, RxQ, Offset) ->
+%% TODO: original file does not have rx1_rf function to handle EU868 and
+%% other, is support required ?
+%% rx1_rf('EU868' = Region, RxQ, Offset) ->
 %%    RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
 %%    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
 rx1_rf('AU915' = Region, RxQ, Offset) ->
@@ -98,7 +99,8 @@ rx1_rf(Region, RxQ, Offset) ->
 
 %% rx2_rf(#network{region=Region, tx_codr=CodingRate}, #node{rxwin_use={_, DataRate, Freq}}) ->
 %%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate};
-%% rx2_rf(#network{region=Region, tx_codr=CodingRate, rxwin_init=WinInit}, #profile{rxwin_set=WinSet}) ->
+%% rx2_rf(#network{region=Region, tx_codr=CodingRate,
+%%        rxwin_init=WinInit}, #profile{rxwin_set=WinSet}) ->
 %%     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
 %%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
 

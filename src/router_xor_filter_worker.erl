@@ -40,7 +40,9 @@
 -record(state, {
     chain :: undefined | blockchain:blockchain(),
     oui :: undefined | non_neg_integer(),
-    pending_txns = #{} :: #{blockchain_txn:hash() => blockchain_txn_routing_v1:txn_routing()},
+    pending_txns = #{} :: #{
+        blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
+    },
     filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()}
 }).
 
@@ -95,12 +97,11 @@ handle_info(
             lager:info("filters are still update to date"),
             ok = schedule_check_filters(?CHECK_FILTERS_TIMER),
             {noreply, State};
-        Updates ->
-            [Update | _] = Updates,
-            CurrNonce = blockchain_ledger_routing_v1:nonce(erlang:element(2, Update)),
+        {Routing, Updates} ->
+            CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             {Pendings1, _} = lists:foldl(
                 fun
-                    ({new, Routing, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_new_filter_txn(Chain, OUI, Filter, Nonce + 1),
@@ -112,7 +113,7 @@ handle_info(
                         Index =
                             erlang:length(blockchain_ledger_routing_v1:filters(Routing)) + 1,
                         {maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings), Nonce + 1};
-                    ({update, _Routing, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("updating filter @ index ~p", [Index]),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_update_filter_txn(Chain, OUI, Filter, Nonce + 1, Index),
@@ -192,13 +193,12 @@ terminate(_Reason, #state{}) ->
     FilterToDevices :: map()
 ) ->
     noop
-    | [
-        {new, blockchain_ledger_routing_v1:routing(), devices_dev_eui_app_eui()}
-        | {update, blockchain_ledger_routing_v1:routing(), non_neg_integer(),
-            devices_dev_eui_app_eui()}
-    ].
+    | {blockchain_ledger_routing_v1:routing(), [
+        {new, devices_dev_eui_app_eui()}
+        | {update, non_neg_integer(), devices_dev_eui_app_eui()}
+    ]}.
 should_update_filters(Chain, OUI, FilterToDevices) ->
-    case router_console_device_api:get_all_devices() of
+    case router_console_api:get_all_devices() of
         {error, _Reason} ->
             lager:error("failed to get device ~p", [_Reason]),
             noop;
@@ -214,47 +214,45 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                 {Map, Added, Removed} when Removed == #{} ->
                     case erlang:length(BinFilters) < MaxXorFilter of
                         true ->
-                            [{new, Routing, Added}];
+                            {Routing, [{new, Added}]};
                         false ->
-                            [{Index, SmallestDevicesDevEuiAppEui} | _] = lists:sort(
-                                fun smallest_first/2,
+                            [{Index, SmallestDevicesDevEuiAppEui} | _] = smallest_first(
                                 maps:to_list(Map)
                             ),
-                            [
-                                {update, Routing, Index, Added ++ SmallestDevicesDevEuiAppEui}
-                            ]
+                            {Routing, [
+                                {update, Index, Added ++ SmallestDevicesDevEuiAppEui}
+                            ]}
                     end;
                 {Map, [], Removed} ->
-                    craft_remove_updates(Routing, Map, Removed);
+                    {Routing, craft_remove_updates(Map, Removed)};
                 {Map, Added, Removed} ->
-                    [{update, R, I, R} | OtherUpdates] =
-                        lists:sort(
-                            fun smallest_first/2,
-                            craft_remove_updates(Routing, Map, Removed)
-                        ),
-                    [{update, R, I, R ++ Added} | OtherUpdates]
+                    [{update, Index, R} | OtherUpdates] = smallest_first(
+                        craft_remove_updates(Map, Removed)
+                    ),
+                    {Routing, [{update, Index, R ++ Added} | OtherUpdates]}
             end
     end.
 
--spec smallest_first(
-    {any(), L1 :: list()} | {any(), any(), any(), L1 :: list()},
-    {any(), L2 :: list()} | {any(), any(), any(), L2 :: list()}
-) -> boolean().
-smallest_first({_, L1}, {_, L2}) ->
-    erlang:length(L1) < erlang:length(L2);
-smallest_first({_, _, _, L1}, {_, _, _, L2}) ->
-    erlang:length(L1) < erlang:length(L2).
-
--spec craft_remove_updates(blockchain_ledger_routing_v1:routing(), map(), map()) ->
-    list(
-        {update, blockchain_ledger_routing_v1:routing(), non_neg_integer(),
-            devices_dev_eui_app_eui()}
+-spec smallest_first([{any(), L1 :: list()} | {any(), any(), L1 :: list()}]) -> list().
+smallest_first(List) ->
+    lists:sort(
+        fun
+            ({_, L1}, {_, L2}) ->
+                erlang:length(L1) < erlang:length(L2);
+            ({_, _, L1}, {_, _, L2}) ->
+                erlang:length(L1) < erlang:length(L2)
+        end,
+        List
     ).
-craft_remove_updates(Routing, Map, RemovedDevicesDevEuiAppEuiMap) ->
+
+-spec craft_remove_updates(map(), map()) ->
+    list({update, non_neg_integer(), devices_dev_eui_app_eui()}).
+
+craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
     maps:fold(
         fun(Index, RemovedDevicesDevEuiAppEui, Acc) ->
             [
-                {update, Routing, Index, maps:get(Index, Map, []) -- RemovedDevicesDevEuiAppEui}
+                {update, Index, maps:get(Index, Map, []) -- RemovedDevicesDevEuiAppEui}
                 | Acc
             ]
         end,
@@ -378,7 +376,7 @@ should_update_filters_test() ->
     OUI = 1,
 
     meck:new(blockchain, [passthrough]),
-    meck:new(router_console_device_api, [passthrough]),
+    meck:new(router_console_api, [passthrough]),
     meck:new(blockchain_ledger_v1, [passthrough]),
 
     %% ------------------------
@@ -386,7 +384,7 @@ should_update_filters_test() ->
     meck:expect(blockchain, ledger, fun(_) -> ledger end),
     %% This set the max xor filter chain var
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-    meck:expect(router_console_device_api, get_all_devices, fun() -> {error, any} end),
+    meck:expect(router_console_api, get_all_devices, fun() -> {error, any} end),
 
     ?assertEqual(noop, should_update_filters(chain, OUI, #{})),
 
@@ -397,7 +395,7 @@ should_update_filters_test() ->
         {app_eui, <<"app_eui0">>}
     ],
     Device0 = router_device:update(Device0Updates, router_device:new(<<"ID0">>)),
-    meck:expect(router_console_device_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_all_devices, fun() ->
         {ok, [Device0]}
     end),
 
@@ -420,7 +418,7 @@ should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        [{new, EmptyRouting, [deveui_appeui(Device0)]}],
+        {EmptyRouting, [{new, [deveui_appeui(Device0)]}]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -435,32 +433,26 @@ should_update_filters_test() ->
         {app_eui, <<"app_eui1">>}
     ],
     Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"ID1">>)),
-    meck:expect(router_console_device_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_all_devices, fun() ->
         {ok, [Device0, Device1]}
     end),
 
     ?assertEqual(
-        [{update, Routing0, 1, [deveui_appeui(Device1), deveui_appeui(Device0)]}],
+        {Routing0, [{update, 1, [deveui_appeui(Device1), deveui_appeui(Device0)]}]},
         should_update_filters(chain, OUI, #{})
     ),
 
     %% ------------------------
     % Testing that we removed Device0
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-    meck:expect(router_console_device_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_all_devices, fun() ->
         {ok, [Device1]}
     end),
 
     ?assertEqual(
-        [
-            {update, Routing0, 1, [
-                deveui_appeui(Device1)
-            ]}
-        ],
+        {Routing0, [{update, 1, [deveui_appeui(Device1)]}]},
         should_update_filters(chain, OUI, #{
-            1 => [
-                deveui_appeui(Device0)
-            ]
+            1 => [deveui_appeui(Device0)]
         })
     ),
 
@@ -471,21 +463,14 @@ should_update_filters_test() ->
         {app_eui, <<"app_eui2">>}
     ],
     Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"ID2">>)),
-    meck:expect(router_console_device_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_all_devices, fun() ->
         {ok, [Device1, Device2]}
     end),
 
     ?assertEqual(
-        [
-            {update, Routing0, 1, [
-                deveui_appeui(Device1),
-                deveui_appeui(Device2)
-            ]}
-        ],
+        {Routing0, [{update, 1, [deveui_appeui(Device1), deveui_appeui(Device2)]}]},
         should_update_filters(chain, OUI, #{
-            1 => [
-                deveui_appeui(Device0)
-            ]
+            1 => [deveui_appeui(Device0)]
         })
     ),
 
@@ -505,27 +490,20 @@ should_update_filters_test() ->
         {ok, RoutingRemoved1}
     end),
 
-    meck:expect(router_console_device_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_all_devices, fun() ->
         {ok, []}
     end),
 
     ?assertEqual(
-        [
-            {update, RoutingRemoved1, 2, []},
-            {update, RoutingRemoved1, 1, []}
-        ],
+        {RoutingRemoved1, [{update, 2, []}, {update, 1, []}]},
         should_update_filters(chain, OUI, #{
-            1 => [
-                deveui_appeui(Device0)
-            ],
-            2 => [
-                deveui_appeui(Device1)
-            ]
+            1 => [deveui_appeui(Device0)],
+            2 => [deveui_appeui(Device1)]
         })
     ),
 
     meck:unload(blockchain_ledger_v1),
-    meck:unload(router_console_device_api),
+    meck:unload(router_console_api),
     meck:unload(blockchain),
     ok.
 

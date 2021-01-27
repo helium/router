@@ -32,61 +32,82 @@ device_usage() ->
     [
         ["device"],
         [
-            "Usage:\n\n",
-            "  device                                   - this message\n",
-            "  device all                               - All devices in rocksdb\n",
-            "  device <id>                              - Info for a device\n",
-            "  device <id> queue                        - Queue of messages for device\n",
-            "  device <id> queue clear                  - Empties the devices queue\n",
-            "  device <id> queue add [see Msg Options]  - Adds Msg to end of device queue\n\n",
+            "\n\n",
+            "  device                                        - this message\n",
+            "  device all                                    - All devices in rocksdb\n",
+            "  device --id=<id>                              - Info for a device\n",
+            "  device queue --id=<id>                        - Queue of messages for device\n",
+            "  device queue clear --id=<id>                  - Empties the devices queue\n",
+            "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",
             "Msg Options:\n\n",
+            "  --id=<id>              - ID of Device, do not wrap, will be converted to binary\n",
             "  --payload=<content>    - Content for message " ++
                 "[default: \"Test cli downlink message\"]\n",
             "  --ack                  - Require confirmation from the device [default: false]\n",
             "  --channel-name=<name>  - Channel name to show up in console " ++
                 "[default: \"CLI custom channel\"]\n",
-            "  --port\n               - Port for frame [default: 1]\n\n"
+            "  --port                 - Port for frame [default: 1]\n\n"
         ]
     ].
 
+id_flag() ->
+    {id, [{longname, "id"}]}.
+
 device_cmd() ->
     [
-        [["device"], [], [], ?USAGE],
+        [["device"], [], [id_flag()], prepend_device_id(fun device_info/4)],
         [["device", "all"], [], [], fun device_list_all/3],
-        [["device", '*'], [], [], fun device_info/3],
-        [["device", '*', "queue"], [], [], fun device_queue/3],
-        [["device", '*', "queue", "clear"], [], [], fun device_queue_clear/3],
+        [["device", "queue"], [], [id_flag()], prepend_device_id(fun device_queue/4)],
         [
-            ["device", '*', "queue", "add"],
+            ["device", "queue", "clear"],
+            [],
+            [id_flag()],
+            prepend_device_id(fun device_queue_clear/4)
+        ],
+        [
+            ["device", "queue", "add"],
             [],
             [
-                {confirmed, {longname, "ack"}, {datatype, boolean}},
-                {port, {longname, "port"}, {datatype, integer}},
-                {channel_name, {longname, "channel-name"}, {datatype, binary}},
-                {payload, {longname, "payload"}, {datatype, binary}}
+                id_flag(),
+                {confirmed, [{longname, "ack"}, {datatype, boolean}]},
+                {port, [{longname, "port"}, {datatype, integer}]},
+                {channel_name, [{longname, "channel-name"}, {datatype, string}]},
+                {payload, [{longname, "payload"}, {datatype, string}]}
             ],
-            fun device_queue_add_front/3
+            prepend_device_id(fun device_queue_add_front/4)
         ]
     ].
+
+prepend_device_id(Fn) ->
+    fun(Cmd, Keys, Flags) ->
+        case proplists:get_value(id, Flags) of
+            undefined -> usage;
+            Value -> Fn(Value, Cmd, Keys, Flags)
+        end
+    end.
 
 device_list_all(["device", "all"], [], []) ->
     c_table([format_device_for_table(Device) || Device <- lookup_all()]).
 
-device_info(["device", ID], [], []) ->
+device_info(ID, ["device"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     {ok, D} = lookup(DeviceID),
-    c_list(
-        io_lib:format("Device ~p", [DeviceID]),
-        format_device_as_list(D)
-    ).
+    c_list(format_device_for_list(D)).
 
-device_queue(["device", ID, "queue"], [], []) ->
+device_queue(ID, ["device", "queue"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     {ok, D} = lookup(DeviceID),
-    Title = io_lib:format("Device Queue: ~p", [DeviceID]),
-    c_list(Title, router_device:queue(D)).
+    case router_device:queue(D) of
+        [] ->
+            c_text("Queue is empty");
+        Queue ->
+            Heading = io_lib:format("Total: ~p~n~n", [length(Queue)]),
+            Indexed = lists:zip(lists:seq(1, erlang:length(Queue)), Queue),
+            Msgs = [io_lib:format("~p -- ~p~n~n", [I, X]) || {I, X} <- Indexed],
+            c_list([Heading | Msgs])
+    end.
 
-device_queue_clear(["device", ID, "queue", "clear"], [], []) ->
+device_queue_clear(ID, ["device", "queue", "clear"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     {ok, D, WorkerPid} = lookup_and_get_worker(DeviceID),
 
@@ -95,7 +116,7 @@ device_queue_clear(["device", ID, "queue", "clear"], [], []) ->
     Title = io_lib:format("~p Queue cleared", [DeviceID]),
     c_list(Title, router_device:queue(D)).
 
-device_queue_add_front(["device", ID, "queue", "add"], [], Flags) ->
+device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
     Options = maps:from_list(Flags),
     DeviceID = erlang:list_to_binary(ID),
     {ok, D, WorkerPid} = lookup_and_get_worker(DeviceID),
@@ -116,10 +137,10 @@ device_queue_add_front(["device", ID, "queue", "add"], [], Flags) ->
     },
 
     ok = router_device_worker:queue_message(WorkerPid, Msg),
-    c_text("Added ~n~p~n to queue for device ~n~p [new_queue_length: ~p]~n", [
-        Msg,
+    c_text("Queued Message to ~p [new_queue_length: ~p]~n~n~p~n~n", [
         DeviceID,
-        length(router_device:queue(D)) + 1
+        length(router_device:queue(D)) + 1,
+        Msg
     ]).
 
 %%--------------------------------------------------------------------
@@ -150,11 +171,14 @@ lookup_and_get_worker(DeviceID) ->
 %% Private Utilities
 %%--------------------------------------------------------------------
 
+-spec c_list(list(string())) -> clique_status:status().
+c_list(L) -> [clique_status:list(L)].
+
 -spec c_list(string(), list()) -> clique_status:status().
 c_list(Name, L) -> [clique_status:list(Name, L)].
 
 -spec c_table(proplists:proplist()) -> clique_status:status().
-c_table(PropLists) -> [clique_status:table([PropLists])].
+c_table(PropLists) -> [clique_status:table(PropLists)].
 
 -spec c_text(string(), list(term())) -> clique_status:status().
 c_text(F, Args) -> c_text(io_lib:format(F, Args)).
@@ -181,21 +205,16 @@ format_device_for_table(D) ->
         {is_active, router_device:is_active(D)}
     ].
 
-%%
--spec format_device_as_list(router_device:device()) -> [string()].
-format_device_as_list(D) ->
+-spec format_device_for_list(router_device:device()) -> [string()].
+format_device_for_list(D) ->
+    Fields = [id, name, app_eui, dev_eui, devaddr, fcnt, fcntdown, queue, metadata, is_active],
+    Longest = lists:max([length(atom_to_list(X)) || X <- Fields, is_atom(X)]),
     lists:map(
-        fun(I) -> io_lib:format("~p", [I]) end,
-        [
-            router_device:name(D),
-            router_device:app_eui(D),
-            router_device:dev_eui(D),
-            router_device:devaddr(D),
-            router_device:fcnt(D),
-            router_device:fcntdown(D),
-            router_device:queue(D),
-            blockchain_utils:addr2name(router_device:location(D)),
-            router_device:metadata(D),
-            router_device:is_active(D)
-        ]
+        fun(Field) ->
+            io_lib:format("~s :: ~p~n", [
+                string:pad(atom_to_list(Field), Longest, trailing),
+                erlang:apply(router_device, Field, [D])
+            ])
+        end,
+        Fields
     ).

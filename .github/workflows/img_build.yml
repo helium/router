@@ -1,0 +1,20 @@
+name: BUILD_AND_PUSH_IMG
+
+on:
+  push:
+    branches: master
+    tags: '*'
+
+jobs:
+  BUILD_AND_PUSH_IMG:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v1
+        with:
+          repository: quay.io/team-helium/router
+          tag_with_ref: true
+          push: false

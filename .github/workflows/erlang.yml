@@ -15,18 +15,19 @@ jobs:
   CI:
     runs-on: ubuntu-latest
     container:
-      image: heliumsystems/builder-erlang:1
+      image: heliumsystems/builder-erlang:latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.5.0
         with:
           access_token: ${{ github.token }}
+
+      # For some reason the toolchain is no installed properly so lets add it...
+      - name: rustup default stable
+        run: rustup default stable
+
+      - name: checkout
+        uses: actions/checkout@v2
 
       - name: Build
         env:

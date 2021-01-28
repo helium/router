@@ -24,6 +24,7 @@
     handle_join/8,
     handle_frame/7,
     queue_message/2,
+    queue_message/3,
     device_update/1,
     clear_queue/1
 ]).
@@ -102,7 +103,11 @@ handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid) ->
 
 -spec queue_message(pid(), #downlink{}) -> ok.
 queue_message(Pid, #downlink{} = Downlink) ->
-    gen_server:cast(Pid, {queue_message, Downlink}).
+    ?MODULE:queue_message(Pid, Downlink, last).
+
+-spec queue_message(pid(), #downlink{}, first | last) -> ok.
+queue_message(Pid, #downlink{} = Downlink, Position) ->
+    gen_server:cast(Pid, {queue_message, Downlink, Position}).
 
 -spec clear_queue(Pid :: pid()) -> ok.
 clear_queue(Pid) ->
@@ -189,7 +194,7 @@ handle_cast(
     ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
     {noreply, State#state{device = Device1}};
 handle_cast(
-    {queue_message, #downlink{port = Port, payload = Payload} = Downlink},
+    {queue_message, #downlink{port = Port, payload = Payload} = Downlink, Position},
     #state{
         db = DB,
         cf = CF,
@@ -203,8 +208,13 @@ handle_cast(
             lager:debug("failed to queue downlink message, too big (~p)", [Size]),
             {noreply, State};
         _ ->
-            Q = router_device:queue(Device0),
-            Device1 = router_device:queue(lists:append(Q, [Downlink]), Device0),
+            OldQueue = router_device:queue(Device0),
+            NewQueue =
+                case Position of
+                    first -> [Downlink | OldQueue];
+                    last -> OldQueue ++ [Downlink]
+                end,
+            Device1 = router_device:queue(NewQueue, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("queued downlink message"),
             {noreply, State#state{device = Device1}}

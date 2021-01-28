@@ -21,7 +21,7 @@
     handle_frame/4,
     report_status/3,
     handle_downlink/3,
-    handle_console_downlink/3,
+    handle_console_downlink/4,
     new_data_cache/5,
     refresh_channels/1
 ]).
@@ -96,8 +96,8 @@ handle_frame(Pid, Device, DataCache, {Balance, Nonce}) ->
 report_status(Pid, Ref, Map) ->
     gen_server:cast(Pid, {report_status, Ref, Map}).
 
--spec handle_console_downlink(binary(), map(), router_channel:channel()) -> ok.
-handle_console_downlink(DeviceID, MapPayload, Channel) ->
+-spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
+handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
     {ChannelHandler, _} = router_channel:handler(Channel),
     case router_devices_sup:lookup_device_worker(DeviceID) of
         {error, _Reason} ->
@@ -107,12 +107,16 @@ handle_console_downlink(DeviceID, MapPayload, Channel) ->
             case downlink_decode(MapPayload) of
                 {ok, {Confirmed, Port, Payload}} ->
                     ok = router_metrics:downlink_inc(ChannelHandler, ok),
-                    router_device_worker:queue_message(Pid, #downlink{
-                        confirmed = Confirmed,
-                        port = Port,
-                        payload = Payload,
-                        channel = Channel
-                    });
+                    router_device_worker:queue_message(
+                        Pid,
+                        #downlink{
+                            confirmed = Confirmed,
+                            port = Port,
+                            payload = Payload,
+                            channel = Channel
+                        },
+                        Position
+                    );
                 {error, _Reason} ->
                     ok = router_metrics:downlink_inc(ChannelHandler, error),
                     lager:info("could not parse json downlink message ~p for ~p", [

@@ -150,7 +150,7 @@ handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req
     try jsx:decode(Body, [return_maps]) of
         Map ->
             Pid ! {organizations_burned, Map},
-            {200, [], <<>>}
+            {204, [], <<>>}
     catch
         _:_ ->
             {400, [], <<"bad_body">>}

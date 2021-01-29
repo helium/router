@@ -127,8 +127,6 @@ publish_xor_test(Config) ->
     ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiAppEui)),
     ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiAppEui)),
 
-    timer:sleep(5000),
-
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ok.

@@ -2,7 +2,7 @@ version: '3'
 services:
   router:
     build: .
-    image: helium/router:latest
+    image: quay.io/team-helium/router:local
     container_name: helium_router
     restart: always
     env_file: .env

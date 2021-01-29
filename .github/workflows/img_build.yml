@@ -15,6 +15,9 @@ jobs:
       - name: Build and push Docker images
         uses: docker/build-push-action@v1
         with:
-          repository: quay.io/team-helium/router
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+          repository: team-helium/router
           tag_with_ref: true
-          push: false
+          push: true

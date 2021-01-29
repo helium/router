@@ -33,9 +33,7 @@
         clique,
         inet_cidr,
         grpcbox,
-        grpc_client,
-        xxhash,
-        exor_filter
+        grpc_client
     ]},
     {included_applications, [blockchain]},
     {env, []},

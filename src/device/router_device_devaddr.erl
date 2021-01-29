@@ -207,6 +207,8 @@ handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
             Subnets = subnets(OUI, Chain),
             {noreply, State#state{chain = Chain, subnets = Subnets}}
     end;
+handle_info(post_init, State) ->
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

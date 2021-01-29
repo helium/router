@@ -36,6 +36,21 @@ handle(Req, _Args) ->
         end,
     handle(Method, elli_request:path(Req), Req, _Args).
 
+%% Get All Devices
+handle('GET', [<<"api">>, <<"router">>, <<"devices">>], _Req, Args) ->
+    Body = #{
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
+        <<"channels">> => [],
+        <<"labels">> => ?CONSOLE_LABELS,
+        <<"organization_id">> => ?CONSOLE_ORG_ID,
+        <<"active">> => true,
+        <<"multi_buy">> => 1
+    },
+    {200, [], jsx:encode([Body])};
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
@@ -93,7 +108,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"labels">> => ?CONSOLE_LABELS,
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
-        <<"multi_buy">> => 1
+        <<"multi_buy">> => 1,
+        <<"adr_allowed">> => false
     },
     case NotFound of
         true ->
@@ -134,7 +150,7 @@ handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req
     try jsx:decode(Body, [return_maps]) of
         Map ->
             Pid ! {organizations_burned, Map},
-            {200, [], <<>>}
+            {204, [], <<>>}
     catch
         _:_ ->
             {400, [], <<"bad_body">>}

@@ -14,6 +14,7 @@
     start_link/1,
     get_device/1,
     get_devices_by_deveui_appeui/2,
+    get_all_devices/0,
     get_channels/2,
     report_status/2,
     get_downlink_url/2,
@@ -46,8 +47,6 @@
 -define(TICK, '__router_console_api_tick').
 -define(PENDING_KEY, <<"router_console_api.PENDING_KEY">>).
 -define(HEADER_JSON, {<<"Content-Type">>, <<"application/json">>}).
--define(MULTI_BUY_DEFAULT, 1).
--define(ADR_ALLOWED_DEFAULT, false).
 -define(DOWNLINK_TOOL_ORIGIN, <<"console_downlink_queue">>).
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
@@ -88,24 +87,34 @@ get_device(DeviceID) ->
         {error, _Reason} = Error ->
             Error;
         {ok, JSONDevice} ->
-            Name = kvc:path([<<"name">>], JSONDevice),
-            DevEui = kvc:path([<<"dev_eui">>], JSONDevice),
-            AppEui = kvc:path([<<"app_eui">>], JSONDevice),
-            Metadata = #{
-                labels => kvc:path([<<"labels">>], JSONDevice),
-                organization_id => kvc:path([<<"organization_id">>], JSONDevice),
-                multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, ?MULTI_BUY_DEFAULT),
-                adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ?ADR_ALLOWED_DEFAULT)
-            },
-            IsActive = kvc:path([<<"active">>], JSONDevice),
-            DeviceUpdates = [
-                {name, Name},
-                {dev_eui, lorawan_utils:hex_to_binary(DevEui)},
-                {app_eui, lorawan_utils:hex_to_binary(AppEui)},
-                {metadata, Metadata},
-                {is_active, IsActive}
-            ],
-            {ok, router_device:update(DeviceUpdates, Device)}
+            {ok, json_device_to_record(JSONDevice)}
+    end.
+
+-spec get_all_devices() -> {ok, [router_device:device()]} | {error, any()}.
+get_all_devices() ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/devices">>,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_all_devices, ok, End - Start),
+            {ok,
+                lists:map(
+                    fun json_device_to_record/1,
+                    jsx:decode(Body, [return_maps])
+                )};
+        Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_all_devices, error, End - Start),
+            {error, Other}
     end.
 
 -spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->
@@ -729,29 +738,15 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
         {ok, 200, _Headers, Body} ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_devices_by_deveui_appeui, ok, End - Start),
-            Devices = lists:map(
+            lists:map(
                 fun(JSONDevice) ->
-                    ID = kvc:path([<<"id">>], JSONDevice),
-                    Name = kvc:path([<<"name">>], JSONDevice),
                     AppKey = lorawan_utils:hex_to_binary(
                         kvc:path([<<"app_key">>], JSONDevice)
                     ),
-                    Metadata = #{
-                        organization_id => kvc:path([<<"organization_id">>], JSONDevice)
-                    },
-                    IsActive = kvc:path([<<"active">>], JSONDevice),
-                    DeviceUpdates = [
-                        {name, Name},
-                        {dev_eui, DevEui},
-                        {app_eui, AppEui},
-                        {metadata, Metadata},
-                        {is_active, IsActive}
-                    ],
-                    {AppKey, router_device:update(DeviceUpdates, router_device:new(ID))}
+                    {AppKey, json_device_to_record(JSONDevice)}
                 end,
                 jsx:decode(Body, [return_maps])
-            ),
-            Devices;
+            );
         _Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(
@@ -790,6 +785,24 @@ get_org_(OrgID) ->
             ok = router_metrics:console_api_observe(get_org, error, End - Start),
             {error, {get_org_failed, _Other}}
     end.
+
+-spec json_device_to_record(JSONDevice :: map()) -> router_device:device().
+json_device_to_record(JSONDevice) ->
+    ID = kvc:path([<<"id">>], JSONDevice),
+    Metadata = #{
+        labels => kvc:path([<<"labels">>], JSONDevice, undefined),
+        organization_id => kvc:path([<<"organization_id">>], JSONDevice, undefined),
+        multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
+        adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, undefined)
+    },
+    DeviceUpdates = [
+        {name, kvc:path([<<"name">>], JSONDevice)},
+        {dev_eui, lorawan_utils:hex_to_binary(kvc:path([<<"dev_eui">>], JSONDevice))},
+        {app_eui, lorawan_utils:hex_to_binary(kvc:path([<<"app_eui">>], JSONDevice))},
+        {metadata, maps:filter(fun(_K, V) -> V =/= undefined end, Metadata)},
+        {is_active, kvc:path([<<"active">>], JSONDevice)}
+    ],
+    router_device:update(DeviceUpdates, router_device:new(ID)).
 
 -spec token_lookup() -> {binary(), binary()}.
 token_lookup() ->
@@ -944,7 +957,7 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
         Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(org_burn, error, End - Start),
-            lager:debug("Burn notification failed", [Other]),
+            lager:debug("Burn notification failed ~p", [Other]),
             timer:sleep(Delay),
             %% fibonacci delay timer
             do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)

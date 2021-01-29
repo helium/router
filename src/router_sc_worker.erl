@@ -123,6 +123,8 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                     end
             end
     end;
+handle_info(post_init, State) ->
+    {noreply, State};
 handle_info({blockchain_event, {new_chain, NC}}, State) ->
     {noreply, State#state{chain = NC}};
 handle_info(

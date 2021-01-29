@@ -1,8 +1,82 @@
 # Helium Router ![CI](https://github.com/helium/routerv3/workflows/CI/badge.svg?branch=master)
 
-## Data
+Helium's LoRa Network Server (backend of https://github.com/helium/console).
 
-### Sent to channels
+## Usage
+
+### Testing / Local
+
+```
+# Build
+make docker-build
+
+# Run
+make docker-run
+
+# Running tests
+make docker-test
+
+```
+
+### Production
+
+Image repository coming soon.
+
+```
+# Build
+docker-compose build --force-rm
+
+# Up
+docker-compose up -d
+
+# Down
+docker-compose down
+
+# Tail logs
+docker-compose logs -f --tail=20
+
+# Get in container
+docker exec -it helium_router bash
+
+```
+
+### Data
+
+Data is stored in `/var/data`.
+
+**WARNING**: The `sawrm_key` file in the `blockchain` directory is router's indentity and linked to your `OUI` (and routing table). **DO NOT DELETE THIS EVER**
+
+### Config
+
+Config is in `.env`.
+
+```
+# Default Helium's seed nodes
+ROUTER_SEED_NODES=/ip4/34.222.64.221/tcp/2154,/ip4/34.208.255.251/tcp/2154
+
+# OUI used by router (see https://developer.helium.com/blockchain/blockchain-cli#oui)
+ROUTER_OUI=22
+
+# Default devaddr if we fail to allocate one
+ROUTER_DEFAULT_DEVADDR=AAQASA==
+
+# State Channel Open amount
+ROUTER_SC_OPEN_DC_AMOUNT=100000
+
+# State Channel block expiration
+ROUTER_SC_EXPIRATION_INTERVAL=45
+
+# Console's connection info (see https://github.com/helium/console)
+ROUTER_CONSOLE_ENDPOINT=http://helium_console:4000
+ROUTER_CONSOLE_WS_ENDPOINT=ws://helium_console:4000/socket/router/websocket
+ROUTER_CONSOLE_SECRET=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+```
+
+Router's deafult port for blockchain connection is `2154`.
+
+## Integrations Data
+
+Data payload example sent to integrations
 
 ```
 {
@@ -44,88 +118,101 @@
     }
 }
 ```
-
-### Console
-
-```
-{
-    "category": "up | down | activation | ack | packet_dropped | channel_crash | channel_start_error",
-    "description": "any specific description ie.correcting channel mask, otherwise null",
-    "reported_at": 123,
-    "device_id": "device_uuid",
-    "frame_up": 2,
-    "frame_down": 2,
-    "payload": "base64 payload", // ONLY ON DEBUG MODE
-    "payload_size": 12,
-    "port": 1,
-    "devaddr": "devaddr",
-    "hotspots": [
-        {
-            "id": "hotspot_id",
-            "name": "hotspot name",
-            "reported_at": 123,
-            "status": "success | error",
-            // ONLY when category=activation (if true it means that we selected that hotspot for the join req/resp)
-            "selected" true | false,
-            "rssi": -30,
-            "snr": 0.2,
-            "spreading": "SF9BW125",
-            "frequency": 923.3,
-            "channel": 12,
-            "lat" => 37.00001962582851,
-            "long" => -120.9000053210367
-        }
-    ],
-    "channels": [
-        {
-            "id": "uuid",
-            "name": "channel name",
-            "reported_at": 123,
-            "status": "success | error | no_channel",
-            "description": "what happened",
-            // ONLY ON DEBUG MODE
-            "debug": {req: {}, res: {}}
-        }
-    ],
-    "dc" : {
-        "balance": 3000,
-        "nonce": 2,
-        // ONLY ON CATEGORY UP/ACTIVATION
-        "used":  1
-    }
-}
-```
-
-## Docker Install
-
-### Commands
+## CLI
+Commands are run in the `routerv3` directory using a docker container.
+> **_NOTE:_**  `sudo` may be required
 
 ```
-# Build
-sudo docker-compose build --force-rm
+docker exec -it helium_router _build/default/rel/router/bin/router
+```
+Following commands are appending to the docker command above.
 
-# Up
-sudo docker-compose up -d
+### Device Worker `device`
 
-# Down
-sudo docker-compose down
-
-# Tail logs
-sudo docker-compose logs -f --tail=20
-
-# Get in container
-sudo docker exec -it helium_router bash
-
-# Run tests
-sudo docker run --name router_test --rm  helium/router:latest ./rebar3 ct --suite=test/router_SUITE.erl
-sudo docker run --name router_test --rm  helium/router:latest make test
-
+#### All Devices
+```
+device all
 ```
 
-### Data
+#### Info for 1 Device
+```
+device --id=<id>
+```
+##### Id Option
+`--id`
+Device IDs are binaries, but should be provided plainly.
+```
+# good
+device --id=1234-5678-890
+# bad
+device --id=<<"1234-5678-890">>
+```
 
-Data is located in `/var/data`.
+#### Single Device Queue
+```
+device queue --id=<id>
+```
+##### Options
+[ID Options](#id-option)
+#### Clear Device's Queue
+```
+device queue clear --id=<id>
+```
+##### Options
+[ID Options](#id-option)
 
-### Config
+#### Add to Device's Queue
+```
+device queue add --id=<id> [--payload=<content> --channel-name=<name> --port=<port> --ack]
+```
+##### Options
+`--id`
+[ID Options](#id-option)
+`--payload [default: "Test cli downlink message"]`
+Set custom message for downlink to device.
+`--channel-name [default: "CLI custom channel"]`
+Channel name Console will show for Integration.
+`--port [default: 1]`
+Port to downlink on.
+`--ack [default: false]`
+Boolean flag for requiring acknowledgement from the device.
+### DC Tracker `dc_tracker`
 
-Config is in `.env`.
+#### All Orgs
+```
+dc_tracker info all [--less 42] [--refetch]
+```
+##### Options
+`--less <amount>`
+Filter to Organizations that have a balance less than `<amount>`.
+`--refetch`
+Update Router information about organizations in list.
+
+#### Info for 1 Org
+```
+dc_tracker info <org_id> [--refetch]
+```
+##### Options
+`--refetch`
+Update Router information about this organization.
+
+#### Refill Org Balance
+```
+dc_tracker refill <org_id> balance=<balance> nonce=<nonce>
+```
+
+#### Helpers
+```
+dc_tracker info no-nonce
+dc_tracker info no-balance
+```
+are aliases for
+
+```
+dc_tracker info nonce <amount=0>
+dc_tracker info balance <balance=0>
+```
+
+## Metrics
+
+Coming soon...

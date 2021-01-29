@@ -396,10 +396,17 @@ handle_info(
             _ ->
                 ProvidedChannelName
         end,
-    lager:info("sending downlink ~p for devices ~p from channel ~p", [
+    Position =
+        case maps:get(<<"position">>, MapPayload, <<"last">>) of
+            <<"first">> -> first;
+            _ -> last
+        end,
+
+    lager:info("sending downlink ~p for devices ~p from channel ~p in position ~p", [
         MapPayload,
         DeviceIDs,
-        ChannelName
+        ChannelName,
+        Position
     ]),
     lists:foreach(
         fun(DeviceID) ->
@@ -414,7 +421,8 @@ handle_info(
             ok = router_device_channels_worker:handle_console_downlink(
                 DeviceID,
                 MapPayload,
-                Channel
+                Channel,
+                Position
             )
         end,
         DeviceIDs

@@ -438,9 +438,6 @@ handle_cast(
                 "[multi_buy_value: ~p] [send_to_channels: ~p]",
                 [MultiBuyValue, SendToChannels]
             ),
-            FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
-
-            {ok, _} = do_multi_buy(PHash, Device2, FrameAck),
 
             %% TODO: Maybe move this down a little?
             case SendToChannels of
@@ -861,23 +858,21 @@ do_multi_buy(PHash, Device, FrameAck) ->
     case MultiBuyValue > 1 of
         true ->
             lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
-            router_device_routing:accept_more(PHash, MultiBuyValue),
-            {ok, accept_more};
+            router_device_routing:accept_more(PHash, MultiBuyValue);
         false ->
             case {router_device:queue(Device), FrameAck == 1} of
                 {[], false} ->
                     lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
-                    router_device_routing:deny_more(PHash),
-                    {ok, deny_more};
+                    router_device_routing:deny_more(PHash);
                 {_Queue, _Ack} ->
                     lager:debug(
                         "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
                         [length(_Queue), _Ack]
                     ),
-                    router_device_routing:accept_more(PHash),
-                    {ok, accept_more}
+                    router_device_routing:accept_more(PHash)
             end
-    end.
+    end,
+    ok.
 
 %%%-------------------------------------------------------------------
 %% @doc
@@ -926,7 +921,8 @@ validate_frame(
         undefined when FCnt =< DownlinkHandledAt andalso FrameAck == 0 ->
             {error, late_packet};
         undefined ->
-            %% Goes through to set frame_timeout
+            PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+            ok = do_multi_buy(PHash, Device0, FrameAck),
             validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)
     end.
 

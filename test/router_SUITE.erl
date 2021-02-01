@@ -76,7 +76,7 @@ dupes_test(Config) ->
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
-    timer:sleep(?JOIN_DELAY),
+    timer:sleep(?JOIN_TIMEOUT),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"activation">>, #{
@@ -385,7 +385,7 @@ join_test(Config) ->
     Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -100)},
     timer:sleep(500),
     Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce, -80)},
-    timer:sleep(?JOIN_DELAY),
+    timer:sleep(?JOIN_TIMEOUT),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
     test_utils:wait_for_console_event(<<"activation">>, #{
@@ -501,7 +501,7 @@ adr_test(Config) ->
     %% Device sends a join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(?JOIN_DELAY),
+    timer:sleep(?JOIN_TIMEOUT),
 
     %% Console reports join
     test_utils:wait_for_console_event(<<"activation">>, #{

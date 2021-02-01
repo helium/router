@@ -55,7 +55,7 @@ docker exec -it helium_router bash
 
 Data is stored in `/var/data`.
 
-> **WARNING**: The `sawrm_key` file in the `blockchain` directory is router's indentity and linked to your `OUI` (and routing table). **DO NOT DELETE THIS EVER**.
+> **WARNING**: The `swarm_key` file in the `blockchain` directory is router's identity and linked to your `OUI` (and routing table). **DO NOT DELETE THIS EVER**.
 
 ### Logs
 

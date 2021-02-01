@@ -8,5 +8,5 @@
 -define(PRIORITY, 2#111).
 
 -define(RX_DELAY, 0).
--define(REPLY_DELAY, 200).
--define(JOIN_DELAY, 2000).
+-define(FRAME_TIMEOUT, 200).
+-define(JOIN_TIMEOUT, 2000).

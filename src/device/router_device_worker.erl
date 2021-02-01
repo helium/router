@@ -267,7 +267,7 @@ handle_cast(
                     Cache1 = maps:put(DevNonce, JoinCache, Cache0),
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     _ = erlang:send_after(
-                        max(0, ?JOIN_DELAY - (erlang:system_time(millisecond) - PacketTime)),
+                        max(0, ?JOIN_TIMEOUT - (erlang:system_time(millisecond) - PacketTime)),
                         self(),
                         {join_timeout, DevNonce}
                     ),
@@ -471,7 +471,7 @@ handle_cast(
                     {noreply, State};
                 undefined ->
                     _ = erlang:send_after(
-                        max(0, ?REPLY_DELAY - (erlang:system_time(millisecond) - PacketTime)),
+                        max(0, ?FRAME_TIMEOUT - (erlang:system_time(millisecond) - PacketTime)),
                         self(),
                         {frame_timeout, FCnt, PacketTime}
                     ),

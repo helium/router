@@ -78,7 +78,7 @@ aws_test(Config) ->
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(?JOIN_DELAY),
+    timer:sleep(?JOIN_TIMEOUT),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"activation">>, #{

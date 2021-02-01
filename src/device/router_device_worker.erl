@@ -473,16 +473,6 @@ handle_cast(
             },
 
             case maps:get(FCnt, Cache0, undefined) of
-                undefined when
-                    FCnt =< DownlinkHandledAt andalso
-                        %% devices will retransmit with an old fcnt if they're looking for an ack
-                        %% so check that is not the case here
-                        FrameAck == 0
-                ->
-                    %% late packet
-                    %% FIXME: Revert lager:debug
-                    ct:print("got a late packet @ ~p", [FCnt]),
-                    {noreply, State};
                 undefined ->
                     Timeout = max(
                         0,

@@ -890,7 +890,10 @@ do_multi_buy(PHash, Device, FrameAck) ->
     Blockchain :: blockchain:blockchain(),
     DownlinkHanldedAt :: integer(),
     FrameCache :: #{integer() => #frame_cache{}}
-) -> {error, duplicate_frame | late_packet} | any().
+) ->
+    {error, any()}
+    | {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}.
 validate_frame(
     Packet,
     PacketTime,
@@ -901,21 +904,14 @@ validate_frame(
     DownlinkHandledAt,
     FrameCache
 ) ->
-    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+    <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
-    FrameAck = router_device_utils:mtype_to_ack(_MType),
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    FrameAck = router_device_utils:mtype_to_ack(MType),
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            case do_multi_buy(PHash, Device0, router_device_utils:mtype_to_ack(_MType)) of
-                {ok, accept_more} ->
-                    validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
-                %% FIXME: original checks if this is a better frame than the last
-                {ok, deny_more} ->
-                    {error, duplicate_frame}
-            end;
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
         %% devices will retransmit with an old fcnt if they're looking for an ack
         %% so check that is not the case here
         undefined when FCnt =< DownlinkHandledAt andalso FrameAck == 0 ->

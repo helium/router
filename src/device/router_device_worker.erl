@@ -437,25 +437,8 @@ handle_cast(
             ),
             FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
 
-            case MultiBuyValue > 1 of
-                true ->
-                    lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
-                    router_device_routing:accept_more(PHash, MultiBuyValue);
-                false ->
-                    case {router_device:queue(Device2), FrameAck == 1} of
-                        {[], false} ->
-                            %% FIXME: Revert lager:debug
-                            ct:print("Denying more packets [queue_length: 0] [frame_ack: 0]"),
-                            router_device_routing:deny_more(PHash);
-                        {_Queue, _Ack} ->
-                            %% FIXME: Revert lager:debug
-                            ct:print(
-                                "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
-                                [length(_Queue), _Ack]
-                            ),
-                            router_device_routing:accept_more(PHash)
-                    end
-            end,
+            {ok, _} = do_multi_buy(PHash, Device2, FrameAck),
+
             %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
@@ -880,6 +863,36 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 
+-spec do_multi_buy(
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Device :: router_device:device(),
+    FrameAck :: 0 | 1
+) -> {ok, accept_more | deny_more}.
+do_multi_buy(PHash, Device, FrameAck) ->
+    MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
+    case MultiBuyValue > 1 of
+        true ->
+            lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+            router_device_routing:accept_more(PHash, MultiBuyValue),
+            {ok, accept_more};
+        false ->
+            case {router_device:queue(Device), FrameAck == 1} of
+                {[], false} ->
+                    %% FIXME: Revert lager:debug
+                    ct:print("Denying more packets [queue_length: 0] [frame_ack: 0]"),
+                    router_device_routing:deny_more(PHash),
+                    {ok, deny_more};
+                {_Queue, _Ack} ->
+                    %% FIXME: Revert lager:debug
+                    ct:print(
+                        "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
+                        [length(_Queue), _Ack]
+                    ),
+                    router_device_routing:accept_more(PHash),
+                    {ok, accept_more}
+            end
+    end.
+
 %%%-------------------------------------------------------------------
 %% @doc
 %% Validate frame packet, figures out FPort/FOptsLen to see if
@@ -912,11 +925,16 @@ validate_frame(
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
     FrameAck = router_device_utils:mtype_to_ack(_MType),
-
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            %% FIXME: original checks if this is a better frame than the last
-            {error, duplicate_frame};
+            case do_multi_buy(PHash, Device0, router_device_utils:mtype_to_ack(_MType)) of
+                {ok, accept_more} ->
+                    validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+                %% FIXME: original checks if this is a better frame than the last
+                {ok, deny_more} ->
+                    {error, duplicate_frame}
+            end;
         %% devices will retransmit with an old fcnt if they're looking for an ack
         %% so check that is not the case here
         undefined when FCnt =< DownlinkHandledAt andalso FrameAck == 0 ->

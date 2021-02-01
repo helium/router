@@ -266,15 +266,21 @@ handle_cast(
                     },
                     Cache1 = maps:put(DevNonce, JoinCache, Cache0),
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+                    Timeout = max(
+                        0,
+                        router_device_utils:join_timeout() -
+                            (erlang:system_time(millisecond) - PacketTime)
+                    ),
                     _ = erlang:send_after(
-                        max(
-                            0,
-                            router_device_utils:join_timeout() -
-                                (erlang:system_time(millisecond) - PacketTime)
-                        ),
+                        Timeout,
                         self(),
                         {join_timeout, DevNonce}
                     ),
+                    lager:debug("Setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
+                        DevNonce,
+                        Timeout
+                    ]),
+                    _ = erlang:send_after(Timeout, self(), {join_timeout, DevNonce}),
                     {noreply, State#state{
                         device = Device1,
                         last_dev_nonce = DevNonce,
@@ -390,7 +396,18 @@ handle_cast(
                 router_device:update(DeviceUpdates, Device0)
         end,
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    case validate_frame(Packet0, PacketTime, PubKeyBin, Region, Device1, Blockchain) of
+    case
+        validate_frame(
+            Packet0,
+            PacketTime,
+            PubKeyBin,
+            Region,
+            Device1,
+            Blockchain,
+            DownlinkHandledAt,
+            Cache0
+        )
+    of
         {error, {not_enough_dc, _Reason, Device2}} ->
             ok = router_device_utils:report_status_no_dc(Device2),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
@@ -404,6 +421,7 @@ handle_cast(
             ),
             {noreply, State#state{device = Device2}};
         {error, _Reason} ->
+            lager:debug("Packet not validated: ~p", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
@@ -414,8 +432,14 @@ handle_cast(
             ),
             {noreply, State};
         {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
-            FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device2), 1),
+            lager:debug(
+                "Frame validated and charged~n"
+                "[multi_buy_value: ~p] [send_to_channels: ~p]",
+                [MultiBuyValue, SendToChannels]
+            ),
+            FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
+
             case MultiBuyValue > 1 of
                 true ->
                     lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
@@ -471,18 +495,17 @@ handle_cast(
                         FrameAck == 0
                 ->
                     %% late packet
-                    lager:debug("got a late packet @ ~p", [FCnt]),
+                    %% FIXME: Revert lager:debug
+                    ct:print("got a late packet @ ~p", [FCnt]),
                     {noreply, State};
                 undefined ->
-                    _ = erlang:send_after(
-                        max(
-                            0,
-                            router_device_utils:frame_timeout() -
-                                (erlang:system_time(millisecond) - PacketTime)
-                        ),
-                        self(),
-                        {frame_timeout, FCnt, PacketTime}
+                    Timeout = max(
+                        0,
+                        router_device_utils:frame_timeout() -
+                            (erlang:system_time(millisecond) - PacketTime)
                     ),
+                    lager:debug("Setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
+                    _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
                     {noreply, State#state{
                         device = Device2,
                         frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
@@ -861,16 +884,56 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec validate_frame(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    blockchain:blockchain()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    Blockchain :: blockchain:blockchain(),
+    DownlinkHanldedAt :: integer(),
+    FrameCache :: #{integer() => #frame_cache{}}
+) -> {error, duplicate_frame | late_packet} | any().
+validate_frame(
+    Packet,
+    PacketTime,
+    PubKeyBin,
+    Region,
+    Device0,
+    Blockchain,
+    DownlinkHandledAt,
+    FrameCache
 ) ->
-    {ok, #frame{}, router_device:device(), boolean(), {non_neg_integer(), non_neg_integer()}}
+    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
+        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+
+    FrameAck = router_device_utils:mtype_to_ack(_MType),
+
+    case maps:get(FCnt, FrameCache, undefined) of
+        #frame_cache{} ->
+            %% FIXME: original checks if this is a better frame than the last
+            {error, duplicate_frame};
+        %% devices will retransmit with an old fcnt if they're looking for an ack
+        %% so check that is not the case here
+        undefined when FCnt =< DownlinkHandledAt andalso FrameAck == 0 ->
+            {error, late_packet};
+        undefined ->
+            %% Goes through to set frame_timeout
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)
+    end.
+
+-spec validate_frame_(
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    Blockchain :: blockchain:blockchain()
+) ->
+    {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),

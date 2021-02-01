@@ -26,17 +26,13 @@ run: | $(grpc_services_directory)
 	_build/default/rel/router/bin/router foreground
 
 docker-build:
-	docker-compose -f docker-compose-local.yaml build --force-rm
+	docker build -f Dockerfile-local --rm -t quay.io/team-helium/router:local .
 
 docker-test:
-	docker-compose -f docker-compose-local.yaml build --force-rm
-	docker run --rm helium/router:local make test
+	docker run --rm -it --init --name=helium_router_test quay.io/team-helium/router:local make test
 
-docker-run:
-	docker-compose -f docker-compose-local.yaml build --force-rm
-	docker-compose -f docker-compose-local.yaml down
-	docker-compose -f docker-compose-local.yaml up -d
-	tail -F data/log/router.log
+docker-run: 
+	docker run --rm -it --init --env-file=.env --network=host --volume=data:/var/data --name=helium_router quay.io/team-helium/router:local
 
 grpc:
 	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen

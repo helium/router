@@ -84,7 +84,7 @@ console_tool_downlink_order_test(Config) ->
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(?JOIN_TIMEOUT),
+    timer:sleep(router_device_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"activation">>, #{
@@ -212,7 +212,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(?JOIN_TIMEOUT),
+    timer:sleep(router_device_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"activation">>, #{

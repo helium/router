@@ -9,6 +9,8 @@
 -module(router_device_utils).
 
 -export([
+    frame_timeout/0,
+    join_timeout/0,
     report_frame_status/10,
     report_frame_status/11,
     report_status/11,
@@ -25,6 +27,20 @@
 -include("lorawan_vars.hrl").
 -include("router_device_worker.hrl").
 
+-spec frame_timeout() -> non_neg_integer().
+frame_timeout() ->
+    case application:get_env(router, frame_timeout, ?FRAME_TIMEOUT) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
+
+-spec join_timeout() -> non_neg_integer().
+join_timeout() ->
+    case application:get_env(router, join_timeout, ?JOIN_TIMEOUT) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
+
 -spec report_frame_status(
     Ack :: 0 | 1,
     Confirmed :: boolean(),
@@ -37,6 +53,7 @@
     Frame :: #frame{},
     Blockchain :: blockchain:blockchain()
 ) -> ok.
+
 report_frame_status(
     Ack,
     Confirmed,

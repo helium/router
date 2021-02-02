@@ -29,6 +29,7 @@
             {reporters, [router_metrics_reporter_prometheus]},
             {router_metrics_reporter_prometheus, [{port, 3000}]}
         ]},
+        {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {frame_timeout, ${ROUTER_FRAME_TIMEOUT}}
     ]},
     {grpcbox, [

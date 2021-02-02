@@ -181,16 +181,16 @@ start_swarm(BaseDir, Name, Port) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, ChannelsWorkerPid, _LastDevNonce,
-        _JoinChache, _FrameCache, _ADREngine, _IsActive} = sys:get_state(
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, ChannelsWorkerPid,
+        _LastDevNonce, _JoinChache, _FrameCache, _ADREngine, _IsActive} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
 
 get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid, LastDevNonce,
-        _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
+        LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     LastDevNonce.

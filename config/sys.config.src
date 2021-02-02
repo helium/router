@@ -1,4 +1,3 @@
-%% -*- erlang -*-
 [
     {libp2p, [{max_tcp_connections, 50000}]},
     {blockchain, [
@@ -16,10 +15,10 @@
     ]},
     {router, [
         {max_v8_context, 1000},
-        {oui, ${ROUTER_OUI}},
+        {oui, "${ROUTER_OUI}"},
         {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
-        {sc_open_dc_amount, ${ROUTER_SC_OPEN_DC_AMOUNT}},
-        {sc_expiration_interval, ${ROUTER_SC_EXPIRATION_INTERVAL}},
+        {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
+        {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
         {router_console_api, [
             {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
             {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
@@ -30,7 +29,7 @@
             {router_metrics_reporter_prometheus, [{port, 3000}]}
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
-        {frame_timeout, ${ROUTER_FRAME_TIMEOUT}}
+        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"}
     ]},
     {grpcbox, [
         {servers, [

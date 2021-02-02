@@ -66,6 +66,9 @@
 -define(MB_DENY_MORE, multi_buy_deny_more).
 -define(MB_UNLIMITED, 9999).
 
+%% Late packet error
+-define(LATE_PACKET, late_packet).
+
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
 -define(RX2_WINDOW, timer:seconds(2)).
@@ -295,8 +298,8 @@ packet_offer(Offer, Pid) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, _DeviceID, PackeTime} ->
-                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                        {ok, _DeviceID, PacketTime} ->
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
                                     lager:debug("most likely a replay packet for ~p buying", [
@@ -305,11 +308,10 @@ packet_offer(Offer, Pid) ->
                                     ok;
                                 false ->
                                     %% This is probably a late packet
-                                    %% we should still use the multi buy
                                     lager:debug("most likely a late packet for ~p multi buying", [
                                         _DeviceID
                                     ]),
-                                    maybe_multi_buy(Offer, 10, Device)
+                                    {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
                             maybe_multi_buy(Offer, 10, Device)

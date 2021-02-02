@@ -47,6 +47,7 @@
 -define(BITS_23, 8388607).
 -define(MAX_DOWNLINK_SIZE, 242).
 -define(NET_ID, <<"He2">>).
+-define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
     chain :: blockchain:blockchain(),
@@ -54,6 +55,7 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = -1 :: integer(),
+    fcnt = 0 :: non_neg_integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
     last_dev_nonce = undefined :: binary() | undefined,
@@ -281,7 +283,8 @@ handle_cast(
                         last_dev_nonce = DevNonce,
                         join_cache = Cache1,
                         adr_engine = undefined,
-                        downlink_handled_at = -1
+                        downlink_handled_at = -1,
+                        fcnt = 0
                     }};
                 #join_cache{
                     rssi = OldRSSI,
@@ -359,6 +362,7 @@ handle_cast(
         device = Device0,
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
+        fcnt = LastSeenFCnt,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
@@ -399,7 +403,7 @@ handle_cast(
             Region,
             Device1,
             Blockchain,
-            DownlinkHandledAt,
+            {LastSeenFCnt, DownlinkHandledAt},
             Cache0
         )
     of
@@ -470,16 +474,6 @@ handle_cast(
             },
 
             case maps:get(FCnt, Cache0, undefined) of
-                undefined when
-                    FCnt =< DownlinkHandledAt andalso
-                        %% devices will retransmit with an old fcnt if they're looking for an ack
-                        %% so check that is not the case here
-                        FrameAck == 0
-                ->
-                    %% late packet
-                    %% FIXME: Revert lager:debug
-                    ct:print("got a late packet @ ~p", [FCnt]),
-                    {noreply, State};
                 undefined ->
                     Timeout = max(
                         0,
@@ -494,8 +488,7 @@ handle_cast(
                     ),
                     {noreply, State#state{
                         device = Device2,
-                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
-                        downlink_handled_at = FCnt
+                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                     }};
                 #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
                     case RSSI0 > OldRSSI of
@@ -650,19 +643,20 @@ handle_info(
                 device = Device1,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
-                frame_cache = Cache1
+                frame_cache = Cache1,
+                fcnt = FCnt
             }};
         {send, Device1, DownlinkPacket} ->
+            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
+                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
+                _ -> router_device_routing:clear_replay(DeviceID)
+            end,
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:info("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
-            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
-                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
-                _ -> router_device_routing:clear_replay(DeviceID)
-            end,
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -674,7 +668,9 @@ handle_info(
                 device = Device1,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
-                frame_cache = Cache1
+                frame_cache = Cache1,
+                downlink_handled_at = FCnt,
+                fcnt = FCnt
             }};
         noop ->
             catch blockchain_state_channel_handler:send_response(
@@ -692,7 +688,8 @@ handle_info(
             {noreply, State#state{
                 last_dev_nonce = undefined,
                 frame_cache = Cache1,
-                adr_engine = ADREngine1
+                adr_engine = ADREngine1,
+                fcnt = FCnt
             }}
     end;
 handle_info(_Msg, State) ->
@@ -907,7 +904,7 @@ do_multi_buy(PHash, Device, FrameAck) ->
     Region :: atom(),
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
-    DownlinkHanldedAt :: integer(),
+    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: integer()},
     FrameCache :: #{integer() => #frame_cache{}}
 ) -> {error, duplicate_frame | late_packet} | any().
 validate_frame(
@@ -917,7 +914,7 @@ validate_frame(
     Region,
     Device0,
     Blockchain,
-    DownlinkHandledAt,
+    {LastSeenFCnt, DownlinkHandledAt},
     FrameCache
 ) ->
     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
@@ -926,6 +923,7 @@ validate_frame(
 
     FrameAck = router_device_utils:mtype_to_ack(_MType),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    Window = erlang:system_time(millisecond) - PacketTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
             case do_multi_buy(PHash, Device0, router_device_utils:mtype_to_ack(_MType)) of
@@ -935,10 +933,36 @@ validate_frame(
                 {ok, deny_more} ->
                     {error, duplicate_frame}
             end;
-        %% devices will retransmit with an old fcnt if they're looking for an ack
-        %% so check that is not the case here
-        undefined when FCnt =< DownlinkHandledAt andalso FrameAck == 0 ->
+        undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
+            lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
+                FCnt,
+                LastSeenFCnt
+            ]),
             {error, late_packet};
+        undefined when
+            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window < ?RX_MAX_WINDOW
+        ->
+            lager:debug(
+                "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
+                [
+                    FCnt,
+                    DownlinkHandledAt,
+                    Window
+                ]
+            ),
+            {error, late_packet};
+        undefined when
+            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window >= ?RX_MAX_WINDOW
+        ->
+            lager:debug(
+                "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
+                [
+                    FCnt,
+                    DownlinkHandledAt,
+                    Window
+                ]
+            ),
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
         undefined ->
             %% Goes through to set frame_timeout
             validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)

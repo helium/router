@@ -51,6 +51,9 @@
 -define(JOIN_MAX, 5).
 -define(PACKET_MAX, 3).
 
+%% Late packet error
+-define(LATE_PACKET, late_packet).
+
 %% Multi Buy
 -define(MB_ETS, router_device_routing_mb_ets).
 -define(MB_FUN(Hash), [
@@ -295,8 +298,8 @@ packet_offer(Offer, Pid) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, _DeviceID, PackeTime} ->
-                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                        {ok, _DeviceID, PacketTime} ->
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
                                     lager:debug("most likely a replay packet for ~p buying", [
@@ -309,7 +312,7 @@ packet_offer(Offer, Pid) ->
                                     lager:debug("most likely a late packet for ~p multi buying", [
                                         _DeviceID
                                     ]),
-                                    maybe_multi_buy(Offer, 10, Device)
+                                    {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
                             maybe_multi_buy(Offer, 10, Device)

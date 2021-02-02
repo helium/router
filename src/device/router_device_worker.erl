@@ -273,11 +273,6 @@ handle_cast(
                         router_device_utils:join_timeout() -
                             (erlang:system_time(millisecond) - PacketTime)
                     ),
-                    _ = erlang:send_after(
-                        Timeout,
-                        self(),
-                        {join_timeout, DevNonce}
-                    ),
                     lager:debug("Setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
                         DevNonce,
                         Timeout

@@ -62,17 +62,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 device_worker_late_packet_double_charge_test(Config) ->
-    [
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config),
-        ok = device_worker_late_packet_double_charge_testx(Config)
-    ].
-
-device_worker_late_packet_double_charge_testx(Config) ->
     #{stream := Stream, pubkey_bin := PubKeyBin1, hotspot_name := HotspotName1} = join(Config),
 
     %% Waiting for reply from router to hotspot
@@ -106,7 +95,7 @@ device_worker_late_packet_double_charge_testx(Config) ->
 
     %% Simulate multiple hotspots sending data
     SendPacket(PubKeyBin1, 0),
-    timer:sleep(?FRAME_TIMEOUT - 1),
+    timer:sleep(?FRAME_TIMEOUT),
     SendPacket(PubKeyBin2, 0),
 
     %% Waiting for data from HTTP channel with 1 hotspots

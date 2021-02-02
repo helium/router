@@ -55,7 +55,7 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = -1 :: integer(),
-    fcnt = 0 :: non_neg_integer(),
+    fcnt = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
     last_dev_nonce = undefined :: binary() | undefined,
@@ -284,7 +284,7 @@ handle_cast(
                         join_cache = Cache1,
                         adr_engine = undefined,
                         downlink_handled_at = -1,
-                        fcnt = 0
+                        fcnt = -1
                     }};
                 #join_cache{
                     rssi = OldRSSI,

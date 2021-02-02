@@ -375,7 +375,7 @@ late_packet_test(Config) ->
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
-    timer:sleep(?JOIN_TIMEOUT),
+    timer:sleep(router_device_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"activation">>, #{

@@ -578,7 +578,7 @@ region_test_() ->
         ?_assertEqual(<<"SF10BW500">>, datar_to_down('US915', <<"SF10BW125">>, 0)),
         ?_assertEqual([0, 1, 2, 3, 4, 5, 6, 7], [
             lorawan_mac_region:f2uch('EU868', F)
-            || F <- [868.1, 868.3, 868.5, 867.1, 867.3, 867.5, 867.7, 867.9]
+            || F <- [868.1, 868.3, 868.5, 867.7, 867.9, 868.9, 869.1, 869.4]
         ]),
         ?_assertEqual([0, 1, 2, 3, 4, 5, 6, 7], [
             lorawan_mac_region:f2uch('US915', F)

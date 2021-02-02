@@ -234,12 +234,9 @@ device_worker_stop_children_test(Config) ->
 
     GetPids = fun() ->
         {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
-        DeviceState = sys:get_state(DeviceWorkerPid),
 
-        ChannelsWorkerPid = element(8, DeviceState),
-        ChannelsWorkerState = sys:get_state(ChannelsWorkerPid),
-
-        EventManagerPid = element(3, ChannelsWorkerState),
+        ChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
+        EventManagerPid = test_utils:get_channel_worker_event_manager(?CONSOLE_DEVICE_ID),
 
         {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid}
     end,

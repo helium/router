@@ -5,6 +5,7 @@
     end_per_testcase/2,
     start_swarm/3,
     get_device_channels_worker/1,
+    get_channel_worker_event_manager/1,
     get_last_dev_nonce/1,
     force_refresh_channels/1,
     ignore_messages/0,
@@ -194,6 +195,12 @@ get_last_dev_nonce(DeviceID) ->
         WorkerPid
     ),
     LastDevNonce.
+
+get_channel_worker_event_manager(DeviceID) ->
+    ChannelWorkerPid = get_device_channels_worker(DeviceID),
+    {state, _Chain, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs,
+        _DataCache, _BalanceCache, _FCnt, _ChannelsRespCache} = sys:get_state(ChannelWorkerPid),
+    EventManagerPid.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),

@@ -57,7 +57,12 @@ start_link(Args) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ok = schedule_post_init(),
+    case enabled() of
+        true ->
+            ok = schedule_post_init();
+        false ->
+            ok
+    end,
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -95,7 +100,7 @@ handle_info(
     case should_update_filters(Chain, OUI, FilterToDevices) of
         noop ->
             lager:info("filters are still up to date"),
-            ok = schedule_check_filters(?CHECK_FILTERS_TIMER),
+            ok = schedule_check_filters(default_timer()),
             {noreply, State};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
@@ -151,7 +156,7 @@ handle_info(
             lager:info("waiting for more txn to clear");
         true ->
             lager:info("all txns cleared"),
-            schedule_check_filters(?CHECK_FILTERS_TIMER)
+            schedule_check_filters(default_timer())
     end,
     {noreply, State1};
 handle_info(
@@ -365,6 +370,21 @@ schedule_post_init() ->
 schedule_check_filters(Timer) ->
     _Ref = erlang:send_after(Timer, self(), ?CHECK_FILTERS_TICK),
     ok.
+
+-spec enabled() -> boolean().
+enabled() ->
+    case application:get_env(router, router_xor_filter_worker, false) of
+        "true" -> true;
+        true -> true;
+        _ -> false
+    end.
+
+-spec default_timer() -> non_neg_integer().
+default_timer() ->
+    case application:get_env(router, router_xor_filter_worker_timer, ?CHECK_FILTERS_TIMER) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

@@ -432,13 +432,6 @@ handle_cast(
             ),
             {noreply, State};
         {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
-            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device2), 1),
-            lager:debug(
-                "Frame validated and charged~n"
-                "[multi_buy_value: ~p] [send_to_channels: ~p]",
-                [MultiBuyValue, SendToChannels]
-            ),
-
             %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
@@ -852,7 +845,7 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     Packet :: blockchain_helium_packet_v1:packet(),
     Device :: router_device:device(),
     FrameAck :: 0 | 1
-) -> {ok, accept_more | deny_more}.
+) -> ok.
 do_multi_buy(PHash, Device, FrameAck) ->
     MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
     case MultiBuyValue > 1 of

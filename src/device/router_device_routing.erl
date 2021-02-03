@@ -314,17 +314,22 @@ packet_offer(Offer, Pid) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, _DeviceID, PackeTime} ->
-                            ok = router_utils:md(Device),
+                        {ok, DeviceID, PackeTime} ->
                             case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
-                                    lager:debug("most likely a replay packet buying"),
+                                    lager:debug(
+                                        [{device_id, DeviceID}],
+                                        "most likely a replay packet buying"
+                                    ),
                                     ok;
                                 false ->
                                     %% This is probably a late packet
                                     %% we should still use the multi buy
-                                    lager:debug("most likely a late packet multi buying"),
+                                    lager:debug(
+                                        [{device_id, DeviceID}],
+                                        "most likely a late packet multi buying"
+                                    ),
                                     maybe_multi_buy(Offer, 10, Device)
                             end;
                         {error, not_found} ->
@@ -423,24 +428,36 @@ lookup_replay(PHash) ->
 maybe_multi_buy(_Offer, 0, _Device) ->
     {error, ?MB_TOO_MANY_ATTEMPTS};
 maybe_multi_buy(Offer, Attempts, Device) ->
-    ok = router_utils:md(Device),
+    DeviceID = router_device:id(Device),
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of
         [] ->
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
             case MultiBuyValue > 1 of
                 true ->
-                    lager:debug("accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+                    lager:debug(
+                        [{device_id, DeviceID}],
+                        "accepting more packets [multi_buy: ~p]",
+                        [MultiBuyValue]
+                    ),
                     ?MODULE:accept_more(PHash, MultiBuyValue);
                 false ->
                     case router_device:queue(Device) of
                         [] ->
+                            lager:debug(
+                                [{device_id, DeviceID}],
+                                "did not get an answer from device worker yet waiting"
+                            ),
                             timer:sleep(10),
                             maybe_multi_buy(Offer, Attempts - 1, Device);
                         _Queue ->
-                            lager:debug("Accepting more packets [queue_length: ~p]", [
-                                length(_Queue)
-                            ]),
+                            lager:debug(
+                                [{device_id, DeviceID}],
+                                "Accepting more packets [queue_length: ~p]",
+                                [
+                                    length(_Queue)
+                                ]
+                            ),
                             ?MODULE:accept_more(PHash)
                     end
             end;
@@ -711,10 +728,10 @@ get_and_sort_devices(DevAddr, PubKeyBin) ->
 get_device_by_mic(_B0, _MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
-    ok = router_utils:md(Device),
     case router_device:nwk_s_key(Device) of
         undefined ->
-            lager:warning("device did not have a nwk_s_key, deleting"),
+            DeviceID = router_device:id(Device),
+            lager:warning([{device_id, DeviceID}], "device did not have a nwk_s_key, deleting"),
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             DeviceID = router_device:id(Device),
             ok = router_device:delete(DB, CF, DeviceID),
@@ -763,7 +780,7 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
     Device :: router_device:device()
 ) -> boolean() | {error, any()}.
 brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
-    ok = router_utils:md(Device),
+    DeviceID = router_device:id(Device),
     try
         case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
             MIC ->
@@ -775,8 +792,10 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
                         B0_32 = b0_from_payload(Payload, 32),
                         case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
                             MIC ->
-                                DeviceID = router_device:id(Device),
-                                lager:warning("device went over max 16bits fcnt size"),
+                                lager:warning(
+                                    [{device_id, DeviceID}],
+                                    "device went over max 16bits fcnt size"
+                                ),
                                 {ok, DB, [_DefaultCF, CF]} = router_db:get(),
                                 ok = router_device:delete(DB, CF, DeviceID),
                                 ok = router_device_cache:delete(DeviceID),
@@ -790,7 +809,7 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
         end
     catch
         _:_ ->
-            lager:warning("skipping invalid device ~p", [Device]),
+            lager:warning([{device_id, DeviceID}], "skipping invalid device ~p", [Device]),
             false
     end.
 

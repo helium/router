@@ -131,7 +131,7 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
             device => Device
         }),
     IsActive = router_device:is_active(Device),
-    ok = router_utils:md(Device),
+    ok = router_utils:lager_md(Device),
     ok = ?MODULE:device_update(self()),
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{

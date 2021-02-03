@@ -6,7 +6,7 @@
     to_bin/1,
     b0/4,
     format_hotspot/6,
-    md/1,
+    lager_md/1,
     trace/1,
     stop_trace/1
 ]).
@@ -81,8 +81,8 @@ format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
         long => Long
     }.
 
--spec md(router_device:device()) -> ok.
-md(Device) ->
+-spec lager_md(router_device:device()) -> ok.
+lager_md(Device) ->
     lager:md([
         {device_id, router_device:id(Device)},
         {app_eui, router_device:app_eui(Device)},

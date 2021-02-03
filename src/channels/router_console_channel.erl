@@ -32,7 +32,7 @@
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
-    ok = router_utils:md(Device),
+    ok = router_utils:lager_md(Device),
     lager:info("init with ~p", [Channel]),
     {ok, #state{channel = Channel, device = Device}}.
 

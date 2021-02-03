@@ -47,6 +47,7 @@
 -define(BITS_23, 8388607).
 -define(MAX_DOWNLINK_SIZE, 242).
 -define(NET_ID, <<"He2">>).
+-define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
     chain :: blockchain:blockchain(),
@@ -54,6 +55,7 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = -1 :: integer(),
+    fcnt = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
     last_dev_nonce = undefined :: binary() | undefined,
@@ -266,21 +268,23 @@ handle_cast(
                     },
                     Cache1 = maps:put(DevNonce, JoinCache, Cache0),
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-                    _ = erlang:send_after(
-                        max(
-                            0,
-                            router_device_utils:join_timeout() -
-                                (erlang:system_time(millisecond) - PacketTime)
-                        ),
-                        self(),
-                        {join_timeout, DevNonce}
+                    Timeout = max(
+                        0,
+                        router_device_utils:join_timeout() -
+                            (erlang:system_time(millisecond) - PacketTime)
                     ),
+                    lager:debug("setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
+                        DevNonce,
+                        Timeout
+                    ]),
+                    _ = erlang:send_after(Timeout, self(), {join_timeout, DevNonce}),
                     {noreply, State#state{
                         device = Device1,
                         last_dev_nonce = DevNonce,
                         join_cache = Cache1,
                         adr_engine = undefined,
-                        downlink_handled_at = -1
+                        downlink_handled_at = -1,
+                        fcnt = -1
                     }};
                 #join_cache{
                     rssi = OldRSSI,
@@ -358,6 +362,7 @@ handle_cast(
         device = Device0,
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
+        fcnt = LastSeenFCnt,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
@@ -390,7 +395,18 @@ handle_cast(
                 router_device:update(DeviceUpdates, Device0)
         end,
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    case validate_frame(Packet0, PacketTime, PubKeyBin, Region, Device1, Blockchain) of
+    case
+        validate_frame(
+            Packet0,
+            PacketTime,
+            PubKeyBin,
+            Region,
+            Device1,
+            Blockchain,
+            {LastSeenFCnt, DownlinkHandledAt},
+            Cache0
+        )
+    of
         {error, {not_enough_dc, _Reason, Device2}} ->
             ok = router_device_utils:report_status_no_dc(Device2),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
@@ -404,6 +420,7 @@ handle_cast(
             ),
             {noreply, State#state{device = Device2}};
         {error, _Reason} ->
+            lager:debug("packet not validated: ~p", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
@@ -414,25 +431,6 @@ handle_cast(
             ),
             {noreply, State};
         {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
-            FrameAck = router_device_utils:mtype_to_ack(Frame#frame.mtype),
-            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device2), 1),
-            case MultiBuyValue > 1 of
-                true ->
-                    lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
-                    router_device_routing:accept_more(PHash, MultiBuyValue);
-                false ->
-                    case {router_device:queue(Device2), FrameAck == 1} of
-                        {[], false} ->
-                            lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
-                            router_device_routing:deny_more(PHash);
-                        {_Queue, _Ack} ->
-                            lager:debug(
-                                "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
-                                [length(_Queue), _Ack]
-                            ),
-                            router_device_routing:accept_more(PHash)
-                    end
-            end,
             %% TODO: Maybe move this down a little?
             case SendToChannels of
                 true ->
@@ -464,29 +462,17 @@ handle_cast(
             },
 
             case maps:get(FCnt, Cache0, undefined) of
-                undefined when
-                    FCnt =< DownlinkHandledAt andalso
-                        %% devices will retransmit with an old fcnt if they're looking for an ack
-                        %% so check that is not the case here
-                        FrameAck == 0
-                ->
-                    %% late packet
-                    lager:debug("got a late packet @ ~p", [FCnt]),
-                    {noreply, State};
                 undefined ->
-                    _ = erlang:send_after(
-                        max(
-                            0,
-                            router_device_utils:frame_timeout() -
-                                (erlang:system_time(millisecond) - PacketTime)
-                        ),
-                        self(),
-                        {frame_timeout, FCnt, PacketTime}
+                    Timeout = max(
+                        0,
+                        router_device_utils:frame_timeout() -
+                            (erlang:system_time(millisecond) - PacketTime)
                     ),
+                    lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
+                    _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
                     {noreply, State#state{
                         device = Device2,
-                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0),
-                        downlink_handled_at = FCnt
+                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                     }};
                 #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
                     case RSSI0 > OldRSSI of
@@ -640,19 +626,21 @@ handle_info(
                 device = Device1,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
-                frame_cache = Cache1
+                frame_cache = Cache1,
+                fcnt = FCnt
             }};
         {send, Device1, DownlinkPacket} ->
+            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
+                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
+                _ -> router_device_routing:clear_replay(DeviceID)
+            end,
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
-            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
-                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
-                _ -> router_device_routing:clear_replay(DeviceID)
-            end,
+
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -664,7 +652,9 @@ handle_info(
                 device = Device1,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
-                frame_cache = Cache1
+                frame_cache = Cache1,
+                downlink_handled_at = FCnt,
+                fcnt = FCnt
             }};
         noop ->
             catch blockchain_state_channel_handler:send_response(
@@ -682,7 +672,8 @@ handle_info(
             {noreply, State#state{
                 last_dev_nonce = undefined,
                 frame_cache = Cache1,
-                adr_engine = ADREngine1
+                adr_engine = ADREngine1,
+                fcnt = FCnt
             }}
     end;
 handle_info(_Msg, State) ->
@@ -853,6 +844,33 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 
+-spec do_multi_buy(
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Device :: router_device:device(),
+    FrameAck :: 0 | 1
+) -> ok.
+do_multi_buy(Packet, Device, FrameAck) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
+    case MultiBuyValue > 1 of
+        true ->
+            lager:debug("accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+            router_device_routing:accept_more(PHash, MultiBuyValue);
+        false ->
+            case {router_device:queue(Device), FrameAck == 1} of
+                {[], false} ->
+                    lager:debug("denying more packets [queue_length: 0] [frame_ack: 0]"),
+                    router_device_routing:deny_more(PHash);
+                {_Queue, _Ack} ->
+                    lager:debug(
+                        "accepting more packets [queue_length: ~p] [frame_ack: ~p]",
+                        [length(_Queue), _Ack]
+                    ),
+                    router_device_routing:accept_more(PHash)
+            end
+    end,
+    ok.
+
 %%%-------------------------------------------------------------------
 %% @doc
 %% Validate frame packet, figures out FPort/FOptsLen to see if
@@ -861,16 +879,76 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec validate_frame(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    blockchain:blockchain()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    Blockchain :: blockchain:blockchain(),
+    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: integer()},
+    FrameCache :: #{integer() => #frame_cache{}}
 ) ->
-    {ok, #frame{}, router_device:device(), boolean(), {non_neg_integer(), non_neg_integer()}}
+    {error, any()}
+    | {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}.
+validate_frame(
+    Packet,
+    PacketTime,
+    PubKeyBin,
+    Region,
+    Device0,
+    Blockchain,
+    {LastSeenFCnt, DownlinkHandledAt},
+    FrameCache
+) ->
+    <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
+        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+
+    FrameAck = router_device_utils:mtype_to_ack(MType),
+    Window = erlang:system_time(millisecond) - PacketTime,
+    case maps:get(FCnt, FrameCache, undefined) of
+        #frame_cache{} ->
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+        undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
+            lager:debug("we got a late unconfirmed up packet for ~p: lastSeendFCnt: ~p", [
+                FCnt,
+                LastSeenFCnt
+            ]),
+            {error, late_packet};
+        undefined when
+            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window < ?RX_MAX_WINDOW
+        ->
+            lager:debug(
+                "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
+                [FCnt, DownlinkHandledAt, Window]
+            ),
+            {error, late_packet};
+        undefined when
+            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window >= ?RX_MAX_WINDOW
+        ->
+            lager:debug(
+                "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
+                [FCnt, DownlinkHandledAt, Window]
+            ),
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+        undefined ->
+            ok = do_multi_buy(Packet, Device0, FrameAck),
+            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)
+    end.
+
+-spec validate_frame_(
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Device :: router_device:device(),
+    Blockchain :: blockchain:blockchain()
+) ->
+    {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -932,7 +1010,7 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                                         router_device:update(DeviceUpdates, Device0);
                                     _ ->
                                         lager:warning(
-                                            "Got ack when no confirmed downlinks in queue"
+                                            "got ack when no confirmed downlinks in queue"
                                         ),
                                         DeviceUpdates = [
                                             {fcnt, FCnt},
@@ -973,7 +1051,7 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug(
-                        "Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
+                        "bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
@@ -1035,7 +1113,7 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                                         router_device:update(DeviceUpdates, Device0);
                                     _ ->
                                         lager:warning(
-                                            "Got ack when no confirmed downlinks in queue"
+                                            "got ack when no confirmed downlinks in queue"
                                         ),
                                         router_device:fcnt(FCnt, Device0)
                                 end
@@ -1369,7 +1447,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 {8, 15};
             _ ->
                 AssumedChannels = {0, 7},
-                lager:warning("Confirm channel plan for region ~p, assuming ~p", [
+                lager:warning("confirm channel plan for region ~p, assuming ~p", [
                     Region,
                     AssumedChannels
                 ]),

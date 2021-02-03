@@ -51,6 +51,9 @@
 -define(JOIN_MAX, 5).
 -define(PACKET_MAX, 3).
 
+%% Late packet error
+-define(LATE_PACKET, late_packet).
+
 %% Multi Buy
 -define(MB_ETS, router_device_routing_mb_ets).
 -define(MB_FUN(Hash), [
@@ -324,13 +327,10 @@ packet_offer(Offer, Pid) ->
                                     ),
                                     ok;
                                 false ->
-                                    %% This is probably a late packet
-                                    %% we should still use the multi buy
-                                    lager:debug(
-                                        [{device_id, DeviceID}],
-                                        "most likely a late packet multi buying"
-                                    ),
-                                    maybe_multi_buy(Offer, 10, Device)
+                                    lager:debug("most likely a late packet for ~p multi buying", [
+                                        DeviceID
+                                    ]),
+                                    {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
                             maybe_multi_buy(Offer, 10, Device)

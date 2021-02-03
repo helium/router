@@ -10,7 +10,8 @@
     device_update_test/1,
     drop_downlink_test/1,
     replay_joins_test/1,
-    device_worker_stop_children_test/1
+    device_worker_stop_children_test/1,
+    device_worker_late_packet_double_charge_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -36,7 +37,13 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [device_worker_stop_children_test, device_update_test, drop_downlink_test, replay_joins_test].
+    [
+        device_worker_stop_children_test,
+        device_update_test,
+        drop_downlink_test,
+        replay_joins_test,
+        device_worker_late_packet_double_charge_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -54,45 +61,103 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-device_worker_stop_children_test(Config) ->
-    AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+device_worker_late_packet_double_charge_test(Config) ->
+    #{stream := Stream, pubkey_bin := PubKeyBin1, hotspot_name := HotspotName1} = join(Config),
 
-    %% Send join packet
-    DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(router_device_utils:join_timeout()),
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
 
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
+    %% Check that device is in cache
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerId = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerId),
+
+    SendPacketFun = fun(PubKeyBin, Fcnt) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?UNCONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device),
+                    router_device:app_s_key(Device),
+                    Fcnt
+                )}
+    end,
+
+    {StartingBalance, StartingNonce} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
+
+    %% NOTE: multi-buy is 1 by default
+    %% multi-buy is only in routing. This test does not exercise that code.
+
+    %% make another hotspot
+    #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey2),
+    {ok, _HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+
+    %% Simulate multiple hotspots sending data
+    SendPacketFun(PubKeyBin1, 0),
+    test_utils:wait_until(fun() ->
+        %% Wait until our device has handled the previous frame.
+        %% We know because it will update it's fcnt
+        %% And the next packet we send will be "late"
+        test_utils:get_device_last_seen_fcnt(?CONSOLE_DEVICE_ID) == 0
+    end),
+    SendPacketFun(PubKeyBin2, 0),
+
+    %% Waiting for data from HTTP channel with 1 hotspots
+    test_utils:wait_channel_data(#{
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false
+        },
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"dc">> => #{<<"balance">> => StartingBalance - 1, <<"nonce">> => StartingNonce},
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName1),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
+
+    test_utils:wait_for_console_event(<<"up">>, #{
+        <<"category">> => <<"up">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => '_',
         <<"devaddr">> => '_',
         <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
             #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName1),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
-                <<"selected">> => true,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW125">>,
@@ -102,17 +167,71 @@ device_worker_stop_children_test(Config) ->
                 <<"long">> => fun erlang:is_float/1
             }
         ],
+        <<"channels">> => [
+            #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"description">> => '_'
+            }
+        ]
+    }),
+
+    test_utils:wait_for_console_event(<<"down">>, #{
+        <<"category">> => <<"down">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => fun erlang:is_integer/1,
+        <<"frame_down">> => fun erlang:is_integer/1,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName1),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => fun erlang:is_float/1,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
         <<"channels">> => []
     }),
 
+    %% Make sure no extra messages are being sent to console for the late packet
+    receive
+        {channel_data, Data} ->
+            ct:fail("Unexpected Channel Data ~p", [Data]);
+        {console_event, Cat, Event} ->
+            ct:fail("Unexpected Console Event ~p ~n~p", [Cat, Event])
+    after 1250 -> ok
+    end,
+
+    %% Make sure DC is not being charged for the late packet.
+    {EndingBalance, EndingNonce} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
+
+    ?assertEqual(EndingBalance, StartingBalance - 1),
+    ?assertEqual(EndingNonce, StartingNonce),
+
+    ok.
+
+device_worker_stop_children_test(Config) ->
+    #{} = join(Config),
+
     GetPids = fun() ->
         {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
-        DeviceState = sys:get_state(DeviceWorkerPid),
 
-        ChannelsWorkerPid = element(8, DeviceState),
-        ChannelsWorkerState = sys:get_state(ChannelsWorkerPid),
-
-        EventManagerPid = element(3, ChannelsWorkerState),
+        ChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
+        EventManagerPid = test_utils:get_channel_worker_event_manager(?CONSOLE_DEVICE_ID),
 
         {DeviceWorkerPid, ChannelsWorkerPid, EventManagerPid}
     end,
@@ -136,55 +255,7 @@ device_worker_stop_children_test(Config) ->
     ok.
 
 device_update_test(Config) ->
-    AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-
-    %% Send join packet
-    DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(router_device_utils:join_timeout()),
-
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
+    #{} = join(Config),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -207,62 +278,13 @@ device_update_test(Config) ->
 
     {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
 
-    timer:sleep(500),
-    ?assertNot(erlang:is_process_alive(DeviceWorkerID)),
+    test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
 
     ok.
 
 drop_downlink_test(Config) ->
-    AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-
-    %% Send join packet
-    DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(router_device_utils:join_timeout()),
-
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => 0,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
+    #{} = join(Config),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -299,55 +321,13 @@ drop_downlink_test(Config) ->
     ok.
 
 replay_joins_test(Config) ->
-    AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-
-    %% Send join packet
-    DevNonce1 = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1)},
-    timer:sleep(router_device_utils:join_timeout()),
-
-    %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"channels">> => []
-    }),
+    #{
+        app_key := AppKey,
+        dev_nonce := DevNonce1,
+        hotspot_name := HotspotName,
+        stream := Stream,
+        pubkey_bin := PubKeyBin
+    } = join(Config),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -573,3 +553,61 @@ replay_joins_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+join(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
+    timer:sleep(router_device_utils:join_timeout()),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"activation">>, #{
+        <<"category">> => <<"activation">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
+
+    #{
+        app_key => AppKey,
+        dev_nonce => DevNonce,
+        hotspot_name => HotspotName,
+        stream => Stream,
+        pubkey_bin => PubKeyBin
+    }.

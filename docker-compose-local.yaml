@@ -1,13 +1,16 @@
 version: '3'
 services:
   router:
-    image: quay.io/team-helium/router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile-local
+    image: quay.io/team-helium/router:local
     container_name: helium_router
     restart: always
     env_file: .env
     network_mode: host
     volumes:
-      - "/var/data:/var/data"
+      - "./data:/var/data"
     depends_on:
       - prometheus
   prometheus:
@@ -15,4 +18,4 @@ services:
       container_name: helium_prometheus
       network_mode: host
       volumes:
-          - ./prometheus.yml:/etc/prometheus/prometheus.yml
+          - "./prometheus.yml:/etc/prometheus/prometheus.yml"

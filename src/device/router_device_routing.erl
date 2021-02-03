@@ -221,19 +221,24 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
         end,
     case Routing of
         #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} ->
-            DevEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
-            AppEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
-            lager:LagerLevel(
+            DevEUI1 = eui_to_bin(DevEUI0),
+            AppEUI1 = eui_to_bin(AppEUI0),
+            DevEUI2 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
+            AppEUI2 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
+            lager:log(
+                LagerLevel,
                 [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
                 "responded ~p to join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
-                [Resp, DevEUI1, AppEUI1, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+                [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         #routing_information_pb{data = {devaddr, DevAddr0}} ->
-            DevAddr1 = lorawan_utils:binary_to_hex(lorawan_utils:reverse(devaddr_to_bin(DevAddr0))),
-            lager:LagerLevel(
+            DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
+            DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
+            lager:log(
+                LagerLevel,
                 [{devaddr, DevAddr1}],
                 "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
-                [Resp, DevAddr1, DevAddr0, HotspotName, HandlerPid]
+                [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
     end.
 
@@ -327,9 +332,13 @@ packet_offer(Offer, Pid) ->
                                     ),
                                     ok;
                                 false ->
-                                    lager:debug("most likely a late packet for ~p multi buying", [
-                                        DeviceID
-                                    ]),
+                                    lager:debug(
+                                        [{device_id, DeviceID}],
+                                        "most likely a late packet for ~p multi buying",
+                                        [
+                                            DeviceID
+                                        ]
+                                    ),
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->

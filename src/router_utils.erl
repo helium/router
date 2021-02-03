@@ -5,7 +5,10 @@
     get_hotspot_location/2,
     to_bin/1,
     b0/4,
-    format_hotspot/6
+    format_hotspot/6,
+    lager_md/1,
+    trace/1,
+    stop_trace/1
 ]).
 
 -spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
@@ -77,6 +80,68 @@ format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
         lat => Lat,
         long => Long
     }.
+
+-spec lager_md(router_device:device()) -> ok.
+lager_md(Device) ->
+    lager:md([
+        {device_id, router_device:id(Device)},
+        {app_eui, router_device:app_eui(Device)},
+        {dev_eui, router_device:dev_eui(Device)},
+        {devaddr, router_device:devaddr(Device)}
+    ]).
+
+-spec trace(DeviceID :: binary()) -> ok.
+trace(<<BinFileName:5/binary, _/binary>> = DeviceID) ->
+    {ok, Device} = router_device_cache:get(DeviceID),
+    FileName = erlang:binary_to_list(BinFileName) ++ ".log",
+    {ok, _} = lager:trace_file(FileName, [{device_id, DeviceID}], debug),
+    {ok, _} = lager:trace_file(
+        FileName,
+        [{module, router_console_api}, {device_id, DeviceID}],
+        debug
+    ),
+    {ok, _} = lager:trace_file(
+        FileName,
+        [
+            {module, router_device_routing},
+            {app_eui, router_device:app_eui(Device)},
+            {dev_eui, router_device:dev_eui(Device)}
+        ],
+        debug
+    ),
+    {ok, _} = lager:trace_file(
+        FileName,
+        [
+            {module, router_device_routing},
+            {devaddr, router_device:devaddr(Device)}
+        ],
+        debug
+    ),
+    ok.
+
+-spec stop_trace(DeviceID :: binary()) -> ok.
+stop_trace(<<BinFileName:5/binary, _/binary>> = DeviceID) ->
+    {ok, Device} = router_device_cache:get(DeviceID),
+    FileName = "/var/data/log/" ++ erlang:binary_to_list(BinFileName) ++ ".log",
+    ok = lager:stop_trace({{lager_file_backend, FileName}, [{device_id, DeviceID}], debug}),
+    ok = lager:stop_trace(
+        {{lager_file_backend, FileName}, [{module, router_console_api}, {device_id, DeviceID}],
+            debug}
+    ),
+    ok = lager:stop_trace(
+        {{lager_file_backend, FileName},
+            [
+                {module, router_device_routing},
+                {app_eui, router_device:app_eui(Device)},
+                {dev_eui, router_device:dev_eui(Device)}
+            ],
+            debug}
+    ),
+    ok = lager:stop_trace(
+        {{lager_file_backend, FileName},
+            [{module, router_device_routing}, {devaddr, router_device:devaddr(Device)}], debug}
+    ),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

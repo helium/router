@@ -131,7 +131,7 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
             device => Device
         }),
     IsActive = router_device:is_active(Device),
-    lager:md([{device_id, router_device:id(Device)}]),
+    ok = router_utils:lager_md(Device),
     ok = ?MODULE:device_update(self()),
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{
@@ -189,7 +189,7 @@ handle_cast(
         channels_worker = ChannelsWorkerPid
     } = State
 ) ->
-    lager:debug("Cleared queue"),
+    lager:debug("cleared queue"),
     Device1 = router_device:queue([], Device0),
     ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
     {noreply, State#state{device = Device1}};
@@ -383,7 +383,7 @@ handle_cast(
                         )},
                     {dev_nonces, DevNonces}
                 ],
-                lager:info("we got our first uplink after join dev nonce=~p and key=~p", [
+                lager:debug("we got our first uplink after join dev nonce=~p and key=~p", [
                     LastDevNonce,
                     UsedNwkSKey
                 ]),
@@ -644,7 +644,7 @@ handle_info(
             }};
         {send, Device1, DownlinkPacket} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            lager:info("sending downlink for fcnt: ~p", [FCnt]),
+            lager:debug("sending downlink for fcnt: ~p", [FCnt]),
             catch blockchain_state_channel_handler:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
@@ -900,7 +900,7 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                     Data = lorawan_utils:reverse(
                         lorawan_utils:cipher(FRMPayload, NwkSKey, MType band 1, DevAddr, FCnt)
                     ),
-                    lager:info(
+                    lager:debug(
                         "~s packet from ~s ~s with fopts ~p received by ~s",
                         [
                             lorawan_utils:mtype(MType),
@@ -1004,7 +1004,7 @@ validate_frame(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                     Data = lorawan_utils:reverse(
                         lorawan_utils:cipher(FRMPayload, AppSKey, MType band 1, DevAddr, FCnt)
                     ),
-                    lager:info(
+                    lager:debug(
                         "~s packet from ~s ~s with ACK ~p fopts ~p " ++
                             "fcnt ~p and data ~p received by ~s",
                         [
@@ -1139,7 +1139,7 @@ handle_frame_timeout(
         Count,
         ADRAdjustment
     ),
-    lager:info(
+    lager:debug(
         "downlink with no queue, ACK ~p, Fopts ~p, channels corrected ~p -> ~p, ADR adjustment ~p",
         [
             ACK,
@@ -1242,7 +1242,7 @@ handle_frame_timeout(
         Count,
         ADRAdjustment
     ),
-    lager:info(
+    lager:debug(
         "downlink with ~p, confirmed ~p port ~p ACK ~p and" ++
             " channels corrected ~p, ADR adjustment ~p, FOpts ~p",
         [
@@ -1414,7 +1414,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                     list_to_binary(blockchain_helium_packet_v1:datarate(Packet))
                 ),
                 Margin = trunc(SNR - MaxUplinkSNR),
-                lager:info("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
+                lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                 [{link_check_ans, Margin, Count} | FOpts1];
             false ->
                 FOpts1
@@ -1436,7 +1436,7 @@ were_channels_corrected(Frame, 'US915') ->
         {link_adr_ans, TxPowerACK, DataRateACK, ChannelMaskACK} ->
             %% consider any answer good enough, if the device wants to reject things,
             %% nothing we can so
-            lager:info("device rejected ADR: TxPower: ~p DataRate: ~p, Channel Mask: ~p", [
+            lager:debug("device rejected ADR: TxPower: ~p DataRate: ~p, Channel Mask: ~p", [
                 TxPowerACK == 1,
                 DataRateACK == 1,
                 ChannelMaskACK == 1
@@ -1622,9 +1622,12 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                         },
                         lorawan_adr:track_adr_answer(ADREngine1, ADRAnswer);
                     {false, {link_adr_ans, _, _, _}} ->
-                        lager:info("ignoring ADR answer while waiting for channel correction ~p", [
-                            ADRAns
-                        ]),
+                        lager:debug(
+                            "ignoring ADR answer while waiting for channel correction ~p",
+                            [
+                                ADRAns
+                            ]
+                        ),
                         ADREngine1;
                     %% Either we're waiting for a channel correction, or this
                     %% is not an ADRAns, so do nothing.

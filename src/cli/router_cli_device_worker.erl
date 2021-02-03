@@ -36,6 +36,8 @@ device_usage() ->
             "  device                                        - this message\n",
             "  device all                                    - All devices in rocksdb\n",
             "  device --id=<id>                              - Info for a device\n",
+            "  device trace --id=<id>                        - Tracing device's log\n",
+            "  device trace stop --id=<id>                   - Stop tracing device's log\n",
             "  device queue --id=<id>                        - Queue of messages for device\n",
             "  device queue clear --id=<id>                  - Empties the devices queue\n",
             "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",
@@ -57,6 +59,8 @@ device_cmd() ->
     [
         [["device"], [], [id_flag()], prepend_device_id(fun device_info/4)],
         [["device", "all"], [], [], fun device_list_all/3],
+        [["device", "trace"], [], [id_flag()], prepend_device_id(fun trace/4)],
+        [["device", "trace", "stop"], [], [id_flag()], prepend_device_id(fun stop_trace/4)],
         [["device", "queue"], [], [id_flag()], prepend_device_id(fun device_queue/4)],
         [
             ["device", "queue", "clear"],
@@ -77,6 +81,16 @@ device_cmd() ->
             prepend_device_id(fun device_queue_add_front/4)
         ]
     ].
+
+trace(ID, ["device", "trace"], [], [{id, ID}]) ->
+    DeviceID = erlang:list_to_binary(ID),
+    router_utils:trace(DeviceID),
+    c_text("Tracing device " ++ ID).
+
+stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]) ->
+    DeviceID = erlang:list_to_binary(ID),
+    router_utils:stop_trace(DeviceID),
+    c_text("Stop tracing device " ++ ID).
 
 prepend_device_id(Fn) ->
     fun(Cmd, Keys, Flags) ->

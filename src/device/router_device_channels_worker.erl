@@ -178,7 +178,7 @@ init(Args) ->
     %% We are doing this because of trap_exit in gen_event
     _ = erlang:monitor(process, DeviceWorkerPid),
     ?MODULE:refresh_channels(self()),
-    lager:md([{device_id, router_device:id(Device)}]),
+    ok = router_utils:md(Device),
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{
         chain = Blockchain,

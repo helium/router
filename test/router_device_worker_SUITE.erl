@@ -95,7 +95,8 @@ device_worker_late_packet_double_charge_test(Config) ->
 
     %% Simulate multiple hotspots sending data
     SendPacket(PubKeyBin1, 0),
-    timer:sleep(?FRAME_TIMEOUT),
+    %% Wait until we're just outside the window
+    timer:sleep(?FRAME_TIMEOUT + 10),
     SendPacket(PubKeyBin2, 0),
 
     %% Waiting for data from HTTP channel with 1 hotspots

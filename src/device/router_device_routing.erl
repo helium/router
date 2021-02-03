@@ -131,7 +131,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     AName = blockchain_utils:addr2name(PubKeyBin),
-    lager:debug("Packet: ~p, from: ~p", [SCPacket, AName]),
+    lager:debug("packet: ~p, from: ~p", [SCPacket, AName]),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
@@ -214,17 +214,24 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     HotspotName = blockchain_utils:addr2name(Hotspot),
+    LagerLevel =
+        case Resp of
+            ok -> debug;
+            _ -> info
+        end,
     case Routing of
         #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} ->
             DevEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
             AppEUI1 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
-            lager:debug(
+            lager:LagerLevel(
+                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
                 "responded ~p to join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
                 [Resp, DevEUI1, AppEUI1, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         #routing_information_pb{data = {devaddr, DevAddr0}} ->
             DevAddr1 = lorawan_utils:binary_to_hex(lorawan_utils:reverse(devaddr_to_bin(DevAddr0))),
-            lager:debug(
+            lager:LagerLevel(
+                [{devaddr, DevAddr1}],
                 "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
                 [Resp, DevAddr1, DevAddr0, HotspotName, HandlerPid]
             )
@@ -240,23 +247,35 @@ join_offer(Offer, _Pid) ->
     AppEUI1 = eui_to_bin(AppEUI0),
     case get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
-            lager:debug("did not find any device matching ~p/~p", [
-                {DevEUI1, DevEUI0},
-                {AppEUI1, AppEUI0}
-            ]),
+            lager:debug(
+                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                "failed to find device matching ~p/~p",
+                [
+                    {DevEUI1, DevEUI0},
+                    {AppEUI1, AppEUI0}
+                ]
+            ),
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, []} ->
-            lager:debug("did not find any device matching ~p/~p", [
-                {DevEUI1, DevEUI0},
-                {AppEUI1, AppEUI0}
-            ]),
+            lager:debug(
+                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                "did not find any device matching ~p/~p",
+                [
+                    {DevEUI1, DevEUI0},
+                    {AppEUI1, AppEUI0}
+                ]
+            ),
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, [Device | _] = Devices} ->
-            lager:debug("found devices ~p matching ~p/~p", [
-                [router_device:id(D) || D <- Devices],
-                DevEUI1,
-                AppEUI1
-            ]),
+            lager:debug(
+                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                "found devices ~p matching ~p/~p",
+                [
+                    [router_device:id(D) || D <- Devices],
+                    DevEUI1,
+                    AppEUI1
+                ]
+            ),
             maybe_buy_join_offer(Offer, _Pid, Device)
     end.
 
@@ -298,19 +317,18 @@ packet_offer(Offer, Pid) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, _DeviceID, PacketTime} ->
-                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
+                        {ok, DeviceID, PackeTime} ->
+                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
-                                    lager:debug("most likely a replay packet for ~p buying", [
-                                        _DeviceID
-                                    ]),
+                                    lager:debug(
+                                        [{device_id, DeviceID}],
+                                        "most likely a replay packet buying"
+                                    ),
                                     ok;
                                 false ->
-                                    %% This is probably a late packet
-                                    %% we should still use the multi buy
                                     lager:debug("most likely a late packet for ~p multi buying", [
-                                        _DeviceID
+                                        DeviceID
                                     ]),
                                     {error, ?LATE_PACKET}
                             end;
@@ -410,23 +428,36 @@ lookup_replay(PHash) ->
 maybe_multi_buy(_Offer, 0, _Device) ->
     {error, ?MB_TOO_MANY_ATTEMPTS};
 maybe_multi_buy(Offer, Attempts, Device) ->
+    DeviceID = router_device:id(Device),
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     case ets:lookup(?MB_ETS, PHash) of
         [] ->
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
             case MultiBuyValue > 1 of
                 true ->
-                    lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+                    lager:debug(
+                        [{device_id, DeviceID}],
+                        "accepting more packets [multi_buy: ~p]",
+                        [MultiBuyValue]
+                    ),
                     ?MODULE:accept_more(PHash, MultiBuyValue);
                 false ->
                     case router_device:queue(Device) of
                         [] ->
+                            lager:debug(
+                                [{device_id, DeviceID}],
+                                "did not get an answer from device worker yet waiting"
+                            ),
                             timer:sleep(10),
                             maybe_multi_buy(Offer, Attempts - 1, Device);
                         _Queue ->
-                            lager:debug("Accepting more packets [queue_length: ~p]", [
-                                length(_Queue)
-                            ]),
+                            lager:debug(
+                                [{device_id, DeviceID}],
+                                "Accepting more packets [queue_length: ~p]",
+                                [
+                                    length(_Queue)
+                                ]
+                            ),
                             ?MODULE:accept_more(PHash)
                     end
             end;
@@ -521,14 +552,19 @@ packet(
                     )
             end;
         {error, api_not_found} ->
-            lager:debug("no key for ~p ~p received by ~s", [
-                lorawan_utils:binary_to_hex(DevEUI),
-                lorawan_utils:binary_to_hex(AppEUI),
-                AName
-            ]),
+            lager:debug(
+                [{appeui, AppEUI}, {dev_eui, DevEUI}],
+                "no key for ~p ~p received by ~s",
+                [
+                    lorawan_utils:binary_to_hex(DevEUI),
+                    lorawan_utils:binary_to_hex(AppEUI),
+                    AName
+                ]
+            ),
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
+                [{appeui, AppEUI}, {dev_eui, DevEUI}],
                 "Device ~s with AppEUI ~s tried to join through ~s " ++
                     "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]
@@ -692,11 +728,12 @@ get_and_sort_devices(DevAddr, PubKeyBin) ->
 get_device_by_mic(_B0, _MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
-    DeviceID = router_device:id(Device),
     case router_device:nwk_s_key(Device) of
         undefined ->
-            lager:warning("device ~p did not have a nwk_s_key, deleting", [DeviceID]),
+            DeviceID = router_device:id(Device),
+            lager:warning([{device_id, DeviceID}], "device did not have a nwk_s_key, deleting"),
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
+            DeviceID = router_device:id(Device),
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             get_device_by_mic(B0, MIC, Payload, Devices);
@@ -743,6 +780,7 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
     Device :: router_device:device()
 ) -> boolean() | {error, any()}.
 brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
+    DeviceID = router_device:id(Device),
     try
         case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
             MIC ->
@@ -754,10 +792,10 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
                         B0_32 = b0_from_payload(Payload, 32),
                         case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
                             MIC ->
-                                DeviceID = router_device:id(Device),
-                                lager:warning("device ~p went over max 16bits fcnt size", [
-                                    DeviceID
-                                ]),
+                                lager:warning(
+                                    [{device_id, DeviceID}],
+                                    "device went over max 16bits fcnt size"
+                                ),
                                 {ok, DB, [_DefaultCF, CF]} = router_db:get(),
                                 ok = router_device:delete(DB, CF, DeviceID),
                                 ok = router_device_cache:delete(DeviceID),
@@ -771,7 +809,7 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
         end
     catch
         _:_ ->
-            lager:warning("skipping invalid device ~p", [Device]),
+            lager:warning([{device_id, DeviceID}], "skipping invalid device ~p", [Device]),
             false
     end.
 

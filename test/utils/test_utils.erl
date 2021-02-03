@@ -6,6 +6,7 @@
     start_swarm/3,
     get_device_channels_worker/1,
     get_channel_worker_event_manager/1,
+    get_device_last_seen_fcnt/1,
     get_last_dev_nonce/1,
     force_refresh_channels/1,
     ignore_messages/0,
@@ -201,6 +202,14 @@ get_channel_worker_event_manager(DeviceID) ->
     {state, _Chain, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs,
         _DataCache, _BalanceCache, _FCnt, _ChannelsRespCache} = sys:get_state(ChannelWorkerPid),
     EventManagerPid.
+
+get_device_last_seen_fcnt(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, FCnt, _OUI, _ChannelsWorkerPid,
+        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
+    FCnt.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),

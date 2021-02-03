@@ -72,7 +72,7 @@ device_worker_late_packet_double_charge_test(Config) ->
     WorkerId = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device} = router_device:get_by_id(DB, CF, WorkerId),
 
-    SendPacket = fun(PubKeyBin, Fcnt) ->
+    SendPacketFun = fun(PubKeyBin, Fcnt) ->
         Stream !
             {send,
                 test_utils:frame_packet(
@@ -87,6 +87,7 @@ device_worker_late_packet_double_charge_test(Config) ->
     {StartingBalance, StartingNonce} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
 
     %% NOTE: multi-buy is 1 by default
+    %% multi-buy is only in routing. This test does not exercise that code.
 
     %% make another hotspot
     #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
@@ -94,10 +95,14 @@ device_worker_late_packet_double_charge_test(Config) ->
     {ok, _HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
 
     %% Simulate multiple hotspots sending data
-    SendPacket(PubKeyBin1, 0),
-    %% Wait until we're just outside the window
-    timer:sleep(?FRAME_TIMEOUT + 10),
-    SendPacket(PubKeyBin2, 0),
+    SendPacketFun(PubKeyBin1, 0),
+    test_utils:wait_until(fun() ->
+        %% Wait until our device has handled the previous frame.
+        %% We know because it will update it's fcnt
+        %% And the next packet we send will be "late"
+        test_utils:get_device_last_seen_fcnt(?CONSOLE_DEVICE_ID) == 0
+    end),
+    SendPacketFun(PubKeyBin2, 0),
 
     %% Waiting for data from HTTP channel with 1 hotspots
     test_utils:wait_channel_data(#{

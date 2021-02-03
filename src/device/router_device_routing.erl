@@ -536,10 +536,7 @@ packet(
             end;
         {error, api_not_found} ->
             lager:debug(
-                [
-                    {appeui, lorawan_utils:binary_to_hex(AppEUI)},
-                    {dev_eui, lorawan_utils:binary_to_hex(DevEUI)}
-                ],
+                [{appeui, AppEUI}, {dev_eui, DevEUI}],
                 "no key for ~p ~p received by ~s",
                 [
                     lorawan_utils:binary_to_hex(DevEUI),
@@ -550,10 +547,7 @@ packet(
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
-                [
-                    {appeui, lorawan_utils:binary_to_hex(AppEUI)},
-                    {dev_eui, lorawan_utils:binary_to_hex(DevEUI)}
-                ],
+                [{appeui, AppEUI}, {dev_eui, DevEUI}],
                 "Device ~s with AppEUI ~s tried to join through ~s " ++
                     "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]

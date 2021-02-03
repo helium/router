@@ -273,7 +273,7 @@ handle_cast(
                         router_device_utils:join_timeout() -
                             (erlang:system_time(millisecond) - PacketTime)
                     ),
-                    lager:debug("Setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
+                    lager:debug("setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
                         DevNonce,
                         Timeout
                     ]),
@@ -420,7 +420,7 @@ handle_cast(
             ),
             {noreply, State#state{device = Device2}};
         {error, _Reason} ->
-            lager:debug("Packet not validated: ~p", [_Reason]),
+            lager:debug("packet not validated: ~p", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
@@ -468,7 +468,7 @@ handle_cast(
                         router_device_utils:frame_timeout() -
                             (erlang:system_time(millisecond) - PacketTime)
                     ),
-                    lager:debug("Setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
+                    lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
                     _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
                     {noreply, State#state{
                         device = Device2,
@@ -854,16 +854,16 @@ do_multi_buy(Packet, Device, FrameAck) ->
     MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
     case MultiBuyValue > 1 of
         true ->
-            lager:debug("Accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+            lager:debug("accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
             router_device_routing:accept_more(PHash, MultiBuyValue);
         false ->
             case {router_device:queue(Device), FrameAck == 1} of
                 {[], false} ->
-                    lager:debug("Denying more packets [queue_length: 0] [frame_ack: 0]"),
+                    lager:debug("denying more packets [queue_length: 0] [frame_ack: 0]"),
                     router_device_routing:deny_more(PHash);
                 {_Queue, _Ack} ->
                     lager:debug(
-                        "Accepting more packets [queue_length: ~p] [frame_ack: ~p]",
+                        "accepting more packets [queue_length: ~p] [frame_ack: ~p]",
                         [length(_Queue), _Ack]
                     ),
                     router_device_routing:accept_more(PHash)
@@ -1010,7 +1010,7 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                                         router_device:update(DeviceUpdates, Device0);
                                     _ ->
                                         lager:warning(
-                                            "Got ack when no confirmed downlinks in queue"
+                                            "got ack when no confirmed downlinks in queue"
                                         ),
                                         DeviceUpdates = [
                                             {fcnt, FCnt},
@@ -1051,7 +1051,7 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug(
-                        "Bad ~s packet from ~s ~s received by ~s -- double fopts~n",
+                        "bad ~s packet from ~s ~s received by ~s -- double fopts~n",
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
@@ -1113,7 +1113,7 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                                         router_device:update(DeviceUpdates, Device0);
                                     _ ->
                                         lager:warning(
-                                            "Got ack when no confirmed downlinks in queue"
+                                            "got ack when no confirmed downlinks in queue"
                                         ),
                                         router_device:fcnt(FCnt, Device0)
                                 end
@@ -1447,7 +1447,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 {8, 15};
             _ ->
                 AssumedChannels = {0, 7},
-                lager:warning("Confirm channel plan for region ~p, assuming ~p", [
+                lager:warning("confirm channel plan for region ~p, assuming ~p", [
                     Region,
                     AssumedChannels
                 ]),

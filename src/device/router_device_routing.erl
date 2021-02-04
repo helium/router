@@ -214,29 +214,23 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     HotspotName = blockchain_utils:addr2name(Hotspot),
-    LagerLevel =
-        case Resp of
-            ok -> debug;
-            _ -> info
-        end,
     case Routing of
         #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} ->
             DevEUI1 = eui_to_bin(DevEUI0),
             AppEUI1 = eui_to_bin(AppEUI0),
-            DevEUI2 = lorawan_utils:binary_to_hex(eui_to_bin(DevEUI0)),
-            AppEUI2 = lorawan_utils:binary_to_hex(eui_to_bin(AppEUI0)),
-            lager:log(
-                LagerLevel,
-                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+            DevEUI2 = lorawan_utils:binary_to_hex(DevEUI1),
+            AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
+            lager:debug(
+                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
                 "responded ~p to join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
                 [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         #routing_information_pb{data = {devaddr, DevAddr0}} ->
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
             DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
-            lager:log(
-                LagerLevel,
-                [{devaddr, DevAddr1}],
+            <<StoredDevAddr:4/binary, _/binary>> = DevAddr1,
+            lager:debug(
+                [{devaddr, StoredDevAddr}],
                 "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
                 [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
@@ -253,7 +247,7 @@ join_offer(Offer, _Pid) ->
     case get_devices(DevEUI1, AppEUI1) of
         {error, _Reason} ->
             lager:debug(
-                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
                 "failed to find device matching ~p/~p",
                 [
                     {DevEUI1, DevEUI0},
@@ -263,7 +257,7 @@ join_offer(Offer, _Pid) ->
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, []} ->
             lager:debug(
-                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
                 "did not find any device matching ~p/~p",
                 [
                     {DevEUI1, DevEUI0},
@@ -273,7 +267,7 @@ join_offer(Offer, _Pid) ->
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, [Device | _] = Devices} ->
             lager:debug(
-                [{appeui, AppEUI1}, {dev_eui, DevEUI1}],
+                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
                 "found devices ~p matching ~p/~p",
                 [
                     [router_device:id(D) || D <- Devices],
@@ -562,7 +556,7 @@ packet(
             end;
         {error, api_not_found} ->
             lager:debug(
-                [{appeui, AppEUI}, {dev_eui, DevEUI}],
+                [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "no key for ~p ~p received by ~s",
                 [
                     lorawan_utils:binary_to_hex(DevEUI),
@@ -573,7 +567,7 @@ packet(
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
-                [{appeui, AppEUI}, {dev_eui, DevEUI}],
+                [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "Device ~s with AppEUI ~s tried to join through ~s " ++
                     "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(AppEUI), AName]

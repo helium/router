@@ -3,7 +3,6 @@ name: CI
 on:
   push:
     branches: master
-    tags: '*'
   pull_request:
     branches: master
   # Run every day at midnight PST (0800 UTC)

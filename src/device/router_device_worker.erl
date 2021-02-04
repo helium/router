@@ -113,7 +113,7 @@ queue_message(Pid, #downlink{} = Downlink, Position) ->
 
 -spec clear_queue(Pid :: pid()) -> ok.
 clear_queue(Pid) ->
-    gen_server:call(Pid, clear_queue).
+    gen_server:cast(Pid, clear_queue).
 
 -spec device_update(Pid :: pid()) -> ok.
 device_update(Pid) ->

@@ -37,6 +37,13 @@ docker-run:
 docker-exec: 
 	docker exec -it helium_router _build/default/rel/router/bin/router remote_console
 
+docker-test-local:
+	docker run --rm -it --init \
+		--mount "type=bind,source=$(CURDIR)/test,target=/opt/router/test" \
+		--mount "type=bind,source=$(CURDIR)/src,target=/opt/router/src" \
+		--name=helium_router_test quay.io/team-helium/router:local \
+		$(REBAR) ct
+
 grpc:
 	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
 	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen

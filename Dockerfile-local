@@ -19,6 +19,8 @@ ADD config/ config/
 ADD priv/ priv/
 RUN make rel
 
+RUN ./c_src/compile.sh
+
 # This is only to fetch tests dependencies
 ADD test/ test/
 RUN ./rebar3 as test compile

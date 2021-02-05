@@ -117,7 +117,7 @@ handle_offer(Offer, HandlerPid) ->
             blockchain_state_channel_offer_v1:hotspot(Offer),
             Start
         ),
-        ok = print_offer_resp(Offer, HandlerPid, Resp),
+        ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
         ok = handle_offer_metrics(Routing, Resp, End - Start)
     end),
     Resp.
@@ -130,16 +130,16 @@ handle_offer(Offer, HandlerPid) ->
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-    AName = blockchain_utils:addr2name(PubKeyBin),
-    lager:debug("packet: ~p, from: ~p", [SCPacket, AName]),
+    _AName = blockchain_utils:addr2name(PubKeyBin),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     case packet(Packet, PacketTime, PubKeyBin, Region, Pid) of
         {error, Reason} = E ->
-            lager:info("failed to handle sc packet ~p : ~p", [Packet, Reason]),
+            ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             E;
         ok ->
+            ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -147,9 +147,8 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             ),
             ok
     end;
+%% This is for CTs only
 handle_packet(Packet, PacketTime, PubKeyBin) ->
-    %% TODO - come back to this, defaulting to US915 here.
-    %% Need to verify what packets are being handled here
     Start = erlang:system_time(millisecond),
     case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
         {error, Reason} = E ->
@@ -193,24 +192,32 @@ accept_more(PHash, Max) ->
 clear_multi_buy(Packet) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     true = ets:delete(?MB_ETS, PHash),
+    lager:debug("cleared multi buy for ~p", [PHash]),
     ok.
 
 -spec allow_replay(blockchain_helium_packet_v1:packet(), binary(), non_neg_integer()) -> ok.
 allow_replay(Packet, DeviceID, PacketTime) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     true = ets:insert(?REPLAY_ETS, {PHash, DeviceID, PacketTime}),
+    lager:debug([{device_id, DeviceID}], "allowed replay for packet ~p @ ~p", [PHash, PacketTime]),
     ok.
 
 -spec clear_replay(binary()) -> ok.
 clear_replay(DeviceID) ->
     true = ets:match_delete(?REPLAY_ETS, {'_', DeviceID, '_'}),
+    lager:debug([{device_id, DeviceID}], "cleared replay"),
     ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-print_offer_resp(Offer, HandlerPid, Resp) ->
+-spec print_handle_offer_resp(
+    Offer :: blockchain_state_channel_offer_v1:offer(),
+    HandlerPid :: pid(),
+    Resp :: any()
+) -> ok.
+print_handle_offer_resp(Offer, HandlerPid, Resp) ->
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     HotspotName = blockchain_utils:addr2name(Hotspot),
@@ -228,17 +235,46 @@ print_offer_resp(Offer, HandlerPid, Resp) ->
         #routing_information_pb{data = {devaddr, DevAddr0}} ->
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
             DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
+            lager:debug(
+                [{devaddr, DevAddr1}],
+                "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
+                [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
+            )
+    end.
+
+-spec print_handle_packet_resp(
+    Offer :: blockchain_state_channel_packet_v1:packet(),
+    HandlerPid :: pid(),
+    Resp :: any()
+) -> ok.
+print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    case blockchain_helium_packet_v1:routing_info(Packet) of
+        {eui, DevEUI0, AppEUI0} ->
+            DevEUI1 = eui_to_bin(DevEUI0),
+            AppEUI1 = eui_to_bin(AppEUI0),
+            DevEUI2 = lorawan_utils:binary_to_hex(DevEUI1),
+            AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
+            lager:debug(
+                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
+                "responded ~p to join deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+            );
+        {devaddr, DevAddr0} ->
+            DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
+            DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
             <<StoredDevAddr:4/binary, _/binary>> = DevAddr1,
             lager:debug(
                 [{devaddr, StoredDevAddr}],
-                "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
+                "responded ~p to packet devaddr=~s (~p) from: ~p (pid: ~p)",
                 [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
     end.
 
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 join_offer(Offer, _Pid) ->
-    %% TODO: Replace this with getter
     #routing_information_pb{
         data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}
     } = blockchain_state_channel_offer_v1:routing(Offer),
@@ -300,6 +336,12 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                             maybe_multi_buy(Offer, 10, Device);
                         false ->
                             true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
+                            DeviceID = router_device:id(Device),
+                            lager:debug(
+                                [{device_id, DeviceID}],
+                                "bought first join for ~p",
+                                [PHash]
+                            ),
                             ok
                     end
             end
@@ -440,8 +482,8 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                 true ->
                     lager:debug(
                         [{device_id, DeviceID}],
-                        "accepting more packets [multi_buy: ~p]",
-                        [MultiBuyValue]
+                        "accepting more packets [multi_buy: ~p] for ~p",
+                        [MultiBuyValue, PHash]
                     ),
                     ?MODULE:accept_more(PHash, MultiBuyValue);
                 false ->
@@ -449,14 +491,15 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                         [] ->
                             lager:debug(
                                 [{device_id, DeviceID}],
-                                "did not get an answer from device worker yet waiting"
+                                "did not get an answer from device worker yet waiting, packet: ~p",
+                                [PHash]
                             ),
                             timer:sleep(10),
                             maybe_multi_buy(Offer, Attempts - 1, Device);
                         _Queue ->
                             lager:debug(
                                 [{device_id, DeviceID}],
-                                "Accepting more packets [queue_length: ~p]",
+                                "Accepting more packets [queue_length: ~p] for ~p",
                                 [
                                     length(_Queue)
                                 ]
@@ -465,12 +508,32 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                     end
             end;
         [{PHash, ?MB_UNLIMITED, _Curr}] ->
+            lager:debug(
+                [{device_id, DeviceID}],
+                "accepting more packets [multi_buy: ~p] for ~p",
+                [?MB_UNLIMITED, PHash]
+            ),
             ok;
         [{PHash, 0, -1}] ->
+            lager:debug(
+                [{device_id, DeviceID}],
+                "denying more packets for ~p",
+                [PHash]
+            ),
             {error, ?MB_DENY_MORE};
         [{PHash, Max, Curr}] when Max == Curr ->
+            lager:debug(
+                [{device_id, DeviceID}],
+                "denying more packets max reached ~p for ~p",
+                [Max, PHash]
+            ),
             {error, ?MB_MAX_PACKET};
         [{PHash, _Max, _Curr}] ->
+            lager:debug(
+                [{device_id, DeviceID}],
+                "accepting more packets max: ~p current: ~p for ~p",
+                [_Max, _Curr, PHash]
+            ),
             case ets:select_replace(?MB_ETS, ?MB_FUN(PHash)) of
                 0 -> {error, ?MB_MAX_PACKET};
                 1 -> ok

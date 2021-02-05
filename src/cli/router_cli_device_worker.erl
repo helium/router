@@ -84,12 +84,12 @@ device_cmd() ->
 
 trace(ID, ["device", "trace"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
-    router_utils:trace(DeviceID),
+    erlang:spawn(router_utils, trace, [DeviceID]),
     c_text("Tracing device " ++ ID).
 
 stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
-    router_utils:stop_trace(DeviceID),
+    erlang:spawn(router_utils, stop_trace, [DeviceID]),
     c_text("Stop tracing device " ++ ID).
 
 prepend_device_id(Fn) ->

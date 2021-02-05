@@ -30,6 +30,7 @@
 -spec frame_timeout() -> non_neg_integer().
 frame_timeout() ->
     case application:get_env(router, frame_timeout, ?FRAME_TIMEOUT) of
+        [] -> ?FRAME_TIMEOUT;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.
@@ -37,6 +38,7 @@ frame_timeout() ->
 -spec join_timeout() -> non_neg_integer().
 join_timeout() ->
     case application:get_env(router, join_timeout, ?JOIN_TIMEOUT) of
+        [] -> ?JOIN_TIMEOUT;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.

@@ -10,7 +10,7 @@ services:
     env_file: .env
     network_mode: host
     volumes:
-      - "./data:/var/data"
+      - "/var/data:/var/data"
     depends_on:
       - prometheus
   prometheus:

@@ -568,6 +568,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = router_device_utils:report_join_status(Device0, PacketSelected, Packets, Blockchain),
+    ok = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},

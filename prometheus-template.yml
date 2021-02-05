@@ -1,0 +1,10 @@
+# my global config
+global:
+  scrape_interval: 10s
+  external_labels:
+    server: helium-router
+
+scrape_configs:
+  - job_name: router
+    static_configs:
+      - targets: ['127.0.0.1:3000']

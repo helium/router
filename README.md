@@ -1,4 +1,4 @@
-# Helium Router ![CI](https://github.com/helium/routerv3/workflows/CI/badge.svg?branch=master) [![Docker Repository on Quay](https://quay.io/repository/team-helium/router/status "Docker Repository on Quay")](https://quay.io/repository/team-helium/router)
+# Helium Router ![CI](https://github.com/helium/routerv3/workflows/CI/badge.svg?branch=master) ![BUILD_AND_PUSH_IMG](https://github.com/helium/routerv3/workflows/BUILD_AND_PUSH_IMG/badge.svg)
 
 Helium's LoRa Network Server (LNS) backend.
 
@@ -23,16 +23,6 @@ make docker-test
 Image hosted on https://quay.io/repository/team-helium/router.
 
 > The `docker-compose` in this repo is an example and only runs `Router` and `metrics server` (via prometheus) please see https://github.com/helium/console to run full LNS stack. 
-> It will build a local image and not use the latest from the registery.
-```
-# Replace this
-build: .
-image: quay.io/team-helium/router:local
-```
-```
-# By this to use latest image
-image: quay.io/team-helium/router:latest
-```
 
 ```
 # Build
@@ -62,33 +52,13 @@ Data is stored in `/var/data`.
 Logs are contained in `/var/data/log/router.log`, by default logs will rotate every day and will remain for 7 days.
 ### Config
 
-Config is in `.env`.
+Config is in `.env`. See `.env-template` for details.
 
-```
-# Default Helium's seed nodes
-ROUTER_SEED_NODES=/ip4/34.222.64.221/tcp/2154,/ip4/34.208.255.251/tcp/2154
-
-# OUI used by router (see https://developer.helium.com/blockchain/blockchain-cli#oui)
-ROUTER_OUI=22
-
-# Default devaddr if we fail to allocate one
-ROUTER_DEFAULT_DEVADDR=AAQASA==
-
-# State Channel Open amount
-ROUTER_SC_OPEN_DC_AMOUNT=100000
-
-# State Channel block expiration
-ROUTER_SC_EXPIRATION_INTERVAL=45
-
-# Console's connection info (see https://github.com/helium/console)
-ROUTER_CONSOLE_ENDPOINT=http://helium_console:4000
-ROUTER_CONSOLE_WS_ENDPOINT=ws://helium_console:4000/socket/router/websocket
-ROUTER_CONSOLE_SECRET=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-```
+Full config is in `config/sys.config.src`.
 
 Router's deafult port for blockchain connection is `2154`.
 
-Full config is in `config/sys.config.src`.
+Prometheus template config file in `prometheus-template.yaml`.
 ## CLI
 Commands are run in the `routerv3` directory using a docker container.
 > **_NOTE:_**  `sudo` may be required
@@ -150,6 +120,21 @@ Port to downlink on.
 
 `--ack [default: false]`
 Boolean flag for requiring acknowledgement from the device.
+
+#### Trace a device's logs
+```
+device trace --id=<id>
+```
+##### Options
+[ID Options](#id-option)
+
+#### Stop trancing  device's logs
+```
+device trace stop --id=<id>
+```
+##### Options
+[ID Options](#id-option)
+
 ### DC Tracker `dc_tracker`
 
 #### All Orgs

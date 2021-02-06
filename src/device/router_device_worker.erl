@@ -239,6 +239,8 @@ handle_cast(
         channels_worker = ChannelsWorker
     } = State
 ) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
+    lager:debug("got join packet (~p) ~p", [PHash, lager:pr(Packet0, blockchain_helium_packet_v1)]),
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
@@ -367,6 +369,8 @@ handle_cast(
         last_dev_nonce = LastDevNonce
     } = State
 ) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
+    lager:debug("got packet (~p) ~p", [PHash, lager:pr(Packet0, blockchain_helium_packet_v1)]),
     Device1 =
         case LastDevNonce == undefined of
             true ->
@@ -394,7 +398,6 @@ handle_cast(
                 ]),
                 router_device:update(DeviceUpdates, Device0)
         end,
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
     case
         validate_frame(
             Packet0,
@@ -568,6 +571,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     ok = router_device_utils:report_join_status(Device0, PacketSelected, Packets, Blockchain),
+    _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
@@ -854,17 +858,19 @@ do_multi_buy(Packet, Device, FrameAck) ->
     MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
     case MultiBuyValue > 1 of
         true ->
-            lager:debug("accepting more packets [multi_buy: ~p]", [MultiBuyValue]),
+            lager:debug("accepting more packets [multi_buy: ~p] for ~p", [MultiBuyValue, PHash]),
             router_device_routing:accept_more(PHash, MultiBuyValue);
         false ->
             case {router_device:queue(Device), FrameAck == 1} of
                 {[], false} ->
-                    lager:debug("denying more packets [queue_length: 0] [frame_ack: 0]"),
+                    lager:debug("denying more packets [queue_length: 0] [frame_ack: 0] for ~p", [
+                        PHash
+                    ]),
                     router_device_routing:deny_more(PHash);
                 {_Queue, _Ack} ->
                     lager:debug(
-                        "accepting more packets [queue_length: ~p] [frame_ack: ~p]",
-                        [length(_Queue), _Ack]
+                        "accepting more packets [queue_length: ~p] [frame_ack: ~p] for ~p",
+                        [length(_Queue), _Ack, PHash]
                     ),
                     router_device_routing:accept_more(PHash)
             end

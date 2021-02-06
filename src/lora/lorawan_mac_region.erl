@@ -190,6 +190,17 @@ drs_to_down(Region, DR) when Region == 'AU915' ->
         5 -> [13, 12, 11, 10, 9, 8];
         6 -> [13, 13, 12, 11, 10, 9]
     end;
+drs_to_down(Region, DR) when Region == 'CN470' ->
+    case DR of
+        0 -> [0, 0, 0, 0, 0, 0];
+        1 -> [1, 1, 1, 1, 1, 1];
+        2 -> [2, 1, 1, 1, 1, 1];
+        3 -> [3, 2, 1, 1, 1, 1];
+        4 -> [4, 3, 2, 1, 1, 1];
+        5 -> [5, 4, 3, 2, 1, 1];
+        6 -> [6, 5, 4, 3, 2, 1];
+        7 -> [7, 6, 5, 4, 3, 2]
+    end;
 drs_to_down(_Region, DR) ->
     case DR of
         0 -> [0, 0, 0, 0, 0, 0];
@@ -223,6 +234,18 @@ datars(Region) when Region == 'AU915' ->
         {5, {7, 125}, up},
         {6, {8, 500}, up}
         | us_down_datars()
+    ];
+datars(Region) when Region == 'CN470' ->
+    [
+        {0, {12, 125}, updown},
+        {1, {11, 125}, updown},
+        {2, {10, 125}, updown},
+        {3, {9, 125}, updown},
+        {4, {8, 125}, updown},
+        {5, {7, 125}, updown},
+        {6, {7, 500}, updown},
+        %% FSK
+        {7, {50000}, updown}
     ];
 datars(_Region) ->
     [
@@ -301,15 +324,17 @@ uplink_power_table('US915') ->
 uplink_power_table('AU915') ->
     uplink_power_table('US915');
 uplink_power_table('CN470') ->
+    %% NOTE: CN470's power levels are relative to the devices max power;
+    %%       they are dB, not dBm.
     [
-        {0, 17},
-        {1, 16},
-        {2, 14},
-        {3, 12},
-        {4, 10},
-        {5, 7},
-        {6, 5},
-        {7, 2}
+        {0, 0},
+        {1, -2},
+        {2, -4},
+        {3, -6},
+        {4, -8},
+        {5, -10},
+        {6, -12},
+        {7, -14}
     ];
 uplink_power_table('CN779') ->
     [

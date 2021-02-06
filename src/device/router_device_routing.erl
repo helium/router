@@ -339,7 +339,7 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                             DeviceID = router_device:id(Device),
                             lager:debug(
                                 [{device_id, DeviceID}],
-                                "bought first join for ~p",
+                                "buying first join for ~p",
                                 [PHash]
                             ),
                             ok
@@ -381,6 +381,11 @@ packet_offer(Offer, Pid) ->
                             maybe_multi_buy(Offer, 10, Device)
                     end;
                 false ->
+                    lager:debug(
+                        [{device_id, router_device:id(Device)}],
+                        "buying 1st packet for ~p",
+                        [PHash]
+                    ),
                     ok
             end
     end.

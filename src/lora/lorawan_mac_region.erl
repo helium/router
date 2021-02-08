@@ -560,28 +560,11 @@ set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
         | FOptsOut
     ].
 
-some_bit(MinMax, Chans) ->
-    lists:any(
-        fun(Tuple) -> match_part(MinMax, Tuple) end,
-        Chans
-    ).
-
 all_bit(MinMax, Chans) ->
     lists:any(
         fun(Tuple) -> match_whole(MinMax, Tuple) end,
         Chans
     ).
-
-none_bit(MinMax, Chans) ->
-    lists:all(
-        fun(Tuple) -> not match_part(MinMax, Tuple) end,
-        Chans
-    ).
-
-match_part(MinMax, {A, B}) when B < A ->
-    match_part(MinMax, {B, A});
-match_part({Min, Max}, {A, B}) ->
-    (A =< Max) and (B >= Min).
 
 match_whole(MinMax, {A, B}) when B < A ->
     match_whole(MinMax, {B, A});
@@ -674,6 +657,10 @@ ceiling(X) ->
         _ -> T
     end.
 
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
 region_test_() ->
@@ -745,4 +732,26 @@ bits_test_() ->
         )
     ].
 
+%%--------------------------------------------------------------------
+%% Private Utilities
+%%--------------------------------------------------------------------
+
+some_bit(MinMax, Chans) ->
+    lists:any(
+        fun(Tuple) -> match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
+none_bit(MinMax, Chans) ->
+    lists:all(
+        fun(Tuple) -> not match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
+match_part(MinMax, {A, B}) when B < A ->
+    match_part(MinMax, {B, A});
+match_part({Min, Max}, {A, B}) ->
+    (A =< Max) and (B >= Min).
+
+-endif.
 %% end of file

@@ -143,13 +143,16 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
 %% we calculate in fixed-point numbers
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
+    DownFreq = dch2f(Region, RxCh rem 8),
+    tx_offset(Region, RxQ, DownFreq, Offset);
 rx1_rf('AU915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9152, 2}, {9159, 16}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
+    DownFreq = dch2f(Region, RxCh rem 8),
+    tx_offset(Region, RxQ, DownFreq, Offset);
 rx1_rf('CN470' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 48), Offset);
+    DownFreq = dch2f(Region, RxCh rem 48),
+    tx_offset(Region, RxQ, DownFreq, Offset);
 rx1_rf(Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 %% TODO: original file does not have rx1_rf function to handle EU868 and

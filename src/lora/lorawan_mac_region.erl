@@ -98,6 +98,16 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
+join2_window(Region, #rxq{freq = UpFreq, tmms = Stamp} = RxQ) when Region == 'CN470' ->
+    Delay = get_window(?FUNCTION_NAME),
+    UpChannel = f2uch(Region, UpFreq),
+    DownFreq = dch2f(Region, UpChannel),
+    #txq{
+        freq = DownFreq,
+        datr = dr_to_datar(Region, 1),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
 %% 869.525 MHz / DR0 (SF12, 125 kHz)
 join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     Delay = get_window(?FUNCTION_NAME),
@@ -127,6 +137,17 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
         freq = 923.3,
         datr = dr_to_datar(Region, 8),
         time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+rx2_window(Region, #rxq{freq = UpFreq, tmms = Stamp} = RxQ) when Region == 'CN470' ->
+    Delay = get_window(?FUNCTION_NAME),
+    %% TODO: How to read Table 52 & 53
+    UpChannel = f2uch(Region, UpFreq),
+    DownFreq = dch2f(Region, UpChannel rem 48),
+    #txq{
+        freq = DownFreq,
+        datr = dr_to_datar(Region, 1),
+        time = Stamp = Delay,
         codr = RxQ#rxq.codr
     };
 %% 869.525 MHz / DR0 (SF12, 125 kHz)

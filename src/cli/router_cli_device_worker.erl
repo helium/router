@@ -123,12 +123,12 @@ device_queue(ID, ["device", "queue"], [], [{id, ID}]) ->
 
 device_queue_clear(ID, ["device", "queue", "clear"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
-    {ok, D, WorkerPid} = lookup_and_get_worker(DeviceID),
+    {ok, _D, WorkerPid} = lookup_and_get_worker(DeviceID),
 
     ok = router_device_worker:clear_queue(WorkerPid),
 
     Title = io_lib:format("~p Queue cleared", [DeviceID]),
-    c_list(Title, router_device:queue(D)).
+    c_text(Title).
 
 device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
     Options = maps:from_list(Flags),
@@ -187,9 +187,6 @@ lookup_and_get_worker(DeviceID) ->
 
 -spec c_list(list(string())) -> clique_status:status().
 c_list(L) -> [clique_status:list(L)].
-
--spec c_list(string(), list()) -> clique_status:status().
-c_list(Name, L) -> [clique_status:list(Name, L)].
 
 -spec c_table(proplists:proplist()) -> clique_status:status().
 c_table(PropLists) -> [clique_status:table(PropLists)].

@@ -77,6 +77,7 @@
 
 %% receive windows
 
+-spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
 join1_window(Region, Delay, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
 
@@ -87,6 +88,7 @@ join1_window(#network{region = Region, join1_delay = Delay}, RxQ) ->
 
 %% See RP002-1.0.1 LoRaWAN® Regional
 
+-spec join2_window(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
 join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
@@ -106,6 +108,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         codr = RxQ#rxq.codr
     }.
 
+-spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
 rx1_window(Region, Delay, Offset, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
 
@@ -120,6 +123,7 @@ rx1_window(
 
 %% See RP002-1.0.1 LoRaWAN® Regional
 
+-spec rx2_window(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
 rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
@@ -139,6 +143,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         codr = RxQ#rxq.codr
     }.
 
+-spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
 %% we calculate in fixed-point numbers
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),

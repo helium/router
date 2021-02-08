@@ -78,13 +78,13 @@
 %% receive windows
 
 -spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
-join1_window(Region, Delay, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
+join1_window(Region, _Delay, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, 0)).
 
 %% UNUSED, we don't use #network{}
 -spec join1_window(#network{}, #rxq{}) -> #txq{}.
-join1_window(#network{region = Region, join1_delay = Delay}, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
+join1_window(#network{region = Region}, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, 0)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
 
@@ -109,17 +109,13 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     }.
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
-rx1_window(Region, Delay, Offset, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
+rx1_window(Region, _Delay, Offset, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, Offset)).
 
 %% UNUSED, we don't use #network{}
 -spec rx1_window(#network{}, #node{}, #rxq{}) -> #txq{}.
-rx1_window(
-    #network{region = Region, rx1_delay = Delay},
-    #node{rxwin_use = {Offset, _, _}},
-    RxQ
-) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
+rx1_window(#network{region = Region}, #node{rxwin_use = {Offset, _, _}}, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, Offset)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
 
@@ -235,7 +231,8 @@ get_window(join2_window) -> 6000000;
 get_window(rx1_window) -> 1000000;
 get_window(rx2_window) -> 2000000.
 
-tx_window(Window, #rxq{tmms = Stamp}, _Delay, TxQ) when is_integer(Stamp) ->
+-spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
+tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
     %% TODO handle rx delay here
     Delay = get_window(Window),

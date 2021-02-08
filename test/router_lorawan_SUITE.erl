@@ -129,8 +129,8 @@ lw_join_test(Config) ->
     end,
 
     {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
+    test_utils:wait_for_console_event(<<"join_req">>, #{
+        <<"category">> => <<"join_req">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,

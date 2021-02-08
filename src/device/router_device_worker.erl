@@ -549,6 +549,7 @@ handle_info(
         0,
         packet_to_rxq(Packet)
     ),
+    ok = router_device_utils:report_join_request(Device0, PacketSelected, Packets, Blockchain),
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         Reply,
@@ -570,8 +571,13 @@ handle_info(
         true
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
-    ok = router_device_utils:report_join_status(Device0, PacketSelected, Packets, Blockchain),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
+    ok = router_device_utils:report_join_accept(
+        Device0,
+        PacketSelected,
+        DownlinkPacket,
+        Blockchain
+    ),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},

@@ -119,32 +119,4 @@ get_save_delete_test() ->
     ets:delete(?ETS),
     ok.
 
-get_by_devaddr_test() ->
-    Dir = test_utils:tmp_dir("get_by_devaddr_test"),
-    {ok, Pid} = router_db:start_link([Dir]),
-    ok = init(),
-    Max = 100000,
-    lists:foreach(
-        fun(I) ->
-            ID = uuid_v4(),
-            true = ets:insert(
-                ?ETS,
-                {ID, #device_v5{
-                    id = ID,
-                    devaddr = <<(I rem 2):25/integer-unsigned-little, 72:7/integer>>
-                }}
-            )
-        end,
-        lists:seq(1, Max)
-    ),
-    DevAddr = <<0:25/integer-unsigned-little, 72:7/integer>>,
-    {Time, Got} = timer:tc(?MODULE, get_by_devaddr, [DevAddr]),
-
-    ?assert(Time / 1000 < 100),
-    ?assertEqual(Max / 2, length(Got) + 0.0),
-
-    gen_server:stop(Pid),
-    ets:delete(?ETS),
-    ok.
-
 -endif.

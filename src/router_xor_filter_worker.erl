@@ -11,7 +11,8 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 -export([
-    start_link/1
+    start_link/1,
+    deveui_appeui/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -51,6 +52,12 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+-spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
+deveui_appeui(Device) ->
+    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+    <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -356,12 +363,7 @@ submit_txn(Txn) ->
     ok = blockchain_worker:submit_txn(Txn, Callback),
     Hash.
 
--spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
-deveui_appeui(Device) ->
-    <<(router_device:dev_eui(Device))/binary, (router_device:app_eui(Device))/binary>>.
-
 -spec schedule_post_init() -> ok.
-
 schedule_post_init() ->
     {ok, _} = timer:send_after(?POST_INIT_TIMER, self(), ?POST_INIT_TICK),
     ok.
@@ -411,8 +413,8 @@ should_update_filters_test() ->
     %% ------------------------
     %% Testing if no devices were added or removed
     Device0Updates = [
-        {dev_eui, <<"deveui0">>},
-        {app_eui, <<"app_eui0">>}
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device0 = router_device:update(Device0Updates, router_device:new(<<"ID0">>)),
     meck:expect(router_console_api, get_all_devices, fun() ->
@@ -449,8 +451,8 @@ should_update_filters_test() ->
         {ok, Routing0}
     end),
     DeviceUpdates1 = [
-        {dev_eui, <<"deveui1">>},
-        {app_eui, <<"app_eui1">>}
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 2>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"ID1">>)),
     meck:expect(router_console_api, get_all_devices, fun() ->
@@ -479,8 +481,8 @@ should_update_filters_test() ->
     %% ------------------------
     % Testing that we removed Device0 and added Device2
     DeviceUpdates2 = [
-        {dev_eui, <<"deveui2">>},
-        {app_eui, <<"app_eui2">>}
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 3>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"ID2">>)),
     meck:expect(router_console_api, get_all_devices, fun() ->

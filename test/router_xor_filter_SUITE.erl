@@ -104,7 +104,6 @@ publish_xor_test(Config) ->
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     %% Wait until xor filter worker started properly
-    DeviceDevEuiAppEui = <<?DEVEUI/binary, ?APPEUI/binary>>,
     test_utils:wait_until(fun() ->
         State = sys:get_state(router_xor_filter_worker),
         State#state.chain =/= undefined andalso
@@ -113,6 +112,13 @@ publish_xor_test(Config) ->
 
     %% After start xor filter worker  should have pushed a new filter to the chain
     ok = test_utils:wait_until(fun() -> {ok, 3} == blockchain:height(Chain) end),
+
+    DeviceUpdates = [
+        {dev_eui, ?DEVEUI},
+        {app_eui, ?APPEUI}
+    ],
+    Device = router_device:update(DeviceUpdates, router_device:new(<<"ID2">>)),
+    DeviceDevEuiAppEui = router_xor_filter_worker:deveui_appeui(Device),
 
     State0 = sys:get_state(router_xor_filter_worker),
     ?assertEqual(#{}, State0#state.pending_txns),

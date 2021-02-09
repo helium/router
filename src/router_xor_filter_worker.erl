@@ -394,6 +394,19 @@ default_timer() ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+deveui_appeui_test() ->
+    DevEUI = 6386327472473908003,
+    AppEUI = 6386327472473964541,
+    DeviceUpdates = [
+        {dev_eui, <<DevEUI:64/integer-unsigned-big>>},
+        {app_eui, <<AppEUI:64/integer-unsigned-big>>}
+    ],
+    Device = router_device:update(DeviceUpdates, router_device:new(<<"ID0">>)),
+    ?assertEqual(
+        <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>,
+        deveui_appeui(Device)
+    ).
+
 should_update_filters_test() ->
     OUI = 1,
 

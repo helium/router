@@ -87,6 +87,7 @@ join1_window(#network{region = Region}, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, 0)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
+%% For CN470 See lorawan_regional_parameters_v1.0.3reva_0.pdf
 
 -spec join2_window(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
@@ -98,13 +99,12 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
-join2_window(Region, #rxq{freq = UpFreq, tmms = Stamp} = RxQ) when Region == 'CN470' ->
+%% 505.3 MHz / DR0 (SF12 / BW125)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
     Delay = get_window(?FUNCTION_NAME),
-    UpChannel = f2uch(Region, UpFreq),
-    DownFreq = dch2f(Region, UpChannel),
     #txq{
-        freq = DownFreq,
-        datr = dr_to_datar(Region, 1),
+        freq = 505.3,
+        datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -139,15 +139,12 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
-rx2_window(Region, #rxq{freq = UpFreq, tmms = Stamp} = RxQ) when Region == 'CN470' ->
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
     Delay = get_window(?FUNCTION_NAME),
-    %% TODO: How to read Table 52 & 53
-    UpChannel = f2uch(Region, UpFreq),
-    DownFreq = dch2f(Region, UpChannel rem 48),
     #txq{
-        freq = DownFreq,
-        datr = dr_to_datar(Region, 1),
-        time = Stamp = Delay,
+        freq = 505.3,
+        datr = dr_to_datar(Region, 0),
+        time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
 %% 869.525 MHz / DR0 (SF12, 125 kHz)
@@ -302,13 +299,11 @@ drs_to_down(Region, DR) when Region == 'AU915' ->
 drs_to_down(Region, DR) when Region == 'CN470' ->
     case DR of
         0 -> [0, 0, 0, 0, 0, 0];
-        1 -> [1, 1, 1, 1, 1, 1];
-        2 -> [2, 1, 1, 1, 1, 1];
-        3 -> [3, 2, 1, 1, 1, 1];
-        4 -> [4, 3, 2, 1, 1, 1];
-        5 -> [5, 4, 3, 2, 1, 1];
-        6 -> [6, 5, 4, 3, 2, 1];
-        7 -> [7, 6, 5, 4, 3, 2]
+        1 -> [1, 0, 0, 0, 0, 0];
+        2 -> [2, 1, 0, 0, 0, 0];
+        3 -> [3, 2, 1, 0, 0, 0];
+        4 -> [4, 3, 2, 1, 0, 0];
+        5 -> [5, 4, 3, 2, 1, 0]
     end;
 drs_to_down(_Region, DR) ->
     case DR of
@@ -351,10 +346,7 @@ datars(Region) when Region == 'CN470' ->
         {2, {10, 125}, updown},
         {3, {9, 125}, updown},
         {4, {8, 125}, updown},
-        {5, {7, 125}, updown},
-        {6, {7, 500}, updown},
-        %% FSK
-        {7, {50000}, updown}
+        {5, {7, 125}, updown}
     ];
 datars(_Region) ->
     [
@@ -688,6 +680,69 @@ ceiling(X) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+cn470_window_1_test() ->
+    Now = os:timestamp(),
+    %% 96 up + 48 down = 144 total
+    Channel = 95,
+
+    RxQ = #rxq{
+        freq = uch2f('CN470', Channel),
+        datr = <<"SF12BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    Step = 0.2,
+    MinDownlinkFreq = 500.3,
+    MaxDownlinkFreq = MinDownlinkFreq + (Step * 48),
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            %% Within Downlink window
+            ?assert(MinDownlinkFreq < TxQ#txq.freq),
+            ?assert(TxQ#txq.freq < MaxDownlinkFreq),
+
+            ?assertEqual(TxQ#txq.freq, dch2f('CN470', Channel rem 48)),
+            ?assertEqual(TxQ#txq.datr, RxQ#rxq.datr, "Datarate is the same"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [
+            {join1_window, join1_window('CN470', 0, RxQ)},
+            {rx1_window, rx1_window('CN470', 0, 0, RxQ)}
+        ]
+    ),
+    ok.
+
+cn470_window_2_test() ->
+    Now = os:timestamp(),
+    %% 96 up + 48 down = 144 total
+    Channel = 95,
+
+    RxQ = #rxq{
+        freq = uch2f('CN470', Channel),
+        datr = <<"SF12BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, 505.3, "Frequency is hardcoded"),
+            ?assertEqual(TxQ#txq.datr, <<"SF12BW125">>, "Datarate is hardcoded"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [{join2_window, join2_window('CN470', RxQ)}, {rx2_window, rx2_window('CN470', RxQ)}]
+    ),
+    ok.
 
 region_test_() ->
     [

@@ -84,6 +84,15 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
+    };
+%% 923.2 MGz / DR2 (SF10 / 125 KHz)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = todo,
+        datr = todo,
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
@@ -342,6 +351,18 @@ datars(Region) when Region == 'CN470' ->
         {4, {8, 125}, updown},
         {5, {7, 125}, updown}
     ];
+datars(Region) when Region == 'AS923' ->
+    [
+        {0, {12, 125}, todo},
+        {1, {11, 125}, todo},
+        {2, {10, 125}, todo},
+        {3, {9, 125}, todo},
+        {4, {8, 125}, todo},
+        {5, {7, 125}, todo},
+        {6, {7, 250}, todo},
+        %% FSK
+        {7, 50000, todo}
+    ];
 datars(_Region) ->
     [
         {0, {12, 125}, updown},
@@ -477,7 +498,9 @@ uplink_power_table('AS923') ->
         {2, -4},
         {3, -6},
         {4, -8},
-        {5, -10}
+        {5, -10},
+        {6, -12},
+        {7, -14}
     ];
 uplink_power_table('KR920') ->
     [
@@ -757,6 +780,33 @@ cn470_window_2_test() ->
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
         [{join2_window, join2_window('CN470', RxQ)}, {rx2_window, rx2_window('CN470', RxQ)}]
+    ),
+    ok.
+
+as923_window_1_test() ->
+     todo.
+
+as923_window_2_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 100.0,
+        datr = <<"SF7BW250">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, 923.2, "Frequency is hardcoded"),
+            ?assertEqual(TxQ#txq.datr, <<"SF10BW125">>, "Datarate is hardcoded"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [{join2_window, join2_window('AS923', RxQ)}, {rx2_window, rx2_window('AS923', RxQ)}]
     ),
     ok.
 

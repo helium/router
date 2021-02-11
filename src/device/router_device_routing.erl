@@ -106,6 +106,7 @@ handle_offer(Offer, HandlerPid) ->
     Resp =
         case Routing of
             #routing_information_pb{data = {eui, _EUI}} ->
+                ok = lorawan_location:maybe_fetch_offer_location(Offer),
                 join_offer(Offer, HandlerPid);
             #routing_information_pb{data = {devaddr, _DevAddr}} ->
                 packet_offer(Offer, HandlerPid)

@@ -806,7 +806,8 @@ handle_join(
         {metadata, router_device:metadata(APIDevice)}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
-    Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
+    LoraRegion = lora_region(Region, PubKeyBin),
+    Reply = craft_join_reply(LoraRegion, AppNonce, DevAddr, AppKey),
     lager:debug(
         "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
         [
@@ -1742,4 +1743,32 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                 ADREngine2,
                 AdrPacket
             )
+    end.
+
+-spec mk_cflist_for_freqs(list(non_neg_integer())) -> binary().
+mk_cflist_for_freqs(Frequencies) ->
+    Channels = <<
+        <<X:24/integer-unsigned-little>>
+        || X <- Frequencies
+    >>,
+    <<Channels/binary, 0:8/integer>>.
+
+-spec lora_region(atom(), libp2p_crypto:pubkey_bin()) -> atom().
+lora_region(Region, PubKeyBin) ->
+    case Region of
+        'AS923' ->
+            case lorawan_location:get_country_code(PubKeyBin) of
+                {ok, CountryCode} ->
+                    lorawan_location:as923_region_from_country_code(CountryCode);
+                {error, _Reason} ->
+                    %% REVIEW: Should I put a Pubkey in a log?
+                    lager:warning("Failed to get country for AS923: ~p [pubkeybin: ~p)]", [
+                        _Reason,
+                        PubKeyBin
+                    ]),
+                    %% Default to AS923 region with more countries
+                    'AS923_AS2'
+            end;
+        _ ->
+            Region
     end.

@@ -225,7 +225,7 @@ ignore_messages() ->
     after 2000 -> ok
     end.
 
-% "category": "up | down | activation | ack | packet_dropped | channel_crash | channel_start_error"
+% "category": "up | down | join_req | join_accept | ack | packet_dropped | channel_crash | channel_start_error"
 wait_for_console_event(Category, Expected) ->
     try
         receive

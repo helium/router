@@ -574,8 +574,8 @@ join(Config) ->
     timer:sleep(router_device_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
+    test_utils:wait_for_console_event(<<"join_req">>, #{
+        <<"category">> => <<"join_req">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
@@ -595,6 +595,36 @@ join(Config) ->
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"join_accept">>, #{
+        <<"category">> => <<"join_accept">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,

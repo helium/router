@@ -75,8 +75,8 @@ bad_fcnt_test(Config) ->
     timer:sleep(router_device_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"activation">>, #{
-        <<"category">> => <<"activation">>,
+    test_utils:wait_for_console_event(<<"join_req">>, #{
+        <<"category">> => <<"join_req">>,
         <<"description">> => '_',
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,

@@ -188,7 +188,7 @@ report_status(Device, Map) ->
             PayloadSize = maps:get(payload_size, Map),
             Hotspots = maps:get(hotspots, Map),
             DCMap1 =
-                case lists:member(Category, [<<"up">>, activation]) of
+                case lists:member(Category, [<<"up">>, join_req]) of
                     false ->
                         DCMap0;
                     true ->

@@ -18,7 +18,8 @@
     report_status_max_size/3,
     report_status_no_dc/1,
     report_status_inactive/1,
-    report_join_status/4,
+    report_join_request/4,
+    report_join_accept/4,
     get_router_oui/0,
     mtype_to_ack/1,
     milli_to_sec/1
@@ -411,13 +412,13 @@ report_status_inactive(Device) ->
     },
     ok = router_console_api:report_status(Device, Report).
 
--spec report_join_status(
+-spec report_join_request(
     Device :: router_device:device(),
     PacketSelected :: tuple(),
     Packets :: list(tuple()),
     Blockchain :: blockchain:blockchain()
 ) -> ok.
-report_join_status(
+report_join_request(
     Device,
     {_, PubKeyBinSelected, _, PacketTimeSelected} = PacketSelected,
     Packets,
@@ -427,7 +428,7 @@ report_join_status(
     AppEUI = router_device:app_eui(Device),
     DevAddr = router_device:devaddr(Device),
     Desc =
-        <<"Join attempt from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+        <<"Join request from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
             (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
     Hotspots = lists:foldl(
         fun({Packet, PubKeyBin, Region, PacketTime}, Acc) ->
@@ -445,11 +446,53 @@ report_join_status(
         [PacketSelected | Packets]
     ),
     Report = #{
-        category => activation,
+        category => join_req,
         description => Desc,
         reported_at => ?MODULE:milli_to_sec(PacketTimeSelected),
         payload => <<>>,
         payload_size => 0,
+        port => 0,
+        fcnt => 0,
+        devaddr => lorawan_utils:binary_to_hex(DevAddr),
+        hotspots => Hotspots,
+        channels => []
+    },
+    ok = router_console_api:report_status(Device, Report).
+
+-spec report_join_accept(
+    Device :: router_device:device(),
+    PacketSelected :: tuple(),
+    DownlinkPacket :: blockchain_helium_packet_v1:packet(),
+    Blockchain :: blockchain:blockchain()
+) -> ok.
+report_join_accept(
+    Device,
+    {_Packet, PubKeyBin, Region, _PacketTime} = _PacketSelected,
+    DownlinkPacket,
+    Blockchain
+) ->
+    DevEUI = router_device:dev_eui(Device),
+    AppEUI = router_device:app_eui(Device),
+    DevAddr = router_device:devaddr(Device),
+    Desc =
+        <<"Join accept from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
+            (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+    Hotspots = [
+        router_utils:format_hotspot(
+            Blockchain,
+            PubKeyBin,
+            DownlinkPacket,
+            Region,
+            ?MODULE:milli_to_sec(erlang:system_time(millisecond)),
+            <<"success">>
+        )
+    ],
+    Report = #{
+        category => join_accept,
+        description => Desc,
+        reported_at => ?MODULE:milli_to_sec(erlang:system_time(millisecond)),
+        payload => <<>>,
+        payload_size => erlang:byte_size(blockchain_helium_packet_v1:payload(DownlinkPacket)),
         port => 0,
         fcnt => 0,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),

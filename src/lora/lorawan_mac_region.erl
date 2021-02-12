@@ -85,12 +85,21 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
-%% 923.2 MGz / DR2 (SF10 / 125 KHz)
-join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS1' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
-        freq = todo,
-        datr = todo,
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS2' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     }.
@@ -133,6 +142,24 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS1' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS2' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
@@ -149,6 +176,10 @@ rx1_rf('CN470' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
     DownFreq = dch2f(Region, RxCh rem 48),
     tx_offset(Region, RxQ, DownFreq, Offset);
+rx1_rf('AS923_AS1' = Region, RxQ, Offset) ->
+    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
+rx1_rf('AS923_AS2' = Region, RxQ, Offset) ->
+    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
 rx1_rf(Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 %% TODO: original file does not have rx1_rf function to handle EU868 and
@@ -268,7 +299,7 @@ datar_to_down(Region, DataRate, Offset) ->
     dr_to_datar(Region, DR2).
 
 -spec dr_to_down(atom(), dr(), non_neg_integer()) -> dr().
-dr_to_down('AS923', DR, Offset) ->
+dr_to_down(Region, DR, Offset) when Region == 'AS923_AS1'; Region == 'AS923_AS2' ->
     %% TODO: should be derived based on DownlinkDwellTime
     MinDR = 0,
     EffOffset =
@@ -779,12 +810,59 @@ cn470_window_2_test() ->
             ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
-        [{join2_window, join2_window('CN470', RxQ)}, {rx2_window, rx2_window('CN470', RxQ)}]
+        [
+            {join2_window, join2_window('CN470', RxQ)},
+            {rx2_window, rx2_window('CN470', RxQ)}
+        ]
     ),
     ok.
 
 as923_window_1_test() ->
-     todo.
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 9232000,
+        datr = dr_to_datar('AS923_AS1', 0),
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, RxQ#rxq.freq, "Frequency is same as uplink"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [
+            {join1_window, join1_window('AS923_AS1', _Delay = 0, RxQ)},
+            {join1_window, join1_window('AS923_AS2', _Delay = 0, RxQ)},
+            {rx1_window, rx1_window('AS923_AS1', _Delay = 0, _Offset0 = 0, RxQ)},
+            {rx1_window, rx1_window('AS923_AS2', _Delay = 0, _Offset0 = 0, RxQ)}
+        ]
+    ),
+
+    %% FIXME: How does the DR actually change?
+    %%        Put this test back when we fix the TODO in `dr_to_down/3'
+    %% lists:foreach(
+    %%     fun({TxQ, {expected_dr, Expected}}) ->
+    %%         ?assertEqual(datar_to_dr('AS923_AS1', TxQ#txq.datr), Expected),
+    %%         ?assertEqual(TxQ#txq.datr, dr_to_datar('AS923_AS1', Expected))
+    %%     end,
+    %%     [
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset0 = 0, RxQ), {expected_dr, 0}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset1 = 1, RxQ), {expected_dr, 1}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset2 = 2, RxQ), {expected_dr, 2}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset3 = 3, RxQ), {expected_dr, 3}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset4 = 4, RxQ), {expected_dr, 4}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset5 = 5, RxQ), {expected_dr, 5}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset6 = 6, RxQ), {expected_dr, 5}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset7 = 7, RxQ), {expected_dr, 5}}
+    %%     ]
+    %% ),
+    ok.
 
 as923_window_2_test() ->
     Now = os:timestamp(),
@@ -802,11 +880,16 @@ as923_window_2_test() ->
     lists:foreach(
         fun({Window, TxQ}) ->
             ?assertEqual(TxQ#txq.freq, 923.2, "Frequency is hardcoded"),
-            ?assertEqual(TxQ#txq.datr, <<"SF10BW125">>, "Datarate is hardcoded"),
+            ?assertEqual(TxQ#txq.datr, <<"SF10BW125">>, "Datarate is hardcoded DR2"),
             ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
-        [{join2_window, join2_window('AS923', RxQ)}, {rx2_window, rx2_window('AS923', RxQ)}]
+        [
+            {join2_window, join2_window('AS923_AS1', RxQ)},
+            {rx2_window, rx2_window('AS923_AS1', RxQ)},
+            {join2_window, join2_window('AS923_AS2', RxQ)},
+            {rx2_window, rx2_window('AS923_AS2', RxQ)}
+        ]
     ),
     ok.
 

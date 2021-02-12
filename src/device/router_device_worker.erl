@@ -1761,11 +1761,14 @@ lora_region(Region, PubKeyBin) ->
                 {ok, CountryCode} ->
                     lorawan_location:as923_region_from_country_code(CountryCode);
                 {error, _Reason} ->
-                    %% REVIEW: Should I put a Pubkey in a log?
-                    lager:warning("Failed to get country for AS923: ~p [pubkeybin: ~p)]", [
-                        _Reason,
-                        PubKeyBin
-                    ]),
+                    lager:warning(
+                        "Failed to get country for AS923: ~p [pubkeybin: ~p] [hotspot: ~p]",
+                        [
+                            _Reason,
+                            PubKeyBin,
+                            blockchain_utils:addr2name(PubKeyBin)
+                        ]
+                    ),
                     %% Default to AS923 region with more countries
                     'AS923_AS2'
             end;

@@ -32,7 +32,24 @@
 ]).
 
 -define(SERVER, ?MODULE).
+
 -define(ETS, lorawan_region_location_ets).
+-define(HOTSPOT_URL_PREFIX, "https://api.helium.io/v1/hotspots/").
+
+-define(AS923_UNKNOWN_REGION_DEFAULT, 'AS923_AS2').
+-define(AS923_REGION_MAPPING, #{
+    {<<"JP">>, <<"Japan">>} => 'AS923_AS1',
+    {<<"MY">>, <<"Malaysia">>} => 'AS923_AS1',
+    {<<"SG">>, <<"Singapore">>} => 'AS923_AS1',
+    {<<"BN">>, <<"Brunei">>} => 'AS923_AS2',
+    {<<"KH">>, <<"Cambodia">>} => 'AS923_AS2',
+    {<<"HK">>, <<"Hong Kong">>} => 'AS923_AS2',
+    {<<"ID">>, <<"Indonesia">>} => 'AS923_AS2',
+    {<<"LA">>, <<"Laos">>} => 'AS923_AS2',
+    {<<"TW">>, <<"Taiwan">>} => 'AS923_AS2',
+    {<<"TH">>, <<"Thailand">>} => 'AS923_AS2',
+    {<<"VN">>, <<"Vietnam">>} => 'AS923_AS2'
+}).
 
 -type country_code() :: {binary(), binary()}.
 
@@ -59,36 +76,20 @@ get_country_code(PubKeyBin) ->
         [] -> {error, pubkey_not_present}
     end.
 
-store(PubKeyBin, CountryCode, Offer) ->
-    %% TODO: What else do we want to store from the offer?
-    true = ets:insert_new(?ETS, {PubKeyBin, CountryCode, Offer}),
+store(PubKeyBin, CountryCode) ->
+    true = ets:insert(?ETS, {PubKeyBin, CountryCode}),
     ok.
 
 -spec as923_region_from_country_code(country_code()) -> 'AS923_AS1' | 'AS923_AS2'.
 as923_region_from_country_code(CountryCode) ->
-    %% TODO: We probably only need one of these
-    case CountryCode of
-        {<<"JP">>, <<"Japan">>} -> 'AS923_AS1';
-        {<<"MY">>, <<"Malaysia">>} -> 'AS923_AS1';
-        {<<"SG">>, <<"Singapore">>} -> 'AS923_AS1';
-        {<<"BN">>, <<"Brunei">>} -> 'AS923_AS2';
-        {<<"KH">>, <<"Cambodia">>} -> 'AS923_AS2';
-        {<<"HK">>, <<"Hong Kong">>} -> 'AS923_AS2';
-        {<<"ID">>, <<"Indonesia">>} -> 'AS923_AS2';
-        {<<"LA">>, <<"Laos">>} -> 'AS923_AS2';
-        {<<"TW">>, <<"Taiwan">>} -> 'AS923_AS2';
-        {<<"TH">>, <<"Thailand">>} -> 'AS923_AS2';
-        {<<"VN">>, <<"Vietnam">>} -> 'AS923_AS2';
-        _ -> 'AS923_AS2'
-    end.
+    maps:get(CountryCode, ?AS923_REGION_MAPPING, ?AS923_UNKNOWN_REGION_DEFAULT).
 
 %% ------------------------------------------------------------------
 %% gen_server callbacks
 %% ------------------------------------------------------------------
 
 init([]) ->
-    ?ETS = etw:new(?ETS, [public, named_table, set]),
-    %% TODO: ok = init_ets(),
+    ?ETS = ets:new(?ETS, [public, named_table, set]),
     {ok, #state{}}.
 
 handle_call(_Msg, _From, State) ->
@@ -100,16 +101,17 @@ handle_cast({fetch, Offer}, State) ->
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
 
-    Url = <<"https://api.helium.io/v1/hotspots/", B58/binary>>,
+    Url = <<?HOTSPOT_URL_PREFIX, B58/binary>>,
     case hackney:get(Url, [], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
             Map = jsx:decode(Body, [return_maps]),
             ShortCountry = kvc:path('data.geocode.short_country', Map),
             LongCountry = kvc:path('data.geocode.long_country', Map),
             %% TODO: Some geocode information is NULL
-            ok = store(PubKeyBin, {ShortCountry, LongCountry}, Offer),
+            ok = store(PubKeyBin, {ShortCountry, LongCountry}),
             ok;
         _Other ->
+            lager:error("fetching hotspot region failed: ~p", [_Other]),
             error
     end,
     {noreply, State};

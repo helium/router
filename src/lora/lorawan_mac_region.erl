@@ -23,7 +23,7 @@
 %% @doc === Types and Terms ===
 %%
 %% dr        -> Datarate Index
-%% datar     -> <<"SFxxBWxx">>
+%% datar     -> ```<<"SFxxBWxx">>'''
 %% datarate  -> Datarate Tuple {spreading, bandwidth}
 %%
 %% Frequency -> A Frequency

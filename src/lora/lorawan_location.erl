@@ -105,14 +105,23 @@ handle_cast({fetch, Offer}, State) ->
     case hackney:get(Url, [], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
             Map = jsx:decode(Body, [return_maps]),
+
             ShortCountry = kvc:path('data.geocode.short_country', Map),
             LongCountry = kvc:path('data.geocode.long_country', Map),
-            %% TODO: Some geocode information is NULL
-            ok = store(PubKeyBin, {ShortCountry, LongCountry}),
-            ok;
+            case ShortCountry == null orelse LongCountry == null of
+                true ->
+                    lager:info(
+                        "Offer received from hotspot with no location [pubkeybin: ~p] [hotspot: ~p]",
+                        [
+                            PubKeyBin,
+                            blockchain_utils:addr2name(PubKeyBin)
+                        ]
+                    );
+                false ->
+                    ok = store(PubKeyBin, {ShortCountry, LongCountry})
+            end;
         _Other ->
-            lager:error("fetching hotspot region failed: ~p", [_Other]),
-            error
+            lager:error("fetching hotspot region failed: ~p", [_Other])
     end,
     {noreply, State};
 handle_cast(_Msg, State) ->

@@ -5,54 +5,6 @@
 %% Distributed under the terms of the MIT License. See the LICENSE file.
 %% @end
 %%%-------------------------------------------------------------------
-%%%
-%%% === Types and Terms ===
-%%%
-%%% dr        -> Datarate Index
-%%% datar     -> <<"SFxxBWxx">>
-%%% datarate  -> Datarate Tuple {spreading, bandwidth}
-%%%
-%%% Frequency -> A Frequency
-%%%              - whole number 4097 (representing 409.7)
-%%%              - float 409.7
-%%% Channel   -> Index of a frequency in a regions range
-%%% Region    -> Atom representing a region
-%%%
-%%% === Help with readability ===
-%%%
-%%% This file can be a bit concise, here are some find-replace you can run to
-%%% make things a bit more descriptive.
-%%%
-%%% ==== ch2fi -- channel_to_frequency_index ====
-%%% (Channel, {Start, Inc}) -> Frequency
-%%% Given a Frequency Index = (Inc * Channel) + Start
-%%% Hey look its y = mx + b
-%%%
-%%% ==== dch2f -- down_channel_to_frequency ====
-%%% (Region, Channel) -> Frequency
-%%% Map Channel to Frequency for region
-%%%
-%%% ==== uch2f -- up_channel_to_frequency ====
-%%% (Region, Channel) -> Frequency
-%%% Map Channel to Frequency for region
-%%%
-%%% ==== f2uch -- frequency_to_up_channel ====
-%%% Warning: Overloaded
-%%% (Region, Freq) -> Channel
-%%% (Freq, {Start, Inc}) -> Channel
-%%% (Freq, {Start1, Inc1}, {Start2, Inc2}) -> Channel
-%%% Map Frequency to Channel for Region
-%%%
-%%% ==== datar_to_down -- up_datarate_tuple_to_down_datarate_tuple ====
-%%% (Region, Datarate Tuple, Offset) -> Datarate Tuple
-%%%
-%%% ==== datar_to_dr -- datarate_tuple_to_datarate_index ====
-%%% (Region, Dararate Tuple) -> Datarate Index
-%%%
-%%% ==== dr_to_datar -- datarate_index_to_datarate_binary ====
-%%% (Region, Datarate Index) -> Datarate Binary
-%%%
-%%%
 -module(lorawan_mac_region).
 
 -dialyzer([no_return, no_unused, no_match]).
@@ -66,6 +18,22 @@
 -export([uplink_power_table/1]).
 
 -include("lorawan_db.hrl").
+
+%% ------------------------------------------------------------------
+%% @doc === Types and Terms ===
+%%
+%% dr        -> Datarate Index
+%% datar     -> <<"SFxxBWxx">>
+%% datarate  -> Datarate Tuple {spreading, bandwidth}
+%%
+%% Frequency -> A Frequency
+%%              - whole number 4097 (representing 409.7)
+%%              - float 409.7
+%% Channel   -> Index of a frequency in a regions range
+%% Region    -> Atom representing a region
+%%
+%% @end
+%% ------------------------------------------------------------------
 
 %%        <<"SFxxBWxxx">> | FSK
 -type datar() :: binary() | non_neg_integer().
@@ -187,6 +155,11 @@ rx1_rf(Region, RxQ, Offset) ->
 %%     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
 %%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
 
+%% ------------------------------------------------------------------
+%% @doc Frequency to Up Channel
+%% Map Frequency to Channel for region.
+%% @end
+%% ------------------------------------------------------------------
 -spec f2uch(Region | Freq, Freq | {Start, Inc}) -> UpChannel when
     Region :: atom(),
     Freq :: freq_float(),
@@ -212,6 +185,11 @@ f2uch(Freq, {Start1, Inc1}, _) when round(10 * Freq - Start1) rem Inc1 == 0 ->
 f2uch(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
     64 + round(10 * Freq - Start2) div Inc2.
 
+%% ------------------------------------------------------------------
+%% @doc Up Channel to Frequency
+%% Map Channel to Frequency for region.
+%% @end
+%% ------------------------------------------------------------------
 -spec uch2f(Region, Channel) -> freq_float() when
     Region :: atom(),
     Channel :: channel().
@@ -226,6 +204,11 @@ uch2f('AU915', Ch) ->
 uch2f('CN470', Ch) ->
     ch2fi(Ch, {4703, 2}).
 
+%% ------------------------------------------------------------------
+%% @doc Down Channel to Frequency
+%% Map Channel to Frequency for region
+%% @end
+%% ------------------------------------------------------------------
 -spec dch2f(Region, Channel) -> Frequency when
     Region :: atom(),
     Channel :: non_neg_integer(),
@@ -235,6 +218,12 @@ dch2f(Region, Ch) when Region == 'US915'; Region == 'AU915' ->
 dch2f('CN470', Ch) ->
     ch2fi(Ch, {5003, 2}).
 
+%% ------------------------------------------------------------------
+%% @doc Channel to Frequency Index
+%% Given a Frequency Index = (Inc * Channel) + Start
+%% (y = mx + b)
+%% @end
+%% ------------------------------------------------------------------
 -spec ch2fi(Channel, {Start, Inc}) -> Freq when
     Channel :: channel(),
     Start :: non_neg_integer(),
@@ -259,6 +248,10 @@ tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
     Delay = get_window(Window),
     TxQ#txq{time = Stamp + Delay}.
 
+%% ------------------------------------------------------------------
+%% @doc Up Datarate tuple to Down Datarate tuple
+%% @end
+%% ------------------------------------------------------------------
 -spec datar_to_down(atom(), datar(), non_neg_integer()) -> datar().
 datar_to_down(Region, DataRate, Offset) ->
     DR2 = dr_to_down(Region, datar_to_dr(Region, DataRate), Offset),
@@ -372,20 +365,37 @@ us_down_datars() ->
         {13, {7, 500}, down}
     ].
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Index to Datarate Tuple
+%% @end
+%% ------------------------------------------------------------------
 -spec dr_to_tuple(atom(), dr()) -> datarate().
 dr_to_tuple(Region, DR) ->
     {_, DataRate, _} = lists:keyfind(DR, 1, datars(Region)),
     DataRate.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Index to Datarate Binary
+%% @end
+%% ------------------------------------------------------------------
 -spec dr_to_datar(atom(), dr()) -> datar().
 dr_to_datar(Region, DR) ->
     tuple_to_datar(dr_to_tuple(Region, DR)).
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Tuple to Datarate Index
+%% @end
+%% ------------------------------------------------------------------
 -spec datar_to_dr(atom(), datar()) -> dr().
 datar_to_dr(Region, DataRate) ->
     {DR, _, _} = lists:keyfind(datar_to_tuple(DataRate), 2, datars(Region)),
     DR.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Tuple to Datarate Binary
+%% NOTE: FSK is a special case.
+%% @end
+%% ------------------------------------------------------------------
 -spec tuple_to_datar(datarate() | non_neg_integer()) -> datar().
 tuple_to_datar({SF, BW}) ->
     <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>;
@@ -393,6 +403,11 @@ tuple_to_datar(DataRate) ->
     %% FSK
     DataRate.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Binary to Datarate Tuple
+%% NOTE: FSK is a special case.
+%% @end
+%% ------------------------------------------------------------------
 -spec datar_to_tuple(datar()) -> datarate() | non_neg_integer().
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),

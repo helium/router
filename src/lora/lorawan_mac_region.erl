@@ -19,22 +19,60 @@
 
 -include("lorawan_db.hrl").
 
+%% ------------------------------------------------------------------
+%% @doc === Types and Terms ===
+%%
+%% dr        -> Datarate Index
+%% datar     -> ```<<"SFxxBWxx">>'''
+%% datarate  -> Datarate Tuple {spreading, bandwidth}
+%%
+%% Frequency -> A Frequency
+%%              - whole number 4097 (representing 409.7)
+%%              - float 409.7
+%% Channel   -> Index of a frequency in a regions range
+%% Region    -> Atom representing a region
+%%
+%% @end
+%% ------------------------------------------------------------------
+
+%%        <<"SFxxBWxxx">> | FSK
+-type datar() :: binary() | non_neg_integer().
+-type dr() :: non_neg_integer().
+-type datarate() :: {Spreading :: non_neg_integer(), Bandwidth :: non_neg_integer()}.
+-type freq_float() :: float().
+-type freq_whole() :: non_neg_integer().
+-type channel() :: non_neg_integer().
+
 %% receive windows
 
-join1_window(Region, Delay, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
+-spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
+join1_window(Region, _Delay, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, 0)).
 
-join1_window(#network{region = Region, join1_delay = Delay}, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, 0)).
+%% UNUSED, we don't use #network{}
+-spec join1_window(#network{}, #rxq{}) -> #txq{}.
+join1_window(#network{region = Region}, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, 0)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
+%% For CN470 See lorawan_regional_parameters_v1.0.3reva_0.pdf
 
+-spec join2_window(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
 join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
         datr = dr_to_datar(Region, 8),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 505.3 MHz / DR0 (SF12 / BW125)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 505.3,
+        datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -48,24 +86,32 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         codr = RxQ#rxq.codr
     }.
 
-rx1_window(Region, Delay, Offset, RxQ) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
+-spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
+rx1_window(Region, _Delay, Offset, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, Offset)).
 
-rx1_window(
-    #network{region = Region, rx1_delay = Delay},
-    #node{rxwin_use = {Offset, _, _}},
-    RxQ
-) ->
-    tx_window(?FUNCTION_NAME, RxQ, Delay, rx1_rf(Region, RxQ, Offset)).
+%% UNUSED, we don't use #network{}
+-spec rx1_window(#network{}, #node{}, #rxq{}) -> #txq{}.
+rx1_window(#network{region = Region}, #node{rxwin_use = {Offset, _, _}}, RxQ) ->
+    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(Region, RxQ, Offset)).
 
 %% See RP002-1.0.1 LoRaWAN® Regional
 
+-spec rx2_window(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
 rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
         datr = dr_to_datar(Region, 8),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 505.3,
+        datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -79,24 +125,29 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         codr = RxQ#rxq.codr
     }.
 
+-spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
 %% we calculate in fixed-point numbers
 rx1_rf('US915' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
+    DownFreq = dch2f(Region, RxCh rem 8),
+    tx_offset(Region, RxQ, DownFreq, Offset);
+rx1_rf('AU915' = Region, RxQ, Offset) ->
+    RxCh = f2uch(RxQ#rxq.freq, {9152, 2}, {9159, 16}),
+    DownFreq = dch2f(Region, RxCh rem 8),
+    tx_offset(Region, RxQ, DownFreq, Offset);
+rx1_rf('CN470' = Region, RxQ, Offset) ->
+    RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
+    DownFreq = dch2f(Region, RxCh rem 48),
+    tx_offset(Region, RxQ, DownFreq, Offset);
+rx1_rf(Region, RxQ, Offset) ->
+    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 %% TODO: original file does not have rx1_rf function to handle EU868 and
 %% other, is support required ?
 %% rx1_rf('EU868' = Region, RxQ, Offset) ->
 %%    RxCh = f2uch(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
 %%    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
-rx1_rf('AU915' = Region, RxQ, Offset) ->
-    RxCh = f2uch(RxQ#rxq.freq, {9152, 2}, {9159, 16}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 8), Offset);
-rx1_rf('CN470' = Region, RxQ, Offset) ->
-    RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
-    tx_offset(Region, RxQ, dch2f(Region, RxCh rem 48), Offset);
-rx1_rf(Region, RxQ, Offset) ->
-    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 
+%% TODO: Remove unless we want to refactor to use #network{}
 %% rx2_rf(#network{region=Region, tx_codr=CodingRate}, #node{rxwin_use={_, DataRate, Freq}}) ->
 %%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate};
 %% rx2_rf(#network{region=Region, tx_codr=CodingRate,
@@ -104,6 +155,17 @@ rx1_rf(Region, RxQ, Offset) ->
 %%     {_, DataRate, Freq} = lorawan_mac_commands:merge_rxwin(WinSet, WinInit),
 %%     #txq{freq=Freq, datr=dr_to_datar(Region, DataRate), codr=CodingRate}.
 
+%% ------------------------------------------------------------------
+%% @doc Frequency to Up Channel
+%% Map Frequency to Channel for region.
+%% @end
+%% ------------------------------------------------------------------
+-spec f2uch(Region | Freq, Freq | {Start, Inc}) -> UpChannel when
+    Region :: atom(),
+    Freq :: freq_float(),
+    Start :: freq_whole(),
+    Inc :: number(),
+    UpChannel :: channel().
 f2uch('US915', Freq) ->
     f2uch(Freq, {9023, 2}, {9030, 16});
 f2uch('AU915', Freq) ->
@@ -123,6 +185,14 @@ f2uch(Freq, {Start1, Inc1}, _) when round(10 * Freq - Start1) rem Inc1 == 0 ->
 f2uch(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
     64 + round(10 * Freq - Start2) div Inc2.
 
+%% ------------------------------------------------------------------
+%% @doc Up Channel to Frequency
+%% Map Channel to Frequency for region.
+%% @end
+%% ------------------------------------------------------------------
+-spec uch2f(Region, Channel) -> freq_float() when
+    Region :: atom(),
+    Channel :: channel().
 uch2f(Region, Ch) when Region == 'US915' andalso Ch < 64 ->
     ch2fi(Ch, {9023, 2});
 uch2f(Region, Ch) when Region == 'US915' ->
@@ -134,32 +204,60 @@ uch2f('AU915', Ch) ->
 uch2f('CN470', Ch) ->
     ch2fi(Ch, {4703, 2}).
 
+%% ------------------------------------------------------------------
+%% @doc Down Channel to Frequency
+%% Map Channel to Frequency for region
+%% @end
+%% ------------------------------------------------------------------
+-spec dch2f(Region, Channel) -> Frequency when
+    Region :: atom(),
+    Channel :: non_neg_integer(),
+    Frequency :: freq_float().
 dch2f(Region, Ch) when Region == 'US915'; Region == 'AU915' ->
     ch2fi(Ch, {9233, 6});
 dch2f('CN470', Ch) ->
     ch2fi(Ch, {5003, 2}).
 
+%% ------------------------------------------------------------------
+%% @doc Channel to Frequency Index
+%% Given a Frequency Index = (Inc * Channel) + Start
+%% (y = mx + b)
+%% @end
+%% ------------------------------------------------------------------
+-spec ch2fi(Channel, {Start, Inc}) -> Freq when
+    Channel :: channel(),
+    Start :: non_neg_integer(),
+    Inc :: non_neg_integer(),
+    Freq :: freq_float().
 ch2fi(Ch, {Start, Inc}) -> (Ch * Inc + Start) / 10.
 
 tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
+-spec get_window(atom()) -> number().
 get_window(join1_window) -> 5000000;
 get_window(join2_window) -> 6000000;
 get_window(rx1_window) -> 1000000;
 get_window(rx2_window) -> 2000000.
 
-tx_window(Window, #rxq{tmms = Stamp}, _Delay, TxQ) when is_integer(Stamp) ->
+-spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
+tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
     %% TODO handle rx delay here
     Delay = get_window(Window),
     TxQ#txq{time = Stamp + Delay}.
 
+%% ------------------------------------------------------------------
+%% @doc Up Datarate tuple to Down Datarate tuple
+%% @end
+%% ------------------------------------------------------------------
+-spec datar_to_down(atom(), datar(), non_neg_integer()) -> datar().
 datar_to_down(Region, DataRate, Offset) ->
     DR2 = dr_to_down(Region, datar_to_dr(Region, DataRate), Offset),
     dr_to_datar(Region, DR2).
 
+-spec dr_to_down(atom(), dr(), non_neg_integer()) -> dr().
 dr_to_down('AS923', DR, Offset) ->
     %% TODO: should be derived based on DownlinkDwellTime
     MinDR = 0,
@@ -172,6 +270,7 @@ dr_to_down('AS923', DR, Offset) ->
 dr_to_down(Region, DR, Offset) ->
     lists:nth(Offset + 1, drs_to_down(Region, DR)).
 
+-spec drs_to_down(atom(), dr()) -> list(dr()).
 drs_to_down(Region, DR) when Region == 'US915' ->
     case DR of
         0 -> [10, 9, 8, 8];
@@ -190,6 +289,15 @@ drs_to_down(Region, DR) when Region == 'AU915' ->
         5 -> [13, 12, 11, 10, 9, 8];
         6 -> [13, 13, 12, 11, 10, 9]
     end;
+drs_to_down(Region, DR) when Region == 'CN470' ->
+    case DR of
+        0 -> [0, 0, 0, 0, 0, 0];
+        1 -> [1, 0, 0, 0, 0, 0];
+        2 -> [2, 1, 0, 0, 0, 0];
+        3 -> [3, 2, 1, 0, 0, 0];
+        4 -> [4, 3, 2, 1, 0, 0];
+        5 -> [5, 4, 3, 2, 1, 0]
+    end;
 drs_to_down(_Region, DR) ->
     case DR of
         0 -> [0, 0, 0, 0, 0, 0];
@@ -203,7 +311,7 @@ drs_to_down(_Region, DR) ->
     end.
 
 %% data rate and end-device output power encoding
-
+-spec datars(atom()) -> list({dr(), datarate(), up | down | updown}).
 datars(Region) when Region == 'US915' ->
     [
         {0, {10, 125}, up},
@@ -224,6 +332,15 @@ datars(Region) when Region == 'AU915' ->
         {6, {8, 500}, up}
         | us_down_datars()
     ];
+datars(Region) when Region == 'CN470' ->
+    [
+        {0, {12, 125}, updown},
+        {1, {11, 125}, updown},
+        {2, {10, 125}, updown},
+        {3, {9, 125}, updown},
+        {4, {8, 125}, updown},
+        {5, {7, 125}, updown}
+    ];
 datars(_Region) ->
     [
         {0, {12, 125}, updown},
@@ -237,6 +354,7 @@ datars(_Region) ->
         {7, 50000, updown}
     ].
 
+-spec us_down_datars() -> list({dr(), datarate(), down}).
 us_down_datars() ->
     [
         {8, {12, 500}, down},
@@ -247,23 +365,50 @@ us_down_datars() ->
         {13, {7, 500}, down}
     ].
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Index to Datarate Tuple
+%% @end
+%% ------------------------------------------------------------------
+-spec dr_to_tuple(atom(), dr()) -> datarate().
 dr_to_tuple(Region, DR) ->
     {_, DataRate, _} = lists:keyfind(DR, 1, datars(Region)),
     DataRate.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Index to Datarate Binary
+%% @end
+%% ------------------------------------------------------------------
+-spec dr_to_datar(atom(), dr()) -> datar().
 dr_to_datar(Region, DR) ->
     tuple_to_datar(dr_to_tuple(Region, DR)).
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Tuple to Datarate Index
+%% @end
+%% ------------------------------------------------------------------
+-spec datar_to_dr(atom(), datar()) -> dr().
 datar_to_dr(Region, DataRate) ->
     {DR, _, _} = lists:keyfind(datar_to_tuple(DataRate), 2, datars(Region)),
     DR.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Tuple to Datarate Binary
+%% NOTE: FSK is a special case.
+%% @end
+%% ------------------------------------------------------------------
+-spec tuple_to_datar(datarate() | non_neg_integer()) -> datar().
 tuple_to_datar({SF, BW}) ->
     <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>;
 tuple_to_datar(DataRate) ->
     %% FSK
     DataRate.
 
+%% ------------------------------------------------------------------
+%% @doc Datarate Binary to Datarate Tuple
+%% NOTE: FSK is a special case.
+%% @end
+%% ------------------------------------------------------------------
+-spec datar_to_tuple(datar()) -> datarate() | non_neg_integer().
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),
     {binary_to_integer(SF), binary_to_integer(BW)};
@@ -301,15 +446,17 @@ uplink_power_table('US915') ->
 uplink_power_table('AU915') ->
     uplink_power_table('US915');
 uplink_power_table('CN470') ->
+    %% NOTE: CN470's power levels are relative to the devices max power;
+    %%       they are dB, not dBm.
     [
-        {0, 17},
-        {1, 16},
-        {2, 14},
-        {3, 12},
-        {4, 10},
-        {5, 7},
-        {6, 5},
-        {7, 2}
+        {0, 0},
+        {1, -2},
+        {2, -4},
+        {3, -6},
+        {4, -8},
+        {5, -10},
+        {6, -12},
+        {7, -14}
     ];
 uplink_power_table('CN779') ->
     [
@@ -446,28 +593,11 @@ set_channels(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
         | FOptsOut
     ].
 
-some_bit(MinMax, Chans) ->
-    lists:any(
-        fun(Tuple) -> match_part(MinMax, Tuple) end,
-        Chans
-    ).
-
 all_bit(MinMax, Chans) ->
     lists:any(
         fun(Tuple) -> match_whole(MinMax, Tuple) end,
         Chans
     ).
-
-none_bit(MinMax, Chans) ->
-    lists:all(
-        fun(Tuple) -> not match_part(MinMax, Tuple) end,
-        Chans
-    ).
-
-match_part(MinMax, {A, B}) when B < A ->
-    match_part(MinMax, {B, A});
-match_part({Min, Max}, {A, B}) ->
-    (A =< Max) and (B >= Min).
 
 match_whole(MinMax, {A, B}) when B < A ->
     match_whole(MinMax, {B, A});
@@ -560,7 +690,74 @@ ceiling(X) ->
         _ -> T
     end.
 
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+cn470_window_1_test() ->
+    Now = os:timestamp(),
+    %% 96 up + 48 down = 144 total
+    Channel = 95,
+
+    RxQ = #rxq{
+        freq = uch2f('CN470', Channel),
+        datr = <<"SF12BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    Step = 0.2,
+    MinDownlinkFreq = 500.3,
+    MaxDownlinkFreq = MinDownlinkFreq + (Step * 48),
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            %% Within Downlink window
+            ?assert(MinDownlinkFreq < TxQ#txq.freq),
+            ?assert(TxQ#txq.freq < MaxDownlinkFreq),
+
+            ?assertEqual(TxQ#txq.freq, dch2f('CN470', Channel rem 48)),
+            ?assertEqual(TxQ#txq.datr, RxQ#rxq.datr, "Datarate is the same"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [
+            {join1_window, join1_window('CN470', 0, RxQ)},
+            {rx1_window, rx1_window('CN470', 0, 0, RxQ)}
+        ]
+    ),
+    ok.
+
+cn470_window_2_test() ->
+    Now = os:timestamp(),
+    %% 96 up + 48 down = 144 total
+    Channel = 95,
+
+    RxQ = #rxq{
+        freq = uch2f('CN470', Channel),
+        datr = <<"SF12BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, 505.3, "Frequency is hardcoded"),
+            ?assertEqual(TxQ#txq.datr, <<"SF12BW125">>, "Datarate is hardcoded"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [{join2_window, join2_window('CN470', RxQ)}, {rx2_window, rx2_window('CN470', RxQ)}]
+    ),
+    ok.
 
 region_test_() ->
     [
@@ -631,4 +828,26 @@ bits_test_() ->
         )
     ].
 
+%%--------------------------------------------------------------------
+%% Private Utilities
+%%--------------------------------------------------------------------
+
+some_bit(MinMax, Chans) ->
+    lists:any(
+        fun(Tuple) -> match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
+none_bit(MinMax, Chans) ->
+    lists:all(
+        fun(Tuple) -> not match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
+match_part(MinMax, {A, B}) when B < A ->
+    match_part(MinMax, {B, A});
+match_part({Min, Max}, {A, B}) ->
+    (A =< Max) and (B >= Min).
+
+-endif.
 %% end of file

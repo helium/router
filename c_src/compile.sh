@@ -17,9 +17,10 @@ if [ ! "$VERSION" = "$CURRENT_VERSION" ]; then
     git checkout $VERSION
 fi
 
-
-if [ ! -d build ]; then
-    cmake -H. -Bbuild -DAPPLICATION="LoRaMac" -DSUB_PROJECT="classA" -DBOARD="Simul" -DRADIO="radio-simul"
-fi
-make -C build -j
-cp build/src/apps/LoRaMac/LoRaMac-classA ../../priv
+for REGION in US915 EU868 AS923 CN470; do
+    if [ ! -d build_$REGION ]; then
+        cmake -H. -Bbuild_$REGION -DREGION_$REGION=1 -DACTIVE_REGION=LORAMAC_REGION_$REGION -DAPPLICATION="LoRaMac" -DSUB_PROJECT="classA" -DBOARD="Simul" -DRADIO="radio-simul"
+    fi
+    make -C build_$REGION -j
+    cp build_$REGION/src/apps/LoRaMac/LoRaMac-classA ../../priv/LoRaMac-classA_$REGION
+done

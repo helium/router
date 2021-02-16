@@ -32,7 +32,8 @@
     key = undefined :: binary() | undefined,
     port,
     joined = false,
-    channel_mask = []
+    channel_mask = [],
+    region
 }).
 
 %% ------------------------------------------------------------------
@@ -55,16 +56,19 @@ version() ->
 init(server, _Conn, _Args) ->
     lager:info("server started with ~p", [_Args]),
     {ok, #state{}};
-init(client, _Conn, [Pid, Pubkeybin] = _Args) ->
+init(client, _Conn, [Pid, Pubkeybin, Region] = _Args) ->
     lager:info("client started with ~p", [_Args]),
     ct:pal("~p", [file:get_cwd()]),
-    Port = erlang:open_port({spawn_executable, "../../../../priv/LoRaMac-classA"}, [
-        {line, 65535},
-        stream,
-        binary,
-        exit_status
-    ]),
-    {ok, #state{pid = Pid, key = Pubkeybin, port = Port}}.
+    Port = erlang:open_port(
+        {spawn_executable, io_lib:format("../../../../priv/LoRaMac-classA_~s", [Region])},
+        [
+            {line, 65535},
+            stream,
+            binary,
+            exit_status
+        ]
+    ),
+    {ok, #state{pid = Pid, key = Pubkeybin, port = Port, region = Region}}.
 
 handle_data(client, Data, #state{pid = Pid, key = Pubkeybin} = State) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
@@ -119,7 +123,7 @@ handle_info(
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = State#state.key,
-        region = 'US915'
+        region = State#state.region
     },
     Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
     {noreply, State, blockchain_state_channel_v1_pb:encode_msg(Msg)};

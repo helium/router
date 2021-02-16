@@ -111,7 +111,7 @@ lw_join_test(Config) ->
         Address,
         router_lorawan_handler_test:version(),
         router_lorawan_handler_test,
-        [self(), PubKeyBin0]
+        [self(), PubKeyBin0, 'AS923']
     ),
     receive
         {client_data, _, _Data3} ->

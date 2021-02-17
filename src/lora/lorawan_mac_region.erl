@@ -86,6 +86,15 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         codr = RxQ#rxq.codr
     };
 %% 923.2. MHz / DR2 (SF10, 125 kHz)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
 join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS1' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
@@ -140,6 +149,15 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     #txq{
         freq = 869.525,
         datr = dr_to_datar(Region, 0),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -217,6 +235,16 @@ f2uch('EU868', Freq) when Freq < 868 ->
     f2uch(Freq, {8671, 2}) + 3;
 f2uch('EU868', Freq) when Freq > 868 ->
     f2uch(Freq, {8681, 2});
+f2uch('AS923_AS1', Freq) ->
+    f2uch(Freq, {9222, 2});
+f2uch('AS923_AS2', Freq) ->
+    f2uch(Freq, {9236, 2});
+f2uch('AS923', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9222, 2}, {9236, 2})
+    end;
 f2uch(Freq, {Start, Inc}) ->
     round(10 * Freq - Start) div Inc.
 

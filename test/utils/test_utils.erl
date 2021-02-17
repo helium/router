@@ -604,9 +604,17 @@ deframe_join_packet(
     AppKey
 ) when MType == ?JOIN_ACCEPT ->
     ct:pal("Enc join ~w", [EncPayload]),
-    <<AppNonce:3/binary, NetID:3/binary, DevAddr:4/binary, DLSettings:8/integer-unsigned,
-        RxDelay:8/integer-unsigned,
-        MIC:4/binary>> = Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
+    Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
+    {AppNonce, NetID, DevAddr, DLSettings, RxDelay, MIC, CFList} =
+        case Payload of
+            <<AN:3/binary, NID:3/binary, DA:4/binary, DL:8/integer-unsigned, RxD:8/integer-unsigned,
+                M:4/binary>> ->
+                CFL = <<>>,
+                {AN, NID, DA, DL, RxD, M, CFL};
+            <<AN:3/binary, NID:3/binary, DA:4/binary, DL:8/integer-unsigned, RxD:8/integer-unsigned,
+                CFL:16/binary, M:4/binary>> ->
+                {AN, NID, DA, DL, RxD, M, CFL}
+        end,
     ct:pal("Dec join ~w", [Payload]),
     %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
@@ -622,4 +630,4 @@ deframe_join_packet(
         AppKey,
         lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)
     ),
-    {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey}.
+    {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey, CFList}.

@@ -105,13 +105,14 @@ lw_join_test(Config) ->
     {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
     ct:pal("registered ~p", [registered()]),
     Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
+    Region = 'AS923',
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(
         Swarm0,
         Address,
         router_lorawan_handler_test:version(),
         router_lorawan_handler_test,
-        [self(), PubKeyBin0, 'AS923']
+        [self(), PubKeyBin0, Region]
     ),
     receive
         {client_data, _, _Data3} ->
@@ -160,7 +161,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for reply resp form router
-    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey} = test_utils:wait_for_join_resp(
+    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, _CFList} = test_utils:wait_for_join_resp(
         PubKeyBin0,
         AppKey,
         DevNonce
@@ -436,15 +437,25 @@ lw_join_test(Config) ->
     Stream0 ! get_channel_mask,
     receive
         {channel_mask, Mask} ->
-            ExpectedMask = lists:seq(8, 15),
-            Mask = ExpectedMask
+            case Region of
+                'US915' ->
+                    ExpectedMask = lists:seq(8, 15),
+                    Mask = ExpectedMask;
+                'AS923' ->
+                    ct:pal("Mask is ~p", [Mask]),
+                    ok
+            end
     after 100 -> ct:fail("channel mask not corrected")
     end,
 
     %% check the device got our downlink
     receive
         {tx, 2, true, <<"someotherpayload">>} -> ok
-    after 5000 -> ct:fail("device did not see downlink 1")
+    after 5000 -> 
+              Buf = receive {tx, _, _, _} = Any -> Any
+              after 0 -> nothing
+              end,
+              ct:fail("device did not see downlink 1 ~p ", [Buf])
     end,
     receive
         {tx, 55, false, <<"sharkfed">>} -> ok

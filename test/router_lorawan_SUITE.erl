@@ -9,7 +9,10 @@
 -include("utils/console_test.hrl").
 
 -export([
+    groups/0,
     all/0,
+    init_per_group/2,
+    end_per_group/2,
     init_per_testcase/2,
     end_per_testcase/2
 ]).
@@ -25,20 +28,42 @@
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
 
+groups() ->
+    [
+        {'US915', [], [lw_join_test]},
+        {'EU868', [], [lw_join_test]},
+        {'CN470', [], [lw_join_test]},
+        {'AS923', [], [lw_join_test]}
+    ].
+
 %%--------------------------------------------------------------------
 %% @public
 %% @doc
 %%   Running tests for this suite
 %% @end
 %%--------------------------------------------------------------------
-all() -> [lw_join_test].
+all() ->
+    [
+        {group, 'US915'},
+        {group, 'EU868'},
+        {group, 'CN470'},
+        {group, 'AS923'}
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 
+init_per_group(RegionGroup, Config) ->
+    [{region, RegionGroup} | Config].
+
+end_per_group(_, _) ->
+    ok.
+
 init_per_testcase(TestCase, Config) ->
-    BaseDir = erlang:atom_to_list(TestCase),
+    BaseDir =
+        erlang:atom_to_list(TestCase) ++
+            "-" ++ erlang:atom_to_list(proplists:get_value(region, Config)),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
@@ -65,7 +90,7 @@ init_per_testcase(TestCase, Config) ->
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
 
-    {_Swarm, Keys} = test_utils:start_swarm(BaseDir, TestCase, 0),
+    {Swarm, Keys} = test_utils:start_swarm(BaseDir, TestCase, 0),
     #{public := PubKey, secret := PrivKey} = Keys,
     {ok, _GenesisMembers, _ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
@@ -74,12 +99,13 @@ init_per_testcase(TestCase, Config) ->
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
-    [{app_key, AppKey}, {ets, Tab}, {elli, Pid}, {base_dir, BaseDir} | Config].
+    [{app_key, AppKey}, {ets, Tab}, {elli, Pid}, {base_dir, BaseDir}, {swarm, Swarm} | Config].
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(_TestCase, Config) ->
+    libp2p_swarm:stop(proplists:get_value(swarm, Config)),
     Pid = proplists:get_value(elli, Config),
     {ok, Acceptors} = elli:get_acceptors(Pid),
     ok = elli:stop(Pid),
@@ -105,7 +131,7 @@ lw_join_test(Config) ->
     {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
     ct:pal("registered ~p", [registered()]),
     Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
-    Region = 'AS923',
+    Region = proplists:get_value(region, Config),
     PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(
         Swarm0,
@@ -187,11 +213,11 @@ lw_join_test(Config) ->
     Msg1 = #downlink{
         confirmed = true,
         port = 2,
-        payload = <<"someotherpayload">>,
+        payload = <<"some">>,
         channel = Channel
     },
     router_device_worker:queue_message(WorkerPid, Msg1),
-    Msg2 = #downlink{confirmed = false, port = 55, payload = <<"sharkfed">>, channel = Channel},
+    Msg2 = #downlink{confirmed = false, port = 55, payload = <<"data">>, channel = Channel},
     router_device_worker:queue_message(WorkerPid, Msg2),
 
     receive
@@ -441,7 +467,7 @@ lw_join_test(Config) ->
                 'US915' ->
                     ExpectedMask = lists:seq(8, 15),
                     Mask = ExpectedMask;
-                'AS923' ->
+                _ ->
                     ct:pal("Mask is ~p", [Mask]),
                     ok
             end
@@ -450,15 +476,17 @@ lw_join_test(Config) ->
 
     %% check the device got our downlink
     receive
-        {tx, 2, true, <<"someotherpayload">>} -> ok
-    after 5000 -> 
-              Buf = receive {tx, _, _, _} = Any -> Any
-              after 0 -> nothing
-              end,
-              ct:fail("device did not see downlink 1 ~p ", [Buf])
+        {tx, 2, true, <<"some">>} -> ok
+    after 5000 ->
+        Buf =
+            receive
+                {tx, _, _, _} = Any -> Any
+            after 0 -> nothing
+            end,
+        ct:fail("device did not see downlink 1 ~p ", [Buf])
     end,
     receive
-        {tx, 55, false, <<"sharkfed">>} -> ok
+        {tx, 55, false, <<"data">>} -> ok
     after 5000 -> ct:fail("device did not see downlink 2")
     end,
 

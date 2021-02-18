@@ -106,9 +106,21 @@ get_all_devices() ->
         {ok, 200, _Headers, Body} ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_all_devices, ok, End - Start),
+            FilterMapFun = fun(JSONDevice) ->
+                try json_device_to_record(JSONDevice) of
+                    Device -> {true, Device}
+                catch
+                    _E:_R ->
+                        lager:error("failed to create record for device ~p: ~p", [
+                            JSONDevice,
+                            {_E, _R}
+                        ]),
+                        false
+                end
+            end,
             {ok,
-                lists:map(
-                    fun json_device_to_record/1,
+                lists:filtermap(
+                    FilterMapFun,
                     jsx:decode(Body, [return_maps])
                 )};
         Other ->

@@ -448,7 +448,7 @@ ws_get_address_test(_Config) ->
                     topic => <<"router">>,
                     event => <<"router:get_address">>,
                     jref => <<"0">>,
-                    payload => jsx:encode(#{address => B58})
+                    payload => #{<<"address">> => B58}
                 },
                 Map
             )

@@ -481,7 +481,7 @@ handle_info(
         <<"0">>,
         <<"router">>,
         <<"router:get_address">>,
-        jsx:encode(#{address => B58})
+        #{address => B58}
     ),
     WSPid ! {ws_resp, Payload},
     {noreply, State};

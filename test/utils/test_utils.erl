@@ -90,10 +90,12 @@ init_per_testcase(TestCase, Config) ->
                 {lager_console_backend, [{application, router}], debug},
                 {lager_console_backend, [{module, router_console_api}], debug},
                 {lager_console_backend, [{module, router_device_routing}], debug},
+                {lager_console_backend, [{module, console_callback}], debug},
                 {{lager_file_backend, "router.log"}, [{application, router}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
-                {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug}
+                {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug},
+                {{lager_file_backend, "router.log"}, [{module, console_callback}], debug}
             ]);
         _ ->
             ok

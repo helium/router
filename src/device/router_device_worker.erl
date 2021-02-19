@@ -205,11 +205,12 @@ handle_cast(
     } = State
 ) ->
     case erlang:byte_size(Payload) of
+        %% TODO: Max size for AS923 is much smaller
         Size when Size > ?MAX_DOWNLINK_SIZE ->
             ok = router_device_utils:report_status_max_size(Device0, Payload, Port),
             lager:debug("failed to queue downlink message, too big (~p)", [Size]),
             {noreply, State};
-        _ ->
+        Size ->
             OldQueue = router_device:queue(Device0),
             NewQueue =
                 case Position of
@@ -218,7 +219,7 @@ handle_cast(
                 end,
             Device1 = router_device:queue(NewQueue, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            lager:debug("queued downlink message"),
+            lager:debug("queued downlink message of size ~p < ~p", [Size, ?MAX_DOWNLINK_SIZE]),
             {noreply, State#state{device = Device1}}
     end;
 handle_cast(

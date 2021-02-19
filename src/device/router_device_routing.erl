@@ -25,6 +25,7 @@
     init/0,
     handle_offer/2,
     handle_packet/3,
+    handle_packet/4,
     deny_more/1,
     accept_more/1,
     accept_more/2,
@@ -124,9 +125,10 @@ handle_offer(Offer, HandlerPid) ->
     Resp.
 
 -spec handle_packet(
-    blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
-    pos_integer(),
-    libp2p_crypto:pubkey_bin() | pid()
+    SCPacket ::
+        blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+    PacketTime :: pos_integer(),
+    Pid :: pid()
 ) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
@@ -147,11 +149,18 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                 Start
             ),
             ok
-    end;
+    end.
+
 %% This is for CTs only
-handle_packet(Packet, PacketTime, PubKeyBin) ->
+-spec handle_packet(
+    Packet :: blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+    PacketTime :: pos_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin() | pid(),
+    Region :: atom()
+) -> ok | {error, any()}.
+handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
     Start = erlang:system_time(millisecond),
-    case packet(Packet, PacketTime, PubKeyBin, 'US915', self()) of
+    case packet(Packet, PacketTime, PubKeyBin, Region, self()) of
         {error, Reason} = E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),

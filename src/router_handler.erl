@@ -70,13 +70,14 @@ handle_data(server, Data, State) ->
     case decode_data(Data) of
         {error, _Reason} ->
             lager:debug("failed to transmit data ~p", [_Reason]);
-        {ok, #packet_pb{type = lorawan} = Packet0, PubKeyBin} ->
+        {ok, #packet_pb{type = lorawan} = Packet0, PubKeyBin, Region} ->
             router_device_routing:handle_packet(
                 Packet0,
                 erlang:system_time(millisecond),
-                PubKeyBin
+                PubKeyBin,
+                Region
             );
-        {ok, #packet_pb{type = _Type} = _Packet, PubKeyBin} ->
+        {ok, #packet_pb{type = _Type} = _Packet, PubKeyBin, _Region} ->
             {ok, _AName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
             lager:error("unknown packet type ~p coming from ~p: ~p", [_Type, _AName, _Packet])
     end,
@@ -106,15 +107,16 @@ encode_resp(Packet) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg = {response, Resp}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
--spec decode_data(binary()) -> {ok, #packet_pb{}, libp2p_crypto:pubkey_bin()} | {error, any()}.
+-spec decode_data(binary()) -> {ok, #packet_pb{}, libp2p_crypto:pubkey_bin(), atom()} | {error, any()}.
 decode_data(Data) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
         #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}} ->
             #blockchain_state_channel_packet_v1_pb{
                 packet = HeliumPacket,
-                hotspot = PubKeyBin
+                hotspot = PubKeyBin,
+                region = Region
             } = Packet,
-            {ok, HeliumPacket, PubKeyBin};
+            {ok, HeliumPacket, PubKeyBin, Region};
         _ ->
             {error, unhandled_message}
     catch

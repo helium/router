@@ -131,6 +131,8 @@ websocket_info(close, _Req, State) ->
     lager:info("rcvd close msg"),
     router_metrics:ws_state(false),
     {close, <<>>, State};
+websocket_info({ws_resp, Payload}, _Req, State) ->
+    {reply, {text, Payload}, State};
 websocket_info(_Msg, _Req, State) ->
     lager:warning("rcvd unknown websocket_info msg: ~p, ~p", [_Msg, _Req]),
     {ok, State}.

@@ -270,6 +270,14 @@ websocket_info(_Req, {is_active, false}, State) ->
         #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
     ),
     {reply, {text, Data}, State};
+websocket_info(_Req, get_router_address, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"router">>,
+        <<"router:get_address">>,
+        #{}
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.
@@ -293,7 +301,9 @@ handle_message(#{ref := Ref, topic := Topic, event := <<"phx_join">>}, State) ->
     ),
     {reply, {text, Data}, State};
 handle_message(Map, State) ->
-    lager:warning("got unknow message ~p", [Map]),
+    lager:info("got unhandle message ~p ~p", [Map, lager:pr(State, ?MODULE)]),
+    Pid = maps:get(forward, State),
+    Pid ! {websocket_msg, Map},
     {ok, State}.
 
 init_ws([<<"websocket">>], _Req, _Args) ->

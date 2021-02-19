@@ -470,6 +470,21 @@ handle_info(
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
+handle_info(
+    {ws_message, <<"router">>, <<"router:get_address">>, _},
+    #state{ws = WSPid} = State
+) ->
+    lager:info("got request for address", []),
+    PubKeyBin = blockchain_swarm:pubkey_bin(),
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    Payload = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"router">>,
+        <<"router:get_address">>,
+        #{address => B58}
+    ),
+    WSPid ! {ws_resp, Payload},
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.

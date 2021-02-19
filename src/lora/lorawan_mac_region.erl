@@ -93,24 +93,6 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
         datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS1' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS2' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
@@ -160,24 +142,6 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
         datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS1' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923_AS2' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
@@ -194,9 +158,7 @@ rx1_rf('CN470' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
     DownFreq = dch2f(Region, RxCh rem 48),
     tx_offset(Region, RxQ, DownFreq, Offset);
-rx1_rf('AS923_AS1' = Region, RxQ, Offset) ->
-    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
-rx1_rf('AS923_AS2' = Region, RxQ, Offset) ->
+rx1_rf('AS923' = Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
 rx1_rf(Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
@@ -235,10 +197,6 @@ f2uch('EU868', Freq) when Freq < 868 ->
     f2uch(Freq, {8671, 2}) + 3;
 f2uch('EU868', Freq) when Freq > 868 ->
     f2uch(Freq, {8681, 2});
-f2uch('AS923_AS1', Freq) ->
-    f2uch(Freq, {9222, 2});
-f2uch('AS923_AS2', Freq) ->
-    f2uch(Freq, {9236, 2});
 f2uch('AS923', Freq) ->
     case Freq of
         923.2 -> 1;
@@ -327,7 +285,7 @@ datar_to_down(Region, DataRate, Offset) ->
     dr_to_datar(Region, DR2).
 
 -spec dr_to_down(atom(), dr(), non_neg_integer()) -> dr().
-dr_to_down(Region, DR, Offset) when Region == 'AS923_AS1'; Region == 'AS923_AS2' ->
+dr_to_down(Region, DR, Offset) when Region == 'AS923' ->
     %% TODO: should be derived based on DownlinkDwellTime
     MinDR = 0,
     EffOffset =
@@ -850,7 +808,7 @@ as923_window_1_test() ->
 
     RxQ = #rxq{
         freq = 9232000,
-        datr = dr_to_datar('AS923_AS1', 0),
+        datr = dr_to_datar('AS923', 0),
         codr = <<"4/5">>,
         time = calendar:now_to_datetime(Now),
         tmms = 0,
@@ -865,10 +823,8 @@ as923_window_1_test() ->
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
         [
-            {join1_window, join1_window('AS923_AS1', _Delay = 0, RxQ)},
-            {join1_window, join1_window('AS923_AS2', _Delay = 0, RxQ)},
-            {rx1_window, rx1_window('AS923_AS1', _Delay = 0, _Offset0 = 0, RxQ)},
-            {rx1_window, rx1_window('AS923_AS2', _Delay = 0, _Offset0 = 0, RxQ)}
+            {join1_window, join1_window('AS923', _Delay = 0, RxQ)},
+            {rx1_window, rx1_window('AS923', _Delay = 0, _Offset0 = 0, RxQ)}
         ]
     ),
 
@@ -913,10 +869,8 @@ as923_window_2_test() ->
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
         [
-            {join2_window, join2_window('AS923_AS1', RxQ)},
-            {rx2_window, rx2_window('AS923_AS1', RxQ)},
-            {join2_window, join2_window('AS923_AS2', RxQ)},
-            {rx2_window, rx2_window('AS923_AS2', RxQ)}
+            {join2_window, join2_window('AS923', RxQ)},
+            {rx2_window, rx2_window('AS923', RxQ)}
         ]
     ),
     ok.

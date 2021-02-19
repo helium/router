@@ -835,11 +835,11 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
                 %%
                 %% The actual channel frequency in Hz is 100 x frequency whereby values representing
                 %% frequencies below 100 MHz are reserved for future use.
-                Channels = <<
-                    <<X:24/integer-unsigned-little>>
-                    || X <- [8671000, 8673000, 8675000, 8677000, 8679000]
-                >>,
-                <<Channels/binary, 0:8/integer>>;
+                mk_cflist_for_freqs([8671000, 8673000, 8675000, 8677000, 8679000]);
+            'AS923_AS1' ->
+                mk_cflist_for_freqs([9222000, 9224000, 9226000, 9228000, 9230000]);
+            'AS923_AS2' ->
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9246000]);
             _ ->
                 %% Not yet implemented for other regions
                 <<>>

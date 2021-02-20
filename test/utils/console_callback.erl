@@ -221,6 +221,14 @@ websocket_info(_Req, {joined, Topic}, State) ->
         <<"devices">> => [?CONSOLE_DEVICE_ID]
     }),
     {reply, {text, Data}, State};
+websocket_info(_Req, clear_queue, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"device:all">>,
+        <<"device:all:clear_downlink_queue:devices">>,
+        #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, {downlink, Payload}, State) ->
     Data = router_console_ws_handler:encode_msg(
         <<"0">>,

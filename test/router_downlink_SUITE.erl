@@ -6,7 +6,12 @@
     end_per_testcase/2
 ]).
 
--export([http_downlink_test/1, console_tool_downlink_test/1, console_tool_downlink_order_test/1]).
+-export([
+    http_downlink_test/1,
+    console_tool_downlink_test/1,
+    console_tool_downlink_order_test/1,
+    console_tool_clear_queue_test/1
+]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -32,7 +37,12 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [http_downlink_test, console_tool_downlink_test, console_tool_downlink_order_test].
+    [
+        http_downlink_test,
+        console_tool_downlink_test,
+        console_tool_downlink_order_test,
+        console_tool_clear_queue_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -399,6 +409,88 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
     ),
 
     %% We ignore the channel correction  and down messages
+    ok = test_utils:ignore_messages(),
+    ok.
+
+console_tool_clear_queue_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
+    timer:sleep(router_device_utils:join_timeout()),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"join_req">>, #{
+        <<"category">> => <<"join_req">>,
+        <<"description">> => '_',
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"frame_up">> => 0,
+        <<"frame_down">> => 0,
+        <<"payload_size">> => fun erlang:is_integer/1,
+        <<"port">> => '_',
+        <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"selected">> => true,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ],
+        <<"channels">> => []
+    }),
+
+    %% Grab the websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+
+    %% Helper
+    GetDeviceQueueLengthFn = fun() ->
+        Device = test_utils:get_device_worker_device(?CONSOLE_DEVICE_ID),
+        Q = router_device:queue(Device),
+        erlang:length(Q)
+    end,
+
+    %% Queue Downlinks in order
+    WSPid ! {downlink, #{payload_raw => base64:encode(<<"one">>)}},
+    WSPid ! {downlink, #{payload_raw => base64:encode(<<"two">>)}},
+    WSPid ! {downlink, #{payload_raw => base64:encode(<<"three">>)}},
+
+    %% Wait for downlinks to be queued
+    ok = test_utils:wait_until(fun() -> GetDeviceQueueLengthFn() == 3 end),
+
+    %% Clear Queue
+    WSPid ! clear_queue,
+
+    %% Wait for downlinks to be cleared
+    ok = test_utils:wait_until(fun() -> GetDeviceQueueLengthFn() == 0 end),
+
     ok = test_utils:ignore_messages(),
     ok.
 

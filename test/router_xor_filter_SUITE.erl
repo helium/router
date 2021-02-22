@@ -26,7 +26,8 @@
     chain :: undefined | blockchain:blockchain(),
     oui :: undefined | non_neg_integer(),
     pending_txns = #{} :: #{blockchain_txn:hash() => blockchain_txn_routing_v1:txn_routing()},
-    filter_to_devices = #{} :: map()
+    filter_to_devices = #{} :: map(),
+    check_filters_ref :: undefined | reference()
 }).
 
 %%--------------------------------------------------------------------

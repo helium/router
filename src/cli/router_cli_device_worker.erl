@@ -38,7 +38,7 @@ device_usage() ->
             "  device --id=<id>                              - Info for a device\n",
             "  device trace --id=<id>                        - Tracing device's log\n",
             "  device trace stop --id=<id>                   - Stop tracing device's log\n",
-            "  device xor --id=<id> --commit                 - Stop tracing device's log\n",
+            "  device xor --commit                           - Update XOR filter\n",
             "  device queue --id=<id>                        - Queue of messages for device\n",
             "  device queue clear --id=<id>                  - Empties the devices queue\n",
             "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",

@@ -403,6 +403,28 @@ handle_info(
     ),
     {noreply, State};
 handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:clear_downlink_queue:devices">>, #{
+        <<"devices">> := DeviceIDs
+    }},
+    State
+) ->
+    lager:info("console triggered clearing downlink for devices ~p", [DeviceIDs]),
+    lists:foreach(
+        fun(DeviceID) ->
+            case router_devices_sup:lookup_device_worker(DeviceID) of
+                {error, _Reason} ->
+                    lager:info("failed to clear queue, could not find device ~p: ~p", [
+                        DeviceID,
+                        _Reason
+                    ]);
+                {ok, Pid} ->
+                    router_device_worker:clear_queue(Pid)
+            end
+        end,
+        DeviceIDs
+    ),
+    {noreply, State};
+handle_info(
     {ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
         <<"devices">> := DeviceIDs,
         <<"payload">> := MapPayload,

@@ -8,6 +8,7 @@
     get_channel_worker_event_manager/1,
     get_device_last_seen_fcnt/1,
     get_last_dev_nonce/1,
+    get_device_worker_device/1,
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
@@ -212,6 +213,14 @@ get_device_last_seen_fcnt(DeviceID) ->
         WorkerPid
     ),
     FCnt.
+
+get_device_worker_device(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _Chain, _DB, _CF, Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
+        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
+    Device.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),

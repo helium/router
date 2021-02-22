@@ -287,6 +287,9 @@ datar_to_down(Region, DataRate, Offset) ->
 -spec dr_to_down(atom(), dr(), non_neg_integer()) -> dr().
 dr_to_down(Region, DR, Offset) when Region == 'AS923' ->
     %% TODO: should be derived based on DownlinkDwellTime
+    %% 2.8.7 of lorawan_regional_parameters1.0.3reva_0.pdf -- We don't send
+    %% downlink dwell time the device, so we're assuming it's 0 for the time
+    %% being.
     MinDR = 0,
     EffOffset =
         if

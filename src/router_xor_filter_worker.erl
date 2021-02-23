@@ -12,6 +12,8 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
+    estimate_cost/0,
+    check_filters/0,
     deveui_appeui/1
 ]).
 
@@ -44,7 +46,8 @@
     pending_txns = #{} :: #{
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
-    filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()}
+    filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()},
+    check_filters_ref :: undefined | reference()
 }).
 
 %% ------------------------------------------------------------------
@@ -52,6 +55,15 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+-spec estimate_cost() -> noop | {non_neg_integer(), non_neg_integer()}.
+estimate_cost() ->
+    gen_server:call(?SERVER, estimate_cost).
+
+-spec check_filters() -> ok.
+check_filters() ->
+    ?SERVER ! ?CHECK_FILTERS_TICK,
+    ok.
 
 -spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
 deveui_appeui(Device) ->
@@ -72,6 +84,10 @@ init(Args) ->
     end,
     {ok, #state{}}.
 
+handle_call(estimate_cost, _From, State) ->
+    Reply = estimate_cost(State),
+    lager:info("estimating cost ~p", [Reply]),
+    {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -91,8 +107,8 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                     ok = schedule_post_init(),
                     {noreply, State};
                 OUI ->
-                    ok = schedule_check_filters(1),
-                    {noreply, State#state{chain = Chain, oui = OUI}}
+                    Ref = schedule_check_filters(1),
+                    {noreply, State#state{chain = Chain, oui = OUI, check_filters_ref = Ref}}
             end
     end;
 handle_info(
@@ -101,14 +117,19 @@ handle_info(
         chain = Chain,
         oui = OUI,
         filter_to_devices = FilterToDevices,
-        pending_txns = Pendings0
+        pending_txns = Pendings0,
+        check_filters_ref = OldRef
     } = State
 ) ->
+    case erlang:is_reference(OldRef) of
+        false -> ok;
+        true -> erlang:cancel_timer(OldRef)
+    end,
     case should_update_filters(Chain, OUI, FilterToDevices) of
         noop ->
             lager:info("filters are still up to date"),
-            ok = schedule_check_filters(default_timer()),
-            {noreply, State};
+            Ref = schedule_check_filters(default_timer()),
+            {noreply, State#state{check_filters_ref = Ref}};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             {Pendings1, _} = lists:foldl(
@@ -160,12 +181,13 @@ handle_info(
     },
     case State1#state.pending_txns == #{} of
         false ->
-            lager:info("waiting for more txn to clear");
+            lager:info("waiting for more txn to clear"),
+            {noreply, State1};
         true ->
             lager:info("all txns cleared"),
-            schedule_check_filters(default_timer())
-    end,
-    {noreply, State1};
+            Ref = schedule_check_filters(default_timer()),
+            {noreply, State1#state{check_filters_ref = Ref}}
+    end;
 handle_info(
     {?SUBMIT_RESULT, Hash, Return},
     #state{
@@ -179,12 +201,13 @@ handle_info(
     State1 = State0#state{pending_txns = maps:remove(Hash, Pendings)},
     case State1#state.pending_txns == #{} of
         false ->
-            lager:info("waiting for more txn to clear");
+            lager:info("waiting for more txn to clear"),
+            {noreply, State1};
         true ->
             lager:info("all txns cleared"),
-            schedule_check_filters(1)
-    end,
-    {noreply, State1};
+            Ref = schedule_check_filters(1),
+            {noreply, State1#state{check_filters_ref = Ref}}
+    end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -198,6 +221,35 @@ terminate(_Reason, #state{}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
+estimate_cost(#state{
+    chain = Chain,
+    oui = OUI,
+    filter_to_devices = FilterToDevices
+}) ->
+    case should_update_filters(Chain, OUI, FilterToDevices) of
+        noop ->
+            noop;
+        {_Routing, Updates} ->
+            {ok,
+                lists:foldl(
+                    fun
+                        ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                            {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                            Txn = craft_new_filter_txn(Chain, OUI, Filter, 1),
+                            {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
+                                N + erlang:length(NewDevicesDevEuiAppEui)};
+                        ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                            {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                            Txn = craft_update_filter_txn(Chain, OUI, Filter, 1, Index),
+                            {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
+                                N + erlang:length(NewDevicesDevEuiAppEui)}
+                    end,
+                    {0, 0},
+                    Updates
+                )}
+    end.
 
 -spec should_update_filters(
     Chain :: blockchain:blockchain(),
@@ -368,10 +420,9 @@ schedule_post_init() ->
     {ok, _} = timer:send_after(?POST_INIT_TIMER, self(), ?POST_INIT_TICK),
     ok.
 
--spec schedule_check_filters(non_neg_integer()) -> ok.
+-spec schedule_check_filters(non_neg_integer()) -> reference().
 schedule_check_filters(Timer) ->
-    _Ref = erlang:send_after(Timer, self(), ?CHECK_FILTERS_TICK),
-    ok.
+    erlang:send_after(Timer, self(), ?CHECK_FILTERS_TICK).
 
 -spec enabled() -> boolean().
 enabled() ->

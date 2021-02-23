@@ -107,7 +107,8 @@ encode_resp(Packet) ->
     Msg = #blockchain_state_channel_message_v1_pb{msg = {response, Resp}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
 
--spec decode_data(binary()) -> {ok, #packet_pb{}, libp2p_crypto:pubkey_bin(), atom()} | {error, any()}.
+-spec decode_data(binary()) ->
+    {ok, #packet_pb{}, libp2p_crypto:pubkey_bin(), atom()} | {error, any()}.
 decode_data(Data) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
         #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}} ->

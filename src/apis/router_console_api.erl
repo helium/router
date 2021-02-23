@@ -390,6 +390,18 @@ handle_info(refresh_token, #state{endpoint = Endpoint, secret = Secret} = State)
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     ok = token_insert(Endpoint, Token),
     {noreply, State#state{token = Token}};
+handle_info(ws_joined, #state{ws = WSPid} = State) ->
+    lager:info("joined, sending router address to console", []),
+    PubKeyBin = blockchain_swarm:pubkey_bin(),
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    Payload = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"router:address">>,
+        #{address => B58}
+    ),
+    WSPid ! {ws_resp, Payload},
+    {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
     State
@@ -503,21 +515,6 @@ handle_info(
 ) ->
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
     update_devices(DB, CF, DeviceIDs),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"router">>, <<"router:get_address">>, _},
-    #state{ws = WSPid} = State
-) ->
-    lager:info("got request for address", []),
-    PubKeyBin = blockchain_swarm:pubkey_bin(),
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    Payload = router_console_ws_handler:encode_msg(
-        <<"0">>,
-        <<"router">>,
-        <<"router:get_address">>,
-        #{address => B58}
-    ),
-    WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),

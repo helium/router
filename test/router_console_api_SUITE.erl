@@ -432,12 +432,11 @@ debug_test(Config) ->
     ok.
 
 ws_get_address_test(_Config) ->
-    WSPid =
+    _WSPid =
         receive
             {websocket_init, P} -> P
         after 2500 -> ct:fail(websocket_init_timeout)
         end,
-    WSPid ! get_router_address,
     receive
         {websocket_msg, Map} ->
             PubKeyBin = blockchain_swarm:pubkey_bin(),
@@ -445,8 +444,8 @@ ws_get_address_test(_Config) ->
             ?assertEqual(
                 #{
                     ref => <<"0">>,
-                    topic => <<"router">>,
-                    event => <<"router:get_address">>,
+                    topic => <<"organization:all">>,
+                    event => <<"router:address">>,
                     jref => <<"0">>,
                     payload => #{<<"address">> => B58}
                 },

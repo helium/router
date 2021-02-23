@@ -116,7 +116,7 @@ websocket_info({heartbeat_timeout, Ref}, _Req, State) ->
     lager:warning("we missed heartbeat ~p, disconnecting", [Ref]),
     router_metrics:ws_state(false),
     {close, <<"failed heartbeat">>, State#state{heartbeat = 0, heartbeat_timeout = undefined}};
-websocket_info(auto_join, _Req, #state{auto_join = AutoJoin} = State) ->
+websocket_info(auto_join, _Req, #state{auto_join = AutoJoin, forward = Pid} = State) ->
     lists:foreach(
         fun(Topic) ->
             Ref = <<"REF_", Topic/binary>>,
@@ -126,6 +126,8 @@ websocket_info(auto_join, _Req, #state{auto_join = AutoJoin} = State) ->
         end,
         AutoJoin
     ),
+    lager:debug("joined"),
+    Pid ! ws_joined,
     {ok, State};
 websocket_info(close, _Req, State) ->
     lager:info("rcvd close msg"),

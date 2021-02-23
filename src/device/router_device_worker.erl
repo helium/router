@@ -206,11 +206,15 @@ handle_cast(
     } = State
 ) ->
     case router_device:can_queue_payload(Payload, Device0) of
-        {false, Size, MaxSize} ->
-            ok = router_device_utils:report_status_max_size(Device0, Payload, Port),
-            lager:debug("failed to queue downlink message, too big (~p > ~p)", [Size, MaxSize]),
+        {false, Size, MaxSize, Datarate} ->
+            ok = router_device_utils:report_status_max_size(Device0, Payload, MaxSize, Port),
+            lager:debug("failed to queue downlink message, too big (~p > ~p), using datarate ~p", [
+                Size,
+                MaxSize,
+                Datarate
+            ]),
             {noreply, State};
-        {true, Size, MaxSize} ->
+        {true, Size, MaxSize, _Datarate} ->
             OldQueue = router_device:queue(Device0),
             NewQueue =
                 case Position of

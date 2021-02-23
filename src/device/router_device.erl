@@ -443,7 +443,12 @@ deserialize(Binary) ->
 
 -spec can_queue_payload(binary(), device()) ->
     {error, any()}
-    | {CanQueue :: boolean(), PayloadSize :: non_neg_integer(), MaxSize :: non_neg_integer()}.
+    | {
+        CanQueue :: boolean(),
+        PayloadSize :: non_neg_integer(),
+        MaxSize :: non_neg_integer(),
+        Datarate :: integer()
+    }.
 can_queue_payload(_Payload, #device_v6{region = undefined}) ->
     {error, device_region_unknown};
 can_queue_payload(Payload, Device) ->
@@ -455,7 +460,7 @@ can_queue_payload(Payload, Device) ->
             _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?MAX_US915_DOWNLINK_SIZE)
         end,
     Size = erlang:byte_size(Payload),
-    {Size < MaxSize, Size, MaxSize}.
+    {Size < MaxSize, Size, MaxSize, DR}.
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

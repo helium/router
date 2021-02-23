@@ -21,7 +21,7 @@ ADD config/ config/
 ADD priv/ priv/
 
 RUN make rel
-# add router to path for easy interations
+# add router to path for easy interactions
 ENV PATH=$PATH:_build/default/rel/router/bin
 
 CMD ["make", "run"]

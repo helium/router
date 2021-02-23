@@ -75,7 +75,7 @@ Following commands are appending to the docker command above.
 device all
 ```
 
-#### Info for 1 Device
+#### Info for a single device
 ```
 device --id=<id>
 ```
@@ -134,6 +134,13 @@ device trace stop --id=<id>
 ```
 ##### Options
 [ID Options](#id-option)
+
+#### Force XOR Filter push
+```
+device xor
+```
+##### Options
+XOR will only happen if `--commit` is used, otherwise it will be a dry run.
 
 ### DC Tracker `dc_tracker`
 
@@ -207,8 +214,8 @@ Data payload example sent to integrations
             "spreading": "SF9BW125",
             "frequency": 923.3,
             "channel": 12,
-            "lat" => 37.00001962582851,
-            "long" => -120.9000053210367
+            "lat": 37.00001962582851,
+            "long": -120.9000053210367
         }
     ],
     "dc" : {

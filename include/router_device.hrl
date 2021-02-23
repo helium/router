@@ -13,7 +13,7 @@
     channel_correction = false :: boolean(),
     queue = [] :: [any()],
     region :: atom() | undefined,
-    last_known_datarate :: binary() | undefined,
+    last_known_datarate :: integer() | undefined,
     ecc_compact :: map(),
     location :: libp2p_crypto:pubkey_bin() | undefined,
     metadata = #{} :: map(),

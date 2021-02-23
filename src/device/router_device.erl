@@ -41,6 +41,50 @@
     serialize/1,
     deserialize/1
 ]).
+-export([
+    can_queue_payload/2
+]).
+
+-define(MAX_US915_DOWNLINK_SIZE, 242).
+-define(MAX_CN470_DOWNLINK_SIZE, 242).
+-define(MAX_AS923_DOWNLINK_SIZE, 250).
+
+-define(AS923_PAYLOAD_SIZE_MAP, #{
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 250,
+    5 => 250,
+    6 => 250,
+    7 => 250
+}).
+
+-define(CN470_PAYLOAD_SIZE_MAP, #{
+    0 => 51,
+    1 => 51,
+    2 => 51,
+    3 => 115,
+    4 => 242,
+    5 => 242
+}).
+
+-define(US915_PAYLOAD_SIZE_MAP, #{
+    0 => 11,
+    1 => 53,
+    2 => 125,
+    3 => 242,
+    4 => 242,
+    %% 5 => rfu,
+    %% 6 => rfu,
+    %% 7 => rfu,
+    8 => 53,
+    9 => 129,
+    10 => 242,
+    11 => 242,
+    12 => 242,
+    13 => 242
+}).
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Exports
@@ -179,11 +223,11 @@ region(Device) ->
 region(Region, Device) ->
     Device#device_v6{region = Region}.
 
--spec last_known_datarate(device()) -> binary().
+-spec last_known_datarate(device()) -> integer().
 last_known_datarate(Device) ->
     Device#device_v6.last_known_datarate.
 
--spec last_known_datarate(binary(), device()) -> device().
+-spec last_known_datarate(integer(), device()) -> device().
 last_known_datarate(DR, Device) ->
     Device#device_v6{last_known_datarate = DR}.
 
@@ -397,6 +441,22 @@ deserialize(Binary) ->
             }
     end.
 
+-spec can_queue_payload(binary(), device()) ->
+    {error, any()}
+    | {CanQueue :: boolean(), PayloadSize :: non_neg_integer(), MaxSize :: non_neg_integer()}.
+can_queue_payload(_Payload, #device_v6{region = undefined}) ->
+    {error, device_region_unknown};
+can_queue_payload(Payload, Device) ->
+    DR = ?MODULE:last_known_datarate(Device),
+    MaxSize =
+        case ?MODULE:region(Device) of
+            'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?MAX_AS923_DOWNLINK_SIZE);
+            'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?MAX_CN470_DOWNLINK_SIZE);
+            _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?MAX_US915_DOWNLINK_SIZE)
+        end,
+    Size = erlang:byte_size(Payload),
+    {Size < MaxSize, Size, MaxSize}.
+
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions
 %% ------------------------------------------------------------------
@@ -562,7 +622,7 @@ region_test() ->
 last_known_datarate_test() ->
     Device = new(<<"id">>),
     ?assertEqual(undefined, last_known_datarate(Device)),
-    ?assertEqual('US915', last_known_datarate(last_known_datarate('US915', Device))).
+    ?assertEqual(7, last_known_datarate(last_known_datarate(7, Device))).
 
 location_test() ->
     Device = new(<<"id">>),
@@ -589,7 +649,7 @@ update_test() ->
         {channel_correction, true},
         {queue, [a]},
         {region, 'US915'},
-        {last_known_datarate, <<"SF7BW125">>},
+        {last_known_datarate, 7},
         {ecc_compact, #{}},
         {location, <<"location">>},
         {metadata, #{a => b}},
@@ -609,7 +669,7 @@ update_test() ->
         channel_correction = true,
         queue = [a],
         region = 'US915',
-        last_known_datarate = <<"SF7BW125">>,
+        last_known_datarate = 7,
         ecc_compact = #{},
         location = <<"location">>,
         metadata = #{a => b},

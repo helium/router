@@ -101,16 +101,14 @@ xor_filter(["device", "xor"], [], Flags) ->
             c_text("No Updates");
         {false, {Cost, N}} ->
             c_text(
-                "Adding " ++
-                    erlang:integer_to_list(N) ++
-                    " devices for " ++ erlang:integer_to_list(Cost) ++ "DC"
+                "DRY RUN: Adding ~p devices for ~p DC",
+                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
             );
         {true, {Cost, N}} ->
             ok = router_xor_filter_worker:check_filters(),
             c_text(
-                "Adding " ++
-                    erlang:integer_to_list(N) ++
-                    " devices for " ++ erlang:integer_to_list(Cost) ++ "DC"
+                "Adding ~p devices for ~p DC",
+                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
             )
     end.
 

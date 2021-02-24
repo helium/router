@@ -45,47 +45,6 @@
     can_queue_payload/2
 ]).
 
--define(MAX_US915_DOWNLINK_SIZE, 242).
--define(MAX_CN470_DOWNLINK_SIZE, 242).
--define(MAX_AS923_DOWNLINK_SIZE, 250).
-
--define(AS923_PAYLOAD_SIZE_MAP, #{
-    0 => 59,
-    1 => 59,
-    2 => 59,
-    3 => 123,
-    4 => 250,
-    5 => 250,
-    6 => 250,
-    7 => 250
-}).
-
--define(CN470_PAYLOAD_SIZE_MAP, #{
-    0 => 51,
-    1 => 51,
-    2 => 51,
-    3 => 115,
-    4 => 242,
-    5 => 242
-}).
-
--define(US915_PAYLOAD_SIZE_MAP, #{
-    0 => 11,
-    1 => 53,
-    2 => 125,
-    3 => 242,
-    4 => 242,
-    %% 5 => rfu,
-    %% 6 => rfu,
-    %% 7 => rfu,
-    8 => 53,
-    9 => 129,
-    10 => 242,
-    11 => 242,
-    12 => 242,
-    13 => 242
-}).
-
 %% ------------------------------------------------------------------
 %% RocksDB Device Exports
 %% ------------------------------------------------------------------
@@ -453,12 +412,8 @@ can_queue_payload(_Payload, #device_v6{region = undefined}) ->
     {error, device_region_unknown};
 can_queue_payload(Payload, Device) ->
     DR = ?MODULE:last_known_datarate(Device),
-    MaxSize =
-        case ?MODULE:region(Device) of
-            'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?MAX_AS923_DOWNLINK_SIZE);
-            'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?MAX_CN470_DOWNLINK_SIZE);
-            _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?MAX_US915_DOWNLINK_SIZE)
-        end,
+    Region = ?MODULE:region(Device),
+    MaxSize = lorawan_mac_region:max_payload_size(Region, DR),
     Size = erlang:byte_size(Payload),
     {Size < MaxSize, Size, MaxSize, DR}.
 

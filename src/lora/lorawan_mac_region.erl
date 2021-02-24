@@ -16,8 +16,50 @@
 -export([tx_time/2, tx_time/3]).
 -export([f2uch/2]).
 -export([uplink_power_table/1]).
+-export([max_payload_size/2]).
 
 -include("lorawan_db.hrl").
+
+-define(US915_MAX_DOWNLINK_SIZE, 242).
+-define(CN470_MAX_DOWNLINK_SIZE, 242).
+-define(AS923_MAX_DOWNLINK_SIZE, 250).
+
+-define(AS923_PAYLOAD_SIZE_MAP, #{
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 250,
+    5 => 250,
+    6 => 250,
+    7 => 250
+}).
+
+-define(CN470_PAYLOAD_SIZE_MAP, #{
+    0 => 51,
+    1 => 51,
+    2 => 51,
+    3 => 115,
+    4 => 242,
+    5 => 242
+}).
+
+-define(US915_PAYLOAD_SIZE_MAP, #{
+    0 => 11,
+    1 => 53,
+    2 => 125,
+    3 => 242,
+    4 => 242,
+    %% 5 => rfu,
+    %% 6 => rfu,
+    %% 7 => rfu,
+    8 => 53,
+    9 => 129,
+    10 => 242,
+    11 => 242,
+    12 => 242,
+    13 => 242
+}).
 
 %% ------------------------------------------------------------------
 %% @doc === Types and Terms ===
@@ -373,15 +415,15 @@ datars(Region) when Region == 'CN470' ->
     ];
 datars(Region) when Region == 'AS923' ->
     [
-        {0, {12, 125}, todo},
-        {1, {11, 125}, todo},
-        {2, {10, 125}, todo},
-        {3, {9, 125}, todo},
-        {4, {8, 125}, todo},
-        {5, {7, 125}, todo},
-        {6, {7, 250}, todo},
+        {0, {12, 125}, updown},
+        {1, {11, 125}, updown},
+        {2, {10, 125}, updown},
+        {3, {9, 125}, updown},
+        {4, {8, 125}, updown},
+        {5, {7, 125}, updown},
+        {6, {7, 250}, updown},
         %% FSK
-        {7, 50000, todo}
+        {7, 50000, updown}
     ];
 datars(_Region) ->
     [
@@ -541,6 +583,14 @@ uplink_power_table('EU868') ->
         {4, 5},
         {5, 2}
     ].
+
+-spec max_payload_size(atom(), dr()) -> integer().
+max_payload_size(Region, DR) ->
+    case Region of
+        'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?AS923_MAX_DOWNLINK_SIZE);
+        'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?CN470_MAX_DOWNLINK_SIZE);
+        _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
+    end.
 
 %% static channel plan parameters
 freq('EU868') ->
@@ -739,6 +789,50 @@ ceiling(X) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+us_window_1_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 923.3,
+        datr = <<"SF10BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    TxQ = rx1_window('US915', 0, 0, RxQ),
+    DR = datar_to_dr('US915', TxQ#txq.datr),
+    ?assertEqual(500, element(2, dr_to_tuple('US915', DR))),
+
+    ?assert(datar_to_dr('US915', TxQ#txq.datr) >= 8),
+    ?assert(datar_to_dr('US915', TxQ#txq.datr) =< 13),
+    ok.
+
+us_window_2_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 923.3,
+        datr = <<"SF10BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun(TxQ) ->
+            ?assertEqual(datar_to_dr('US915', TxQ#txq.datr), 8),
+            ?assertEqual(TxQ#txq.freq, 923.3)
+        end,
+        [rx2_window('US915', RxQ), join2_window('US915', RxQ)]
+    ),
+
+    ok.
 
 cn470_window_1_test() ->
     Now = os:timestamp(),

@@ -227,7 +227,7 @@ handle_cast(
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
             lager:debug("failed to queue downlink message, ~p", [_Reason]),
-            %% REVIEW: Message to console?
+            %% TODO: Send update to console
             {noreply, State}
     end;
 handle_cast(

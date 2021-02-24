@@ -76,12 +76,7 @@ deveui_appeui(Device) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    case enabled() of
-        true ->
-            ok = schedule_post_init();
-        false ->
-            ok
-    end,
+    ok = schedule_post_init(),
     {ok, #state{}}.
 
 handle_call(estimate_cost, _From, State) ->
@@ -107,8 +102,17 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                     ok = schedule_post_init(),
                     {noreply, State};
                 OUI ->
-                    Ref = schedule_check_filters(1),
-                    {noreply, State#state{chain = Chain, oui = OUI, check_filters_ref = Ref}}
+                    case enabled() of
+                        true ->
+                            Ref = schedule_check_filters(1),
+                            {noreply, State#state{
+                                chain = Chain,
+                                oui = OUI,
+                                check_filters_ref = Ref
+                            }};
+                        false ->
+                            {noreply, State#state{chain = Chain, oui = OUI}}
+                    end
             end
     end;
 handle_info(

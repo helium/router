@@ -340,7 +340,7 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         non_neg_integer() => devices_dev_eui_app_eui()
     }}.
 contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
-    BinFiltersWithIndex = lists:zip(lists:seq(1, erlang:length(BinFilters)), BinFilters),
+    BinFiltersWithIndex = lists:zip(lists:seq(0, erlang:length(BinFilters) - 1), BinFilters),
     ContainedBy = fun(Filter) -> fun(Bin) -> xor16:contain({Filter, ?HASH_FUN}, Bin) end end,
     {CurrFilter, Removed, Added, _} =
         lists:foldl(
@@ -528,7 +528,7 @@ should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 1, [deveui_appeui(Device1), deveui_appeui(Device0)]}]},
+        {Routing0, [{update, 0, [deveui_appeui(Device1), deveui_appeui(Device0)]}]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -540,9 +540,9 @@ should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 1, [deveui_appeui(Device1)]}]},
+        {Routing0, [{update, 0, [deveui_appeui(Device1)]}]},
         should_update_filters(chain, OUI, #{
-            1 => [deveui_appeui(Device0)]
+            0 => [deveui_appeui(Device0)]
         })
     ),
 
@@ -558,9 +558,9 @@ should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 1, [deveui_appeui(Device1), deveui_appeui(Device2)]}]},
+        {Routing0, [{update, 0, [deveui_appeui(Device1), deveui_appeui(Device2)]}]},
         should_update_filters(chain, OUI, #{
-            1 => [deveui_appeui(Device0)]
+            0 => [deveui_appeui(Device0)]
         })
     ),
 
@@ -574,7 +574,7 @@ should_update_filters_test() ->
     RoutingRemoved1 = blockchain_ledger_routing_v1:update(
         RoutingRemoved0,
         {new_xor, BinFilter1},
-        2
+        1
     ),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, RoutingRemoved1}
@@ -585,10 +585,10 @@ should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {RoutingRemoved1, [{update, 2, []}, {update, 1, []}]},
+        {RoutingRemoved1, [{update, 1, []}, {update, 0, []}]},
         should_update_filters(chain, OUI, #{
-            1 => [deveui_appeui(Device0)],
-            2 => [deveui_appeui(Device1)]
+            0 => [deveui_appeui(Device0)],
+            1 => [deveui_appeui(Device1)]
         })
     ),
 
@@ -611,20 +611,20 @@ contained_in_filters_test() ->
     {Filter2, _} = xor16:new(BinDevices2, ?HASH_FUN),
     {BinFilter2, _} = xor16:to_bin({Filter2, ?HASH_FUN}),
     ?assertEqual(
-        {#{1 => BinDevices1, 2 => BinDevices2}, [], #{}},
+        {#{0 => BinDevices1, 1 => BinDevices2}, [], #{}},
         contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{1 => BinDevices1}, BinDevices2, #{}},
+        {#{0 => BinDevices1}, BinDevices2, #{}},
         contained_in_filters([BinFilter1], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{1 => BinDevices1}, [], #{2 => BinDevices2}},
-        contained_in_filters([BinFilter1, BinFilter2], #{1 => BinDevices2}, BinDevices1)
+        {#{0 => BinDevices1}, [], #{1 => BinDevices2}},
+        contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
     ),
     ?assertEqual(
-        {#{}, BinDevices2, #{1 => BinDevices1}},
-        contained_in_filters([BinFilter1], #{1 => BinDevices1}, BinDevices2)
+        {#{}, BinDevices2, #{0 => BinDevices1}},
+        contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
     ),
     ok.
 

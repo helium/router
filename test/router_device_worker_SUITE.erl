@@ -305,7 +305,7 @@ drop_downlink_test(Config) ->
 
     test_utils:wait_for_console_event(<<"packet_dropped">>, #{
         <<"category">> => <<"packet_dropped">>,
-        <<"description">> => <<"Packet request exceeds maximum 242 bytes">>,
+        <<"description">> => <<"Packet request exceeds maximum 125 bytes">>,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"frame_up">> => 0,

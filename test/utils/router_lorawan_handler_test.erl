@@ -32,7 +32,8 @@
     key = undefined :: binary() | undefined,
     port,
     joined = false,
-    channel_mask = []
+    channel_mask = [],
+    region
 }).
 
 %% ------------------------------------------------------------------
@@ -55,16 +56,19 @@ version() ->
 init(server, _Conn, _Args) ->
     lager:info("server started with ~p", [_Args]),
     {ok, #state{}};
-init(client, _Conn, [Pid, Pubkeybin] = _Args) ->
+init(client, _Conn, [Pid, Pubkeybin, Region] = _Args) ->
     lager:info("client started with ~p", [_Args]),
     ct:pal("~p", [file:get_cwd()]),
-    Port = erlang:open_port({spawn_executable, "../../../../priv/LoRaMac-classA"}, [
-        {line, 65535},
-        stream,
-        binary,
-        exit_status
-    ]),
-    {ok, #state{pid = Pid, key = Pubkeybin, port = Port}}.
+    Port = erlang:open_port(
+        {spawn_executable, io_lib:format("../../../../priv/LoRaMac-classA_~s", [Region])},
+        [
+            {line, 65535},
+            stream,
+            binary,
+            exit_status
+        ]
+    ),
+    {ok, #state{pid = Pid, key = Pubkeybin, port = Port, region = Region}}.
 
 handle_data(client, Data, #state{pid = Pid, key = Pubkeybin} = State) ->
     try blockchain_state_channel_v1_pb:decode_msg(Data, blockchain_state_channel_message_v1_pb) of
@@ -119,7 +123,7 @@ handle_info(
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = State#state.key,
-        region = 'US915'
+        region = State#state.region
     },
     Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
     {noreply, State, blockchain_state_channel_v1_pb:encode_msg(Msg)};
@@ -146,10 +150,9 @@ handle_info(client, {Port, {data, {eol, LogMsg}}}, State = #state{port = Port}) 
             <<"###### ===== JOINING ==== ######">> ->
                 State#state.pid ! joining,
                 State;
-            <<"CHANNEL MASK: ", A:4/binary, " ", B:4/binary, " ", C:4/binary, " ", D:4/binary, " ",
-                E:4/binary, _/binary>> ->
+            <<"CHANNEL MASK: ", Rest/binary>> ->
                 %% 0,8,16,24,32,40,48,56,64,72
-                Mask = parse_channel_mask(<<A/binary, B/binary, C/binary, D/binary, E/binary>>),
+                Mask = parse_channel_mask(Rest, State#state.region),
                 lager:info("channel mask ~w", [Mask]),
                 State#state{channel_mask = Mask};
             <<"RX CONFIRMED DATA     : ", HexPort:2/binary, " ", HexPayload/binary>> ->
@@ -184,7 +187,10 @@ handle_info(_Type, _Msg, State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-parse_channel_mask(B) ->
+parse_channel_mask(
+    <<A:4/binary, " ", B:4/binary, " ", C:4/binary, " ", D:4/binary, " ", E:4/binary, _/binary>>,
+    Region
+) when Region == 'US915'; Region == 'AU915'; Region == 'CN470' ->
     {_, R} = lists:foldl(
         fun(Byte, {Offset, Channels}) ->
             NewChannels = [
@@ -202,9 +208,31 @@ parse_channel_mask(B) ->
         {1, []},
         binary_to_list(<<
             <<Y:8/integer, X:8/integer>>
-            || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(B)
+            || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(
+                   <<A/binary, B/binary, C/binary, D/binary, E/binary>>
+               )
         >>)
     ),
+    [F - 1 || F <- R, F /= 0];
+parse_channel_mask(<<A:4/binary, _/binary>>, _) ->
+    %% XXX assume AS923 form
+    [Byte, _] = binary_to_list(<<
+        <<Y:8/integer, X:8/integer>>
+        || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(<<A/binary>>)
+    >>),
+    ct:pal("byte ~p", [Byte]),
+    R = [
+        (Byte band 2#1),
+        1 + ((Byte band 2#10) bsr 1),
+        2 + ((Byte band 2#100) bsr 2),
+        3 + ((Byte band 2#1000) bsr 3),
+        4 + ((Byte band 2#10000) bsr 4),
+        5 + ((Byte band 2#100000) bsr 5),
+        6 + ((Byte band 2#1000000) bsr 6),
+        7 + ((Byte band 2#10000000) bsr 7)
+    ],
+
+    ct:pal("R ~p", [R]),
     [E - 1 || E <- R, E /= 0].
 
 %% ------------------------------------------------------------------

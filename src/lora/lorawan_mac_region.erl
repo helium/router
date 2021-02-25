@@ -16,8 +16,50 @@
 -export([tx_time/2, tx_time/3]).
 -export([f2uch/2]).
 -export([uplink_power_table/1]).
+-export([max_payload_size/2]).
 
 -include("lorawan_db.hrl").
+
+-define(US915_MAX_DOWNLINK_SIZE, 242).
+-define(CN470_MAX_DOWNLINK_SIZE, 242).
+-define(AS923_MAX_DOWNLINK_SIZE, 250).
+
+-define(AS923_PAYLOAD_SIZE_MAP, #{
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 250,
+    5 => 250,
+    6 => 250,
+    7 => 250
+}).
+
+-define(CN470_PAYLOAD_SIZE_MAP, #{
+    0 => 51,
+    1 => 51,
+    2 => 51,
+    3 => 115,
+    4 => 242,
+    5 => 242
+}).
+
+-define(US915_PAYLOAD_SIZE_MAP, #{
+    0 => 11,
+    1 => 53,
+    2 => 125,
+    3 => 242,
+    4 => 242,
+    %% 5 => rfu,
+    %% 6 => rfu,
+    %% 7 => rfu,
+    8 => 53,
+    9 => 129,
+    10 => 242,
+    11 => 242,
+    12 => 242,
+    13 => 242
+}).
 
 %% ------------------------------------------------------------------
 %% @doc === Types and Terms ===
@@ -84,6 +126,15 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
         datr = dr_to_datar(Region, 0),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
@@ -107,6 +158,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
+%% 505.3 MHz / DR0 (SF12 / BW125)
 rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
@@ -121,6 +173,15 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     #txq{
         freq = 869.525,
         datr = dr_to_datar(Region, 0),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     }.
@@ -139,6 +200,8 @@ rx1_rf('CN470' = Region, RxQ, Offset) ->
     RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
     DownFreq = dch2f(Region, RxCh rem 48),
     tx_offset(Region, RxQ, DownFreq, Offset);
+rx1_rf('AS923' = Region, RxQ, Offset) ->
+    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
 rx1_rf(Region, RxQ, Offset) ->
     tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
 %% TODO: original file does not have rx1_rf function to handle EU868 and
@@ -176,6 +239,12 @@ f2uch('EU868', Freq) when Freq < 868 ->
     f2uch(Freq, {8671, 2}) + 3;
 f2uch('EU868', Freq) when Freq > 868 ->
     f2uch(Freq, {8681, 2});
+f2uch('AS923', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9222, 2}, {9236, 2})
+    end;
 f2uch(Freq, {Start, Inc}) ->
     round(10 * Freq - Start) div Inc.
 
@@ -258,8 +327,11 @@ datar_to_down(Region, DataRate, Offset) ->
     dr_to_datar(Region, DR2).
 
 -spec dr_to_down(atom(), dr(), non_neg_integer()) -> dr().
-dr_to_down('AS923', DR, Offset) ->
+dr_to_down(Region, DR, Offset) when Region == 'AS923' ->
     %% TODO: should be derived based on DownlinkDwellTime
+    %% 2.8.7 of lorawan_regional_parameters1.0.3reva_0.pdf -- We don't send
+    %% downlink dwell time the device, so we're assuming it's 0 for the time
+    %% being.
     MinDR = 0,
     EffOffset =
         if
@@ -340,6 +412,18 @@ datars(Region) when Region == 'CN470' ->
         {3, {9, 125}, updown},
         {4, {8, 125}, updown},
         {5, {7, 125}, updown}
+    ];
+datars(Region) when Region == 'AS923' ->
+    [
+        {0, {12, 125}, updown},
+        {1, {11, 125}, updown},
+        {2, {10, 125}, updown},
+        {3, {9, 125}, updown},
+        {4, {8, 125}, updown},
+        {5, {7, 125}, updown},
+        {6, {7, 250}, updown},
+        %% FSK
+        {7, 50000, updown}
     ];
 datars(_Region) ->
     [
@@ -476,7 +560,9 @@ uplink_power_table('AS923') ->
         {2, -4},
         {3, -6},
         {4, -8},
-        {5, -10}
+        {5, -10},
+        {6, -12},
+        {7, -14}
     ];
 uplink_power_table('KR920') ->
     [
@@ -497,6 +583,14 @@ uplink_power_table('EU868') ->
         {4, 5},
         {5, 2}
     ].
+
+-spec max_payload_size(atom(), dr()) -> integer().
+max_payload_size(Region, DR) ->
+    case Region of
+        'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?AS923_MAX_DOWNLINK_SIZE);
+        'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?CN470_MAX_DOWNLINK_SIZE);
+        _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
+    end.
 
 %% static channel plan parameters
 freq('EU868') ->
@@ -696,6 +790,50 @@ ceiling(X) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
+us_window_1_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 923.3,
+        datr = <<"SF10BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    TxQ = rx1_window('US915', 0, 0, RxQ),
+    DR = datar_to_dr('US915', TxQ#txq.datr),
+    ?assertEqual(500, element(2, dr_to_tuple('US915', DR))),
+
+    ?assert(datar_to_dr('US915', TxQ#txq.datr) >= 8),
+    ?assert(datar_to_dr('US915', TxQ#txq.datr) =< 13),
+    ok.
+
+us_window_2_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 923.3,
+        datr = <<"SF10BW125">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun(TxQ) ->
+            ?assertEqual(datar_to_dr('US915', TxQ#txq.datr), 8),
+            ?assertEqual(TxQ#txq.freq, 923.3)
+        end,
+        [rx2_window('US915', RxQ), join2_window('US915', RxQ)]
+    ),
+
+    ok.
+
 cn470_window_1_test() ->
     Now = os:timestamp(),
     %% 96 up + 48 down = 144 total
@@ -755,7 +893,82 @@ cn470_window_2_test() ->
             ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
-        [{join2_window, join2_window('CN470', RxQ)}, {rx2_window, rx2_window('CN470', RxQ)}]
+        [
+            {join2_window, join2_window('CN470', RxQ)},
+            {rx2_window, rx2_window('CN470', RxQ)}
+        ]
+    ),
+    ok.
+
+as923_window_1_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 9232000,
+        datr = dr_to_datar('AS923', 0),
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, RxQ#rxq.freq, "Frequency is same as uplink"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [
+            {join1_window, join1_window('AS923', _Delay = 0, RxQ)},
+            {rx1_window, rx1_window('AS923', _Delay = 0, _Offset0 = 0, RxQ)}
+        ]
+    ),
+
+    %% FIXME: How does the DR actually change?
+    %%        Put this test back when we fix the TODO in `dr_to_down/3'
+    %% lists:foreach(
+    %%     fun({TxQ, {expected_dr, Expected}}) ->
+    %%         ?assertEqual(datar_to_dr('AS923_AS1', TxQ#txq.datr), Expected),
+    %%         ?assertEqual(TxQ#txq.datr, dr_to_datar('AS923_AS1', Expected))
+    %%     end,
+    %%     [
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset0 = 0, RxQ), {expected_dr, 0}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset1 = 1, RxQ), {expected_dr, 1}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset2 = 2, RxQ), {expected_dr, 2}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset3 = 3, RxQ), {expected_dr, 3}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset4 = 4, RxQ), {expected_dr, 4}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset5 = 5, RxQ), {expected_dr, 5}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset6 = 6, RxQ), {expected_dr, 5}},
+    %%         {rx1_window('AS923_AS1', _Delay = 0, _Offset7 = 7, RxQ), {expected_dr, 5}}
+    %%     ]
+    %% ),
+    ok.
+
+as923_window_2_test() ->
+    Now = os:timestamp(),
+
+    RxQ = #rxq{
+        freq = 100.0,
+        datr = <<"SF7BW250">>,
+        codr = <<"4/5">>,
+        time = calendar:now_to_datetime(Now),
+        tmms = 0,
+        rssi = 42.2,
+        lsnr = 10.1
+    },
+
+    lists:foreach(
+        fun({Window, TxQ}) ->
+            ?assertEqual(TxQ#txq.freq, 923.2, "Frequency is hardcoded"),
+            ?assertEqual(TxQ#txq.datr, <<"SF10BW125">>, "Datarate is hardcoded DR2"),
+            ?assertEqual(TxQ#txq.codr, RxQ#rxq.codr, "Coderate is the same"),
+            ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
+        end,
+        [
+            {join2_window, join2_window('AS923', RxQ)},
+            {rx2_window, rx2_window('AS923', RxQ)}
+        ]
     ),
     ok.
 

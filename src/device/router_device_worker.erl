@@ -45,8 +45,9 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
--define(MAX_DOWNLINK_SIZE, 242).
+
 -define(NET_ID, <<"He2">>).
+
 -define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
@@ -204,12 +205,16 @@ handle_cast(
         channels_worker = ChannelsWorker
     } = State
 ) ->
-    case erlang:byte_size(Payload) of
-        Size when Size > ?MAX_DOWNLINK_SIZE ->
-            ok = router_device_utils:report_status_max_size(Device0, Payload, Port),
-            lager:debug("failed to queue downlink message, too big (~p)", [Size]),
+    case router_device:can_queue_payload(Payload, Device0) of
+        {false, Size, MaxSize, Datarate} ->
+            ok = router_device_utils:report_status_max_size(Device0, Payload, MaxSize, Port),
+            lager:debug("failed to queue downlink message, too big (~p > ~p), using datarate ~p", [
+                Size,
+                MaxSize,
+                Datarate
+            ]),
             {noreply, State};
-        _ ->
+        {true, Size, MaxSize, _Datarate} ->
             OldQueue = router_device:queue(Device0),
             NewQueue =
                 case Position of
@@ -218,8 +223,12 @@ handle_cast(
                 end,
             Device1 = router_device:queue(NewQueue, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-            lager:debug("queued downlink message"),
-            {noreply, State#state{device = Device1}}
+            lager:debug("queued downlink message of size ~p < ~p", [Size, MaxSize]),
+            {noreply, State#state{device = Device1}};
+        {error, _Reason} ->
+            lager:debug("failed to queue downlink message, ~p", [_Reason]),
+            %% TODO: Send update to console
+            {noreply, State}
     end;
 handle_cast(
     {join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid},
@@ -760,7 +769,7 @@ handle_join(
         payload =
             <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary,
                 _MIC:4/binary>>
-    },
+    } = Packet,
     PubKeyBin,
     Region,
     _OUI,
@@ -803,10 +812,13 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, router_device:metadata(APIDevice)}
+        {metadata, router_device:metadata(APIDevice)},
+        {last_known_datarate, packet_datarate_to_dr(Packet, Region)},
+        {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
-    Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
+    LoraRegion = lora_region(Region, PubKeyBin),
+    Reply = craft_join_reply(LoraRegion, AppNonce, DevAddr, AppKey),
     lager:debug(
         "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
         [
@@ -834,11 +846,11 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
                 %%
                 %% The actual channel frequency in Hz is 100 x frequency whereby values representing
                 %% frequencies below 100 MHz are reserved for future use.
-                Channels = <<
-                    <<X:24/integer-unsigned-little>>
-                    || X <- [8671000, 8673000, 8675000, 8677000, 8679000]
-                >>,
-                <<Channels/binary, 0:8/integer>>;
+                mk_cflist_for_freqs([8671000, 8673000, 8675000, 8677000, 8679000]);
+            'AS923_AS1' ->
+                mk_cflist_for_freqs([9222000, 9224000, 9226000, 9228000, 9230000]);
+            'AS923_AS2' ->
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9246000]);
             _ ->
                 %% Not yet implemented for other regions
                 <<>>
@@ -973,6 +985,7 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
     PayloadSize = erlang:byte_size(FRMPayload),
     case router_console_dc_tracker:charge(Device0, PayloadSize, Blockchain) of
         {error, Reason} ->
+            %% REVIEW: Do we want to update region and datarate for an uncharged packet?
             DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],
             Device1 = router_device:update(DeviceUpdates, Device0),
             case FPort of
@@ -1000,37 +1013,28 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                             AName
                         ]
                     ),
+                    BaseDeviceUpdates = [
+                        {fcnt, FCnt},
+                        {location, PubKeyBin},
+                        {region, Region},
+                        {last_known_datarate, packet_datarate_to_dr(Packet, Region)}
+                    ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
-                    Device1 =
-                        case ACK of
-                            0 ->
-                                DeviceUpdates = [
-                                    {fcnt, FCnt},
-                                    {location, PubKeyBin}
-                                ],
-                                router_device:update(DeviceUpdates, Device0);
-                            1 ->
-                                case router_device:queue(Device0) of
-                                    %% Check if confirmed down link
-                                    [#downlink{confirmed = true} | T] ->
-                                        DeviceUpdates = [
-                                            {fcnt, FCnt},
-                                            {queue, T},
-                                            {location, PubKeyBin},
-                                            {fcntdown, router_device:fcntdown(Device0) + 1}
-                                        ],
-                                        router_device:update(DeviceUpdates, Device0);
-                                    _ ->
-                                        lager:warning(
-                                            "got ack when no confirmed downlinks in queue"
-                                        ),
-                                        DeviceUpdates = [
-                                            {fcnt, FCnt},
-                                            {location, PubKeyBin}
-                                        ],
-                                        router_device:update(DeviceUpdates, Device0)
-                                end
+                    QueueDeviceUpdates =
+                        case {ACK, router_device:queue(Device0)} of
+                            %% Check if acknowledging confirmed downlink
+                            {1, [#downlink{confirmed = true} | T]} ->
+                                [{queue, T}, {fcntdown, router_device:fcntdown(Device0) + 1}];
+                            {1, _} ->
+                                lager:warning("got ack when no confirmed downlinks in queue"),
+                                [];
+                            _ ->
+                                []
                         end,
+                    Device1 = router_device:update(
+                        QueueDeviceUpdates ++ BaseDeviceUpdates,
+                        Device0
+                    ),
                     Frame = #frame{
                         mtype = MType,
                         devaddr = DevAddr,
@@ -1108,28 +1112,28 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                             AName
                         ]
                     ),
+
+                    BaseDeviceUpdates = [
+                        {fcnt, FCnt},
+                        {region, Region},
+                        {last_known_datarate, packet_datarate_to_dr(Packet, Region)}
+                    ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
-                    Device1 =
-                        case ACK of
-                            0 ->
-                                router_device:fcnt(FCnt, Device0);
-                            1 ->
-                                case router_device:queue(Device0) of
-                                    %% Check if confirmed down link
-                                    [#downlink{confirmed = true} | T] ->
-                                        DeviceUpdates = [
-                                            {fcnt, FCnt},
-                                            {queue, T},
-                                            {fcntdown, router_device:fcntdown(Device0) + 1}
-                                        ],
-                                        router_device:update(DeviceUpdates, Device0);
-                                    _ ->
-                                        lager:warning(
-                                            "got ack when no confirmed downlinks in queue"
-                                        ),
-                                        router_device:fcnt(FCnt, Device0)
-                                end
+                    QueueDeviceUpdates =
+                        case {ACK, router_device:queue(Device0)} of
+                            %% Check if acknowledging confirmed downlink
+                            {1, [#downlink{confirmed = true} | T]} ->
+                                [{queue, T}, {fcntdown, router_device:fcntdown(Device0) + 1}];
+                            {1, _} ->
+                                lager:warning("got ack when no confirmed downlinks in queue"),
+                                [];
+                            _ ->
+                                []
                         end,
+                    Device1 = router_device:update(
+                        QueueDeviceUpdates ++ BaseDeviceUpdates,
+                        Device0
+                    ),
                     Frame = #frame{
                         mtype = MType,
                         devaddr = DevAddr,
@@ -1743,3 +1747,45 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                 AdrPacket
             )
     end.
+
+-spec mk_cflist_for_freqs(list(non_neg_integer())) -> binary().
+mk_cflist_for_freqs(Frequencies) ->
+    Channels = <<
+        <<X:24/integer-unsigned-little>>
+        || X <- Frequencies
+    >>,
+    <<Channels/binary, 0:8/integer>>.
+
+-spec lora_region(atom(), libp2p_crypto:pubkey_bin()) -> atom().
+lora_region(Region, PubKeyBin) ->
+    case Region of
+        'AS923' ->
+            case lorawan_location:get_country_code(PubKeyBin) of
+                {ok, CountryCode} ->
+                    lorawan_location:as923_region_from_country_code(CountryCode);
+                {error, _Reason} ->
+                    lager:warning(
+                        "Failed to get country for AS923: ~p [pubkeybin: ~p] [hotspot: ~p]",
+                        [
+                            _Reason,
+                            PubKeyBin,
+                            blockchain_utils:addr2name(PubKeyBin)
+                        ]
+                    ),
+                    %% Default to AS923 region with more countries
+                    'AS923_AS2'
+            end;
+        _ ->
+            Region
+    end.
+
+-spec packet_datarate_to_dr(Packet :: blockchain_helium_packet_v1:packet(), Region :: atom()) ->
+    integer().
+packet_datarate_to_dr(Packet, Region) ->
+    Datarate = erlang:list_to_binary(
+        blockchain_helium_packet_v1:datarate(Packet)
+    ),
+    lorawan_mac_region:datar_to_dr(
+        Region,
+        Datarate
+    ).

@@ -108,6 +108,7 @@ init([]) ->
             ?SUP(blockchain_sup, [BlockchainOpts]),
             ?WORKER(router_db, [DBOpts]),
             ?SUP(router_devices_sup, []),
+            ?WORKER(lorawan_location, []),
             ?WORKER(router_sc_worker, [SCWorkerOpts]),
             ?SUP(router_console_sup, []),
             ?WORKER(router_v8, [#{}]),

@@ -15,7 +15,7 @@
     report_frame_status/11,
     report_status/11,
     report_status/12,
-    report_status_max_size/3,
+    report_status_max_size/4,
     report_status_no_dc/1,
     report_status_inactive/1,
     report_join_request/4,
@@ -367,11 +367,17 @@ report_status(
     },
     ok = router_console_api:report_status(Device, Report).
 
--spec report_status_max_size(router_device:device(), binary(), non_neg_integer()) -> ok.
-report_status_max_size(Device, Payload, Port) ->
+-spec report_status_max_size(
+    router_device:device(),
+    binary(),
+    non_neg_integer(),
+    non_neg_integer()
+) -> ok.
+report_status_max_size(Device, Payload, MaxSize, Port) ->
+    Desc = io_lib:format("Packet request exceeds maximum ~p bytes", [MaxSize]),
     Report = #{
         category => packet_dropped,
-        description => <<"Packet request exceeds maximum 242 bytes">>,
+        description => erlang:list_to_binary(Desc),
         reported_at => erlang:system_time(seconds),
         payload => base64:encode(Payload),
         payload_size => erlang:byte_size(Payload),

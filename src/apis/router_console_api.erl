@@ -16,6 +16,7 @@
     get_devices_by_deveui_appeui/2,
     get_all_devices/0,
     get_channels/2,
+    event/2,
     report_status/2,
     get_downlink_url/2,
     get_org/1,
@@ -175,6 +176,99 @@ get_channels(Device, DeviceWorkerPid) ->
             ),
             Channels1
     end.
+
+-spec event(Device :: router_device:device(), Map :: map()) -> ok.
+event(Device, Map) ->
+    erlang:spawn(
+        fun() ->
+            ok = router_utils:lager_md(Device),
+            lager:debug("event ~p", [Map]),
+            {Endpoint, Token} = token_lookup(),
+            DeviceID = router_device:id(Device),
+            Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
+            Category = maps:get(category, Map),
+            true = lists:member(Category, [uplink, downlink, join_request, join_accept, misc]),
+            SubCategory = maps:get(sub_category, Map, undefined),
+            true = lists:member(SubCategory, [
+                undefined,
+                uplink_confirmed,
+                uplink_unconfirmed,
+                uplink_integration_req,
+                uplink_integration_res,
+                uplink_dropped,
+                downlink_confirmed,
+                downlink_unconfirmed,
+                downlink_dropped,
+                downlink_queued,
+                downlink_ack,
+                misc_integration_error
+            ]),
+            Data =
+                case {Category, SubCategory} of
+                    {_C, SC} when
+                        SC == uplink_integration_req orelse
+                            SC == uplink_integration_res orelse
+                            SC == downlink_dropped orelse
+                            SC == downlink_queued orelse
+                            SC == misc_integration_error
+                    ->
+                        #{
+                            id => maps:get(channel_id, Map),
+                            name => maps:get(channel_name, Map),
+                            status => maps:get(channel_status, Map)
+                            %% TODO Req/Res
+                        };
+                    {_C, uplink_dropped} ->
+                        #{
+                            fcnt => maps:get(fcnt, Map)
+                            %% TODO Req/Res
+                        };
+                    {C, _SC} when
+                        C == uplink orelse
+                            C == downlink orelse
+                            C == join_request orelse
+                            C == join_accept
+                    ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map)
+                            %% TODO DCs
+                        }
+                end,
+            Body = #{
+                id => maps:get(id, Map),
+                category => Category,
+                sub_category => SubCategory,
+                description => maps:get(description, Map),
+                reported_at => maps:get(reported_at, Map),
+                device_id => router_device:id(Device),
+                data => Data
+            },
+            lager:debug("post ~p to ~p", [Body, Url]),
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:post(
+                    Url,
+                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                    jsx:encode(Body),
+                    [with_body, {pool, ?POOL}]
+                )
+            of
+                {ok, 200, _Headers, _Body} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(report_status, ok, End - Start);
+                _Other ->
+                    lager:warning("got non 200 resp ~p", [_Other]),
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(report_status, error, End - Start)
+            end
+        end
+    ),
+    ok.
 
 -spec report_status(Device :: router_device:device(), Map :: map()) -> ok.
 report_status(Device, Map) ->

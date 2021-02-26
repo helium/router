@@ -107,7 +107,6 @@ handle_offer(Offer, HandlerPid) ->
     Resp =
         case Routing of
             #routing_information_pb{data = {eui, _EUI}} ->
-                ok = lorawan_location:maybe_fetch_offer_location(Offer),
                 join_offer(Offer, HandlerPid);
             #routing_information_pb{data = {devaddr, _DevAddr}} ->
                 packet_offer(Offer, HandlerPid)
@@ -122,6 +121,8 @@ handle_offer(Offer, HandlerPid) ->
         ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
         ok = handle_offer_metrics(Routing, Resp, End - Start)
     end),
+    %% TODO: Remove when hotspots start reporting AS923 including subregions
+    ok = lorawan_location:maybe_fetch_offer_location(Offer),
     Resp.
 
 -spec handle_packet(

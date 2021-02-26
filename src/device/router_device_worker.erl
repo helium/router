@@ -1759,6 +1759,10 @@ mk_cflist_for_freqs(Frequencies) ->
 -spec lora_region(atom(), libp2p_crypto:pubkey_bin()) -> atom().
 lora_region(Region, PubKeyBin) ->
     case Region of
+        'AS923_AS1' ->
+            Region;
+        'AS923_AS2' ->
+            Region;
         'AS923' ->
             case lorawan_location:get_country_code(PubKeyBin) of
                 {ok, CountryCode} ->

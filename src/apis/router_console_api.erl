@@ -58,10 +58,9 @@
 -define(GET_DEVICES_LIFETIME, 10).
 -define(GET_ORG_EVICTION_TIMEOUT, timer:seconds(10)).
 
--type uuid_v4() :: binary().
 -type request_body() :: maps:map().
--type pending() :: #{uuid_v4() => request_body()}.
--type inflight() :: {uuid_v4(), pid()}.
+-type pending() :: #{router_utils:uuid_v4() => request_body()}.
+-type inflight() :: {router_utils:uuid_v4(), pid()}.
 
 -record(state, {
     endpoint :: binary(),
@@ -424,7 +423,7 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({hnt_burn, Body}, #state{db = DB, pending_burns = P, inflight = I} = State) ->
-    Uuid = uuid_v4(),
+    Uuid = router_utils:uuid_v4(),
     ReqBody = Body#{request_id => Uuid},
     NewP = maps:put(Uuid, ReqBody, P),
     ok = store_pending_burns(DB, NewP),
@@ -1052,7 +1051,7 @@ maybe_spawn_pending_burns(P, I) ->
     ).
 
 -spec spawn_pending_burn(
-    Uuid :: uuid_v4(),
+    Uuid :: router_utils:uuid_v4(),
     Body :: maps:map()
 ) -> pid().
 spawn_pending_burn(Uuid, Body) ->
@@ -1062,13 +1061,13 @@ spawn_pending_burn(Uuid, Body) ->
     end).
 
 -spec do_hnt_burn_post(
-    Uuid :: uuid_v4(),
+    Uuid :: router_utils:uuid_v4(),
     ReplyPid :: pid(),
     Body :: request_body(),
     Delay :: pos_integer(),
     Next :: pos_integer(),
     Retries :: non_neg_integer()
-) -> {hnt_burn, success | fail, uuid_v4()}.
+) -> {hnt_burn, success | fail, router_utils:uuid_v4()}.
 do_hnt_burn_post(Uuid, ReplyPid, _Body, _Delay, _Next, 0) ->
     ReplyPid ! {hnt_burn, fail, Uuid};
 do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
@@ -1102,14 +1101,3 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
             %% fibonacci delay timer
             do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)
     end.
-
-%% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
-%% MIT License
--spec uuid_v4() -> uuid_v4().
-uuid_v4() ->
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    Str = io_lib:format(
-        "~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]
-    ),
-    list_to_binary(Str).

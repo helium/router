@@ -1,9 +1,7 @@
 -module(router_utils).
 
 -export([
-    event_uplink/10,
-    format_hotspot/4,
-
+    uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
     to_bin/1,
@@ -15,39 +13,20 @@
     maybe_update_trace/1
 ]).
 
-event_uplink(ID, SubCategory, Desc, Timestamp, FCnt, Payload, Port, Devaddr, Hotspot, Device) ->
-    Map = #{
-        id => ID,
-        category => uplink,
-        sub_category => SubCategory,
-        description => Desc,
-        reported_at => Timestamp,
-        fcnt => FCnt,
-        payload_size => binary:byte_size(Payload),
-        payload => Payload,
-        port => Port,
-        devaddr => Devaddr,
-        hotspot => Hotspot
-    },
-    ok = router_console_api:event(Device, Map),
-    ok.
+-type uuid_v4() :: binary().
 
-format_hotspot(Chain, PubKeyBin, Packet, Region) ->
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    HotspotName = blockchain_utils:addr2name(PubKeyBin),
-    Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = ?MODULE:get_hotspot_location(PubKeyBin, Chain),
-    #{
-        id => erlang:list_to_binary(B58),
-        name => erlang:list_to_binary(HotspotName),
-        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
-        snr => blockchain_helium_packet_v1:snr(Packet),
-        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-        frequency => Freq,
-        channel => lorawan_mac_region:f2uch(Region, Freq),
-        lat => Lat,
-        long => Long
-    }.
+-export_type([uuid_v4/0]).
+
+%% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
+%% MIT License
+-spec uuid_v4() -> uuid_v4().
+uuid_v4() ->
+    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
+    Str = io_lib:format(
+        "~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
+        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]
+    ),
+    list_to_binary(Str).
 
 -spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
 get_router_oui(Chain) ->

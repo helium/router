@@ -1,4 +1,4 @@
-FROM heliumsystems/builder-erlang:latest
+FROM heliumsystems/builder-erlang:1
 
 WORKDIR /opt/router
 

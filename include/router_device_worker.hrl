@@ -27,6 +27,7 @@
 }).
 
 -record(frame_cache, {
+    uuid :: router_utils:uuid_v4(),
     rssi :: float(),
     count = 1 :: pos_integer(),
     packet :: blockchain_helium_packet_v1:packet(),

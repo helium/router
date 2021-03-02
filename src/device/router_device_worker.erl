@@ -374,7 +374,7 @@ handle_cast(
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
         fcnt = LastSeenFCnt,
-        channels_worker = ChannelsWorker,
+        channels_worker = _ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
 ) ->
@@ -420,7 +420,12 @@ handle_cast(
         )
     of
         {error, {not_enough_dc, _Reason, Device2}} ->
-            ok = router_device_utils:report_status_no_dc(Device2),
+            ok = router_utils:event_uplink_dropped(
+                <<"Not enough DC">>,
+                PacketTime,
+                router_device:fcnt(Device2),
+                Device2
+            ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
@@ -433,6 +438,12 @@ handle_cast(
             {noreply, State#state{device = Device2}};
         {error, _Reason} ->
             lager:debug("packet not validated: ~p", [_Reason]),
+            ok = router_utils:event_uplink_dropped(
+                <<"Invalid Packet: ", (erlang:atom_to_binary(_Reason, utf8))/binary>>,
+                PacketTime,
+                router_device:fcnt(Device1),
+                Device1
+            ),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
@@ -442,8 +453,8 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
-            %% TODO: Maybe move this down a little?
+        {ok, Frame, Device2, _SendToChannels, {_Balance, _Nonce}} ->
+            %% TODO: Send data to channels worker
             case SendToChannels of
                 true ->
                     Data = router_device_channels_worker:new_data_cache(
@@ -465,6 +476,7 @@ handle_cast(
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device2),
             NewFrameCache = #frame_cache{
+                uuid = router_utils:uuid_v4(),
                 rssi = RSSI0,
                 packet = Packet0,
                 pubkey_bin = PubKeyBin,
@@ -472,9 +484,18 @@ handle_cast(
                 pid = Pid,
                 region = Region
             },
-
             case maps:get(FCnt, Cache0, undefined) of
                 undefined ->
+                    ok = router_utils:event_uplink(
+                        NewFrameCache#frame_cache.uuid,
+                        PacketTime,
+                        Frame,
+                        Device2,
+                        Blockchain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     Timeout = max(
                         0,
                         router_device_utils:frame_timeout() -
@@ -487,6 +508,16 @@ handle_cast(
                         frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                     }};
                 #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
+                    ok = router_utils:event_uplink(
+                        OldFrameCache#frame_cache.uuid,
+                        PacketTime,
+                        Frame,
+                        Device2,
+                        Blockchain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     case RSSI0 > OldRSSI of
                         false ->
                             catch blockchain_state_channel_handler:send_response(
@@ -1156,7 +1187,6 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
-
 -spec handle_frame_timeout(
     blockchain_helium_packet_v1:packet(),
     non_neg_integer(),

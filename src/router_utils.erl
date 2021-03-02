@@ -1,6 +1,11 @@
 -module(router_utils).
 
+-include("lorawan_vars.hrl").
+-include("router_device_worker.hrl").
+
 -export([
+    event_uplink/8,
+    event_uplink_dropped/4,
     uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
@@ -16,6 +21,61 @@
 -type uuid_v4() :: binary().
 
 -export_type([uuid_v4/0]).
+
+event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
+    #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,
+    {SubCategory, Desc} =
+        case MType of
+            ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up">>};
+            ?UNCONFIRMED_UP -> {uplink_unconfirmed, <<"Unconfirmed data up">>}
+        end,
+    Map = #{
+        id => ID,
+        category => uplink,
+        sub_category => SubCategory,
+        description => Desc,
+        reported_at => Timestamp,
+        fcnt => FCnt,
+        payload_size => erlang:byte_size(Payload),
+        payload => base64:encode(Payload),
+        port => FPort,
+        devaddr => base64:encode(DevAddr),
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => uplink,
+        sub_category => uplink_dropped,
+        description => Desc,
+        reported_at => Timestamp,
+        fcnt => FCnt,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => router_device:devaddr(Device),
+        hotspot => #{}
+    },
+    ok = router_console_api:event(Device, Map).
+
+format_hotspot(Chain, PubKeyBin, Packet, Region) ->
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    Freq = blockchain_helium_packet_v1:frequency(Packet),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    #{
+        id => erlang:list_to_binary(B58),
+        name => erlang:list_to_binary(HotspotName),
+        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
+        snr => blockchain_helium_packet_v1:snr(Packet),
+        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+        frequency => Freq,
+        channel => lorawan_mac_region:f2uch(Region, Freq),
+        lat => Lat,
+        long => Long
+    }.
 
 %% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
 %% MIT License

@@ -6,6 +6,7 @@
 -export([
     event_uplink/8,
     event_uplink_dropped/4,
+    event_downlink/10,
     uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
@@ -26,8 +27,8 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
     #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,
     {SubCategory, Desc} =
         case MType of
-            ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up">>};
-            ?UNCONFIRMED_UP -> {uplink_unconfirmed, <<"Unconfirmed data up">>}
+            ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up received">>};
+            ?UNCONFIRMED_UP -> {uplink_unconfirmed, <<"Unconfirmed data up received">>}
         end,
     Map = #{
         id => ID,
@@ -39,7 +40,7 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
         payload_size => erlang:byte_size(Payload),
         payload => base64:encode(Payload),
         port => FPort,
-        devaddr => base64:encode(DevAddr),
+        devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
     },
     ok = router_console_api:event(Device, Map).
@@ -57,6 +58,41 @@ event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
         port => 0,
         devaddr => router_device:devaddr(Device),
         hotspot => #{}
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_downlink(
+    IsDownlinkAck,
+    ConfirmedDown,
+    Port,
+    Payload,
+    Device,
+    ChannelMap,
+    Chain,
+    PubKeyBin,
+    Packet,
+    Region
+) ->
+    {SubCategory, Desc} =
+        case {IsDownlinkAck, ConfirmedDown} of
+            {1, _} -> {downlink_ack, <<"Ack sent">>};
+            {_, true} -> {downlink_confirmed, <<"Confirmed data down sent">>};
+            {_, false} -> {downlink_unconfirmed, <<"Unconfirmed data down sent">>}
+        end,
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => downlink,
+        sub_category => SubCategory,
+        description => Desc,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => router_device:fcntdown(Device),
+        payload_size => erlang:byte_size(Payload),
+        payload => base64:encode(Payload),
+        port => Port,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        integration_id => maps:get(id, ChannelMap),
+        integration_name => maps:get(name, ChannelMap)
     },
     ok = router_console_api:event(Device, Map).
 

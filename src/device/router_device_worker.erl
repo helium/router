@@ -374,7 +374,7 @@ handle_cast(
         frame_cache = Cache0,
         downlink_handled_at = DownlinkHandledAt,
         fcnt = LastSeenFCnt,
-        channels_worker = _ChannelsWorker,
+        channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
 ) ->
@@ -453,7 +453,7 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, _SendToChannels, {_Balance, _Nonce}} ->
+        {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
             %% TODO: Send data to channels worker
             case SendToChannels of
                 true ->
@@ -648,14 +648,12 @@ handle_info(
     case
         handle_frame_timeout(
             Packet,
-            PacketTime,
-            PubKeyBin,
             Region,
             Device0,
             Frame,
             Count,
-            Blockchain,
-            ADRAdjustment
+            ADRAdjustment,
+            router_device:queue(Device0)
         )
     of
         {ok, Device1} ->
@@ -679,7 +677,19 @@ handle_info(
                 frame_cache = Cache1,
                 fcnt = FCnt
             }};
-        {send, Device1, DownlinkPacket} ->
+        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, Reply, ChannelMap}} ->
+            ok = router_utils:event_downlink(
+                ACK,
+                ConfirmedDown,
+                Port,
+                Reply,
+                Device1,
+                ChannelMap,
+                Blockchain,
+                PubKeyBin,
+                Packet,
+                Region
+            ),
             case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
@@ -964,7 +974,7 @@ validate_frame(
     Window = erlang:system_time(millisecond) - PacketTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
         undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
             lager:debug("we got a late unconfirmed up packet for ~p: lastSeendFCnt: ~p", [
                 FCnt,
@@ -986,15 +996,14 @@ validate_frame(
                 "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
                 [FCnt, DownlinkHandledAt, Window]
             ),
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
         undefined ->
             ok = do_multi_buy(Packet, Device0, FrameAck),
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain)
     end.
 
 -spec validate_frame_(
     Packet :: blockchain_helium_packet_v1:packet(),
-    PacketTime :: non_neg_integer(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
     Device :: router_device:device(),
@@ -1003,7 +1012,7 @@ validate_frame(
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
         {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1078,23 +1087,6 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                         fport = FPort,
                         data = undefined
                     },
-                    Desc =
-                        <<"Packet with empty fopts received from AppEUI: ",
-                            (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                            (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_device_utils:report_status(
-                        up,
-                        Desc,
-                        Device0,
-                        success,
-                        PubKeyBin,
-                        Region,
-                        {Packet, PacketTime},
-                        undefined,
-                        0,
-                        DevAddr,
-                        Blockchain
-                    ),
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug(
@@ -1105,23 +1097,6 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                             lorawan_utils:binary_to_hex(AppEUI),
                             AName
                         ]
-                    ),
-                    Desc =
-                        <<"Packet with double fopts received from AppEUI: ",
-                            (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                            (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_device_utils:report_status(
-                        up,
-                        Desc,
-                        Device0,
-                        error,
-                        PubKeyBin,
-                        Region,
-                        {Packet, PacketTime},
-                        undefined,
-                        0,
-                        DevAddr,
-                        Blockchain
                     ),
                     {error, double_fopts};
                 _N ->
@@ -1188,67 +1163,23 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec handle_frame_timeout(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    #frame{},
-    pos_integer(),
-    blockchain:blockchain(),
-    lorwan_adr:adjustment()
-) ->
-    noop
-    | {ok, router_device:device()}
-    | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(
-    Packet,
-    PacketTime,
-    PubKeyBin,
-    Region,
-    Device,
-    Frame,
-    Count,
-    Blockchain,
-    ADRAdjustment
-) ->
-    handle_frame_timeout(
-        Packet,
-        PacketTime,
-        PubKeyBin,
-        Region,
-        Device,
-        Frame,
-        Count,
-        Blockchain,
-        ADRAdjustment,
-        router_device:queue(Device)
-    ).
-
--spec handle_frame_timeout(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    #frame{},
-    pos_integer(),
-    blockchain:blockchain(),
-    lorwan_adr:adjustment(),
+    Packet0 :: blockchain_helium_packet_v1:packet(),
+    Region :: atom(),
+    Device0 :: router_device:device(),
+    Frame :: #frame{},
+    Count :: pos_integer(),
+    ADRAdjustment :: lorwan_adr:adjustment(),
     [#downlink{}]
 ) ->
     noop
     | {ok, router_device:device()}
-    | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
+    | {send, router_device:device(), blockchain_helium_packet_v1:packet(), tuple()}.
 handle_frame_timeout(
     Packet0,
-    PacketTime,
-    PubKeyBin,
     Region,
     Device0,
     Frame,
     Count,
-    Blockchain,
     ADRAdjustment,
     []
 ) ->
@@ -1315,23 +1246,13 @@ handle_frame_timeout(
                 {fcntdown, (FCntDown + 1)}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                undefined,
-                Frame,
-                Blockchain
-            ),
+            EventTuple =
+                {ACK, ConfirmedDown, Port, Reply, #{id => undefined, name => <<"router">>}},
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
-                    {send, router_device:channel_correction(true, Device1), Packet1};
+                    {send, router_device:channel_correction(true, Device1), Packet1, EventTuple};
                 false ->
-                    {send, Device1, Packet1}
+                    {send, Device1, Packet1, EventTuple}
             end;
         _ when ChannelCorrection == false andalso WereChannelsCorrected == true ->
             %% we corrected the channels but don't have anything else to send
@@ -1342,13 +1263,10 @@ handle_frame_timeout(
     end;
 handle_frame_timeout(
     Packet0,
-    PacketTime,
-    PubKeyBin,
     Region,
     Device0,
     Frame,
     Count,
-    Blockchain,
     ADRAdjustment,
     [
         #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
@@ -1421,28 +1339,11 @@ handle_frame_timeout(
         binary_to_list(TxDataRate),
         Rx2
     ),
-    MapChannel = maps:merge(router_channel:to_map(Channel), #{
-        status => success,
-        reported_at => erlang:system_time(seconds),
-        description => <<"downlink sent">>
-    }),
+    EventTuple = {ACK, ConfirmedDown, Port, Reply, router_channel:to_map(Channel)},
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                ReplyPayload,
-                Frame,
-                Blockchain,
-                [MapChannel]
-            ),
-            {send, Device1, Packet1};
+            {send, Device1, Packet1, EventTuple};
         false ->
             DeviceUpdates = [
                 {queue, T},
@@ -1450,20 +1351,7 @@ handle_frame_timeout(
                 {fcntdown, (FCntDown + 1)}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                ReplyPayload,
-                Frame,
-                Blockchain,
-                [MapChannel]
-            ),
-            {send, Device1, Packet1}
+            {send, Device1, Packet1, EventTuple}
     end.
 
 %% TODO: we need `link_adr_answer' for ADR. Suggest refactoring this.

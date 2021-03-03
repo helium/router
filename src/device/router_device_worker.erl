@@ -487,7 +487,7 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
+        {ok, Frame, Device2, SendToChannels, {_Balance, _Nonce}} ->
             %% TODO: Send data to channels worker
             case SendToChannels of
                 true ->
@@ -501,8 +501,7 @@ handle_cast(
                     ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
                         Device2,
-                        Data,
-                        {Balance, Nonce}
+                        Data
                     );
                 false ->
                     ok

@@ -38,7 +38,6 @@
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
     data_cache = #{} :: map(),
-    balance_cache = #{} :: map(),
     fcnt :: integer(),
     channels_resp_cache = #{} :: map()
 }).
@@ -492,7 +491,6 @@ late_packet_test(Config) ->
         <<"payload_size">> => 0,
         <<"port">> => 1,
         <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),

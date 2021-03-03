@@ -174,8 +174,8 @@ is_non_local_address(Host) ->
             ok
     end.
 
--spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.
-handle_http_res(Res, Channel, Ref, Debug) ->
+-spec handle_http_res(any(), router_channel:channel(), router_utils:uuid_v4(), map()) -> ok.
+handle_http_res(Res, Channel, UUIDRef, Debug) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{
         id => router_channel:id(Channel),
@@ -231,7 +231,7 @@ handle_http_res(Res, Channel, Ref, Debug) ->
                     description => list_to_binary(io_lib:format("~p", [Reason]))
                 })
         end,
-    router_device_channels_worker:report_status(Pid, Ref, Result1).
+    router_device_channels_worker:report_status(Pid, UUIDRef, Result1).
 
 -spec content_type_or_default(list()) -> list().
 content_type_or_default(Headers) ->

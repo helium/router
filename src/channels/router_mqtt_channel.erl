@@ -278,9 +278,9 @@ ping(Conn) ->
             {error, Reason}
     end.
 
--spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
+-spec publish(router_utils:uuid_v4(), map(), #state{}) -> {ok, #state{}}.
 publish(
-    Ref,
+    UUIDRef,
     Data,
     #state{
         channel = Channel,
@@ -298,10 +298,10 @@ publish(
             body => Body
         }
     },
-    ok = handle_publish_res({error, not_connected}, Channel, Ref, Debug),
+    ok = handle_publish_res({error, not_connected}, Channel, UUIDRef, Debug),
     {ok, State};
 publish(
-    Ref,
+    UUIDRef,
     Data,
     #state{
         channel = Channel,
@@ -324,12 +324,12 @@ publish(
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
             lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
-            ok = handle_publish_res(Resp, Channel, Ref, Debug),
+            ok = handle_publish_res(Resp, Channel, UUIDRef, Debug),
             {ok, State}
     catch
         _:_ ->
             lager:error("[~s] failed to publish", [ChannelID]),
-            ok = handle_publish_res({error, publish_failed}, Channel, Ref, Debug),
+            ok = handle_publish_res({error, publish_failed}, Channel, UUIDRef, Debug),
             Backoff1 = reconnect(ChannelID, Backoff0),
             {ok, State#state{connection_backoff = Backoff1}}
     end.
@@ -354,8 +354,8 @@ cleanup_connection(Conn) ->
     (catch emqtt:stop(Conn)),
     ok.
 
--spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
-handle_publish_res(Res, Channel, Ref, Debug) ->
+-spec handle_publish_res(any(), router_channel:channel(), router_utils:uuid_v4(), map()) -> ok.
+handle_publish_res(Res, Channel, UUIDRef, Debug) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{
         id => router_channel:id(Channel),
@@ -383,7 +383,7 @@ handle_publish_res(Res, Channel, Ref, Debug) ->
                     description => list_to_binary(io_lib:format("~p", [Reason]))
                 })
         end,
-    router_device_channels_worker:report_status(Pid, Ref, Result1).
+    router_device_channels_worker:report_status(Pid, UUIDRef, Result1).
 
 -spec connect(URI :: binary(), DeviceID :: binary(), Name :: binary()) ->
     {ok, pid()} | {error, term()}.

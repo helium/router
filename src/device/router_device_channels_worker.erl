@@ -18,11 +18,11 @@
     start_link/1,
     handle_join/1,
     handle_device_update/2,
-    handle_frame/4,
+    handle_frame/3,
     report_status/3,
     handle_downlink/3,
     handle_console_downlink/4,
-    new_data_cache/5,
+    new_data_cache/6,
     refresh_channels/1
 ]).
 
@@ -50,6 +50,7 @@
 
 -record(data_cache, {
     pub_key :: libp2p_crypto:pubkey_bin(),
+    uuid :: router_utils:uuid_v4(),
     packet :: #packet_pb{},
     frame :: #frame{},
     region :: atom(),
@@ -63,8 +64,7 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: #{integer() => #{libp2p_crypto:pubkey_to_bin() => #data_cache{}}},
-    fcnt :: integer(),
+    data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}},
     channels_resp_cache = #{} :: map()
 }).
 
@@ -86,9 +86,9 @@ handle_device_update(Pid, Device) ->
 handle_frame(Pid, Device, DataCache) ->
     gen_server:cast(Pid, {handle_frame, Device, DataCache}).
 
--spec report_status(pid(), reference(), map()) -> ok.
-report_status(Pid, Ref, Map) ->
-    gen_server:cast(Pid, {report_status, Ref, Map}).
+-spec report_status(pid(), router_utils:uuid_v4(), map()) -> ok.
+report_status(Pid, UUID, Map) ->
+    gen_server:cast(Pid, {report_status, UUID, Map}).
 
 -spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
 handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
@@ -141,15 +141,17 @@ handle_downlink(Pid, BinaryPayload, Channel) ->
     end.
 
 -spec new_data_cache(
-    libp2p_crypto:pubkey_bin(),
-    #packet_pb{},
-    #frame{},
-    atom(),
-    non_neg_integer()
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    UUID :: router_utils:uuid_v4(),
+    Packet :: #packet_pb{},
+    Frame :: #frame{},
+    Region :: atom(),
+    Time :: non_neg_integer()
 ) -> #data_cache{}.
-new_data_cache(PubKeyBin, Packet, Frame, Region, Time) ->
+new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time) ->
     #data_cache{
         pub_key = PubKeyBin,
+        uuid = UUID,
         packet = Packet,
         frame = Frame,
         region = Region,
@@ -178,8 +180,7 @@ init(Args) ->
         chain = Blockchain,
         event_mgr = EventMgrRef,
         device_worker = DeviceWorkerPid,
-        device = Device,
-        fcnt = -1
+        device = Device
     }}.
 
 handle_call(_Msg, _From, State) ->
@@ -187,57 +188,51 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(handle_join, State) ->
-    {noreply, State#state{fcnt = -1}};
+    {noreply, State};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_frame, Device, #data_cache{pub_key = PubKeyBin, packet = Packet, frame = Frame} = Data},
-    #state{data_cache = DataCache0, fcnt = CurrFCnt} = State
+    {handle_frame, Device, #data_cache{uuid = UUID, pub_key = PubKeyBin, packet = Packet} = Data},
+    #state{data_cache = DataCache0} = State
 ) ->
-    FCnt = router_device:fcnt(Device),
-    CheckFCnt = FCnt =< CurrFCnt andalso router_device_utils:mtype_to_ack(Frame#frame.mtype) == 0,
-    DataCache1 =
-        case CheckFCnt of
-            true ->
-                lager:debug("we received a late packet ~p from ~p: ~p", [
-                    {FCnt, CurrFCnt},
-                    PubKeyBin,
-                    Packet
-                ]),
-                DataCache0;
-            false ->
-                case maps:get(FCnt, DataCache0, undefined) of
-                    undefined ->
-                        _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, FCnt}),
-                        maps:put(FCnt, #{PubKeyBin => Data}, DataCache0);
-                    CachedData0 ->
-                        CachedData1 = maps:put(PubKeyBin, Data, CachedData0),
-                        case maps:get(PubKeyBin, CachedData0, undefined) of
-                            undefined ->
-                                maps:put(FCnt, CachedData1, DataCache0);
-                            #data_cache{packet = #packet_pb{signal_strength = RSSI}} ->
-                                case Packet#packet_pb.signal_strength > RSSI of
-                                    true ->
-                                        maps:put(FCnt, CachedData1, DataCache0);
-                                    false ->
-                                        DataCache0
-                                end
-                        end
-                end
+    Action =
+        case maps:get(UUID, DataCache0, undefined) of
+            undefined ->
+                new_uuid;
+            #{PubKeyBin := CachedPacket} = CachedData ->
+                case CachedPacket#packet_pb.signal_strength < Packet#packet_pb.signal_strength of
+                    true -> {stronger, CachedData};
+                    false -> {weaker, CachedData}
+                end;
+            CachedData ->
+                {new_pubkey, CachedData}
         end,
+    DataCache1 =
+        case Action of
+            new_uuid ->
+                _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, UUID}),
+                maps:put(UUID, #{PubKeyBin => Data}, DataCache0);
+            {new_pubkey, CachedData1} ->
+                maps:put(UUID, CachedData1#{PubKeyBin => Data}, DataCache0);
+            {stronger, CachedData1} ->
+                maps:put(UUID, CachedData1#{PubKeyBin => Data}, DataCache0);
+            {weaker, _CachedData} ->
+                DataCache0
+        end,
+
     {noreply, State#state{device = Device, data_cache = DataCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_status, FCnt, Report}, #state{channels_resp_cache = Cache0} = State) ->
-    lager:debug("received report_status ~p ~p", [FCnt, Report]),
+handle_cast({report_status, UUID, Report}, #state{channels_resp_cache = Cache0} = State) ->
+    lager:debug("received report_status ~p ~p", [UUID, Report]),
     Cache1 =
-        case maps:get(FCnt, Cache0, undefined) of
+        case maps:get(UUID, Cache0, undefined) of
             undefined ->
-                lager:warning("received report_status ~p too late ignoring ~p", [FCnt, Report]),
+                lager:warning("received report_status ~p too late ignoring ~p", [UUID, Report]),
                 Cache0;
             {Data, CachedReports} ->
-                maps:put(FCnt, {Data, [Report | CachedReports]}, Cache0)
+                maps:put(UUID, {Data, [Report | CachedReports]}, Cache0)
         end,
     {noreply, State#state{channels_resp_cache = Cache1}};
 handle_cast(_Msg, State) ->
@@ -248,7 +243,7 @@ handle_cast(_Msg, State) ->
 %% Data Handling
 %% ------------------------------------------------------------------
 handle_info(
-    {data_timeout, FCnt},
+    {data_timeout, UUID},
     #state{
         chain = Blockchain,
         event_mgr = EventMgrRef,
@@ -257,24 +252,23 @@ handle_info(
         channels_resp_cache = RespCache0
     } = State
 ) ->
-    CachedData = maps:values(maps:get(FCnt, DataCache0)),
+    CachedData = maps:values(maps:get(UUID, DataCache0)),
     {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
-    lager:debug("data_timeout for ~p data: ~p", [FCnt, Map]),
-    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, FCnt}),
+    lager:debug("data_timeout for ~p data: ~p", [UUID, Map]),
+    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, UUID}),
     {noreply, State#state{
-        data_cache = maps:remove(FCnt, DataCache0),
-        fcnt = FCnt,
-        channels_resp_cache = maps:put(FCnt, {Map, []}, RespCache0)
+        data_cache = maps:remove(UUID, DataCache0),
+        channels_resp_cache = maps:put(UUID, {Map, []}, RespCache0)
     }};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------
 handle_info(
-    {report_status_timeout, FCnt},
+    {report_status_timeout, UUID},
     #state{device = Device, channels_resp_cache = Cache0} = State
 ) ->
-    lager:debug("report_status_timeout for ~p", [FCnt]),
-    case maps:get(FCnt, Cache0, undefined) of
+    lager:debug("report_status_timeout for ~p", [UUID]),
+    case maps:get(UUID, Cache0, undefined) of
         undefined ->
             {noreply, State};
         {Data, CachedReports} ->
@@ -292,7 +286,7 @@ handle_info(
                 fcnt => maps:get(fcnt, Data)
             },
             ok = router_console_api:report_status(Device, ReportsMap),
-            {noreply, State#state{channels_resp_cache = maps:remove(FCnt, Cache0)}}
+            {noreply, State#state{channels_resp_cache = maps:remove(UUID, Cache0)}}
     end;
 handle_info(
     refresh_channels,
@@ -509,9 +503,10 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
     ) ->
         router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
     end,
-    [#data_cache{frame = Frame, time = Time} | _] = CachedData,
+    [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     Map = #{
+        uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),
         dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
@@ -529,7 +524,7 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspots => lists:map(FormatHotspot, CachedData)
     },
-    ok = router_channel:handle_data(EventMgrRef, Map, FCnt),
+    ok = router_channel:handle_data(EventMgrRef, Map, UUID),
     {ok, Map}.
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->

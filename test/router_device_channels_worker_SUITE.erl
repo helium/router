@@ -38,7 +38,6 @@
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
     data_cache = #{} :: map(),
-    fcnt :: integer(),
     channels_resp_cache = #{} :: map()
 }).
 
@@ -474,6 +473,7 @@ late_packet_test(Config) ->
 
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
         <<"name">> => ?CONSOLE_DEVICE_NAME,

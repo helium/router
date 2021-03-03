@@ -488,11 +488,98 @@ handle_cast(
             ),
             {noreply, State};
         {ok, Frame, Device2, SendToChannels, {_Balance, _Nonce}} ->
+            RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
+            FCnt = router_device:fcnt(Device2),
+            NewFrameCache = #frame_cache{
+                uuid = router_utils:uuid_v4(),
+                rssi = RSSI0,
+                packet = Packet0,
+                pubkey_bin = PubKeyBin,
+                frame = Frame,
+                pid = Pid,
+                region = Region
+            },
+            {noreply, UUID, State1} =
+                case maps:get(FCnt, Cache0, undefined) of
+                    undefined ->
+                        ok = router_utils:event_uplink(
+                            NewFrameCache#frame_cache.uuid,
+                            PacketTime,
+                            Frame,
+                            Device2,
+                            Blockchain,
+                            PubKeyBin,
+                            Packet0,
+                            Region
+                        ),
+                        Timeout = max(
+                            0,
+                            router_device_utils:frame_timeout() -
+                                (erlang:system_time(millisecond) - PacketTime)
+                        ),
+                        lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [
+                            FCnt,
+                            Timeout
+                        ]),
+                        _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
+                        {noreply, NewFrameCache#frame_cache.uuid, State#state{
+                            device = Device2,
+                            frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
+                        }};
+                    #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
+                        ok = router_utils:event_uplink(
+                            OldFrameCache#frame_cache.uuid,
+                            PacketTime,
+                            Frame,
+                            Device2,
+                            Blockchain,
+                            PubKeyBin,
+                            Packet0,
+                            Region
+                        ),
+                        case RSSI0 > OldRSSI of
+                            false ->
+                                catch blockchain_state_channel_handler:send_response(
+                                    Pid,
+                                    blockchain_state_channel_response_v1:new(true)
+                                ),
+                                ok = router_metrics:packet_trip_observe_end(
+                                    PHash,
+                                    PubKeyBin,
+                                    erlang:system_time(millisecond),
+                                    packet,
+                                    false
+                                ),
+                                {noreply, OldFrameCache#frame_cache.uuid, State#state{
+                                    device = Device2,
+                                    frame_cache = maps:put(
+                                        FCnt,
+                                        OldFrameCache#frame_cache{count = Count + 1},
+                                        Cache0
+                                    )
+                                }};
+                            true ->
+                                catch blockchain_state_channel_handler:send_response(
+                                    OldPid,
+                                    blockchain_state_channel_response_v1:new(true)
+                                ),
+                                {noreply, OldFrameCache#frame_cache.uuid, State#state{
+                                    device = Device2,
+                                    frame_cache = maps:put(
+                                        FCnt,
+                                        NewFrameCache#frame_cache{count = Count + 1},
+                                        Cache0
+                                    )
+                                }}
+                        end
+                end,
+
             %% TODO: Send data to channels worker
             case SendToChannels of
                 true ->
                     Data = router_device_channels_worker:new_data_cache(
                         PubKeyBin,
+                        UUID,
                         Packet0,
                         Frame,
                         Region,
@@ -506,87 +593,7 @@ handle_cast(
                 false ->
                     ok
             end,
-            RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
-            FCnt = router_device:fcnt(Device2),
-            NewFrameCache = #frame_cache{
-                uuid = router_utils:uuid_v4(),
-                rssi = RSSI0,
-                packet = Packet0,
-                pubkey_bin = PubKeyBin,
-                frame = Frame,
-                pid = Pid,
-                region = Region
-            },
-            case maps:get(FCnt, Cache0, undefined) of
-                undefined ->
-                    ok = router_utils:event_uplink(
-                        NewFrameCache#frame_cache.uuid,
-                        PacketTime,
-                        Frame,
-                        Device2,
-                        Blockchain,
-                        PubKeyBin,
-                        Packet0,
-                        Region
-                    ),
-                    Timeout = max(
-                        0,
-                        router_device_utils:frame_timeout() -
-                            (erlang:system_time(millisecond) - PacketTime)
-                    ),
-                    lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
-                    _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
-                    {noreply, State#state{
-                        device = Device2,
-                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
-                    }};
-                #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
-                    ok = router_utils:event_uplink(
-                        OldFrameCache#frame_cache.uuid,
-                        PacketTime,
-                        Frame,
-                        Device2,
-                        Blockchain,
-                        PubKeyBin,
-                        Packet0,
-                        Region
-                    ),
-                    case RSSI0 > OldRSSI of
-                        false ->
-                            catch blockchain_state_channel_handler:send_response(
-                                Pid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
-                            ok = router_metrics:packet_trip_observe_end(
-                                PHash,
-                                PubKeyBin,
-                                erlang:system_time(millisecond),
-                                packet,
-                                false
-                            ),
-                            {noreply, State#state{
-                                device = Device2,
-                                frame_cache = maps:put(
-                                    FCnt,
-                                    OldFrameCache#frame_cache{count = Count + 1},
-                                    Cache0
-                                )
-                            }};
-                        true ->
-                            catch blockchain_state_channel_handler:send_response(
-                                OldPid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
-                            {noreply, State#state{
-                                device = Device2,
-                                frame_cache = maps:put(
-                                    FCnt,
-                                    NewFrameCache#frame_cache{count = Count + 1},
-                                    Cache0
-                                )
-                            }}
-                    end
-            end
+            {noreply, State1}
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

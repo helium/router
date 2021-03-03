@@ -209,7 +209,15 @@ handle_info(
     try ping(Conn) of
         ok ->
             lager:debug("[~s] pinged MQTT connection ~p successfully", [ChannelID, Conn]),
-            {ok, State#state{ping = schedule_ping(ChannelID)}}
+            {ok, State#state{ping = schedule_ping(ChannelID)}};
+        {error, _Reason} ->
+            lager:error("[~s] failed to ping MQTT connection ~p: ~p", [
+                ChannelID,
+                Conn,
+                _Reason
+            ]),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff = Backoff1}}
     catch
         _Class:_Reason ->
             lager:error("[~s] failed to ping MQTT connection ~p: ~p", [

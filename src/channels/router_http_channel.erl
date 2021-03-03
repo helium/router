@@ -169,7 +169,9 @@ is_non_local_address(Host) ->
             of
                 true -> {error, local_address};
                 false -> ok
-            end
+            end;
+        {ok, _} ->
+            ok
     end.
 
 -spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.

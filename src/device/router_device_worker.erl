@@ -673,6 +673,7 @@ handle_info(
 ) ->
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
+        uuid = UUID,
         packet = Packet,
         pubkey_bin = PubKeyBin,
         frame = Frame,
@@ -682,6 +683,7 @@ handle_info(
     } = FrameCache,
     Cache1 = maps:remove(FCnt, Cache0),
     ok = router_device_routing:clear_multi_buy(Packet),
+    ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),

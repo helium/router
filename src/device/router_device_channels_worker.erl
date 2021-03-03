@@ -23,7 +23,8 @@
     handle_downlink/3,
     handle_console_downlink/4,
     new_data_cache/6,
-    refresh_channels/1
+    refresh_channels/1,
+    frame_timeout/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -45,7 +46,6 @@
     {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
 ).
 
--define(DATA_TIMEOUT, timer:seconds(1)).
 -define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
 
 -record(data_cache, {
@@ -89,6 +89,10 @@ handle_frame(Pid, Device, DataCache) ->
 -spec report_status(pid(), router_utils:uuid_v4(), map()) -> ok.
 report_status(Pid, UUID, Map) ->
     gen_server:cast(Pid, {report_status, UUID, Map}).
+
+-spec frame_timeout(pid(), router_utils:uuid_v4()) -> ok.
+frame_timeout(Pid, UUID) ->
+    gen_server:cast(Pid, {frame_timeout, UUID}).
 
 -spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
 handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
@@ -192,7 +196,12 @@ handle_cast(handle_join, State) ->
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_frame, Device, #data_cache{uuid = UUID, pub_key = PubKeyBin, packet = Packet} = Data},
+    {handle_frame, Device,
+        #data_cache{
+            uuid = UUID,
+            pub_key = PubKeyBin,
+            packet = Packet
+        } = Data},
     #state{data_cache = DataCache0} = State
 ) ->
     Action =
@@ -210,7 +219,6 @@ handle_cast(
     DataCache1 =
         case Action of
             new_uuid ->
-                _ = erlang:send_after(?DATA_TIMEOUT, self(), {data_timeout, UUID}),
                 maps:put(UUID, #{PubKeyBin => Data}, DataCache0);
             {new_pubkey, CachedData1} ->
                 maps:put(UUID, CachedData1#{PubKeyBin => Data}, DataCache0);
@@ -235,31 +243,28 @@ handle_cast({report_status, UUID, Report}, #state{channels_resp_cache = Cache0} 
                 maps:put(UUID, {Data, [Report | CachedReports]}, Cache0)
         end,
     {noreply, State#state{channels_resp_cache = Cache1}};
+handle_cast(
+    {frame_timeout, UUID},
+    #state{
+        data_cache = DataCache0,
+        chain = Blockchain,
+        event_mgr = EventMgrPid,
+        channels_resp_cache = RespCache,
+        device = Device
+    } = State
+) ->
+    {CachedData, DataCache1} = maps:take(UUID, DataCache0),
+    {ok, Map} = send_to_channel(maps:values(CachedData), Device, EventMgrPid, Blockchain),
+    lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
+    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, UUID}),
+    {noreply, State#state{
+        data_cache = DataCache1,
+        channels_resp_cache = maps:put(UUID, {Map, []}, RespCache)
+    }};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-%% ------------------------------------------------------------------
-%% Data Handling
-%% ------------------------------------------------------------------
-handle_info(
-    {data_timeout, UUID},
-    #state{
-        chain = Blockchain,
-        event_mgr = EventMgrRef,
-        device = Device,
-        data_cache = DataCache0,
-        channels_resp_cache = RespCache0
-    } = State
-) ->
-    CachedData = maps:values(maps:get(UUID, DataCache0)),
-    {ok, Map} = send_to_channel(CachedData, Device, EventMgrRef, Blockchain),
-    lager:debug("data_timeout for ~p data: ~p", [UUID, Map]),
-    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, UUID}),
-    {noreply, State#state{
-        data_cache = maps:remove(UUID, DataCache0),
-        channels_resp_cache = maps:put(UUID, {Map, []}, RespCache0)
-    }};
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------

@@ -231,29 +231,38 @@ handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State
     {noreply, State};
 handle_cast({report_status, UUID, Report}, #state{device = Device} = State) ->
     lager:debug("received report_status ~p ~p", [UUID, Report]),
-    Status = maps:get(status, Report),
-    {Category, SubCategory} =
-        case Status of
-            no_channel -> {uplink, uplink_integration_res};
-            success -> {uplink, uplink_integration_res};
-            failure -> {misc, misc_integration_error}
-        end,
 
-    Payload = #{
-        %% Top Level
-        id => UUID,
-        category => Category,
-        sub_category => SubCategory,
-        description => maps:get(description, Report),
-        reported_at => maps:get(reported_at, Report),
-        %% Integration specific
+    ChannelInfo = #{
         channel_id => maps:get(id, Report),
         channel_name => maps:get(name, Report),
-        channel_status => maps:get(status, Report),
-        request => maps:get(request, Report, #{}),
-        response => maps:get(response, Report, #{})
+        channel_status => maps:get(status, Report)
     },
-    router_console_api:event(Device, Payload),
+
+    case maps:get(status, Report) of
+        no_channel ->
+            noop;
+        success ->
+            router_utils:event_uplink_integration_res(
+                UUID,
+                Device,
+                success,
+                maps:get(description, Report),
+                maps:get(request, Report),
+                maps:get(response, Report),
+                ChannelInfo
+            );
+        failure ->
+            %% TODO: combine success and failure?
+            router_utils:event_misc_integration_res(
+                UUID,
+                Device,
+                failure,
+                maps:get(description, Report),
+                maps:get(request, Report),
+                maps:get(response, Report),
+                ChannelInfo
+            )
+    end,
 
     {noreply, State};
 handle_cast(

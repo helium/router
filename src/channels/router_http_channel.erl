@@ -178,7 +178,6 @@ handle_http_res(Res, Channel, UUIDRef, Request) ->
     Result0 = #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
-        reported_at => erlang:system_time(millisecond),
         request => Request
     },
     Result1 =

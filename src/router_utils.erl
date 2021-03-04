@@ -11,6 +11,7 @@
     event_downlink/10,
     event_downlink_dropped/5,
     event_downlink_queued/5,
+    event_uplink_integration_res/7,
     uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
@@ -173,6 +174,32 @@ event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
         hotspot => #{},
         integration_id => maps:get(id, ChannelMap),
         integration_name => maps:get(name, ChannelMap)
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_uplink_integration_res(
+    UUID :: uuid_v4(),
+    Device :: router_device:device(),
+    Description :: binary(),
+    Status :: success | failure,
+    Request :: map(),
+    Response :: map(),
+    ChannelInfo :: map()
+) -> ok.
+event_uplink_integration_res(UUID, Device, Description, Status, Request, Response, ChannelInfo) ->
+    Map = #{
+        id => UUID,
+        category => uplink,
+        sub_category => uplink_integration_res,
+        status => Status,
+        description => Description,
+        reported_at => erlang:system_time(millisecond),
+        %%
+        channel_id => maps:get(id, ChannelInfo),
+        channel_name => maps:get(name, ChannelInfo),
+        channel_status => maps:get(status, ChannelInfo),
+        request => Request,
+        response => Response
     },
     ok = router_console_api:event(Device, Map).
 

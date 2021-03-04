@@ -49,7 +49,6 @@ handle_event({data, Ref, Data}, #state{channel = Channel, device = Device} = Sta
                 description => <<"console debug">>,
                 id => router_channel:id(Channel),
                 name => router_channel:name(Channel),
-                reported_at => erlang:system_time(millisecond),
                 request => #{body => router_channel:encode_data(Channel, Data)}
             },
             router_device_channels_worker:report_status(Pid, Ref, Report)

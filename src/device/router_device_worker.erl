@@ -197,7 +197,8 @@ handle_cast(
     ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
     {noreply, State#state{device = Device1}};
 handle_cast(
-    {queue_message, #downlink{port = Port, payload = Payload} = Downlink, Position},
+    {queue_message, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
+        Position},
     #state{
         db = DB,
         cf = CF,
@@ -207,7 +208,17 @@ handle_cast(
 ) ->
     case router_device:can_queue_payload(Payload, Device0) of
         {false, Size, MaxSize, Datarate} ->
-            ok = router_device_utils:report_status_max_size(Device0, Payload, MaxSize, Port),
+            Desc = io_lib:format(
+                "Payload too big for ~p max size is ~p (payload was ~p)",
+                [Datarate, MaxSize, Size]
+            ),
+            ok = router_utils:event_downlink_dropped(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device0,
+                router_channel:to_map(Channel)
+            ),
             lager:debug("failed to queue downlink message, too big (~p > ~p), using datarate ~p", [
                 Size,
                 MaxSize,
@@ -223,11 +234,30 @@ handle_cast(
                 end,
             Device1 = router_device:queue(NewQueue, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            Desc = io_lib:format(
+                "Downlink queued in ~p place",
+                [Position]
+            ),
+            ok = router_utils:event_downlink_queued(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device1,
+                router_channel:to_map(Channel)
+            ),
+
             lager:debug("queued downlink message of size ~p < ~p", [Size, MaxSize]),
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
+            Desc = io_lib:format("Failed to queue downlink: ~p", [_Reason]),
+            ok = router_utils:event_downlink_dropped(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device0,
+                router_channel:to_map(Channel)
+            ),
             lager:debug("failed to queue downlink message, ~p", [_Reason]),
-            %% TODO: Send update to console
             {noreply, State}
     end;
 handle_cast(

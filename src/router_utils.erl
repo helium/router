@@ -7,6 +7,8 @@
     event_uplink/8,
     event_uplink_dropped/4,
     event_downlink/10,
+    event_downlink_dropped/5,
+    event_downlink_queued/5,
     uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
@@ -91,6 +93,42 @@ event_downlink(
         port => Port,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        integration_id => maps:get(id, ChannelMap),
+        integration_name => maps:get(name, ChannelMap)
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => downlink,
+        sub_category => downlink_dropped,
+        description => Desc,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => router_device:fcntdown(Device),
+        payload_size => erlang:byte_size(Payload),
+        payload => Payload,
+        port => Port,
+        devaddr => router_device:devaddr(Device),
+        hotspot => #{},
+        integration_id => maps:get(id, ChannelMap),
+        integration_name => maps:get(name, ChannelMap)
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => downlink,
+        sub_category => downlink_queued,
+        description => Desc,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => router_device:fcntdown(Device),
+        payload_size => erlang:byte_size(Payload),
+        payload => Payload,
+        port => Port,
+        devaddr => router_device:devaddr(Device),
+        hotspot => #{},
         integration_id => maps:get(id, ChannelMap),
         integration_name => maps:get(name, ChannelMap)
     },

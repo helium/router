@@ -211,15 +211,13 @@ publish(
     } = State
 ) ->
     Body = router_channel:encode_data(Channel, Data),
-    Debug = #{
-        req => #{
-            endpoint => Endpoint,
-            topic => Topic,
-            qos => 0,
-            body => Body
-        }
+    Request = #{
+        endpoint => Endpoint,
+        topic => Topic,
+        qos => 0,
+        body => Body
     },
-    ok = handle_publish_res({error, not_connected}, Channel, UUIDRef, Debug),
+    ok = handle_publish_res({error, not_connected}, Channel, UUIDRef, Request),
     {ok, State};
 publish(
     UUIDRef,
@@ -234,23 +232,21 @@ publish(
     } = State
 ) ->
     Body = router_channel:encode_data(Channel, Data),
-    Debug = #{
-        req => #{
-            endpoint => Endpoint,
-            topic => Topic,
-            qos => 0,
-            body => Body
-        }
+    Request = #{
+        endpoint => Endpoint,
+        topic => Topic,
+        qos => 0,
+        body => Body
     },
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
             lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
-            ok = handle_publish_res(Resp, Channel, UUIDRef, Debug),
+            ok = handle_publish_res(Resp, Channel, UUIDRef, Request),
             {ok, State}
     catch
         _:_ ->
             lager:error("[~s] failed to publish", [ChannelID]),
-            ok = handle_publish_res({error, publish_failed}, Channel, UUIDRef, Debug),
+            ok = handle_publish_res({error, publish_failed}, Channel, UUIDRef, Request),
             Backoff1 = reconnect(ChannelID, Backoff0),
             {ok, State#state{connection_backoff = Backoff1}}
     end.
@@ -276,30 +272,31 @@ cleanup_connection(Conn) ->
     ok.
 
 -spec handle_publish_res(any(), router_channel:channel(), router_utils:uuid_v4(), map()) -> ok.
-handle_publish_res(Res, Channel, UUIDRef, Debug) ->
+handle_publish_res(Res, Channel, UUIDRef, Request) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
-        reported_at => erlang:system_time(seconds)
+        reported_at => erlang:system_time(millisecond),
+        request => Request
     },
     Result1 =
         case Res of
             {ok, PacketID} ->
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{packet_id => PacketID}}),
+                    response => #{packet_id => PacketID},
                     status => success,
                     description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))
                 });
             ok ->
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
+                    response => #{},
                     status => success,
                     description => <<"ok">>
                 });
             {error, Reason} ->
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
+                    response => #{},
                     status => failure,
                     description => list_to_binary(io_lib:format("~p", [Reason]))
                 })

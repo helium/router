@@ -36,11 +36,11 @@ init({[Channel, Device], _}) ->
 handle_event({data, Ref, _Data}, #state{channel = Channel} = State) ->
     Pid = router_channel:controller(Channel),
     Report = #{
-        status => <<"no_channel">>,
+        status => no_channel,
         description => <<"no channels configured">>,
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
-        reported_at => erlang:system_time(seconds)
+        reported_at => erlang:system_time(millisecond)
     },
     router_device_channels_worker:report_status(Pid, Ref, Report),
     {ok, State};

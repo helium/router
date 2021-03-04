@@ -214,8 +214,9 @@ event(Device, Map) ->
                         #{
                             id => maps:get(channel_id, Map),
                             name => maps:get(channel_name, Map),
-                            status => maps:get(channel_status, Map)
-                            %% TODO Req/Res
+                            status => maps:get(channel_status, Map),
+                            req => maps:get(request, Map),
+                            res => maps:get(response, Map)
                         };
                     {_C, uplink_dropped} ->
                         #{

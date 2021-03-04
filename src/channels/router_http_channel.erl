@@ -53,15 +53,13 @@ handle_event(
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
     Res = make_http_req(Method, URL, Headers, Body),
     lager:debug("published: ~p result: ~p", [Body, Res]),
-    Debug = #{
-        req => #{
-            method => Method,
-            url => URL,
-            headers => Headers,
-            body => Body
-        }
+    Request = #{
+        method => Method,
+        url => URL,
+        headers => Headers,
+        body => Body
     },
-    ok = handle_http_res(Res, Channel, Ref, Debug),
+    ok = handle_http_res(Res, Channel, Ref, Request),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -175,24 +173,23 @@ is_non_local_address(Host) ->
     end.
 
 -spec handle_http_res(any(), router_channel:channel(), router_utils:uuid_v4(), map()) -> ok.
-handle_http_res(Res, Channel, UUIDRef, Debug) ->
+handle_http_res(Res, Channel, UUIDRef, Request) ->
     Pid = router_channel:controller(Channel),
     Result0 = #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
-        reported_at => erlang:system_time(seconds)
+        reported_at => erlang:system_time(millisecond),
+        request => Request
     },
     Result1 =
         case Res of
             {ok, StatusCode, ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => <<>>
-                        }
-                    }),
+                    response => #{
+                        code => StatusCode,
+                        headers => ResponseHeaders,
+                        body => <<>>
+                    },
                     status => success,
                     description => <<"Connection established">>
                 });
@@ -201,32 +198,28 @@ handle_http_res(Res, Channel, UUIDRef, Debug) ->
             ->
                 router_device_channels_worker:handle_downlink(Pid, ResponseBody, Channel),
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => ResponseBody
-                        }
-                    }),
+                    response => #{
+                        code => StatusCode,
+                        headers => ResponseHeaders,
+                        body => ResponseBody
+                    },
                     status => success,
                     description => ResponseBody
                 });
             {ok, StatusCode, ResponseHeaders, ResponseBody} ->
                 SCBin = erlang:integer_to_binary(StatusCode),
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => ResponseBody
-                        }
-                    }),
+                    response => #{
+                        code => StatusCode,
+                        headers => ResponseHeaders,
+                        body => ResponseBody
+                    },
                     status => failure,
                     description => <<"ResponseCode: ", SCBin/binary, " Body ", ResponseBody/binary>>
                 });
             {error, Reason} ->
                 maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
+                    response => #{},
                     status => failure,
                     description => list_to_binary(io_lib:format("~p", [Reason]))
                 })

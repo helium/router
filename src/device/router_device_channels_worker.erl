@@ -46,8 +46,6 @@
     {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
 ).
 
--define(CHANNELS_RESP_TIMEOUT, timer:seconds(3)).
-
 -record(data_cache, {
     pub_key :: libp2p_crypto:pubkey_bin(),
     uuid :: router_utils:uuid_v4(),
@@ -64,8 +62,7 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}},
-    channels_resp_cache = #{} :: map()
+    data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}}
 }).
 
 %% ------------------------------------------------------------------
@@ -232,35 +229,46 @@ handle_cast(
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_status, UUID, Report}, #state{channels_resp_cache = Cache0} = State) ->
+handle_cast({report_status, UUID, Report}, #state{device = Device} = State) ->
     lager:debug("received report_status ~p ~p", [UUID, Report]),
-    Cache1 =
-        case maps:get(UUID, Cache0, undefined) of
-            undefined ->
-                lager:warning("received report_status ~p too late ignoring ~p", [UUID, Report]),
-                Cache0;
-            {Data, CachedReports} ->
-                maps:put(UUID, {Data, [Report | CachedReports]}, Cache0)
+    Status = maps:get(status, Report),
+    {Category, SubCategory} =
+        case Status of
+            no_channel -> {uplink, uplink_integration_res};
+            success -> {uplink, uplink_integration_res};
+            failure -> {misc, misc_integration_error}
         end,
-    {noreply, State#state{channels_resp_cache = Cache1}};
+
+    Payload = #{
+        %% Top Level
+        id => UUID,
+        category => Category,
+        sub_category => SubCategory,
+        description => maps:get(description, Report),
+        reported_at => maps:get(reported_at, Report),
+        %% Integration specific
+        channel_id => maps:get(id, Report),
+        channel_name => maps:get(name, Report),
+        channel_status => maps:get(status, Report),
+        request => maps:get(request, Report, #{}),
+        response => maps:get(response, Report, #{})
+    },
+    router_console_api:event(Device, Payload),
+
+    {noreply, State};
 handle_cast(
     {frame_timeout, UUID},
     #state{
         data_cache = DataCache0,
         chain = Blockchain,
         event_mgr = EventMgrPid,
-        channels_resp_cache = RespCache,
         device = Device
     } = State
 ) ->
     {CachedData, DataCache1} = maps:take(UUID, DataCache0),
     {ok, Map} = send_to_channel(maps:values(CachedData), Device, EventMgrPid, Blockchain),
     lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
-    _ = erlang:send_after(?CHANNELS_RESP_TIMEOUT, self(), {report_status_timeout, UUID}),
-    {noreply, State#state{
-        data_cache = DataCache1,
-        channels_resp_cache = maps:put(UUID, {Map, []}, RespCache)
-    }};
+    {noreply, State#state{data_cache = DataCache1}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -268,31 +276,6 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 %% Channel Handling
 %% ------------------------------------------------------------------
-handle_info(
-    {report_status_timeout, UUID},
-    #state{device = Device, channels_resp_cache = Cache0} = State
-) ->
-    lager:debug("report_status_timeout for ~p", [UUID]),
-    case maps:get(UUID, Cache0, undefined) of
-        undefined ->
-            {noreply, State};
-        {Data, CachedReports} ->
-            Payload = maps:get(payload, Data),
-            ReportsMap = #{
-                category => <<"up">>,
-                description => <<"Channels report">>,
-                reported_at => erlang:system_time(seconds),
-                payload => base64:encode(Payload),
-                payload_size => erlang:byte_size(Payload),
-                port => maps:get(port, Data),
-                devaddr => maps:get(devaddr, Data),
-                hotspots => maps:get(hotspots, Data),
-                channels => CachedReports,
-                fcnt => maps:get(fcnt, Data)
-            },
-            ok = router_console_api:report_status(Device, ReportsMap),
-            {noreply, State#state{channels_resp_cache = maps:remove(UUID, Cache0)}}
-    end;
 handle_info(
     refresh_channels,
     #state{event_mgr = EventMgrRef, device = Device, channels = Channels0} = State

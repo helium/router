@@ -13,6 +13,7 @@
 }).
 
 -record(join_cache, {
+    uuid :: router_utils:uuid_v4(),
     rssi :: float(),
     reply :: binary(),
     packet_selected ::

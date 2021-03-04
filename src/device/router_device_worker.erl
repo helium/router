@@ -301,6 +301,7 @@ handle_cast(
                 undefined ->
                     lager:debug("got a first join: ~p", [DevNonce]),
                     JoinCache = #join_cache{
+                        uuid = router_utils:uuid_v4(),
                         rssi = NewRSSI,
                         reply = Reply,
                         packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
@@ -319,6 +320,15 @@ handle_cast(
                         Timeout
                     ]),
                     _ = erlang:send_after(Timeout, self(), {join_timeout, DevNonce}),
+                    ok = router_utils:event_join_request(
+                        JoinCache#join_cache.uuid,
+                        PacketTime,
+                        Device1,
+                        Chain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     {noreply, State#state{
                         device = Device1,
                         last_dev_nonce = DevNonce,
@@ -328,11 +338,21 @@ handle_cast(
                         fcnt = -1
                     }};
                 #join_cache{
+                    uuid = UUID,
                     rssi = OldRSSI,
                     packet_selected = {OldPacket, _, _, _} = OldSelected,
                     packets = OldPackets,
                     pid = OldPid
                 } = JoinCache1 ->
+                    ok = router_utils:event_join_request(
+                        UUID,
+                        PacketTime,
+                        Device1,
+                        Chain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     case NewRSSI > OldRSSI of
                         false ->
                             lager:debug("got another join for ~p with worst RSSI ~p", [
@@ -629,7 +649,6 @@ handle_info(
         0,
         packet_to_rxq(Packet)
     ),
-    ok = router_device_utils:report_join_request(Device0, PacketSelected, Packets, Blockchain),
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         Reply,
@@ -652,12 +671,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
-    ok = router_device_utils:report_join_accept(
-        Device0,
-        PacketSelected,
-        DownlinkPacket,
-        Blockchain
-    ),
+    ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, Packet, Region),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},

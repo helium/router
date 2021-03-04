@@ -4,6 +4,8 @@
 -include("router_device_worker.hrl").
 
 -export([
+    event_join_request/7,
+    event_join_accept/5,
     event_uplink/8,
     event_uplink_dropped/4,
     event_downlink/10,
@@ -24,6 +26,46 @@
 -type uuid_v4() :: binary().
 
 -export_type([uuid_v4/0]).
+
+event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
+    DevEUI = router_device:dev_eui(Device),
+    AppEUI = router_device:app_eui(Device),
+    Map = #{
+        id => ID,
+        category => join_request,
+        sub_category => undefined,
+        description =>
+            <<"Join request from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
+                " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+        reported_at => Timestamp,
+        fcnt => 0,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
+    DevEUI = router_device:dev_eui(Device),
+    AppEUI = router_device:app_eui(Device),
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => join_accept,
+        sub_category => undefined,
+        description =>
+            <<"Join accept from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
+                " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => 0,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+    },
+    ok = router_console_api:event(Device, Map).
 
 event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
     #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,

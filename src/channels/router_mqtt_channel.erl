@@ -139,7 +139,7 @@ handle_info(
             {ok, State#state{
                 connection = Conn,
                 connection_backoff = Backoff1,
-                ping = ping(ChannelID)
+                ping = schedule_ping(ChannelID)
             }};
         {error, _ConnReason} ->
             lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
@@ -177,7 +177,7 @@ handle_info(
                     {ok, State#state{
                         connection = Conn,
                         connection_backoff = Backoff1,
-                        ping = ping(ChannelID)
+                        ping = schedule_ping(ChannelID)
                     }};
                 {error, _SubReason} ->
                     lager:error("[~s] failed to subscribe to ~p: ~p", [
@@ -206,13 +206,25 @@ handle_info(
     } = State
 ) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
-    try emqtt:ping(Conn) of
-        pong ->
+    try ping(Conn) of
+        ok ->
             lager:debug("[~s] pinged MQTT connection ~p successfully", [ChannelID, Conn]),
-            {ok, State#state{ping = ping(ChannelID)}}
+            {ok, State#state{ping = schedule_ping(ChannelID)}};
+        {error, _Reason} ->
+            lager:error("[~s] failed to ping MQTT connection ~p: ~p", [
+                ChannelID,
+                Conn,
+                _Reason
+            ]),
+            Backoff1 = reconnect(ChannelID, Backoff0),
+            {ok, State#state{connection_backoff = Backoff1}}
     catch
-        _:_ ->
-            lager:error("[~s] failed to ping MQTT connection ~p", [ChannelID, Conn]),
+        _Class:_Reason ->
+            lager:error("[~s] failed to ping MQTT connection ~p: ~p", [
+                ChannelID,
+                Conn,
+                {_Class, _Reason}
+            ]),
             Backoff1 = reconnect(ChannelID, Backoff0),
             {ok, State#state{connection_backoff = Backoff1}}
     end;
@@ -255,6 +267,16 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec ping(Conn :: pid()) -> ok | {error, any()}.
+ping(Conn) ->
+    try emqtt:ping(Conn) of
+        pong ->
+            ok
+    catch
+        _Class:Reason ->
+            {error, Reason}
+    end.
 
 -spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
 publish(
@@ -312,8 +334,8 @@ publish(
             {ok, State#state{connection_backoff = Backoff1}}
     end.
 
--spec ping(binary()) -> reference().
-ping(ChannelID) ->
+-spec schedule_ping(binary()) -> reference().
+schedule_ping(ChannelID) ->
     erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
 
 -spec send_connect_after(ChannelID :: binary(), Delay :: integer()) -> reference().

@@ -386,7 +386,7 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, _PacketTime, _PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, _PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
@@ -394,7 +394,11 @@ handle_cast(
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     _ = router_device_routing:deny_more(PHash),
-    ok = router_device_utils:report_status_inactive(Device),
+    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
+        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+    Desc = <<"Device inactive packet dropped">>,
+    ok = router_utils:event_uplink_dropped(Desc, PacketTime, FCnt, Device),
     {noreply, State};
 handle_cast(
     {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},

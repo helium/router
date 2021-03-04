@@ -236,23 +236,22 @@ estimate_cost(#state{
         noop ->
             noop;
         {_Routing, Updates} ->
-            {ok,
-                lists:foldl(
-                    fun
-                        ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
-                            {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                            Txn = craft_new_filter_txn(Chain, OUI, Filter, 1),
-                            {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
-                                N + erlang:length(NewDevicesDevEuiAppEui)};
-                        ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
-                            {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                            Txn = craft_update_filter_txn(Chain, OUI, Filter, 1, Index),
-                            {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
-                                N + erlang:length(NewDevicesDevEuiAppEui)}
-                    end,
-                    {0, 0},
-                    Updates
-                )}
+            lists:foldl(
+                fun
+                    ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Txn = craft_new_filter_txn(Chain, OUI, Filter, 1),
+                        {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
+                            N + erlang:length(NewDevicesDevEuiAppEui)};
+                    ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Txn = craft_update_filter_txn(Chain, OUI, Filter, 1, Index),
+                        {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
+                            N + erlang:length(NewDevicesDevEuiAppEui)}
+                end,
+                {0, 0},
+                Updates
+            )
     end.
 
 -spec should_update_filters(

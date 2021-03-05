@@ -20,6 +20,8 @@
     handle_device_update/2,
     handle_frame/3,
     report_status/3,
+    report_request/4,
+    report_response/4,
     handle_downlink/3,
     handle_console_downlink/4,
     new_data_cache/6,
@@ -82,6 +84,14 @@ handle_device_update(Pid, Device) ->
 -spec handle_frame(pid(), router_device:device(), #data_cache{}) -> ok.
 handle_frame(Pid, Device, DataCache) ->
     gen_server:cast(Pid, {handle_frame, Device, DataCache}).
+
+-spec report_request(pid(), router_utils:uuid_v4(), router_channel:channel(), map()) -> ok.
+report_request(Pid, UUID, Channel, Map) ->
+    gen_server:cast(Pid, {report_request, UUID, Channel, Map}).
+
+-spec report_response(pid(), router_utils:uuid_v4(), router_channel:channel(), map()) -> ok.
+report_response(Pid, UUID, Channel, Map) ->
+    gen_server:cast(Pid, {report_response, UUID, Channel, Map}).
 
 -spec report_status(pid(), router_utils:uuid_v4(), map()) -> ok.
 report_status(Pid, UUID, Map) ->
@@ -229,36 +239,44 @@ handle_cast(
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_status, UUID, Report}, #state{device = Device} = State) ->
+handle_cast({report_request, UUID, Channel, Request, Status}, #state{device = Device} = State) ->
+    lager:debug("received report_request ~p ~p", [UUID, Request]),
+
+    ChannelName = router_channel:name(Channel),
+    ChannelInfo = #{
+        channel_id => router_channel:id(Channel),
+        channel_name => ChannelName
+    },
+
+    Description = io_lib:format("Request sent to ~p", [ChannelName]),
+
+    ok = router_utils:event_uplink_integration_req(
+        UUID,
+        Device,
+        Status,
+        erlang:list_to_binary(Description),
+        Request,
+        ChannelInfo
+    ),
+
+    {noreply, State};
+handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = State) ->
     lager:debug("received report_status ~p ~p", [UUID, Report]),
 
     ChannelInfo = #{
-        channel_id => maps:get(id, Report),
-        channel_name => maps:get(name, Report),
-        channel_status => maps:get(status, Report)
+        channel_id => router_channel:id(Channel),
+        channel_name => router_channel:name(Channel)
     },
 
     case maps:get(status, Report) of
         no_channel ->
             noop;
-        success ->
+        Status ->
             router_utils:event_uplink_integration_res(
                 UUID,
                 Device,
-                success,
+                Status,
                 maps:get(description, Report),
-                maps:get(request, Report),
-                maps:get(response, Report),
-                ChannelInfo
-            );
-        failure ->
-            %% TODO: combine success and failure?
-            router_utils:event_misc_integration_res(
-                UUID,
-                Device,
-                failure,
-                maps:get(description, Report),
-                maps:get(request, Report),
                 maps:get(response, Report),
                 ChannelInfo
             )

@@ -65,8 +65,16 @@ start_link() ->
 -spec maybe_fetch_offer_location(blockchain_state_channel_offer_v1:offer()) -> ok.
 maybe_fetch_offer_location(Offer) ->
     case blockchain_state_channel_offer_v1:region(Offer) of
-        'AS923' -> gen_server:cast(?SERVER, {fetch, Offer});
-        _ -> ok
+        'AS923' ->
+            PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+            case get_country_code(PubKeyBin) of
+                {error, pubkey_not_present} ->
+                    gen_server:cast(?SERVER, {fetch, Offer});
+                {ok, _} ->
+                    ok
+            end;
+        _ ->
+            ok
     end.
 
 -spec get_country_code(libp2p_crypto:pubkey_bin()) -> {ok, country_code()} | {error, any()}.

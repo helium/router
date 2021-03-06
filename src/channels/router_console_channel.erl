@@ -2,9 +2,6 @@
 %% @doc
 %% == Router Console Channel ==
 %%
-%% Publishes events to Console when Debug Panel is open and has been
-%% `Limit' (currently: 10) has not been exceeded.
-%%
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_console_channel).
@@ -36,23 +33,16 @@ init({[Channel, Device], _}) ->
     lager:info("init with ~p", [Channel]),
     {ok, #state{channel = Channel, device = Device}}.
 
-handle_event({data, Ref, Data}, #state{channel = Channel, device = Device} = State) ->
-    DeviceID = router_device:id(Device),
-    DebugActive = router_console_api:debug_active_for_device(DeviceID),
-    case DebugActive of
-        false ->
-            ok;
-        true ->
-            Pid = router_channel:controller(Channel),
-            Report = #{
-                status => success,
-                description => <<"console debug">>,
-                id => router_channel:id(Channel),
-                name => router_channel:name(Channel),
-                request => #{body => router_channel:encode_data(Channel, Data)}
-            },
-            router_device_channels_worker:report_status(Pid, Ref, Report)
-    end,
+handle_event({data, UUIDRef, Data}, #state{channel = Channel} = State) ->
+    Pid = router_channel:controller(Channel),
+    Report = #{
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel),
+        status => success,
+        description => <<"console debug">>,
+        request => #{body => router_channel:encode_data(Channel, Data)}
+    },
+    ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, Report),
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

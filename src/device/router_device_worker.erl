@@ -519,7 +519,7 @@ handle_cast(
                 pid = Pid,
                 region = Region
             },
-            {noreply, UUID, State1} =
+            {UUID, State1} =
                 case maps:get(FCnt, Cache0, undefined) of
                     undefined ->
                         ok = router_utils:event_uplink(
@@ -542,7 +542,7 @@ handle_cast(
                             Timeout
                         ]),
                         _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
-                        {noreply, NewFrameCache#frame_cache.uuid, State#state{
+                        {NewFrameCache#frame_cache.uuid, State#state{
                             device = Device2,
                             frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                         }};
@@ -570,7 +570,7 @@ handle_cast(
                                     packet,
                                     false
                                 ),
-                                {noreply, OldFrameCache#frame_cache.uuid, State#state{
+                                {OldFrameCache#frame_cache.uuid, State#state{
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
@@ -583,7 +583,7 @@ handle_cast(
                                     OldPid,
                                     blockchain_state_channel_response_v1:new(true)
                                 ),
-                                {noreply, OldFrameCache#frame_cache.uuid, State#state{
+                                {OldFrameCache#frame_cache.uuid, State#state{
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
@@ -594,7 +594,6 @@ handle_cast(
                         end
                 end,
 
-            %% TODO: Send data to channels worker
             case SendToChannels of
                 true ->
                     Data = router_device_channels_worker:new_data_cache(

@@ -73,7 +73,7 @@ allocate(Config) ->
     ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
 
     {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_gossip_handler:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
@@ -125,7 +125,7 @@ route_packet(Config) ->
     ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
 
     {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_gossip_handler:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 

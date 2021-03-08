@@ -3,11 +3,13 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("blockchain/include/blockchain_vars.hrl").
+-include_lib("blockchain/include/blockchain.hrl").
 
 -export([
     init_chain/2, init_chain/3, init_chain/4,
     generate_keys/1, generate_keys/2,
-    create_block/2, create_block/3
+    create_block/2, create_block/3,
+    add_block/4
 ]).
 
 -define(BASE_TMP_DIR, "./_build/test/tmp").
@@ -149,6 +151,67 @@ create_block(ConsensusMembers, Txs, Override) ->
             {error, {invalid_txns, Invalid}}
     end.
 
+add_block(Block, Chain, Sender, SwarmTID) ->
+    lager:debug("Sender: ~p, MyAddress: ~p", [Sender, blockchain_swarm:pubkey_bin()]),
+    %% try to acquire the lock with a timeout
+    case blockchain_lock:acquire(5000) of
+        error ->
+            %% fail quietly
+            ok;
+        ok ->
+            R =
+                case blockchain:add_block(Block, Chain) of
+                    ok ->
+                        lager:info("got gossipped block ~p", [blockchain_block:height(Block)]),
+                        %% pass it along
+                        regossip_block(Block, SwarmTID),
+                        ok;
+                    plausible ->
+                        lager:warning(
+                            "plausuble gossipped block doesn't fit with our chain, will start sync if not already active"
+                        ),
+                        blockchain_worker:maybe_sync(),
+                        %% pass it along
+                        regossip_block(Block, SwarmTID),
+                        ok;
+                    exists ->
+                        ok;
+                    {error, disjoint_chain} ->
+                        lager:warning(
+                            "gossipped block ~p doesn't fit with our chain,"
+                            " will start sync if not already active",
+                            [blockchain_block:height(Block)]
+                        ),
+                        blockchain_worker:maybe_sync(),
+                        ok;
+                    {error, disjoint_assumed_valid_block} ->
+                        %% harmless
+                        ok;
+                    {error, block_higher_than_assumed_valid_height} ->
+                        %% harmless
+                        ok;
+                    {error, no_ledger} ->
+                        %% just ignore this, we don't care right now
+                        ok;
+                    Error ->
+                        %% Uhm what is this?
+                        lager:error("Something bad happened: ~p", [Error])
+                end,
+            blockchain_lock:release(),
+            R
+    end.
+
+%% ------------------------------------------------------------------
+%% Helper functions
+%% ------------------------------------------------------------------
+
+regossip_block(Block, SwarmTID) ->
+    libp2p_group_gossip:send(
+        libp2p_swarm:gossip_group(SwarmTID),
+        ?GOSSIP_PROTOCOL_V1,
+        blockchain_gossip_handler:gossip_data(SwarmTID, Block)
+    ).
+
 signatures(ConsensusMembers, BinBlock) ->
     lists:foldl(
         fun
@@ -164,9 +227,6 @@ signatures(ConsensusMembers, BinBlock) ->
         ConsensusMembers
     ).
 
-%% ------------------------------------------------------------------
-%% Helper functions
-%% ------------------------------------------------------------------
 create_vars(Vars) ->
     #{secret := Priv, public := Pub} =
         libp2p_crypto:generate_keys(ecc_compact),

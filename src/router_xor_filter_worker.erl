@@ -58,7 +58,7 @@ start_link(Args) ->
 
 -spec estimate_cost() -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost() ->
-    gen_server:call(?SERVER, estimate_cost).
+    gen_server:call(?SERVER, estimate_cost, infinity).
 
 -spec check_filters() -> ok.
 check_filters() ->
@@ -270,7 +270,7 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
             lager:error("failed to get device ~p", [_Reason]),
             noop;
         {ok, Devices} ->
-            DevicesDevEuiAppEui = [deveui_appeui(D) || D <- Devices],
+            DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
             Ledger = blockchain:ledger(Chain),
             {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
             {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
@@ -298,6 +298,30 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                     ),
                     {Routing, [{update, Index, R ++ Added} | OtherUpdates]}
             end
+    end.
+
+-spec get_devices_deveui_app_eui(Devices :: [router_device:device()]) ->
+    list(device_dev_eui_app_eui()).
+get_devices_deveui_app_eui(Devices) ->
+    get_devices_deveui_app_eui(Devices, []).
+
+-spec get_devices_deveui_app_eui(
+    Devices :: [router_device:device()],
+    DevEUIsAppEUIs :: list(device_dev_eui_app_eui())
+) -> list(device_dev_eui_app_eui()).
+get_devices_deveui_app_eui([], DevEUIsAppEUIs) ->
+    lists:reverse(DevEUIsAppEUIs);
+get_devices_deveui_app_eui([Device | Devices], DevEUIsAppEUIs) ->
+    try deveui_appeui(Device) of
+        DevEUiAppEUI ->
+            get_devices_deveui_app_eui(Devices, [DevEUiAppEUI | DevEUIsAppEUIs])
+    catch
+        _C:_R ->
+            lager:warning("failed to get deveui_appeui for device ~p: ~p", [
+                router_device:id(Device),
+                {_C, _R}
+            ]),
+            get_devices_deveui_app_eui(Devices, DevEUIsAppEUIs)
     end.
 
 -spec smallest_first([{any(), L1 :: list()} | {any(), any(), L1 :: list()}]) -> list().
@@ -589,6 +613,22 @@ should_update_filters_test() ->
             0 => [deveui_appeui(Device0)],
             1 => [deveui_appeui(Device1)]
         })
+    ),
+
+    %% ------------------------
+    % Testing with a device that has bad app eui or dev eui
+    DeviceUpdates3 = [
+        {dev_eui, <<0, 0, 3>>},
+        {app_eui, <<0, 0, 0, 2, 1>>}
+    ],
+    Device3 = router_device:update(DeviceUpdates3, router_device:new(<<"ID3">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device3]}
+    end),
+
+    ?assertEqual(
+        noop,
+        should_update_filters(chain, OUI, #{})
     ),
 
     meck:unload(blockchain_ledger_v1),

@@ -23,6 +23,7 @@
 -define(US915_MAX_DOWNLINK_SIZE, 242).
 -define(CN470_MAX_DOWNLINK_SIZE, 242).
 -define(AS923_MAX_DOWNLINK_SIZE, 250).
+-define(AU915_MAX_DOWNLINK_SIZE, 250).
 
 -define(AS923_PAYLOAD_SIZE_MAP, #{
     0 => 59,
@@ -59,6 +60,25 @@
     11 => 242,
     12 => 242,
     13 => 242
+}).
+
+-define(AU915_PAYLOAD_SIZE_MAP, #{
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 250,
+    5 => 250,
+    6 => 250,
+    %% 7 => undefined,
+    8 => 61,
+    9 => 137,
+    10 => 250,
+    11 => 250,
+    12 => 250,
+    13 => 250
+    %% 14 => undefined,
+    %% 15 => undefined,
 }).
 
 %% ------------------------------------------------------------------
@@ -135,6 +155,14 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
         datr = dr_to_datar(Region, 2),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
+    };
+join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.3,
+        datr = dr_to_datar(Region, 8),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
     }.
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
@@ -182,6 +210,15 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
     #txq{
         freq = 923.2,
         datr = dr_to_datar(Region, 2),
+        time = Stamp + Delay,
+        codr = RxQ#rxq.codr
+    };
+%% 923.3. MHz / DR8 (SF12, 500 kHz)
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
+    Delay = get_window(?FUNCTION_NAME),
+    #txq{
+        freq = 923.3,
+        datr = dr_to_datar(Region, 8),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     }.
@@ -589,6 +626,7 @@ max_payload_size(Region, DR) ->
     case Region of
         'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?AS923_MAX_DOWNLINK_SIZE);
         'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?CN470_MAX_DOWNLINK_SIZE);
+        'AU915' -> maps:get(DR, ?AU915_PAYLOAD_SIZE_MAP, ?AU915_MAX_DOWNLINK_SIZE);
         _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
     end.
 

@@ -410,15 +410,10 @@ handle_info(
                         channels_backoffs = maps:remove(ChannelID, Backoffs0)
                     }};
                 Channel ->
-                    Desc = erlang:list_to_binary(io_lib:format("~p", [Error])),
+                    Description = io_lib:format("channel_crash: ~p", [Error]),
+                    ok = report_integration_error(Device, Description, Channel),
                     ChannelID = router_channel:id(Channel),
                     ChannelName = router_channel:name(Channel),
-                    ChannelInfo = #{
-                        channel_id => ChannelID,
-                        channel_name => ChannelName,
-                        status => <<"channel_crash">>
-                    },
-                    router_utils:event_misc_integration_error(Device, Desc, ChannelInfo),
                     lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                         {ok, Backoffs1} ->
@@ -543,31 +538,12 @@ start_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
-            Desc = erlang:list_to_binary(io_lib:format("~p ~p", [E, Reason])),
-            Report = #{
-                category => <<"channel_start_error">>,
-                description => Desc,
-                reported_at => erlang:system_time(seconds),
-                payload => <<>>,
-                payload_size => 0,
-                port => 0,
-                devaddr => <<>>,
-                hotspots => [],
-                channels => [
-                    #{
-                        id => ChannelID,
-                        name => ChannelName,
-                        reported_at => erlang:system_time(seconds),
-                        status => <<"error">>,
-                        description => Desc
-                    }
-                ]
-            },
-            router_console_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
+            Description = io_lib:format("channel_start_error: ~p ~p", [E, Reason]),
+            ok = report_integration_error(Device, Description, Channel),
             lager:error("failed to start channel ~p: ~p, retrying in ~pms", [
                 {ChannelID, ChannelName},
                 {E, Reason},
@@ -590,31 +566,13 @@ update_channel(EventMgrRef, Channel, Device, Backoffs) ->
             {_Delay, Backoff1} = backoff:succeed(Backoff0),
             {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
         {E, Reason} when E == 'EXIT'; E == error ->
-            lager:error("failed to update channel ~p: ~p", [{ChannelID, ChannelName}, {E, Reason}]),
-            Desc = erlang:list_to_binary(io_lib:format("~p ~p", [E, Reason])),
-            Report = #{
-                category => <<"update_channel_failure">>,
-                description => Desc,
-                reported_at => erlang:system_time(seconds),
-                payload => <<>>,
-                payload_size => 0,
-                hotspots => [],
-                channels => [
-                    #{
-                        id => ChannelID,
-                        name => ChannelName,
-                        reported_at => erlang:system_time(seconds),
-                        status => <<"error">>,
-                        description => Desc
-                    }
-                ]
-            },
-            router_console_api:report_status(Device, Report),
             {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
             _ = erlang:cancel_timer(TimerRef0),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
             {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
+            Description = io_lib:format("update_channel_failure: ~p ~p", [E, Reason]),
+            ok = report_integration_error(Device, Description, Channel),
     end.
 
 -spec maybe_start_decoder(router_channel:channel()) -> ok.
@@ -668,3 +626,16 @@ maybe_start_no_channel(Device, EventMgrRef) ->
         _ -> router_channel:add(EventMgrRef, NoChannel, Device)
     end,
     NoChannel.
+
+-spec report_integration_error(router_device:device(), string(), router_channel:channel()) -> ok.
+report_integration_error(Device, Description, Channel) ->
+    ChannelInfo = #{
+        channel_id => router_channel:id(Channel),
+        channel_name => router_channel:name(Channel),
+        channel_status => error
+    },
+    ok = router_utils:event_misc_integration_error(
+        Device,
+        erlang:list_to_binary(Description),
+        ChannelInfo
+    ).

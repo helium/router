@@ -325,7 +325,6 @@ get_devices_deveui_app_eui([Device | Devices], DevEUIsAppEUIs) ->
     end.
 
 -spec smallest_first([{any(), L1 :: list()} | {any(), any(), L1 :: list()}]) -> list().
-
 smallest_first(List) ->
     lists:sort(
         fun

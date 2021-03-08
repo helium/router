@@ -348,40 +348,48 @@ handle_info(
     } = State
 ) ->
     ChannelID = router_channel:unique_id(Channel),
-    case maps:get(ChannelID, Channels, undefined) of
-        undefined ->
-            case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
-                {ok, Backoffs1} ->
-                    {noreply, State#state{
-                        channels = maps:put(ChannelID, Channel, Channels),
-                        channels_backoffs = Backoffs1
-                    }};
-                {error, _Reason, Backoffs1} ->
-                    {noreply, State#state{channels_backoffs = Backoffs1}}
-            end;
-        CachedChannel ->
-            ChannelHash = router_channel:hash(Channel),
-            case router_channel:hash(CachedChannel) of
-                ChannelHash ->
-                    lager:info("channel ~p already started", [ChannelID]),
-                    {noreply, State};
-                _OldHash ->
-                    lager:info("updating channel ~p", [ChannelID]),
-                    case update_channel(EventMgrRef, Channel, Device, Backoffs0) of
-                        {ok, Backoffs1} ->
-                            lager:info("channel ~p updated", [ChannelID]),
-                            {noreply, State#state{
-                                channels = maps:put(ChannelID, Channel, Channels),
-                                channels_backoffs = Backoffs1
-                            }};
-                        {error, _Reason, Backoffs1} ->
-                            {noreply, State#state{
-                                channels = maps:remove(ChannelID, Channels),
-                                channels_backoffs = Backoffs1
-                            }}
-                    end
-            end
-    end;
+    ChannelState =
+        case maps:get(ChannelID, Channels, undefined) of
+            undefined ->
+                missing;
+            CachedChan ->
+                case router_channel:hash(CachedChan) == router_channel:hash(Channel) of
+                    true -> exists;
+                    false -> stale
+                end
+        end,
+    State1 =
+        case ChannelState of
+            missing ->
+                lager:info("starting channel ~p", [ChannelID]),
+                case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
+                    {ok, Backoffs1} ->
+                        State#state{
+                            channels = map:put(ChannelID, Channel, Channels),
+                            channels_backoffs = Backoffs1
+                        };
+                    {error, _Reason, Backoffs1} ->
+                        State#state{channels_backoffs = Backoffs1}
+                end;
+            stale ->
+                lager:info("updating channel ~p", [ChannelID]),
+                case update_channel(EventMgrRef, Channel, Device, Backoffs0) of
+                    {ok, Backoffs1} ->
+                        State#state{
+                            channels = map:put(ChannelID, Channel, Channels),
+                            channels_backoffs = Backoffs1
+                        };
+                    {error, _Reason, Backoffs1} ->
+                        State#state{
+                            channels = maps:remove(ChannelID, Channels),
+                            channels_backoffs = Backoffs1
+                        }
+                end;
+            exists ->
+                lager:info("channel ~p already started", [ChannelID]),
+                State
+        end,
+    {noreply, State1};
 handle_info(
     {gen_event_EXIT, {_Handler, ChannelID}, ExitReason},
     #state{
@@ -526,53 +534,48 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
     {ok, map()} | {error, any(), map()}.
-start_channel(EventMgrRef, Channel, Device, Backoffs) ->
+start_channel(EventMgrRef, Channel, Device, Backoffs0) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
     case router_channel:add(EventMgrRef, Channel, Device) of
         ok ->
             lager:info("channel ~p started", [{ChannelID, ChannelName}]),
             ok = maybe_start_decoder(Channel),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {_Delay, Backoff1} = backoff:succeed(Backoff0),
-            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
+            Backoffs1 = backoff_succeed(ChannelID, Backoffs0),
+            {ok, Backoffs1};
         {E, Reason} when E == 'EXIT'; E == error ->
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
             Description = io_lib:format("channel_start_error: ~p ~p", [E, Reason]),
             ok = report_integration_error(Device, Description, Channel),
+            {Delay, Backoffs1} = backoff_fail(ChannelID, Backoffs0, {start_channel, Channel}),
             lager:error("failed to start channel ~p: ~p, retrying in ~pms", [
                 {ChannelID, ChannelName},
                 {E, Reason},
                 Delay
             ]),
-            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
+            {error, Reason, Backoffs1}
     end.
 
 -spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
     {ok, map()} | {error, any(), map()}.
-update_channel(EventMgrRef, Channel, Device, Backoffs) ->
+update_channel(EventMgrRef, Channel, Device, Backoffs0) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
     case router_channel:update(EventMgrRef, Channel, Device) of
         ok ->
             lager:info("channel ~p updated", [{ChannelID, ChannelName}]),
             ok = maybe_start_decoder(Channel),
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {_Delay, Backoff1} = backoff:succeed(Backoff0),
-            {ok, maps:put(ChannelID, {Backoff1, erlang:make_ref()}, Backoffs)};
+            Backoffs1 = backoff_succeed(ChannelID, Backoffs0),
+            {ok, Backoffs1};
         {E, Reason} when E == 'EXIT'; E == error ->
-            {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs, ?BACKOFF_INIT),
-            _ = erlang:cancel_timer(TimerRef0),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            TimerRef1 = erlang:send_after(Delay, self(), {start_channel, Channel}),
-            {error, Reason, maps:put(ChannelID, {Backoff1, TimerRef1}, Backoffs)}
             Description = io_lib:format("update_channel_failure: ~p ~p", [E, Reason]),
             ok = report_integration_error(Device, Description, Channel),
+            {Delay, Backoffs1} = backoff_fail(ChannelID, Backoffs0, {start_channel, Channel}),
+            lager:error("failed to update channel ~p: ~p, retrying in ~pms", [
+                {ChannelID, ChannelName},
+                {E, Reason},
+                Delay
+            ]),
+            {error, Reason, Backoffs1}
     end.
 
 -spec maybe_start_decoder(router_channel:channel()) -> ok.
@@ -639,3 +642,18 @@ report_integration_error(Device, Description, Channel) ->
         erlang:list_to_binary(Description),
         ChannelInfo
     ).
+
+-spec backoff_succeed(binary(), map()) -> map().
+backoff_succeed(ChannelID, Backoffs0) ->
+    {Backoff, TimerRef} = maps:get(ChannelID, Backoffs0, ?BACKOFF_INIT),
+    _ = erlang:cancel_timer(TimerRef),
+    {_Delay, NewBackoff} = backoff:succeed(Backoff),
+    maps:put(ChannelID, {NewBackoff, erlang:make_ref()}, Backoffs0).
+
+-spec backoff_fail(binary(), map(), tuple()) -> {integer(), map()}.
+backoff_fail(ChannelID, Backoffs0, ScheduleMessage) ->
+    {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs0, ?BACKOFF_INIT),
+    _ = erlang:cancel_timer(TimerRef0),
+    {Delay, NewBackoff} = backoff:fail(Backoff0),
+    TimerRef = erlang:send_after(Delay, self(), ScheduleMessage),
+    {Delay, maps:put(ChannelID, {NewBackoff, TimerRef}, Backoffs0)}.

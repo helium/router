@@ -58,7 +58,7 @@ start_link(Args) ->
 
 -spec estimate_cost() -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost() ->
-    gen_server:call(?SERVER, estimate_cost).
+    gen_server:call(?SERVER, estimate_cost, infinity).
 
 -spec check_filters() -> ok.
 check_filters() ->

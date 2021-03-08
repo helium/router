@@ -138,8 +138,9 @@ event_downlink(
         port => Port,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
-        integration_id => maps:get(id, ChannelMap),
-        integration_name => maps:get(name, ChannelMap)
+        channel_id => maps:get(id, ChannelMap),
+        channel_name => maps:get(name, ChannelMap),
+        channel_status => <<"success">>
     },
     ok = router_console_api:event(Device, Map).
 
@@ -156,8 +157,9 @@ event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
         port => Port,
         devaddr => router_device:devaddr(Device),
         hotspot => #{},
-        integration_id => maps:get(id, ChannelMap),
-        integration_name => maps:get(name, ChannelMap)
+        channel_id => maps:get(id, ChannelMap),
+        channel_name => maps:get(name, ChannelMap),
+        channel_status => <<"error">>
     },
     ok = router_console_api:event(Device, Map).
 
@@ -174,8 +176,9 @@ event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
         port => Port,
         devaddr => router_device:devaddr(Device),
         hotspot => #{},
-        integration_id => maps:get(id, ChannelMap),
-        integration_name => maps:get(name, ChannelMap)
+        channel_id => maps:get(id, ChannelMap),
+        channel_name => maps:get(name, ChannelMap),
+        channel_status => <<"success">>
     },
     ok = router_console_api:event(Device, Map).
 

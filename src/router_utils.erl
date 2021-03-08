@@ -185,7 +185,7 @@ event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
 -spec event_uplink_integration_req(
     UUID :: uuid_v4(),
     Device :: router_device:device(),
-    Status :: success | failure,
+    Status :: success | error,
     Description :: binary(),
     Request :: map(),
     ChannelInfo :: map()
@@ -209,7 +209,7 @@ event_uplink_integration_req(UUID, Device, Status, Description, Request, Channel
     UUID :: uuid_v4(),
     Device :: router_device:device(),
     Description :: binary(),
-    Status :: success | failure,
+    Status :: success | error,
     Response :: map(),
     ChannelInfo :: map()
 ) -> ok.

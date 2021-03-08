@@ -182,13 +182,16 @@ is_non_local_address(Host) ->
             ok
     end.
 
+-spec make_request_report(HeliumError | HackneyResponse, any(), #state{}) -> map() when
+    HeliumError :: {error, atom()},
+    HackneyResponse :: {ok, any()}.
 make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
     #{
         method => Method,
         url => URL,
         headers => Headers,
         body => Body,
-        status => faiure,
+        status => error,
         description => erlang:list_to_binary(io_lib:format("Helium Error: ~p", [Reason]))
     };
 make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
@@ -201,20 +204,22 @@ make_request_report({ok, Response}, Body, #state{method = Method, url = URL, hea
     case Response of
         {error, Reason} ->
             Map#{
-                status => faiure,
+                status => error,
                 description => erlang:list_to_binary(io_lib:format("Hackney Error: ~p", [Reason]))
             };
         {ok, _, _, _} ->
             Map#{status => success}
     end.
 
--spec make_response_report(any(), router_channel:channel()) -> map().
+-spec make_response_report(HeliumError | HackneyResponse, router_channel:channel()) -> map() when
+    HeliumError :: {error, atom()},
+    HackneyResponse :: {ok, any()}.
 make_response_report({error, Reason}, Channel) ->
     #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
         response => #{},
-        status => failure,
+        status => error,
         description => list_to_binary(io_lib:format("Helium Error: ~p", [Reason]))
     };
 make_response_report({ok, Res}, Channel) ->
@@ -252,14 +257,14 @@ make_response_report({ok, Res}, Channel) ->
                     headers => ResponseHeaders,
                     body => ResponseBody
                 },
-                status => failure,
+                status => error,
                 description => <<"ResponseCode: ", SCBin/binary, " Body ", ResponseBody/binary>>
             });
         {error, Reason} ->
             %% Hackney Error
             maps:merge(Result0, #{
                 response => #{},
-                status => failure,
+                status => error,
                 description => list_to_binary(io_lib:format("Hackney Error: ~p", [Reason]))
             })
     end.

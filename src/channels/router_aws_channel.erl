@@ -276,7 +276,7 @@ make_request_report(Request, Data, #state{
     case Request of
         {error, Reason} ->
             Description = list_to_binary(io_lib:format("~p", [Reason])),
-            maps:merge(Map, #{status => failure, description => Description});
+            maps:merge(Map, #{status => error, description => Description});
         {ok, _} ->
             maps:merge(Map, #{status => success, description => <<"published">>})
     end.
@@ -298,7 +298,7 @@ make_response_report(Res, Channel) ->
         {error, Reason} ->
             maps:merge(Result0, #{
                 response => #{},
-                status => failure,
+                status => error,
                 description => list_to_binary(io_lib:format("~p", [Reason]))
             })
     end.

@@ -211,13 +211,18 @@ event(Device, Map) ->
                             SC == downlink_queued orelse
                             SC == misc_integration_error
                     ->
-                        #{
-                            id => maps:get(channel_id, Map),
-                            name => maps:get(channel_name, Map),
-                            status => maps:get(channel_status, Map),
-                            req => maps:get(request, Map),
-                            res => maps:get(response, Map)
-                        };
+                        Report = #{
+                            integration => #{
+                                id => maps:get(channel_id, Map),
+                                name => maps:get(channel_name, Map),
+                                status => maps:get(channel_status, Map)
+                            }
+                        },
+                        case SC of
+                            uplink_integration_req -> Report#{req => maps:get(request, Map)};
+                            uplink_integration_res -> Report#{res => maps:get(response, Map)};
+                            _ -> Report
+                        end;
                     {_C, uplink_dropped} ->
                         #{
                             fcnt => maps:get(fcnt, Map)

@@ -410,29 +410,16 @@ handle_info(
                         channels_backoffs = maps:remove(ChannelID, Backoffs0)
                     }};
                 Channel ->
-                    ChannelName = router_channel:name(Channel),
-                    lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
                     Desc = erlang:list_to_binary(io_lib:format("~p", [Error])),
-                    Report = #{
-                        category => <<"channel_crash">>,
-                        description => Desc,
-                        reported_at => erlang:system_time(seconds),
-                        payload => <<>>,
-                        payload_size => 0,
-                        port => 0,
-                        devaddr => <<>>,
-                        hotspots => [],
-                        channels => [
-                            #{
-                                id => ChannelID,
-                                name => ChannelName,
-                                reported_at => erlang:system_time(seconds),
-                                status => <<"error">>,
-                                description => Desc
-                            }
-                        ]
+                    ChannelID = router_channel:id(Channel),
+                    ChannelName = router_channel:name(Channel),
+                    ChannelInfo = #{
+                        channel_id => ChannelID,
+                        channel_name => ChannelName,
+                        status => <<"channel_crash">>
                     },
-                    router_console_api:report_status(Device, Report),
+                    router_utils:event_misc_integration_error(Device, Desc, ChannelInfo),
+                    lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                         {ok, Backoffs1} ->
                             {noreply, State#state{

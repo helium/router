@@ -13,6 +13,7 @@
     event_downlink_queued/5,
     event_uplink_integration_req/6,
     event_uplink_integration_res/6,
+    event_misc_integration_error/3,
     uuid_v4/0,
     get_router_oui/1,
     get_hotspot_location/2,
@@ -222,6 +223,21 @@ event_uplink_integration_res(UUID, Device, Description, Status, Response, Channe
         channel_name => maps:get(name, ChannelInfo),
         channel_status => maps:get(status, ChannelInfo),
         response => Response
+    },
+    ok = router_console_api:event(Device, Map).
+
+event_misc_integration_error(Device, Description, ChannelInfo) ->
+    Map = #{
+        id => uuid_v4(),
+        category => misc,
+        sub_category => misc_integration_error,
+        status => error,
+        description => Description,
+        reported_at => erlang:system_time(millisecond),
+        %%
+        channel_id => maps:get(id, ChannelInfo),
+        channel_name => maps:get(name, ChannelInfo),
+        channel_status => maps:get(status, ChannelInfo)
     },
     ok = router_console_api:event(Device, Map).
 

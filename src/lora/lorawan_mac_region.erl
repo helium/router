@@ -214,7 +214,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
         codr = RxQ#rxq.codr
     };
 %% 923.3. MHz / DR8 (SF12, 500 kHz)
-rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
+rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,

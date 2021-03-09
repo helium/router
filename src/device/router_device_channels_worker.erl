@@ -244,8 +244,8 @@ handle_cast({report_request, UUID, Channel, Request, Status}, #state{device = De
 
     ChannelName = router_channel:name(Channel),
     ChannelInfo = #{
-        channel_id => router_channel:id(Channel),
-        channel_name => ChannelName
+        id => router_channel:id(Channel),
+        name => ChannelName
     },
 
     Description = io_lib:format("Request sent to ~p", [ChannelName]),
@@ -264,8 +264,8 @@ handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = 
     lager:debug("received report_status ~p ~p", [UUID, Report]),
 
     ChannelInfo = #{
-        channel_id => router_channel:id(Channel),
-        channel_name => router_channel:name(Channel)
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel)
     },
 
     case maps:get(status, Report) of

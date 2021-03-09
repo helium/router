@@ -186,13 +186,14 @@ is_non_local_address(Host) ->
     HeliumError :: {error, atom()},
     HackneyResponse :: {ok, any()}.
 make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+    %% Helium Error
     #{
         method => Method,
         url => URL,
         headers => Headers,
         body => Body,
         status => error,
-        description => erlang:list_to_binary(io_lib:format("Helium Error: ~p", [Reason]))
+        description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
 make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
     Map = #{
@@ -203,9 +204,10 @@ make_request_report({ok, Response}, Body, #state{method = Method, url = URL, hea
     },
     case Response of
         {error, Reason} ->
+            %% Hackney Error
             Map#{
                 status => error,
-                description => erlang:list_to_binary(io_lib:format("Hackney Error: ~p", [Reason]))
+                description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
             };
         {ok, _, _, _} ->
             Map#{status => success}
@@ -215,12 +217,13 @@ make_request_report({ok, Response}, Body, #state{method = Method, url = URL, hea
     HeliumError :: {error, atom()},
     HackneyResponse :: {ok, any()}.
 make_response_report({error, Reason}, Channel) ->
+    %% Helium Error
     #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
         response => #{},
         status => error,
-        description => list_to_binary(io_lib:format("Helium Error: ~p", [Reason]))
+        description => list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
 make_response_report({ok, Res}, Channel) ->
     Result0 = #{
@@ -265,7 +268,7 @@ make_response_report({ok, Res}, Channel) ->
             maps:merge(Result0, #{
                 response => #{},
                 status => error,
-                description => list_to_binary(io_lib:format("Hackney Error: ~p", [Reason]))
+                description => list_to_binary(io_lib:format("Error: ~p", [Reason]))
             })
     end.
 

@@ -109,7 +109,7 @@ handle_cast({fetch, Offer}, State) ->
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
 
-    Url = <<?HOTSPOT_URL_PREFIX, B58/binary>>,
+    Url = erlang:list_to_binary(io_lib:format("~p~p", [?HOTSPOT_URL_PREFIX, B58])),
     case hackney:get(Url, [], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
             Map = jsx:decode(Body, [return_maps]),
@@ -147,3 +147,32 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal functions
 %% ------------------------------------------------------------------
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+
+fetch_test_() ->
+    {timeout, 15, fun test_fetch/0}.
+
+test_fetch() ->
+    {ok, _} = application:ensure_all_started(hackney),
+    B58 = "1129zHtCXModu3mzP98TMCs63WZnm2xGT3WHQQbmizgEmqWQw9Vd",
+    PubKeyBin = libp2p_crypto:b58_to_bin(B58),
+    Offer = #blockchain_state_channel_offer_v1_pb{
+        hotspot = PubKeyBin
+    },
+    {ok, Pid} = ?MODULE:start_link(),
+    ok = gen_server:cast(?SERVER, {fetch, Offer}),
+    test_utils:wait_until(fun() ->
+        case get_country_code(PubKeyBin) of
+            {error, _} -> false;
+            _ -> true
+        end
+    end),
+
+    ok = gen_server:stop(Pid),
+
+    timer:sleep(100),
+    ?assertEqual(false, erlang:is_process_alive(Pid)).
+
+-endif.

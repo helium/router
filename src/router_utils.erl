@@ -199,12 +199,12 @@ event_uplink_integration_req(UUID, Device, Status, Description, Request, Channel
         id => UUID,
         category => uplink,
         sub_category => uplink_integration_res,
-        status => Status,
         description => Description,
         reported_at => erlang:system_time(millisecond),
         %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
+        channel_status => Status,
         request => Request
     },
     ok = router_console_api:event(Device, Map).
@@ -222,13 +222,12 @@ event_uplink_integration_res(UUID, Device, Description, Status, Response, Channe
         id => UUID,
         category => uplink,
         sub_category => uplink_integration_res,
-        status => Status,
         description => Description,
         reported_at => erlang:system_time(millisecond),
         %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
-        channel_status => maps:get(status, ChannelInfo),
+        channel_status => Status,
         response => Response
     },
     ok = router_console_api:event(Device, Map).
@@ -243,13 +242,12 @@ event_misc_integration_error(Device, Description, ChannelInfo) ->
         id => uuid_v4(),
         category => misc,
         sub_category => misc_integration_error,
-        status => error,
         description => Description,
         reported_at => erlang:system_time(millisecond),
         %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
-        channel_status => maps:get(status, ChannelInfo)
+        channel_status => error
     },
     ok = router_console_api:event(Device, Map).
 

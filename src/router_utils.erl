@@ -233,6 +233,11 @@ event_uplink_integration_res(UUID, Device, Description, Status, Response, Channe
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_misc_integration_error(
+    Device :: router_device:device(),
+    Description :: binary(),
+    ChannelInfo :: map()
+) -> ok.
 event_misc_integration_error(Device, Description, ChannelInfo) ->
     Map = #{
         id => uuid_v4(),

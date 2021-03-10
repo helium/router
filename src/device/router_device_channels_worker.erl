@@ -639,9 +639,9 @@ maybe_start_no_channel(Device, EventMgrRef) ->
 -spec report_integration_error(router_device:device(), string(), router_channel:channel()) -> ok.
 report_integration_error(Device, Description, Channel) ->
     ChannelInfo = #{
-        channel_id => router_channel:id(Channel),
-        channel_name => router_channel:name(Channel),
-        channel_status => error
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel),
+        status => error
     },
     ok = router_utils:event_misc_integration_error(
         Device,

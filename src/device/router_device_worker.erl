@@ -733,8 +733,13 @@ handle_info(
                 fcnt = FCnt
             }};
         {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, Reply, ChannelMap}} ->
+            IsDownlinkAck =
+                case ACK of
+                    1 -> true;
+                    0 -> false
+                end,
             ok = router_utils:event_downlink(
-                ACK,
+                IsDownlinkAck,
                 ConfirmedDown,
                 Port,
                 Reply,

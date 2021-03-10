@@ -109,7 +109,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            case router_utils:get_router_oui(Chain) of
+            case router_utils:get_oui(Chain) of
                 undefined ->
                     {noreply, State#state{chain = Chain}};
                 OUI ->
@@ -139,7 +139,7 @@ handle_info(
     #state{is_active = false, chain = Chain} = State
 ) ->
     %% We're inactive, check if we have an oui
-    case router_utils:get_router_oui(Chain) of
+    case router_utils:get_oui(Chain) of
         undefined ->
             %% stay inactive
             {noreply, State};

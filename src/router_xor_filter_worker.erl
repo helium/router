@@ -97,7 +97,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             ok = schedule_post_init(),
             {noreply, State};
         Chain ->
-            case router_utils:get_router_oui(Chain) of
+            case router_utils:get_oui(Chain) of
                 undefined ->
                     ok = schedule_post_init(),
                     {noreply, State};

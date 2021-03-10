@@ -506,7 +506,7 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
     FormatHotspot = fun(
         #data_cache{pub_key = PubKeyBin, packet = Packet, region = Region, time = Time}
     ) ->
-        router_utils:format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
+        format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
     end,
     [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
@@ -657,3 +657,30 @@ backoff_fail(ChannelID, Backoffs0, ScheduleMessage) ->
     {Delay, NewBackoff} = backoff:fail(Backoff0),
     TimerRef = erlang:send_after(Delay, self(), ScheduleMessage),
     {Delay, maps:put(ChannelID, {NewBackoff, TimerRef}, Backoffs0)}.
+
+-spec format_hotspot(
+    blockchain:blockchain(),
+    libp2p_crypto:pubkey_bin(),
+    blockchain_helium_packet_v1:packet(),
+    atom(),
+    non_neg_integer(),
+    any()
+) -> map().
+format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    Freq = blockchain_helium_packet_v1:frequency(Packet),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    #{
+        id => erlang:list_to_binary(B58),
+        name => erlang:list_to_binary(HotspotName),
+        reported_at => Time,
+        status => Status,
+        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
+        snr => blockchain_helium_packet_v1:snr(Packet),
+        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+        frequency => Freq,
+        channel => lorawan_mac_region:f2uch(Region, Freq),
+        lat => Lat,
+        long => Long
+    }.

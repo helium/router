@@ -15,11 +15,10 @@
     event_uplink_integration_res/6,
     event_misc_integration_error/3,
     uuid_v4/0,
-    get_router_oui/1,
+    get_oui/1,
     get_hotspot_location/2,
     to_bin/1,
     b0/4,
-    format_hotspot/6,
     lager_md/1,
     trace/1,
     stop_trace/1,
@@ -34,6 +33,15 @@
 
 -export_type([uuid_v4/0]).
 
+-spec event_join_request(
+    ID :: uuid_v4(),
+    Timestamp :: non_neg_integer(),
+    Device :: router_device:device(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> ok.
 event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
@@ -54,6 +62,13 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_join_accept(
+    Device :: router_device:device(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> ok.
 event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
@@ -74,6 +89,16 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_uplink(
+    ID :: uuid_v4(),
+    Timestamp :: non_neg_integer(),
+    Frame :: #frame{},
+    Device :: router_device:device(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> ok.
 event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
     #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,
     {SubCategory, Desc} =
@@ -96,6 +121,12 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_uplink_dropped(
+    Desc :: binary(),
+    Timestamp :: non_neg_integer(),
+    FCnt :: non_neg_integer(),
+    Device :: router_device:device()
+) -> ok.
 event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
     Map = #{
         id => router_utils:uuid_v4(),
@@ -112,6 +143,18 @@ event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_downlink(
+    IsDownlinkAck :: boolean(),
+    ConfirmedDown :: boolean(),
+    Port :: non_neg_integer(),
+    Payload :: binary(),
+    Device :: router_device:device(),
+    ChannelMap :: map(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> ok.
 event_downlink(
     IsDownlinkAck,
     ConfirmedDown,
@@ -126,7 +169,7 @@ event_downlink(
 ) ->
     {SubCategory, Desc} =
         case {IsDownlinkAck, ConfirmedDown} of
-            {1, _} -> {downlink_ack, <<"Ack sent">>};
+            {true, _} -> {downlink_ack, <<"Ack sent">>};
             {_, true} -> {downlink_confirmed, <<"Confirmed data down sent">>};
             {_, false} -> {downlink_unconfirmed, <<"Unconfirmed data down sent">>}
         end,
@@ -148,6 +191,13 @@ event_downlink(
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_downlink_dropped(
+    Desc :: binary(),
+    Port :: non_neg_integer(),
+    Payload :: binary(),
+    Device :: router_device:device(),
+    ChannelMap :: map()
+) -> ok.
 event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
     Map = #{
         id => router_utils:uuid_v4(),
@@ -167,6 +217,13 @@ event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
     },
     ok = router_console_api:event(Device, Map).
 
+-spec event_downlink_queued(
+    Desc :: binary(),
+    Port :: non_neg_integer(),
+    Payload :: binary(),
+    Device :: router_device:device(),
+    ChannelMap :: map()
+) -> ok.
 event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
     Map = #{
         id => router_utils:uuid_v4(),
@@ -251,23 +308,6 @@ event_misc_integration_error(Device, Description, ChannelInfo) ->
     },
     ok = router_console_api:event(Device, Map).
 
-format_hotspot(Chain, PubKeyBin, Packet, Region) ->
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    HotspotName = blockchain_utils:addr2name(PubKeyBin),
-    Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
-    #{
-        id => erlang:list_to_binary(B58),
-        name => erlang:list_to_binary(HotspotName),
-        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
-        snr => blockchain_helium_packet_v1:snr(Packet),
-        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-        frequency => Freq,
-        channel => lorawan_mac_region:f2uch(Region, Freq),
-        lat => Lat,
-        long => Long
-    }.
-
 %% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
 %% MIT License
 -spec uuid_v4() -> uuid_v4().
@@ -279,8 +319,8 @@ uuid_v4() ->
     ),
     list_to_binary(Str).
 
--spec get_router_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
-get_router_oui(Chain) ->
+-spec get_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
+get_oui(Chain) ->
     Ledger = blockchain:ledger(Chain),
     PubkeyBin = blockchain_swarm:pubkey_bin(),
     case blockchain_ledger_v1:get_oui_counter(Ledger) of
@@ -311,6 +351,7 @@ get_hotspot_location(PubKeyBin, Blockchain) ->
             end
     end.
 
+-spec to_bin(any()) -> binary().
 to_bin(Bin) when is_binary(Bin) ->
     Bin;
 to_bin(List) when is_list(List) ->
@@ -321,33 +362,6 @@ to_bin(_) ->
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0, 0, 0, 0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
-
--spec format_hotspot(
-    blockchain:blockchain(),
-    libp2p_crypto:pubkey_bin(),
-    blockchain_helium_packet_v1:packet(),
-    atom(),
-    non_neg_integer(),
-    any()
-) -> map().
-format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    HotspotName = blockchain_utils:addr2name(PubKeyBin),
-    Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = ?MODULE:get_hotspot_location(PubKeyBin, Chain),
-    #{
-        id => erlang:list_to_binary(B58),
-        name => erlang:list_to_binary(HotspotName),
-        reported_at => Time,
-        status => Status,
-        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
-        snr => blockchain_helium_packet_v1:snr(Packet),
-        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-        frequency => Freq,
-        channel => lorawan_mac_region:f2uch(Region, Freq),
-        lat => Lat,
-        long => Long
-    }.
 
 -spec lager_md(router_device:device()) -> ok.
 lager_md(Device) ->
@@ -452,6 +466,29 @@ join_timeout() ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec format_hotspot(
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> map().
+format_hotspot(Chain, PubKeyBin, Packet, Region) ->
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    Freq = blockchain_helium_packet_v1:frequency(Packet),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    #{
+        id => erlang:list_to_binary(B58),
+        name => erlang:list_to_binary(HotspotName),
+        rssi => blockchain_helium_packet_v1:signal_strength(Packet),
+        snr => blockchain_helium_packet_v1:snr(Packet),
+        spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+        frequency => Freq,
+        channel => lorawan_mac_region:f2uch(Region, Freq),
+        lat => Lat,
+        long => Long
+    }.
 
 -spec find_oui(
     PubkeyBin :: libp2p_crypto:pubkey_bin(),

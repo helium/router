@@ -12,6 +12,7 @@
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
+    wait_for_console_event_sub/2,
     wait_for_join_resp/3,
     wait_channel_data/1,
     wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
@@ -240,7 +241,7 @@ ignore_messages() ->
 wait_for_console_event(Category, Expected) ->
     try
         receive
-            {console_event, Category, Got} ->
+            {console_event, Category, _, Got} ->
                 case match_map(Expected, Got) of
                     true ->
                         ok;
@@ -254,6 +255,28 @@ wait_for_console_event(Category, Expected) ->
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
             ct:fail("wait_for_console_event ~p failed", [Category])
+    end.
+
+wait_for_console_event_sub(SubCategory, Expected) ->
+    try
+        receive
+            {console_event, _, SubCategory, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        ok;
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event ~p data failed ~p", [SubCategory, Reason])
+                end
+        after 4250 -> ct:fail("wait_for_console_event ~p timeout", [SubCategory])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [
+                SubCategory,
+                {_Reason, _Stacktrace}
+            ]),
+            ct:fail("wait_for_console_event ~p failed", [SubCategory])
     end.
 
 wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->

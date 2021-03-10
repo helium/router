@@ -239,8 +239,8 @@ handle_cast(
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
-handle_cast({report_request, UUID, Channel, Request, Status}, #state{device = Device} = State) ->
-    lager:debug("received report_request ~p ~p", [UUID, Request]),
+handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = State) ->
+    lager:debug("received report_request ~p ~p", [UUID, Report]),
 
     ChannelName = router_channel:name(Channel),
     ChannelInfo = #{
@@ -253,9 +253,10 @@ handle_cast({report_request, UUID, Channel, Request, Status}, #state{device = De
     ok = router_utils:event_uplink_integration_req(
         UUID,
         Device,
-        Status,
+        maps:get(status, Report),
+        %% REVIEW: Sometimes descriptions comes from requests
         erlang:list_to_binary(Description),
-        Request,
+        maps:get(request, Report),
         ChannelInfo
     ),
 

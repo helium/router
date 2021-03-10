@@ -188,15 +188,17 @@ is_non_local_address(Host) ->
 make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
     %% Helium Error
     #{
-        method => Method,
-        url => URL,
-        headers => Headers,
-        body => Body,
+        request => #{
+            method => Method,
+            url => URL,
+            headers => Headers,
+            body => Body
+        },
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
 make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
-    Map = #{
+    Request = #{
         method => Method,
         url => URL,
         headers => Headers,
@@ -205,12 +207,16 @@ make_request_report({ok, Response}, Body, #state{method = Method, url = URL, hea
     case Response of
         {error, Reason} ->
             %% Hackney Error
-            Map#{
+            #{
                 status => error,
-                description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
+                description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason])),
+                request => Request
             };
         {ok, _, _, _} ->
-            Map#{status => success}
+            #{
+                request => Request,
+                status => success
+            }
     end.
 
 -spec make_response_report(HeliumError | HackneyResponse, router_channel:channel()) -> map() when

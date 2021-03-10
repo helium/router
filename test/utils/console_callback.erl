@@ -142,7 +142,10 @@ handle(
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),
     Data = jsx:decode(Body, [return_maps]),
-    Pid ! {console_event, maps:get(<<"category">>, Data, <<"unknown">>), Data},
+    Cat = maps:get(<<"category">>, Data, <<"unknown">>),
+    SubCat = maps:get(<<"sub_category">>, Data, <<"unknown">>),
+    ct:print("Console Event: ~p (~p)~n~n~p", [Cat, SubCat, Data]),
+    Pid ! {console_event, Cat, SubCat, Data},
     {200, [], <<>>};
 handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req, Args) ->
     Pid = maps:get(forward, Args),

@@ -418,7 +418,7 @@ replay_joins_test(Config) ->
     DevNonce2 = crypto:strong_rand_bytes(2),
     %% we are sending another join with an already used nonce to try to DOS the device
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
-    timer:sleep(router_device_utils:join_timeout()),
+    timer:sleep(router_utils:join_timeout()),
 
     %% We are not making sure that we maintain multiple keys and nonce in
     %% device just in case last join was valid
@@ -450,7 +450,7 @@ replay_joins_test(Config) ->
     DevNonce3 = crypto:strong_rand_bytes(2),
     %% we are sending another join with an already used nonce to try to DOS the device
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
-    timer:sleep(router_device_utils:join_timeout()),
+    timer:sleep(router_utils:join_timeout()),
 
     %% We are not making sure that we maintain multiple keys and
     %% nonce in device just in case last join was valid
@@ -571,7 +571,7 @@ join(Config) ->
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
-    timer:sleep(router_device_utils:join_timeout()),
+    timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
     test_utils:wait_for_console_event(<<"join_req">>, #{

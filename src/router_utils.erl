@@ -23,7 +23,11 @@
     lager_md/1,
     trace/1,
     stop_trace/1,
-    maybe_update_trace/1
+    maybe_update_trace/1,
+    get_oui/0,
+    mtype_to_ack/1,
+    frame_timeout/0,
+    join_timeout/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -410,6 +414,38 @@ maybe_update_trace(DeviceID) ->
             ok = ?MODULE:trace(DeviceID)
     end.
 
+-spec get_oui() -> undefined | non_neg_integer().
+get_oui() ->
+    case application:get_env(router, oui, undefined) of
+        undefined ->
+            undefined;
+        %% app env comes in as a string
+        OUI0 when is_list(OUI0) ->
+            erlang:list_to_integer(OUI0);
+        OUI0 ->
+            OUI0
+    end.
+
+-spec mtype_to_ack(integer()) -> 0 | 1.
+mtype_to_ack(?CONFIRMED_UP) -> 1;
+mtype_to_ack(_) -> 0.
+
+-spec frame_timeout() -> non_neg_integer().
+frame_timeout() ->
+    case application:get_env(router, frame_timeout, ?FRAME_TIMEOUT) of
+        [] -> ?FRAME_TIMEOUT;
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
+
+-spec join_timeout() -> non_neg_integer().
+join_timeout() ->
+    case application:get_env(router, join_timeout, ?JOIN_TIMEOUT) of
+        [] -> ?JOIN_TIMEOUT;
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
@@ -421,7 +457,7 @@ maybe_update_trace(DeviceID) ->
 
 find_oui(PubkeyBin, Ledger) ->
     MyOUIs = blockchain_ledger_v1:find_router_ouis(PubkeyBin, Ledger),
-    case router_device_utils:get_router_oui() of
+    case router_utils:get_oui() of
         undefined ->
             %% still check on chain
             case MyOUIs of

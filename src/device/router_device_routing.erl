@@ -476,7 +476,7 @@ validate_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI = router_device_utils:get_router_oui(),
+            OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -595,7 +595,12 @@ maybe_multi_buy(Offer, Attempts, Device) ->
 check_device_is_active(Device) ->
     case router_device:is_active(Device) of
         false ->
-            ok = router_device_utils:report_status_inactive(Device),
+            ok = router_utils:event_uplink_dropped(
+                <<"Device inactive packet dropped">>,
+                erlang:system_time(millisecond),
+                router_device:fcnt(Device),
+                Device
+            ),
             {error, ?DEVICE_INACTIVE};
         true ->
             ok
@@ -606,7 +611,12 @@ check_device_balance(PayloadSize, Device) ->
     Chain = get_chain(),
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
-            ok = router_device_utils:report_status_no_dc(Device),
+            ok = router_utils:event_uplink_dropped(
+                <<"Not enough DC">>,
+                erlang:system_time(millisecond),
+                router_device:fcnt(Device),
+                Device
+            ),
             {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} ->
             ok
@@ -705,7 +715,7 @@ packet(
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI = router_device_utils:get_router_oui(),
+            OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),

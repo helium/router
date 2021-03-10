@@ -338,7 +338,7 @@ lw_join_test(Config) ->
         ]
     }),
 
-    test_utils:wait_state_channel_message(router_device_utils:frame_timeout() + 250, PubKeyBin0),
+    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin0),
 
     receive
         rx -> ok
@@ -458,7 +458,7 @@ lw_join_test(Config) ->
         ]
     }),
 
-    test_utils:wait_state_channel_message(router_device_utils:frame_timeout() + 250, PubKeyBin0),
+    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin0),
 
     Stream0 ! get_channel_mask,
     receive

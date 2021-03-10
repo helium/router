@@ -125,7 +125,7 @@ device_update(Pid) ->
 %% ------------------------------------------------------------------
 init(#{db := DB, cf := CF, id := ID} = Args) ->
     Blockchain = blockchain_worker:blockchain(),
-    OUI = router_device_utils:get_router_oui(),
+    OUI = router_utils:get_oui(),
     Device = get_device(DB, CF, ID),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{
@@ -312,7 +312,7 @@ handle_cast(
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     Timeout = max(
                         0,
-                        router_device_utils:join_timeout() -
+                        router_utils:join_timeout() -
                             (erlang:system_time(millisecond) - PacketTime)
                     ),
                     lager:debug("setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
@@ -534,7 +534,7 @@ handle_cast(
                         ),
                         Timeout = max(
                             0,
-                            router_device_utils:frame_timeout() -
+                            router_utils:frame_timeout() -
                                 (erlang:system_time(millisecond) - PacketTime)
                         ),
                         lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [
@@ -602,7 +602,7 @@ handle_cast(
                         Packet0,
                         Frame,
                         Region,
-                        router_device_utils:milli_to_sec(PacketTime)
+                        PacketTime
                     ),
                     ok = router_device_channels_worker:handle_frame(
                         ChannelsWorker,
@@ -745,7 +745,7 @@ handle_info(
                 Packet,
                 Region
             ),
-            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
+            case router_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
@@ -1025,7 +1025,7 @@ validate_frame(
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
-    FrameAck = router_device_utils:mtype_to_ack(MType),
+    FrameAck = router_utils:mtype_to_ack(MType),
     Window = erlang:system_time(millisecond) - PacketTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
@@ -1238,7 +1238,7 @@ handle_frame_timeout(
     ADRAdjustment,
     []
 ) ->
-    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
+    ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
@@ -1328,7 +1328,7 @@ handle_frame_timeout(
         | T
     ]
 ) ->
-    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
+    ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(

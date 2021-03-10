@@ -365,7 +365,7 @@ handle_info(
                 case start_channel(EventMgrRef, Channel, Device, Backoffs0) of
                     {ok, Backoffs1} ->
                         State#state{
-                            channels = map:put(ChannelID, Channel, Channels),
+                            channels = maps:put(ChannelID, Channel, Channels),
                             channels_backoffs = Backoffs1
                         };
                     {error, _Reason, Backoffs1} ->
@@ -376,7 +376,7 @@ handle_info(
                 case update_channel(EventMgrRef, Channel, Device, Backoffs0) of
                     {ok, Backoffs1} ->
                         State#state{
-                            channels = map:put(ChannelID, Channel, Channels),
+                            channels = maps:put(ChannelID, Channel, Channels),
                             channels_backoffs = Backoffs1
                         };
                     {error, _Reason, Backoffs1} ->

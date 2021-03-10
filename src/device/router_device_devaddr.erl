@@ -116,7 +116,7 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = blockchain_event:add_handler(self()),
     OUI =
-        case router_device_utils:get_router_oui() of
+        case router_utils:get_oui() of
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,

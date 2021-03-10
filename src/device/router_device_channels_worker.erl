@@ -264,10 +264,13 @@ handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = S
 handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = State) ->
     lager:debug("received report_status ~p ~p", [UUID, Report]),
 
+    ChannelName = router_channel:name(Channel),
     ChannelInfo = #{
         id => router_channel:id(Channel),
-        name => router_channel:name(Channel)
+        name => ChannelName
     },
+
+    Description = io_lib:format("Response received from ~p", [ChannelName]),
 
     case maps:get(status, Report) of
         no_channel ->
@@ -277,7 +280,9 @@ handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = 
                 UUID,
                 Device,
                 Status,
-                maps:get(description, Report),
+                %% REVIEW: sometimes Report.description is the ResponseBody
+                %% maps:get(description, Report),
+                erlang:list_to_binary(Description),
                 maps:get(response, Report),
                 ChannelInfo
             )

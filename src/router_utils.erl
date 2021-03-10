@@ -255,7 +255,7 @@ event_uplink_integration_req(UUID, Device, Status, Description, Request, Channel
     Map = #{
         id => UUID,
         category => uplink,
-        sub_category => uplink_integration_res,
+        sub_category => uplink_integration_req,
         description => Description,
         reported_at => erlang:system_time(millisecond),
         %%
@@ -269,12 +269,12 @@ event_uplink_integration_req(UUID, Device, Status, Description, Request, Channel
 -spec event_uplink_integration_res(
     UUID :: uuid_v4(),
     Device :: router_device:device(),
-    Description :: binary(),
     Status :: success | error,
+    Description :: binary(),
     Response :: map(),
     ChannelInfo :: map()
 ) -> ok.
-event_uplink_integration_res(UUID, Device, Description, Status, Response, ChannelInfo) ->
+event_uplink_integration_res(UUID, Device, Status, Description, Response, ChannelInfo) ->
     Map = #{
         id => UUID,
         category => uplink,

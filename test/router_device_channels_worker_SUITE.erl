@@ -37,8 +37,7 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: map(),
-    channels_resp_cache = #{} :: map()
+    data_cache = #{} :: map()
 }).
 
 %%--------------------------------------------------------------------
@@ -256,27 +255,21 @@ crashing_channel_test(Config) ->
     {Backoff1, _} = maps:get(<<"HTTP_1">>, State1#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN, backoff:get(Backoff1)),
 
-    test_utils:wait_for_console_event(<<"channel_crash">>, #{
-        <<"category">> => <<"channel_crash">>,
-        <<"description">> => '_',
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => <<"channel_crash: crash_http_channel">>,
+
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => DeviceID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [],
-        <<"channels">> => [
-            #{
+        <<"data">> => #{
+            <<"integration">> => #{
                 <<"id">> => <<"HTTP_1">>,
                 <<"name">> => <<"HTTP_NAME_1">>,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"error">>,
-                <<"description">> => '_'
+                <<"status">> => <<"error">>
             }
-        ]
+        }
     }),
 
     %% Crash channel and crash on init
@@ -290,49 +283,38 @@ crashing_channel_test(Config) ->
     ?assertEqual(#{}, State2#state.channels),
     {Backoff2, _} = maps:get(<<"HTTP_1">>, State2#state.channels_backoffs),
     ?assertEqual(?BACKOFF_MIN * 2, backoff:get(Backoff2)),
-    test_utils:wait_for_console_event(<<"channel_crash">>, #{
-        <<"category">> => <<"channel_crash">>,
-        <<"description">> => '_',
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => <<"channel_crash: crash_http_channel">>,
+
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => DeviceID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [],
-        <<"channels">> => [
-            #{
+        <<"data">> => #{
+            <<"integration">> => #{
                 <<"id">> => <<"HTTP_1">>,
                 <<"name">> => <<"HTTP_NAME_1">>,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"error">>,
-                <<"description">> => '_'
+                <<"status">> => <<"error">>
             }
-        ]
+        }
     }),
-    test_utils:wait_for_console_event(<<"channel_start_error">>, #{
-        <<"category">> => <<"channel_start_error">>,
-        <<"description">> => '_',
+
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => <<"channel_start_error: error init_failed">>,
+
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => DeviceID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [],
-        <<"channels">> => [
-            #{
+        <<"data">> => #{
+            <<"integration">> => #{
                 <<"id">> => <<"HTTP_1">>,
                 <<"name">> => <<"HTTP_NAME_1">>,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"error">>,
-                <<"description">> => '_'
+                <<"status">> => <<"error">>
             }
-        ]
+        }
     }),
 
     %% Fix crash and wait for HTTP channel to come back
@@ -376,24 +358,22 @@ late_packet_test(Config) ->
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"join_req">>, #{
-        <<"category">> => <<"join_req">>,
-        <<"description">> => '_',
+    test_utils:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => 0,
-        <<"frame_down">> => 0,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW125">>,
@@ -402,8 +382,7 @@ late_packet_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ],
-        <<"channels">> => []
+        }
     }),
 
     %% Waiting for reply from router to hotspot
@@ -521,24 +500,23 @@ late_packet_test(Config) ->
         ]
     }),
 
-    %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"up">>, #{
-        <<"category">> => <<"up">>,
-        <<"description">> => '_',
+    %% Waiting for report channel status from HTTP channel from hotspots 1
+    test_utils:wait_for_console_event(<<"uplink">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_unconfirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
+        <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW125">>,
@@ -546,12 +524,74 @@ late_packet_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"method">> => fun erlang:is_binary/1,
+                <<"url">> => fun erlang:is_binary/1,
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1
             },
-            #{
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_res">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"res">> => #{
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1,
+                <<"code">> => fun erlang:is_integer/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    %% Waiting for report channel status from HTTP channel from hotspots 2
+    test_utils:wait_for_console_event(<<"uplink">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_unconfirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin2)),
                 <<"name">> => erlang:list_to_binary(HotspotName2),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW125">>,
@@ -560,20 +600,12 @@ late_packet_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
+        }
     }),
 
     %% Make sure we did not get a duplicate with that late message
     receive
+        %% REVIEW: Wrong shape, what messages do we actually want to break the test?
         {console_event, Got} ->
             ct:fail("wait/1 failed we got ~p", [Got]);
         {channel_data, Got} ->

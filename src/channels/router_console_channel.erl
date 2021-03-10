@@ -36,8 +36,6 @@ init({[Channel, Device], _}) ->
 handle_event({data, UUIDRef, Data}, #state{channel = Channel} = State) ->
     Pid = router_channel:controller(Channel),
     Report = #{
-        id => router_channel:id(Channel),
-        name => router_channel:name(Channel),
         status => success,
         description => <<"console debug">>,
         request => #{body => router_channel:encode_data(Channel, Data)}

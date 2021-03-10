@@ -123,7 +123,10 @@ handle_offer(Offer, HandlerPid) ->
     end),
     %% TODO: Remove when hotspots start reporting AS923 including subregions
     ok = lorawan_location:maybe_fetch_offer_location(Offer),
-    Resp.
+    case Resp of
+        {ok, _} -> ok;
+        {error, _} = Error -> Error
+    end.
 
 -spec handle_packet(
     SCPacket ::
@@ -226,9 +229,9 @@ clear_replay(DeviceID) ->
 -spec print_handle_offer_resp(
     Offer :: blockchain_state_channel_offer_v1:offer(),
     HandlerPid :: pid(),
-    Resp :: any()
+    Resp :: {ok, router_device:device()} | {error, any()}
 ) -> ok.
-print_handle_offer_resp(Offer, HandlerPid, Resp) ->
+print_handle_offer_resp(Offer, HandlerPid, {ok, Device}) ->
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     HotspotName = blockchain_utils:addr2name(Hotspot),
@@ -239,17 +242,41 @@ print_handle_offer_resp(Offer, HandlerPid, Resp) ->
             DevEUI2 = lorawan_utils:binary_to_hex(DevEUI1),
             AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
             lager:debug(
-                [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
-                "responded ~p to join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
-                [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+                [{device_id, router_device:id(Device)}],
+                "buying join offer deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                [DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+            );
+        #routing_information_pb{data = {devaddr, DevAddr0}} ->
+            DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
+            DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
+            lager:debug(
+                [{device_id, router_device:id(Device)}],
+                "buying packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
+                [DevAddr2, DevAddr0, HotspotName, HandlerPid]
+            )
+    end;
+print_handle_offer_resp(Offer, HandlerPid, Error) ->
+    Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    HotspotName = blockchain_utils:addr2name(Hotspot),
+    case Routing of
+        #routing_information_pb{data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}} ->
+            DevEUI1 = eui_to_bin(DevEUI0),
+            AppEUI1 = eui_to_bin(AppEUI0),
+            DevEUI2 = lorawan_utils:binary_to_hex(DevEUI1),
+            AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
+            lager:debug(
+                [{device_id, AppEUI1}, {dev_eui, DevEUI1}],
+                "refusing join offer: ~p deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                [Error, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         #routing_information_pb{data = {devaddr, DevAddr0}} ->
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
             DevAddr2 = lorawan_utils:binary_to_hex(DevAddr1),
             lager:debug(
                 [{devaddr, DevAddr1}],
-                "responded ~p to packet offer devaddr=~s (~p) from: ~p (pid: ~p)",
-                [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
+                "refusing packet offer: ~p devaddr=~s (~p) from: ~p (pid: ~p)",
+                [Error, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
     end.
 
@@ -284,7 +311,8 @@ print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
             )
     end.
 
--spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
+-spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
+    {ok, router_device:device()} | {error, any()}.
 join_offer(Offer, _Pid) ->
     #routing_information_pb{
         data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}
@@ -322,7 +350,10 @@ join_offer(Offer, _Pid) ->
                     AppEUI1
                 ]
             ),
-            maybe_buy_join_offer(Offer, _Pid, Device)
+            case maybe_buy_join_offer(Offer, _Pid, Device) of
+                ok -> {ok, Device};
+                {error, _} = Error -> Error
+            end
     end.
 
 -spec maybe_buy_join_offer(
@@ -344,7 +375,10 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
                     case bloom:set(BFRef, PHash) of
                         true ->
-                            maybe_multi_buy(Offer, 10, Device);
+                            case maybe_multi_buy(Offer, 10, Device) of
+                                ok -> ok;
+                                {error, _} = Error -> Error
+                            end;
                         false ->
                             true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
                             DeviceID = router_device:id(Device),
@@ -358,7 +392,8 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
             end
     end.
 
--spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
+-spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
+    {ok, router_device:device()} | {error, any()}.
 packet_offer(Offer, Pid) ->
     case validate_packet_offer(Offer, Pid) of
         {error, _} = Error ->
@@ -377,7 +412,7 @@ packet_offer(Offer, Pid) ->
                                         [{device_id, DeviceID}],
                                         "most likely a replay packet buying"
                                     ),
-                                    ok;
+                                    {ok, Device};
                                 false ->
                                     lager:debug(
                                         [{device_id, DeviceID}],
@@ -389,7 +424,10 @@ packet_offer(Offer, Pid) ->
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
-                            maybe_multi_buy(Offer, 10, Device)
+                            case maybe_multi_buy(Offer, 10, Device) of
+                                ok -> {ok, Device};
+                                {error, _} = Error -> Error
+                            end
                     end;
                 false ->
                     lager:debug(
@@ -397,7 +435,7 @@ packet_offer(Offer, Pid) ->
                         "buying 1st packet for ~p",
                         [PHash]
                     ),
-                    ok
+                    {ok, Device}
             end
     end.
 
@@ -931,12 +969,16 @@ get_chain() ->
             Chain
     end.
 
--spec handle_offer_metrics(any(), ok | {error, any()}, non_neg_integer()) -> ok.
-handle_offer_metrics(#routing_information_pb{data = {eui, _}}, ok, Time) ->
+-spec handle_offer_metrics(
+    any(),
+    {ok, router_device:device()} | {error, any()},
+    non_neg_integer()
+) -> ok.
+handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {ok, _}, Time) ->
     ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
-handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, ok, Time) ->
+handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {ok, _}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).

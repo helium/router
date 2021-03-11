@@ -35,14 +35,9 @@
     code_change/3
 ]).
 
-%% ------------------------------------------------------------------
-%% Channel Function Exports
-%% ------------------------------------------------------------------
--export([debug_active_for_device/1]).
-
 -define(SERVER, ?MODULE).
 -define(POOL, router_console_api_pool).
--define(ETS, router_console_debug_ets).
+-define(ETS, router_console_api_ets).
 -define(TOKEN_CACHE_TIME, timer:hours(23)).
 -define(TICK_INTERVAL, 1000).
 -define(TICK, '__router_console_api_tick').
@@ -318,31 +313,16 @@ report_status(Device, Map) ->
                 port => maps:get(port, Map, 0),
                 devaddr => maps:get(devaddr, Map),
                 hotspots => Hotspots,
-                channels => [maps:remove(debug, C) || C <- Channels],
+                channels => Channels,
                 dc => DCMap1
             },
-            DebugLeft = debug_lookup(DeviceID),
-            Body1 =
-                case
-                    DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>, down, ack])
-                of
-                    false ->
-                        Body0;
-                    true ->
-                        case DebugLeft - 1 =< 0 of
-                            false -> debug_insert(DeviceID, DebugLeft - 1);
-                            true -> debug_delete(DeviceID)
-                        end,
-                        B0 = maps:put(payload, maps:get(payload, Map), Body0),
-                        maps:put(channels, Channels, B0)
-                end,
-            lager:debug("post ~p to ~p", [Body1, Url]),
+            lager:debug("post ~p to ~p", [Body0, Url]),
             Start = erlang:system_time(millisecond),
             case
                 hackney:post(
                     Url,
                     [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                    jsx:encode(Body1),
+                    jsx:encode(Body0),
                     [with_body, {pool, ?POOL}]
                 )
             of
@@ -384,13 +364,6 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
-
-%% ------------------------------------------------------------------
-%% Channel Function Definitions
-%% ------------------------------------------------------------------
--spec debug_active_for_device(DeviceID :: binary()) -> boolean().
-debug_active_for_device(DeviceID) ->
-    debug_lookup(DeviceID) > 0.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -500,18 +473,6 @@ handle_info(ws_joined, #state{ws = WSPid} = State) ->
         #{address => B58}
     ),
     WSPid ! {ws_resp, Payload},
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
-    State
-) ->
-    lager:info("turning debug on for devices ~p", [DeviceIDs]),
-    lists:foreach(
-        fun(DeviceID) ->
-            ok = debug_insert(DeviceID, 10)
-        end,
-        DeviceIDs
-    ),
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:clear_downlink_queue:devices">>, #{
@@ -959,23 +920,6 @@ token_lookup() ->
 -spec token_insert(Endpoint :: binary(), Token :: binary()) -> ok.
 token_insert(Endpoint, Token) ->
     true = ets:insert(?ETS, {token, {Endpoint, Token}}),
-    ok.
-
--spec debug_lookup(DeviceID :: binary()) -> non_neg_integer().
-debug_lookup(DeviceID) ->
-    case ets:lookup(?ETS, DeviceID) of
-        [] -> 0;
-        [{DeviceID, Limit}] -> Limit
-    end.
-
--spec debug_insert(DeviceID :: binary(), Limit :: non_neg_integer()) -> ok.
-debug_insert(DeviceID, Limit) ->
-    true = ets:insert(?ETS, {DeviceID, Limit}),
-    ok.
-
--spec debug_delete(binary()) -> ok.
-debug_delete(DeviceID) ->
-    true = ets:delete(?ETS, DeviceID),
     ok.
 
 -spec schedule_next_tick() -> reference().

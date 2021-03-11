@@ -290,7 +290,7 @@ get_last_dev_nonce(DeviceID) ->
 get_channel_worker_event_manager(DeviceID) ->
     ChannelWorkerPid = get_device_channels_worker(DeviceID),
     {state, _Chain, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs,
-        _DataCache, _BalanceCache, _FCnt, _ChannelsRespCache} = sys:get_state(ChannelWorkerPid),
+        _DataCache} = sys:get_state(ChannelWorkerPid),
     EventManagerPid.
 
 get_device_last_seen_fcnt(DeviceID) ->

@@ -105,8 +105,7 @@ join_from_unknown_device_grpc_test(Config) ->
     %% submit the packet via grpc to router
     {ok, Connection} = grpc_client:connect(tcp, "localhost", 8080),
 
-    %% helium.router = service, route = RPC call, router_client_pb is the an auto generated PB file
-    %% maybe not return this as an error ??
+    %% helium.router = service, route = RPC call, router_client_pb is an auto generated PB file
     {error, #{headers := Headers, status_message := StatusMsg, result := Result}} = grpc_client:unary(
         Connection,
         Packet,

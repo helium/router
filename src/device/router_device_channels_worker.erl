@@ -215,7 +215,7 @@ handle_cast(
         case maps:get(UUID, DataCache0, undefined) of
             undefined ->
                 new_uuid;
-            #{PubKeyBin := CachedPacket} = CachedData ->
+            #{PubKeyBin := #data_cache{packet = CachedPacket}} = CachedData ->
                 case CachedPacket#packet_pb.signal_strength < Packet#packet_pb.signal_strength of
                     true -> {stronger, CachedData};
                     false -> {weaker, CachedData}

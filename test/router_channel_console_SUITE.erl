@@ -56,7 +56,6 @@ end_per_testcase(TestCase, Config) ->
 console_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     true = ets:insert(Tab, {channel_type, console}),
-    true = ets:insert(router_console_debug_ets, {?CONSOLE_DEVICE_ID, 2}),
 
     #{
         pubkey_bin := PubKeyBin,

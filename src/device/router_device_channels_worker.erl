@@ -18,7 +18,7 @@
     start_link/1,
     handle_join/1,
     handle_device_update/2,
-    handle_frame/3,
+    handle_frame/2,
     report_status/3,
     report_request/4,
     report_response/4,
@@ -64,7 +64,7 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}}
+    data_cache = #{} :: #{router_utils:uuid_v4() => [#data_cache{}]}
 }).
 
 %% ------------------------------------------------------------------
@@ -81,9 +81,9 @@ handle_join(Pid) ->
 handle_device_update(Pid, Device) ->
     gen_server:cast(Pid, {handle_device_update, Device}).
 
--spec handle_frame(pid(), router_device:device(), #data_cache{}) -> ok.
-handle_frame(Pid, Device, DataCache) ->
-    gen_server:cast(Pid, {handle_frame, Device, DataCache}).
+-spec handle_frame(pid(), #data_cache{}) -> ok.
+handle_frame(Pid, DataCache) ->
+    gen_server:cast(Pid, {handle_frame, DataCache}).
 
 -spec report_request(pid(), router_utils:uuid_v4(), router_channel:channel(), map()) -> ok.
 report_request(Pid, UUID, Channel, Map) ->
@@ -203,39 +203,13 @@ handle_cast(handle_join, State) ->
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_frame, Device,
-        #data_cache{
-            uuid = UUID,
-            pub_key = PubKeyBin,
-            packet = Packet
-        } = Data},
+    {handle_frame, #data_cache{uuid = UUID} = Data},
     #state{data_cache = DataCache0} = State
 ) ->
-    Action =
-        case maps:get(UUID, DataCache0, undefined) of
-            undefined ->
-                new_uuid;
-            #{PubKeyBin := #data_cache{packet = CachedPacket}} = CachedData ->
-                case CachedPacket#packet_pb.signal_strength < Packet#packet_pb.signal_strength of
-                    true -> {stronger, CachedData};
-                    false -> {weaker, CachedData}
-                end;
-            CachedData ->
-                {new_pubkey, CachedData}
-        end,
-    DataCache1 =
-        case Action of
-            new_uuid ->
-                maps:put(UUID, #{PubKeyBin => Data}, DataCache0);
-            {new_pubkey, CachedData1} ->
-                maps:put(UUID, CachedData1#{PubKeyBin => Data}, DataCache0);
-            {stronger, CachedData1} ->
-                maps:put(UUID, CachedData1#{PubKeyBin => Data}, DataCache0);
-            {weaker, _CachedData} ->
-                DataCache0
-        end,
-
-    {noreply, State#state{device = Device, data_cache = DataCache1}};
+    %% REVIEW: Is it safe to drop the device here?
+    UUIDCache0 = maps:get(UUID, DataCache0, []),
+    DataCache1 = maps:put(UUID, [Data | UUIDCache0], DataCache0),
+    {noreply, State#state{data_cache = DataCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
@@ -299,7 +273,7 @@ handle_cast(
     } = State
 ) ->
     {CachedData, DataCache1} = maps:take(UUID, DataCache0),
-    {ok, Map} = send_to_channel(maps:values(CachedData), Device, EventMgrPid, Blockchain),
+    {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
     lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
     {noreply, State#state{data_cache = DataCache1}};
 handle_cast(_Msg, State) ->

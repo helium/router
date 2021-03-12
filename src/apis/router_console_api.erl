@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Router Device Channels Worker ==
+%% == Router Console API ==
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_console_api).
@@ -19,7 +19,8 @@
     event/2,
     get_downlink_url/2,
     get_org/1,
-    organizations_burned/3
+    organizations_burned/3,
+    get_token/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -60,8 +61,6 @@
     endpoint :: binary(),
     secret :: binary(),
     token :: binary(),
-    ws :: pid(),
-    ws_endpoint :: binary(),
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
     pending_burns = #{} :: pending(),
@@ -72,6 +71,9 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 -spec get_device(DeviceID :: binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
@@ -329,8 +331,9 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
     },
     gen_server:cast(?SERVER, {hnt_burn, Body}).
 
-start_link(Args) ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+-spec get_token() -> binary().
+get_token() ->
+    gen_server:call(?SERVER, get_token).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -341,10 +344,8 @@ init(Args) ->
     ets:new(?ETS, [public, named_table, set]),
     ok = hackney_pool:start_pool(?POOL, [{timeout, timer:seconds(60)}, {max_connections, 100}]),
     Endpoint = maps:get(endpoint, Args),
-    WSEndpoint = maps:get(ws_endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
-    WSPid = start_ws(WSEndpoint, Token),
     ok = token_insert(Endpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
@@ -355,8 +356,6 @@ init(Args) ->
         endpoint = Endpoint,
         secret = Secret,
         token = Token,
-        ws = WSPid,
-        ws_endpoint = WSEndpoint,
         db = DB,
         cf = CF,
         pending_burns = P,
@@ -364,6 +363,8 @@ init(Args) ->
         inflight = Inflight
     }}.
 
+handle_call(get_token, _From, #state{token = Token} = State) ->
+    {reply, Token, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -416,133 +417,11 @@ handle_info({hnt_burn, drop, Uuid}, #state{pending_burns = P, inflight = I} = St
     }};
 handle_info({hnt_burn, fail, Uuid}, #state{inflight = I} = State) ->
     {noreply, State#state{inflight = lists:keydelete(Uuid, 1, I)}};
-handle_info(
-    {'EXIT', WSPid0, _Reason},
-    #state{token = Token, ws = WSPid0, ws_endpoint = WSEndpoint, db = DB, cf = CF} = State
-) ->
-    lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
-    WSPid1 = start_ws(WSEndpoint, Token),
-    check_devices(DB, CF),
-    {noreply, State#state{ws = WSPid1}};
 handle_info(refresh_token, #state{endpoint = Endpoint, secret = Secret} = State) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     ok = token_insert(Endpoint, Token),
     {noreply, State#state{token = Token}};
-handle_info(ws_joined, #state{ws = WSPid} = State) ->
-    lager:info("joined, sending router address to console", []),
-    PubKeyBin = blockchain_swarm:pubkey_bin(),
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    Payload = router_console_ws_handler:encode_msg(
-        <<"0">>,
-        <<"organization:all">>,
-        <<"router:address">>,
-        #{address => B58}
-    ),
-    WSPid ! {ws_resp, Payload},
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:clear_downlink_queue:devices">>, #{
-        <<"devices">> := DeviceIDs
-    }},
-    State
-) ->
-    lager:info("console triggered clearing downlink for devices ~p", [DeviceIDs]),
-    lists:foreach(
-        fun(DeviceID) ->
-            case router_devices_sup:lookup_device_worker(DeviceID) of
-                {error, _Reason} ->
-                    lager:info("failed to clear queue, could not find device ~p: ~p", [
-                        DeviceID,
-                        _Reason
-                    ]);
-                {ok, Pid} ->
-                    router_device_worker:clear_queue(Pid)
-            end
-        end,
-        DeviceIDs
-    ),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:downlink:devices">>, #{
-        <<"devices">> := DeviceIDs,
-        <<"payload">> := MapPayload,
-        <<"channel_name">> := ProvidedChannelName
-    }},
-    State
-) ->
-    ChannelName =
-        case maps:get(<<"from">>, MapPayload, undefined) of
-            ?DOWNLINK_TOOL_ORIGIN ->
-                ?DOWNLINK_TOOL_CHANNEL_NAME;
-            _ ->
-                ProvidedChannelName
-        end,
-    Position =
-        case maps:get(<<"position">>, MapPayload, <<"last">>) of
-            <<"first">> -> first;
-            _ -> last
-        end,
-
-    lager:info("sending downlink ~p for devices ~p from channel ~p in position ~p", [
-        MapPayload,
-        DeviceIDs,
-        ChannelName,
-        Position
-    ]),
-    lists:foreach(
-        fun(DeviceID) ->
-            Channel = router_channel:new(
-                <<"console_websocket">>,
-                websocket,
-                ChannelName,
-                #{},
-                DeviceID,
-                self()
-            ),
-            ok = router_device_channels_worker:handle_console_downlink(
-                DeviceID,
-                MapPayload,
-                Channel,
-                Position
-            )
-        end,
-        DeviceIDs
-    ),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
-    #state{db = DB, cf = CF} = State
-) ->
-    update_devices(DB, CF, DeviceIDs),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{
-        <<"id">> := OrgID,
-        <<"dc_balance_nonce">> := Nonce,
-        <<"dc_balance">> := Balance
-    }},
-    State
-) ->
-    lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
-    ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> := DeviceIDs}},
-    #state{db = DB, cf = CF} = State
-) ->
-    lager:info("got activate message for devices: ~p", [DeviceIDs]),
-    update_devices(DB, CF, DeviceIDs),
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:inactive:devices">>, #{
-        <<"devices">> := DeviceIDs
-    }},
-    #state{db = DB, cf = CF} = State
-) ->
-    lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
-    update_devices(DB, CF, DeviceIDs),
-    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -557,78 +436,6 @@ terminate(_Reason, #state{db = DB, pending_burns = P}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec update_devices(
-    DB :: rocksdb:db_handle(),
-    CF :: rocksdb:cf_handle(),
-    DeviceIDs :: [binary()]
-) -> pid().
-update_devices(DB, CF, DeviceIDs) ->
-    erlang:spawn(
-        fun() ->
-            lager:info("got update for devices: ~p from WS", [DeviceIDs]),
-            lists:foreach(
-                fun(DeviceID) ->
-                    case router_devices_sup:lookup_device_worker(DeviceID) of
-                        {error, not_found} ->
-                            lager:info(
-                                "device worker not running for device ~p, updating DB record",
-                                [DeviceID]
-                            ),
-                            update_device_record(DB, CF, DeviceID);
-                        {ok, Pid} ->
-                            router_device_worker:device_update(Pid)
-                    end
-                end,
-                DeviceIDs
-            )
-        end
-    ).
-
--spec update_device_record(
-    DB :: rocksdb:db_handle(),
-    CF :: rocksdb:cf_handle(),
-    DeviceID :: binary()
-) -> ok.
-update_device_record(DB, CF, DeviceID) ->
-    case ?MODULE:get_device(DeviceID) of
-        {error, _Reason} ->
-            lager:warning("failed to get device ~p ~p", [DeviceID, _Reason]);
-        {ok, APIDevice} ->
-            Device0 =
-                case router_device:get_by_id(DB, CF, DeviceID) of
-                    {ok, D} -> D;
-                    {error, _} -> router_device:new(DeviceID)
-                end,
-            DeviceUpdates = [
-                {name, router_device:name(APIDevice)},
-                {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, router_device:metadata(APIDevice)},
-                {is_active, router_device:is_active(APIDevice)}
-            ],
-            Device = router_device:update(DeviceUpdates, Device0),
-            {ok, _} = router_device_cache:save(Device),
-            {ok, _} = router_device:save(DB, CF, Device),
-            ok
-    end.
-
--spec check_devices(DB :: rocksdb:db_handle(), CF :: rocksdb:cf_handle()) -> pid().
-check_devices(DB, CF) ->
-    lager:info("checking all devices in DB"),
-    DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],
-    update_devices(DB, CF, DeviceIDs).
-
--spec start_ws(WSEndpoint :: binary(), Token :: binary()) -> pid().
-start_ws(WSEndpoint, Token) ->
-    Url = binary_to_list(<<WSEndpoint/binary, "?token=", Token/binary, "&vsn=2.0.0">>),
-    {ok, Pid} = router_console_ws_handler:start_link(#{
-        url => Url,
-        auto_join => [<<"device:all">>, <<"organization:all">>],
-        forward => self()
-    }),
-    Pid.
-
 -spec convert_channel(Device :: router_device:device(), Pid :: pid(), JSONChannel :: map()) ->
     false | {true, router_channel:channel()}.
 convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->

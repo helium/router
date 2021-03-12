@@ -18,7 +18,7 @@
 }).
 
 -define(FLAGS, #{
-    strategy => one_for_one,
+    strategy => rest_for_one,
     intensity => 1,
     period => 5
 }).
@@ -39,6 +39,7 @@ init([]) ->
     {ok,
         {?FLAGS, [
             ?WORKER(router_console_api, [DeviceAPIData]),
+            ?WORKER(router_console_ws_worker, [DeviceAPIData]),
             ?WORKER(router_console_dc_tracker, [#{}])
         ]}}.
 

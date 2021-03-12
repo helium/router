@@ -256,7 +256,7 @@ make_response_report({ok, Res}, Channel) ->
                     body => ResponseBody
                 },
                 status => success,
-                description => ResponseBody
+                description => <<"Connection Success">>
             });
         {ok, StatusCode, ResponseHeaders, ResponseBody} ->
             SCBin = erlang:integer_to_binary(StatusCode),
@@ -267,7 +267,7 @@ make_response_report({ok, Res}, Channel) ->
                     body => ResponseBody
                 },
                 status => error,
-                description => <<"ResponseCode: ", SCBin/binary, " Body ", ResponseBody/binary>>
+                description => <<"Error ResponseCode: ", SCBin/binary>>
             });
         {error, Reason} ->
             %% Hackney Error

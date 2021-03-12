@@ -214,21 +214,19 @@ handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
     {noreply, State};
 handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = State) ->
-    lager:debug("received report_request ~p ~p", [UUID, Report]),
-
     ChannelName = router_channel:name(Channel),
+    lager:debug("received report_request from channel ~p uuid ~p ~p", [ChannelName, UUID, Report]),
+
     ChannelInfo = #{
         id => router_channel:id(Channel),
         name => ChannelName
     },
-
     Description = io_lib:format("Request sent to ~p", [ChannelName]),
 
     ok = router_utils:event_uplink_integration_req(
         UUID,
         Device,
         maps:get(status, Report),
-        %% REVIEW: Sometimes descriptions comes from requests
         erlang:list_to_binary(Description),
         maps:get(request, Report),
         ChannelInfo
@@ -236,14 +234,13 @@ handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = S
 
     {noreply, State};
 handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = State) ->
-    lager:debug("received report_status ~p ~p", [UUID, Report]),
-
     ChannelName = router_channel:name(Channel),
+    lager:debug("received report_response from channel ~p uuid ~p ~p", [ChannelName, UUID, Report]),
+
     ChannelInfo = #{
         id => router_channel:id(Channel),
         name => ChannelName
     },
-
     Description = io_lib:format("Response received from ~p", [ChannelName]),
 
     case maps:get(status, Report) of
@@ -254,8 +251,6 @@ handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = 
                 UUID,
                 Device,
                 Status,
-                %% REVIEW: sometimes Report.description is the ResponseBody
-                %% maps:get(description, Report),
                 erlang:list_to_binary(Description),
                 maps:get(response, Report),
                 ChannelInfo

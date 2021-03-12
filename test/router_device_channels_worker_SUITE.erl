@@ -562,15 +562,8 @@ late_packet_test(Config) ->
         }
     }),
 
-    %% Make sure we did not get a duplicate with that late message
-    receive
-        %% REVIEW: Wrong shape, what messages do we actually want to break the test?
-        {console_event, Got} ->
-            ct:fail("wait/1 failed we got ~p", [Got]);
-        {channel_data, Got} ->
-            ct:fail("wait_channel_data failed we got ~p", [Got])
-    after 10000 -> ok
-    end,
+    ok = test_utils:ignore_messages(),
+
     ok.
 
 %% ------------------------------------------------------------------

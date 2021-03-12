@@ -24,6 +24,8 @@
     accept_uplink/4,
     handle_join/8,
     handle_frame/7,
+    get_queue_updates/3,
+    stop_queue_updates/1,
     queue_message/2,
     queue_message/3,
     device_update/1,
@@ -57,6 +59,7 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
+    queue_updates :: undefined | {pid(), undefined | binary()},
     fcnt = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
@@ -114,6 +117,14 @@ handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey,
 ) -> ok.
 handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid) ->
     gen_server:cast(WorkerPid, {frame, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid}).
+
+-spec get_queue_updates(Pid :: pid(), ForwardPid :: pid(), LabelID :: undefined | binary()) -> ok.
+get_queue_updates(Pid, ForwardPid, LabelID) ->
+    gen_server:cast(Pid, {get_queue_updates, ForwardPid, LabelID}).
+
+-spec stop_queue_updates(Pid :: pid()) -> ok.
+stop_queue_updates(Pid) ->
+    gen_server:cast(Pid, stop_queue_updates).
 
 -spec queue_message(pid(), #downlink{}) -> ok.
 queue_message(Pid, #downlink{} = Downlink) ->
@@ -265,6 +276,19 @@ handle_cast(
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
 handle_cast(
+    {get_queue_updates, ForwardPid, LabelID},
+    #state{
+        device = Device
+    } = State0
+) ->
+    lager:debug("queue updates requested by ~p", ForwardPid),
+    State1 = State0#state{queue_updates = {ForwardPid, LabelID}},
+    ok = maybe_send_queue_update(Device, State1),
+    {noreply, State1};
+handle_cast(stop_queue_updates, State) ->
+    lager:debug("stopped queue updates"),
+    {noreply, State#state{queue_updates = undefined}};
+handle_cast(
     clear_queue,
     #state{
         db = DB,
@@ -276,6 +300,7 @@ handle_cast(
     lager:debug("cleared queue"),
     Device1 = router_device:queue([], Device0),
     ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
+    ok = maybe_send_queue_update(Device1, State),
     {noreply, State#state{device = Device1}};
 handle_cast(
     {queue_message, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
@@ -325,7 +350,7 @@ handle_cast(
                 Device1,
                 router_channel:to_map(Channel)
             ),
-
+            ok = maybe_send_queue_update(Device1, State),
             lager:debug("queued downlink message of size ~p < ~p", [Size, MaxSize]),
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
@@ -907,6 +932,27 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec downlink_to_map(#downlink{}) -> map().
+downlink_to_map(Downlink) ->
+    #{
+        confirmed => Downlink#downlink.confirmed,
+        port => Downlink#downlink.port,
+        payload => Downlink#downlink.payload,
+        channel => router_channel:to_map(Downlink#downlink.channel)
+    }.
+
+-spec maybe_send_queue_update(router_device:device(), #state{}) -> ok.
+maybe_send_queue_update(_Device, #state{queue_updates = undefined}) ->
+    ok;
+maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID}}) ->
+    Queue = router_device:queue(Device),
+    ForwardPid !
+        {?MODULE, queue_update, LabelID, router_device:queue(Device), [
+            downlink_to_map(D)
+            || D <- Queue
+        ]},
+    ok.
 
 -spec validate_join(
     blockchain_helium_packet_v1:packet(),

@@ -191,6 +191,72 @@ handle_info(
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
+handle_info(
+    {ws_message, <<"label:all">>, <<"label:all:downlink:fetch_queue">>, #{
+        <<"label">> := LabelID,
+        <<"devices">> := DeviceIDs
+    }},
+    State
+) ->
+    lager:info("got label ~p fetch_queue message for devices: ~p", [LabelID, DeviceIDs]),
+    lists:foreach(
+        fun(DeviceID) ->
+            case router_devices_sup:lookup_device_worker(DeviceID) of
+                {error, _Reason} ->
+                    lager:info([{device_id, DeviceID}], "fetch_queue could not find device ~p", [
+                        DeviceID
+                    ]);
+                {ok, Pid} ->
+                    router_device_worker:get_queue_updates(Pid, self(), LabelID)
+            end
+        end,
+        DeviceIDs
+    ),
+    {noreply, State};
+handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:downlink:fetch_queue">>, #{
+        <<"device">> := DeviceID
+    }},
+    State
+) ->
+    lager:info([{device_id, DeviceID}], "got device fetch_queue message for device: ~p", [DeviceID]),
+    case router_devices_sup:lookup_device_worker(DeviceID) of
+        {error, _Reason} ->
+            lager:warning([{device_id, DeviceID}], "fetch_queue could not find device ~p", [
+                DeviceID
+            ]);
+        {ok, Pid} ->
+            router_device_worker:get_queue_updates(Pid, self(), undefined)
+    end,
+    {noreply, State};
+handle_info(
+    {router_device_worker, queue_update, LabelID, DeviceID, Queue},
+    #state{ws = WSPid} = State
+) ->
+    lager:debug([{device_id, DeviceID}], "got device ~p queue_update: ~p, label ~p", [
+        DeviceID,
+        Queue,
+        LabelID
+    ]),
+    Payload =
+        case LabelID of
+            undefined ->
+                router_console_ws_handler:encode_msg(
+                    <<"0">>,
+                    <<"device:all">>,
+                    <<"device:all:downlink:update_queue">>,
+                    #{device => DeviceID, queue => Queue}
+                );
+            LabelID ->
+                router_console_ws_handler:encode_msg(
+                    <<"0">>,
+                    <<"label:all">>,
+                    <<"label:all:downlink:update_queue">>,
+                    #{label => LabelID, device => DeviceID, queue => Queue}
+                )
+        end,
+    WSPid ! {ws_resp, Payload},
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.

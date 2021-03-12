@@ -6,7 +6,7 @@
 -export([
     event_join_request/7,
     event_join_accept/5,
-    event_uplink/8,
+    event_uplink/9,
     event_uplink_dropped/4,
     event_downlink/10,
     event_downlink_dropped/5,
@@ -97,15 +97,19 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
-    Region :: atom()
+    Region :: atom(),
+    BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
+event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
     #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,
     {SubCategory, Desc} =
         case MType of
             ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up received">>};
             ?UNCONFIRMED_UP -> {uplink_unconfirmed, <<"Unconfirmed data up received">>}
         end,
+    PayloadSize = erlang:byte_size(Payload),
+    Ledger = blockchain:ledger(Chain),
+    Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
     Map = #{
         id => ID,
         category => uplink,
@@ -113,11 +117,16 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region) ->
         description => Desc,
         reported_at => Timestamp,
         fcnt => FCnt,
-        payload_size => erlang:byte_size(Payload),
+        payload_size => PayloadSize,
         payload => base64:encode(Payload),
         port => FPort,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        dc => #{
+            balance => Balance,
+            nonce => Nonce,
+            used => Used
+        }
     },
     ok = router_console_api:event(Device, Map).
 

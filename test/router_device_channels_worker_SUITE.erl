@@ -468,6 +468,7 @@ late_packet_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -543,6 +544,7 @@ late_packet_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,

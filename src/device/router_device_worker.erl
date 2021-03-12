@@ -507,7 +507,7 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, SendToChannels, {_Balance, _Nonce}} ->
+        {ok, Frame, Device2, SendToChannels, BalanceNonce} ->
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device2),
             NewFrameCache = #frame_cache{
@@ -530,7 +530,8 @@ handle_cast(
                             Blockchain,
                             PubKeyBin,
                             Packet0,
-                            Region
+                            Region,
+                            BalanceNonce
                         ),
                         Timeout = max(
                             0,
@@ -555,7 +556,8 @@ handle_cast(
                             Blockchain,
                             PubKeyBin,
                             Packet0,
-                            Region
+                            Region,
+                            BalanceNonce
                         ),
                         case RSSI0 > OldRSSI of
                             false ->
@@ -604,11 +606,7 @@ handle_cast(
                         Region,
                         PacketTime
                     ),
-                    ok = router_device_channels_worker:handle_frame(
-                        ChannelsWorker,
-                        Device2,
-                        Data
-                    );
+                    ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
                 false ->
                     ok
             end,

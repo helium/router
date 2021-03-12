@@ -221,7 +221,16 @@ event(Device, Map) ->
                     {_C, uplink_dropped} ->
                         #{
                             fcnt => maps:get(fcnt, Map)
-                            %% TODO Req/Res
+                        };
+                    {uplink, SC} when SC == uplink_confirmed orelse SC == uplink_unconfirmed ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            dc => maps:get(dc, Map)
                         };
                     {C, _SC} when
                         C == uplink orelse
@@ -236,7 +245,6 @@ event(Device, Map) ->
                             port => maps:get(port, Map),
                             devaddr => maps:get(devaddr, Map),
                             hotspot => maps:get(hotspot, Map)
-                            %% TODO DCs
                         }
                 end,
             Body = #{

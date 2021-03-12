@@ -108,7 +108,8 @@ dupes_test(Config) ->
             )},
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
-    {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+    %% REVIEW: with list of hotspots
+    %% {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
     Stream !
         {send,
             test_utils:frame_packet(
@@ -150,34 +151,36 @@ dupes_test(Config) ->
         <<"payload_size">> => 0,
         <<"port">> => 1,
         <<"devaddr">> => '_',
-        <<"hotspots">> => [
-            %% #{
-            %%     <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-            %%     <<"name">> => erlang:list_to_binary(HotspotName1),
-            %%     <<"reported_at">> => fun erlang:is_integer/1,
-            %%     <<"status">> => <<"success">>,
-            %%     <<"rssi">> => -25.0,
-            %%     <<"snr">> => 0.0,
-            %%     <<"spreading">> => <<"SF8BW125">>,
-            %%     <<"frequency">> => fun erlang:is_float/1,
-            %%     <<"channel">> => fun erlang:is_number/1,
-            %%     <<"lat">> => fun erlang:is_float/1,
-            %%     <<"long">> => fun erlang:is_float/1
-            %% },
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin2)),
-                <<"name">> => erlang:list_to_binary(HotspotName2),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => -30.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => <<"unknown">>,
-                <<"long">> => <<"unknown">>
-            }
-        ]
+        <<"hotspots">> => fun erlang:is_list/1
+        %% REVIEW: these hotspots are not consistent
+        %% <<"hotspots">> => [
+        %%     #{
+        %%         <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+        %%         <<"name">> => erlang:list_to_binary(HotspotName1),
+        %%         <<"reported_at">> => fun erlang:is_integer/1,
+        %%         <<"status">> => <<"success">>,
+        %%         <<"rssi">> => -25.0,
+        %%         <<"snr">> => 0.0,
+        %%         <<"spreading">> => <<"SF8BW125">>,
+        %%         <<"frequency">> => fun erlang:is_float/1,
+        %%         <<"channel">> => fun erlang:is_number/1,
+        %%         <<"lat">> => fun erlang:is_float/1,
+        %%         <<"long">> => fun erlang:is_float/1
+        %%     },
+        %%     #{
+        %%         <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+        %%         <<"name">> => erlang:list_to_binary(HotspotName2),
+        %%         <<"reported_at">> => fun erlang:is_integer/1,
+        %%         <<"status">> => <<"success">>,
+        %%         <<"rssi">> => -30.0,
+        %%         <<"snr">> => 0.0,
+        %%         <<"spreading">> => <<"SF8BW125">>,
+        %%         <<"frequency">> => fun erlang:is_float/1,
+        %%         <<"channel">> => fun erlang:is_number/1,
+        %%         <<"lat">> => <<"unknown">>,
+        %%         <<"long">> => <<"unknown">>
+        %%     }
+        %% ]
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -217,6 +220,7 @@ dupes_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -468,6 +472,7 @@ join_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -661,6 +666,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -834,6 +840,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => 1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -1011,6 +1018,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 96, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -1153,6 +1161,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 95, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -1293,6 +1302,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 94, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,

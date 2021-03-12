@@ -88,6 +88,7 @@ no_channel_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
@@ -111,7 +112,6 @@ no_channel_test(Config) ->
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
-        %% REVIEW: re: router_device_channels_worker:report_request
         <<"description">> => erlang:list_to_binary(
             io_lib:format("Request sent to ~p", [<<"no_channel">>])
         ),
@@ -219,6 +219,7 @@ no_channel_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,

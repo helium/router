@@ -59,7 +59,7 @@
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
     downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
-    queue_updates :: undefined | {pid(), undefined | binary()},
+    queue_updates :: undefined | {pid(), undefined | binary(), reference()},
     fcnt = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
@@ -124,7 +124,8 @@ get_queue_updates(Pid, ForwardPid, LabelID) ->
 
 -spec stop_queue_updates(Pid :: pid()) -> ok.
 stop_queue_updates(Pid) ->
-    gen_server:cast(Pid, stop_queue_updates).
+    Pid ! stop_queue_updates,
+    ok.
 
 -spec queue_message(pid(), #downlink{}) -> ok.
 queue_message(Pid, #downlink{} = Downlink) ->
@@ -278,16 +279,21 @@ handle_cast(
 handle_cast(
     {get_queue_updates, ForwardPid, LabelID},
     #state{
-        device = Device
+        device = Device,
+        queue_updates = QueueUpdates
     } = State0
 ) ->
     lager:debug("queue updates requested by ~p", ForwardPid),
-    State1 = State0#state{queue_updates = {ForwardPid, LabelID}},
+    TRef = erlang:send_after(timer:minutes(10), self(), stop_queue_updates),
+    case QueueUpdates of
+        undefined ->
+            ok;
+        {_, _, OldTRef} ->
+            erlang:cancel_timer(OldTRef)
+    end,
+    State1 = State0#state{queue_updates = {ForwardPid, LabelID, TRef}},
     ok = maybe_send_queue_update(Device, State1),
     {noreply, State1};
-handle_cast(stop_queue_updates, State) ->
-    lager:debug("stopped queue updates"),
-    {noreply, State#state{queue_updates = undefined}};
 handle_cast(
     clear_queue,
     #state{
@@ -742,6 +748,9 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(stop_queue_updates, State) ->
+    lager:debug("stopped queue updates"),
+    {noreply, State#state{queue_updates = undefined}};
 handle_info(
     {join_timeout, DevNonce},
     #state{
@@ -945,7 +954,7 @@ downlink_to_map(Downlink) ->
 -spec maybe_send_queue_update(router_device:device(), #state{}) -> ok.
 maybe_send_queue_update(_Device, #state{queue_updates = undefined}) ->
     ok;
-maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID}}) ->
+maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}) ->
     Queue = router_device:queue(Device),
     ForwardPid !
         {?MODULE, queue_update, LabelID, router_device:queue(Device), [

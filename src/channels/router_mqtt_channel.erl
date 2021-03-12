@@ -376,6 +376,8 @@ make_request_report({ok, Response}, Data, #state{
             Description = erlang:list_to_binary(io_lib:format("Error: ~p", [Reason])),
             #{request => Request, status => error, description => Description};
         ok ->
+            #{request => Request, status => success, description => <<"published">>};
+        {ok, _PacketID} ->
             #{request => Request, status => success, description => <<"published">>}
     end.
 

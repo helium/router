@@ -19,7 +19,6 @@
     handle_join/1,
     handle_device_update/2,
     handle_frame/2,
-    report_status/3,
     report_request/4,
     report_response/4,
     handle_downlink/3,
@@ -92,10 +91,6 @@ report_request(Pid, UUID, Channel, Map) ->
 -spec report_response(pid(), router_utils:uuid_v4(), router_channel:channel(), map()) -> ok.
 report_response(Pid, UUID, Channel, Map) ->
     gen_server:cast(Pid, {report_response, UUID, Channel, Map}).
-
--spec report_status(pid(), router_utils:uuid_v4(), map()) -> ok.
-report_status(Pid, UUID, Map) ->
-    gen_server:cast(Pid, {report_status, UUID, Map}).
 
 -spec frame_timeout(pid(), router_utils:uuid_v4()) -> ok.
 frame_timeout(Pid, UUID) ->

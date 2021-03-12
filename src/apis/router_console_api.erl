@@ -17,7 +17,6 @@
     get_all_devices/0,
     get_channels/2,
     event/2,
-    report_status/2,
     get_downlink_url/2,
     get_org/1,
     organizations_burned/3
@@ -271,73 +270,6 @@ event(Device, Map) ->
                     ok = router_metrics:console_api_observe(report_status, ok, End - Start);
                 _Other ->
                     lager:warning("got non 200 resp ~p", [_Other]),
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(report_status, error, End - Start)
-            end
-        end
-    ),
-    ok.
-
--spec report_status(Device :: router_device:device(), Map :: map()) -> ok.
-report_status(Device, Map) ->
-    erlang:spawn(
-        fun() ->
-            ok = router_utils:lager_md(Device),
-            {Endpoint, Token} = token_lookup(),
-            DeviceID = router_device:id(Device),
-            Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-            Category = maps:get(category, Map),
-            Channels = maps:get(channels, Map),
-            FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
-            DCMap0 =
-                case maps:get(dc, Map, undefined) of
-                    undefined ->
-                        Metadata = router_device:metadata(Device),
-                        OrgID = maps:get(organization_id, Metadata, <<>>),
-                        {B, N} = router_console_dc_tracker:current_balance(OrgID),
-                        #{balance => B, nonce => N};
-                    BN ->
-                        BN
-                end,
-            PayloadSize = maps:get(payload_size, Map),
-            Hotspots = maps:get(hotspots, Map),
-            DCMap1 =
-                case lists:member(Category, [<<"up">>, join_req]) of
-                    false ->
-                        DCMap0;
-                    true ->
-                        Ledger = blockchain:ledger(blockchain_worker:blockchain()),
-                        Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
-                        maps:put(used, Used * erlang:length(Hotspots), DCMap0)
-                end,
-            Body0 = #{
-                category => Category,
-                description => maps:get(description, Map),
-                reported_at => maps:get(reported_at, Map),
-                device_id => DeviceID,
-                frame_up => FrameUp,
-                frame_down => router_device:fcntdown(Device),
-                payload_size => maps:get(payload_size, Map),
-                port => maps:get(port, Map, 0),
-                devaddr => maps:get(devaddr, Map),
-                hotspots => Hotspots,
-                channels => Channels,
-                dc => DCMap1
-            },
-            lager:debug("post ~p to ~p", [Body0, Url]),
-            Start = erlang:system_time(millisecond),
-            case
-                hackney:post(
-                    Url,
-                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                    jsx:encode(Body0),
-                    [with_body, {pool, ?POOL}]
-                )
-            of
-                {ok, 200, _Headers, _Body} ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(report_status, ok, End - Start);
-                _ ->
                     End = erlang:system_time(millisecond),
                     ok = router_metrics:console_api_observe(report_status, error, End - Start)
             end

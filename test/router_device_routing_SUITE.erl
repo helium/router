@@ -119,7 +119,7 @@ bad_fcnt_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -148,7 +148,7 @@ bad_fcnt_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -172,7 +172,7 @@ bad_fcnt_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(

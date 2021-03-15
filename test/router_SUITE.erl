@@ -211,37 +211,82 @@ dupes_test(Config) ->
         }
     }),
 
+    IsFirstCouplePacketsFun = fun
+        (Balance) when Balance == 98 orelse Balance == 97 -> true;
+        (_) -> false
+    end,
+
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_unconfirmed">>,
-        <<"description">> => fun erlang:is_binary/1,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-            <<"fcnt">> => fun erlang:is_integer/1,
-            <<"payload_size">> => fun erlang:is_integer/1,
-            <<"payload">> => fun erlang:is_binary/1,
-            <<"port">> => fun erlang:is_integer/1,
-            <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => fun erlang:is_float/1,
-                <<"snr">> => fun erlang:is_float/1,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{
+                    <<"balance">> => IsFirstCouplePacketsFun,
+                    <<"nonce">> => 1,
+                    <<"used">> => 1
+                },
+                %% <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"rssi">> => fun erlang:is_float/1,
+                    <<"snr">> => fun erlang:is_float/1,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                }
             }
         }
-    }),
-
+    ),
+    {ok, #{<<"id">> := _UplinkUUID2}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                %% <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"rssi">> => fun erlang:is_float/1,
+                    <<"snr">> => fun erlang:is_float/1,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                }
+            }
+        }
+    ),
+    %% ct:print("Waiting for uplink_integration_req for ~p", [UplinkUUID1]),
+    %% ct:print("Or for uplink_integration_req for ~p", [_UplinkUUID2]),
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -265,7 +310,7 @@ dupes_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -658,7 +703,7 @@ adr_test(Config) ->
     }),
 
     %% Unconfirmed uplink from device
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -687,7 +732,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -711,7 +756,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -832,7 +877,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_confirmed">>,
@@ -861,7 +906,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -885,7 +930,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -1010,7 +1055,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID3}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -1039,7 +1084,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID3,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -1063,7 +1108,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID3,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -1153,7 +1198,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID4}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -1182,7 +1227,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID4,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -1206,7 +1251,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID4,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -1294,7 +1339,7 @@ adr_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID5}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_confirmed">>,
@@ -1323,7 +1368,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID5,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -1347,7 +1392,7 @@ adr_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID5,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(

@@ -283,12 +283,16 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                         true ->
                             {Routing, [{new, Added}]};
                         false ->
-                            [{Index, SmallestDevicesDevEuiAppEui} | _] = smallest_first(
-                                maps:to_list(Map)
-                            ),
-                            {Routing, [
-                                {update, Index, Added ++ SmallestDevicesDevEuiAppEui}
-                            ]}
+                            case smallest_first(maps:to_list(Map)) of
+                                [] ->
+                                    {Routing, [
+                                        {update, 1, Added}
+                                    ]};
+                                [{Index, SmallestDevicesDevEuiAppEui} | _] ->
+                                    {Routing, [
+                                        {update, Index, Added ++ SmallestDevicesDevEuiAppEui}
+                                    ]}
+                            end
                     end;
                 {Map, [], Removed} ->
                     {Routing, craft_remove_updates(Map, Removed)};

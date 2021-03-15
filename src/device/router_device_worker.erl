@@ -283,7 +283,7 @@ handle_cast(
         queue_updates = QueueUpdates
     } = State0
 ) ->
-    lager:debug("queue updates requested by ~p", ForwardPid),
+    lager:debug("queue updates requested by ~p", [ForwardPid]),
     TRef = erlang:send_after(timer:minutes(10), self(), stop_queue_updates),
     case QueueUpdates of
         undefined ->
@@ -955,11 +955,10 @@ downlink_to_map(Downlink) ->
 maybe_send_queue_update(_Device, #state{queue_updates = undefined}) ->
     ok;
 maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}) ->
-    Queue = router_device:queue(Device),
     ForwardPid !
-        {?MODULE, queue_update, LabelID, router_device:queue(Device), [
+        {?MODULE, queue_update, LabelID, router_device:id(Device), [
             downlink_to_map(D)
-            || D <- Queue
+            || D <- router_device:queue(Device)
         ]},
     ok.
 

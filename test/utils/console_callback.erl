@@ -284,6 +284,27 @@ websocket_info(_Req, get_router_address, State) ->
         #{}
     ),
     {reply, {text, Data}, State};
+websocket_info(_Req, {label_fetch_queue, LabelID}, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"label:all">>,
+        <<"label:all:downlink:fetch_queue">>,
+        #{
+            <<"label">> => LabelID,
+            <<"devices">> => [?CONSOLE_DEVICE_ID]
+        }
+    ),
+    {reply, {text, Data}, State};
+websocket_info(_Req, device_fetch_queue, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"device:all">>,
+        <<"device:all:downlink:fetch_queue">>,
+        #{
+            <<"device">> => ?CONSOLE_DEVICE_ID
+        }
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.

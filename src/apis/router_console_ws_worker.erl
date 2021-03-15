@@ -203,9 +203,14 @@ handle_info(
         fun(DeviceID) ->
             case router_devices_sup:lookup_device_worker(DeviceID) of
                 {error, _Reason} ->
-                    lager:info([{device_id, DeviceID}], "fetch_queue could not find device ~p", [
-                        DeviceID
-                    ]);
+                    lager:info(
+                        [{device_id, DeviceID}],
+                        "fetch_queue could not find device ~p: ~p",
+                        [
+                            DeviceID,
+                            _Reason
+                        ]
+                    );
                 {ok, Pid} ->
                     router_device_worker:get_queue_updates(Pid, self(), LabelID)
             end
@@ -222,8 +227,9 @@ handle_info(
     lager:info([{device_id, DeviceID}], "got device fetch_queue message for device: ~p", [DeviceID]),
     case router_devices_sup:lookup_device_worker(DeviceID) of
         {error, _Reason} ->
-            lager:warning([{device_id, DeviceID}], "fetch_queue could not find device ~p", [
-                DeviceID
+            lager:warning([{device_id, DeviceID}], "fetch_queue could not find device ~p: ~p", [
+                DeviceID,
+                _Reason
             ]);
         {ok, Pid} ->
             router_device_worker:get_queue_updates(Pid, self(), undefined)

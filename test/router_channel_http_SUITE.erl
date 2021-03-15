@@ -119,7 +119,7 @@ http_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -148,7 +148,7 @@ http_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -172,7 +172,7 @@ http_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -277,7 +277,7 @@ http_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -306,7 +306,7 @@ http_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -330,7 +330,7 @@ http_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -436,7 +436,7 @@ http_update_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -465,7 +465,7 @@ http_update_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -489,7 +489,7 @@ http_update_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
@@ -543,7 +543,7 @@ http_update_test(Config) ->
             )},
 
     %% Waiting for report channel status from HTTP channel with 404 error
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event(<<"uplink">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_unconfirmed">>,
@@ -572,7 +572,7 @@ http_update_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
@@ -596,7 +596,7 @@ http_update_test(Config) ->
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(

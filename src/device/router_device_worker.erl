@@ -433,7 +433,11 @@ handle_cast(
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    lager:debug("got packet (~p) ~p", [PHash, lager:pr(Packet0, blockchain_helium_packet_v1)]),
+    lager:debug("got packet (~p) ~p from ~p", [
+        PHash,
+        lager:pr(Packet0, blockchain_helium_packet_v1),
+        blockchain_utils:addr2name(PubKeyBin)
+    ]),
     Device1 =
         case LastDevNonce == undefined of
             true ->
@@ -589,13 +593,15 @@ handle_cast(
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
-                                        NewFrameCache#frame_cache{count = Count + 1},
+                                        NewFrameCache#frame_cache{
+                                            uuid = OldFrameCache#frame_cache.uuid,
+                                            count = Count + 1
+                                        },
                                         Cache0
                                     )
                                 }}
                         end
                 end,
-
             case SendToChannels of
                 true ->
                     Data = router_device_channels_worker:new_data_cache(

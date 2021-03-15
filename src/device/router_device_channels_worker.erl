@@ -48,7 +48,7 @@
 ).
 
 -record(data_cache, {
-    pub_key :: libp2p_crypto:pubkey_bin(),
+    pubkey_bin :: libp2p_crypto:pubkey_bin(),
     uuid :: router_utils:uuid_v4(),
     packet :: #packet_pb{},
     frame :: #frame{},
@@ -63,7 +63,7 @@
     device :: router_device:device(),
     channels = #{} :: map(),
     channels_backoffs = #{} :: map(),
-    data_cache = #{} :: #{router_utils:uuid_v4() => [#data_cache{}]}
+    data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}}
 }).
 
 %% ------------------------------------------------------------------
@@ -156,7 +156,7 @@ handle_downlink(Pid, BinaryPayload, Channel) ->
 ) -> #data_cache{}.
 new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time) ->
     #data_cache{
-        pub_key = PubKeyBin,
+        pubkey_bin = PubKeyBin,
         uuid = UUID,
         packet = Packet,
         frame = Frame,
@@ -198,12 +198,27 @@ handle_cast(handle_join, State) ->
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
 handle_cast(
-    {handle_frame, #data_cache{uuid = UUID} = Data},
-    #state{data_cache = DataCache0} = State
+    {handle_frame,
+        #data_cache{uuid = UUID, pubkey_bin = PubKeyBin, packet = NewPacket} = NewDataCache},
+    #state{data_cache = DataCache} = State
 ) ->
-    %% REVIEW: Is it safe to drop the device here?
-    UUIDCache0 = maps:get(UUID, DataCache0, []),
-    DataCache1 = maps:put(UUID, [Data | UUIDCache0], DataCache0),
+    %% We (sadly) still need to do a little deduplication here
+    UUIDCache0 = maps:get(UUID, DataCache, #{}),
+    UUIDCache1 =
+        case maps:get(PubKeyBin, UUIDCache0, undefined) of
+            undefined ->
+                maps:put(PubKeyBin, NewDataCache, UUIDCache0);
+            #data_cache{pubkey_bin = PubKeyBin, packet = OldPacket} ->
+                NewRSSI = blockchain_helium_packet_v1:signal_strength(NewPacket),
+                OldRSSI = blockchain_helium_packet_v1:signal_strength(OldPacket),
+                case NewRSSI > OldRSSI of
+                    false ->
+                        UUIDCache0;
+                    true ->
+                        maps:put(PubKeyBin, NewDataCache, UUIDCache0)
+                end
+        end,
+    DataCache1 = maps:put(UUID, UUIDCache1, DataCache),
     {noreply, State#state{data_cache = DataCache1}};
 handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
     ok = router_device_worker:queue_message(DeviceWorker, Msg),
@@ -226,7 +241,6 @@ handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = S
         maps:get(request, Report),
         ChannelInfo
     ),
-
     {noreply, State};
 handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = State) ->
     ChannelName = router_channel:name(Channel),
@@ -467,18 +481,22 @@ downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
 -spec send_to_channel(
-    CachedData :: [#data_cache{}],
+    CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
     Device :: router_device:device(),
     EventMgrRef :: pid(),
     Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
-send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
+send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     FormatHotspot = fun(
-        #data_cache{pub_key = PubKeyBin, packet = Packet, region = Region, time = Time}
+        #data_cache{pubkey_bin = PubKeyBin, packet = Packet, region = Region, time = Time}
     ) ->
         format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
     end,
-    [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData,
+    CachedData1 = lists:sort(
+        fun(A, B) -> A#data_cache.time < B#data_cache.time end,
+        maps:values(CachedData0)
+    ),
+    [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     Map = #{
         uuid => UUID,
@@ -497,7 +515,7 @@ send_to_channel(CachedData, Device, EventMgrRef, Blockchain) ->
                 _ -> Port
             end,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
-        hotspots => lists:map(FormatHotspot, CachedData)
+        hotspots => lists:map(FormatHotspot, CachedData1)
     },
     ok = router_channel:handle_data(EventMgrRef, Map, UUID),
     {ok, Map}.

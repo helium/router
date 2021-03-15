@@ -323,14 +323,34 @@ ignore_messages() ->
     after 2000 -> ok
     end.
 
-% "category": "up | down | join_req | join_accept | ack | packet_dropped | channel_crash | channel_start_error"
+% "category": "uplink | downlink | misc"
+wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
+    erlang:is_binary(ExpectedUUID)
+->
+    try
+        receive
+            {console_event, Category, _, #{<<"id">> := ExpectedUUID} = Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        {ok, Got};
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event ~p data failed ~p", [Category, Reason])
+                end
+        after 4250 -> ct:fail("wait_for_console_event ~p timeout", [Category])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
+            ct:fail("wait_for_console_event ~p failed", [Category])
+    end;
 wait_for_console_event(Category, Expected) ->
     try
         receive
             {console_event, Category, _, Got} ->
                 case match_map(Expected, Got) of
                     true ->
-                        ok;
+                        {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_for_console_event ~p data failed ~p", [Category, Reason])
@@ -343,18 +363,52 @@ wait_for_console_event(Category, Expected) ->
             ct:fail("wait_for_console_event ~p failed", [Category])
     end.
 
+% "sub_category":
+%   "undefined
+%   | uplink_confirmed | uplink_unconfirmed | uplink_integration_req | uplink_integration_res | uplink_dropped
+%   | downlink_confirmed | downlink_unconfirmed | downlink_dropped | downlink_queued | downlink_ack
+%   | misc_integration_error"
+wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) when
+    erlang:is_binary(ExpectedUUID)
+->
+    try
+        receive
+            {console_event, _, SubCategory, #{<<"id">> := ExpectedUUID} = Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        {ok, Got};
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event_sub ~p data failed ~n~p", [
+                            SubCategory,
+                            Reason
+                        ])
+                end
+        after 4250 -> ct:fail("wait_for_console_event_sub ~p timeout", [SubCategory])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [
+                SubCategory,
+                {_Reason, _Stacktrace}
+            ]),
+            ct:fail("wait_for_console_event ~p failed", [SubCategory])
+    end;
 wait_for_console_event_sub(SubCategory, Expected) ->
     try
         receive
             {console_event, _, SubCategory, Got} ->
                 case match_map(Expected, Got) of
                     true ->
-                        ok;
+                        {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_for_console_event ~p data failed ~p", [SubCategory, Reason])
+                        ct:fail("wait_for_console_event_sub ~p data failed ~p", [
+                            SubCategory,
+                            Reason
+                        ])
                 end
-        after 4250 -> ct:fail("wait_for_console_event ~p timeout", [SubCategory])
+        after 4250 -> ct:fail("wait_for_console_event_sub ~p timeout", [SubCategory])
         end
     catch
         _Class:_Reason:_Stacktrace ->
@@ -394,7 +448,7 @@ wait_channel_data(Expected) ->
             {channel_data, Got} ->
                 case match_map(Expected, Got) of
                     true ->
-                        ok;
+                        {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_channel_data failed ~p", [Reason])

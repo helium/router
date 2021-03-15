@@ -375,10 +375,7 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
                     case bloom:set(BFRef, PHash) of
                         true ->
-                            case maybe_multi_buy(Offer, 10, Device) of
-                                ok -> ok;
-                                {error, _} = Error -> Error
-                            end;
+                            maybe_multi_buy(Offer, 10, Device);
                         false ->
                             true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
                             DeviceID = router_device:id(Device),

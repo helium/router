@@ -119,6 +119,14 @@ trace(DeviceID) ->
         ],
         debug
     ),
+    {ok, _} = lager:trace_file(
+        FileName,
+        [
+            {module, router_device_routing},
+            {device_id, router_device:id(Device)}
+        ],
+        debug
+    ),
     ok.
 
 -spec stop_trace(DeviceID :: binary()) -> ok.

@@ -286,7 +286,7 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                             case smallest_first(maps:to_list(Map)) of
                                 [] ->
                                     {Routing, [
-                                        {update, 1, Added}
+                                        {update, 0, Added}
                                     ]};
                                 [{Index, SmallestDevicesDevEuiAppEui} | _] ->
                                     {Routing, [
@@ -632,6 +632,31 @@ should_update_filters_test() ->
 
     ?assertEqual(
         noop,
+        should_update_filters(chain, OUI, #{})
+    ),
+
+    %% ------------------------
+    % Testing for an empty Map
+    RoutingEmptyMap0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter0, [], 1),
+    RoutingEmptyMap1 = blockchain_ledger_routing_v1:update(
+        RoutingEmptyMap0,
+        {new_xor, BinFilter1},
+        1
+    ),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
+        {ok, RoutingEmptyMap1}
+    end),
+    DeviceUpdates4 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 4>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
+    ],
+    Device4 = router_device:update(DeviceUpdates4, router_device:new(<<"ID2">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device4]}
+    end),
+
+    ?assertEqual(
+        {RoutingEmptyMap1, [{update, 0, [deveui_appeui(Device4)]}]},
         should_update_filters(chain, OUI, #{})
     ),
 

@@ -967,7 +967,7 @@ get_chain() ->
     end.
 
 -spec handle_offer_metrics(
-    #router_information_pb{},
+    #routing_information_pb{},
     {ok, router_device:device()} | {error, any()},
     non_neg_integer()
 ) -> ok.

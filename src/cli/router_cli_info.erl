@@ -42,13 +42,15 @@ info_usage() ->
             "                       the block height.  If the second number is displayed with an asterisk (*)\n"
             "                       this node has yet to sync past the assumed valid hash in the node config.\n\n"
             "info name          - Get name for this router\n"
+            "info block_age     - Get age of the latest block in the chain, in seconds.\n"
         ]
     ].
 
 info_cmd() ->
     [
         [["info", "height"], [], [], fun info_height/3],
-        [["info", "name"], [], [], fun info_name/3]
+        [["info", "name"], [], [], fun info_name/3],
+        [["info", "block_age"], [], [], fun info_block_age/3]
     ].
 
 info_height(["info", "height"], [], []) ->
@@ -82,4 +84,12 @@ info_name(["info", "name"], [], []) ->
     ),
     [clique_status:text(Name)];
 info_name([_, _, _], [], []) ->
+    usage.
+
+info_block_age(["info", "block_age"], [], []) ->
+    Chain = blockchain_worker:blockchain(),
+    {ok, Block} = blockchain:head_block(Chain),
+    Age = erlang:system_time(seconds) - blockchain_block:time(Block),
+    [clique_status:text(integer_to_list(Age))];
+info_block_age([_, _, _], [], []) ->
     usage.

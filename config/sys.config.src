@@ -7,10 +7,10 @@
         {seed_nodes, "${ROUTER_SEED_NODES}"},
         {honor_quick_sync, true},
         {quick_sync_mode, blessed_snapshot},
-        {blessed_snapshot_block_height, 733681},
+        {blessed_snapshot_block_height, 750241},
         {blessed_snapshot_block_hash,
-            <<248, 124, 118, 173, 85, 247, 158, 155, 253, 103, 32, 64, 55, 169, 81, 178, 24, 216,
-                200, 7, 40, 150, 69, 43, 64, 83, 161, 45, 58, 227, 15, 201>>},
+            <<192, 30, 158, 119, 235, 255, 199, 94, 11, 31, 230, 131, 11, 77, 25, 102, 65, 181, 209,
+                119, 165, 179, 121, 155, 35, 127, 43, 98, 102, 240, 235, 235>>},
         {sc_packet_handler, router_device_routing}
     ]},
     {router, [

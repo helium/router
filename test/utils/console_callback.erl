@@ -219,11 +219,6 @@ websocket_handle(_Req, _Frame, State) ->
     lager:info("websocket_handle ~p", [_Frame]),
     {ok, State}.
 
-websocket_info(_Req, {joined, Topic}, State) ->
-    Data = router_console_ws_handler:encode_msg(<<"0">>, Topic, <<"device:all:debug:devices">>, #{
-        <<"devices">> => [?CONSOLE_DEVICE_ID]
-    }),
-    {reply, {text, Data}, State};
 websocket_info(_Req, clear_queue, State) ->
     Data = router_console_ws_handler:encode_msg(
         <<"0">>,

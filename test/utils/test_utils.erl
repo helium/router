@@ -335,13 +335,19 @@ wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
                         {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_for_console_event (explicit id) ~p data failed ~p", [Category, Reason])
+                        ct:fail("wait_for_console_event (explicit id) ~p data failed ~p", [
+                            Category,
+                            Reason
+                        ])
                 end
         after 4250 -> ct:fail("wait_for_console_event (explicit id) ~p timeout", [Category])
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
+            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~p~n", [
+                Category,
+                {_Reason, _Stacktrace}
+            ]),
             ct:fail("wait_for_console_event (explicit id) ~p failed", [Category])
     end;
 wait_for_console_event(Category, Expected) ->

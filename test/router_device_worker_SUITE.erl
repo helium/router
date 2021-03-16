@@ -146,33 +146,36 @@ device_worker_late_packet_double_charge_test(Config) ->
         ]
     }),
 
-    {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_unconfirmed">>,
-        <<"description">> => fun erlang:is_binary/1,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-            <<"fcnt">> => fun erlang:is_integer/1,
-            <<"payload_size">> => fun erlang:is_integer/1,
-            <<"payload">> => fun erlang:is_binary/1,
-            <<"port">> => fun erlang:is_integer/1,
-            <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
+    {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                }
             }
         }
-    }),
+    ),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
         <<"id">> => UplinkUUID,
@@ -394,33 +397,36 @@ replay_joins_test(Config) ->
             )},
 
     %% Waiting for report channel status
-    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_unconfirmed">>,
-        <<"description">> => fun erlang:is_binary/1,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-            <<"fcnt">> => fun erlang:is_integer/1,
-            <<"payload_size">> => fun erlang:is_integer/1,
-            <<"payload">> => fun erlang:is_binary/1,
-            <<"port">> => fun erlang:is_integer/1,
-            <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                }
             }
         }
-    }),
+    ),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
         <<"id">> => UplinkUUID1,
@@ -568,33 +574,36 @@ replay_joins_test(Config) ->
             )},
 
     %% Waiting for report channel status
-    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_unconfirmed">>,
-        <<"description">> => fun erlang:is_binary/1,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"dc">> => #{<<"balance">> => 95, <<"nonce">> => 1, <<"used">> => 1},
-            <<"fcnt">> => fun erlang:is_integer/1,
-            <<"payload_size">> => fun erlang:is_integer/1,
-            <<"payload">> => fun erlang:is_binary/1,
-            <<"port">> => fun erlang:is_integer/1,
-            <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 95, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                }
             }
         }
-    }),
+    ),
 
     test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
         <<"id">> => UplinkUUID2,

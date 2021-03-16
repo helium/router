@@ -285,7 +285,7 @@ to_res(Index, Res) ->
 
 -spec compare_distance(h3:index(), h3:index(), h3:index()) -> boolean().
 compare_distance(Index1, Index2, Index3) ->
-    try h3:grid_distance(Index2, Index1) > h3:grid_distance(Index3, Index1) of
+    try h3:grid_distance(Index2, Index1) < h3:grid_distance(Index3, Index1) of
         Bool -> Bool
     catch
         _:_ -> false
@@ -295,4 +295,77 @@ compare_distance(Index1, Index2, Index3) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
+
+%% There H3 indexes (resolution 12) are aligned from farther left to right
+-define(INDEX_A, 631210969893275647).
+-define(INDEX_B, 631210973995593215).
+-define(INDEX_C, 631210968861644799).
+-define(INDEX_D, 631210968873637887).
+
+sort_devices_test() ->
+    Hotspots = #{
+        <<"A">> => ?INDEX_A,
+        <<"B">> => ?INDEX_B,
+        <<"C">> => ?INDEX_C,
+        <<"D">> => ?INDEX_D
+    },
+    meck:new(blockchain_worker, [passthrough]),
+    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
+    meck:new(blockchain_ledger_v1, [passthrough]),
+    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+        {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
+    end),
+
+    Randomized = lists:sort([{rand:uniform(), N} || N <- maps:keys(Hotspots)]),
+    Devices = [router_device:location(ID, router_device:new(ID)) || {_, ID} <- Randomized],
+
+    ?assertEqual([<<"A">>, <<"B">>, <<"C">>, <<"D">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"A">>)
+    ]),
+
+    ?assertEqual([<<"B">>, <<"A">>, <<"C">>, <<"D">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"B">>)
+    ]),
+
+    ?assertEqual([<<"C">>, <<"D">>, <<"B">>, <<"A">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"C">>)
+    ]),
+
+    ?assertEqual([<<"D">>, <<"C">>, <<"B">>, <<"A">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"D">>)
+    ]),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_ledger_v1)),
+    meck:unload(blockchain_ledger_v1),
+    ok.
+
+indexes_to_lowest_res_test() ->
+    ?assertEqual(
+        {?INDEX_A, ?INDEX_B, ?INDEX_C},
+        indexes_to_lowest_res(?INDEX_A, ?INDEX_B, ?INDEX_C)
+    ).
+
+to_res_test() ->
+    ?assertEqual(?INDEX_A, to_res(?INDEX_A, 12)),
+    ?assertEqual(?INDEX_B, to_res(?INDEX_B, 12)),
+    ?assertEqual(?INDEX_C, to_res(?INDEX_C, 12)),
+    ?assertEqual(?INDEX_D, to_res(?INDEX_D, 12)),
+    ok.
+
+compare_distance_test() ->
+    ?assert(compare_distance(?INDEX_A, ?INDEX_B, ?INDEX_C)),
+    ?assert(compare_distance(?INDEX_A, ?INDEX_C, ?INDEX_D)),
+    ?assert(compare_distance(?INDEX_A, ?INDEX_B, ?INDEX_D)),
+    ok.
+
 -endif.

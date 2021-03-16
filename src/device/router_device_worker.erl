@@ -406,19 +406,28 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, PacketTime, _PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, PubKeyBin, _Region, _Pid},
     #state{
+        chain = Blockchain,
         device = Device,
         is_active = false
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
     _ = router_device_routing:deny_more(PHash),
     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     Desc = <<"Device inactive packet dropped">>,
-    ok = router_utils:event_uplink_dropped(Desc, PacketTime, FCnt, Device),
+    ok = router_utils:event_uncharged_uplink_dropped(
+        Desc,
+        PacketTime,
+        FCnt,
+        Device,
+        Blockchain,
+        PubKeyBin
+    ),
     {noreply, State};
 handle_cast(
     {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},
@@ -478,11 +487,13 @@ handle_cast(
         )
     of
         {error, {not_enough_dc, _Reason, Device2}} ->
-            ok = router_utils:event_uplink_dropped(
+            ok = router_utils:event_uncharged_uplink_dropped(
                 <<"Not enough DC">>,
                 PacketTime,
                 router_device:fcnt(Device2),
-                Device2
+                Device2,
+                Blockchain,
+                PubKeyBin
             ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
@@ -494,14 +505,30 @@ handle_cast(
                 false
             ),
             {noreply, State#state{device = Device2}};
-        {error, _Reason} ->
-            lager:debug("packet not validated: ~p", [_Reason]),
-            ok = router_utils:event_uplink_dropped(
-                <<"Invalid Packet: ", (erlang:atom_to_binary(_Reason, utf8))/binary>>,
-                PacketTime,
-                router_device:fcnt(Device1),
-                Device1
-            ),
+        {error, Reason} ->
+            lager:debug("packet not validated: ~p", [Reason]),
+            case Reason of
+                late_packet ->
+                    ok = router_utils:event_uncharged_uplink_dropped(
+                        <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
+                        PacketTime,
+                        router_device:fcnt(Device1),
+                        Device1,
+                        Blockchain,
+                        PubKeyBin
+                    );
+                _ ->
+                    ok = router_utils:event_charged_uplink_dropped(
+                        <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
+                        PacketTime,
+                        router_device:fcnt(Device1),
+                        Device1,
+                        Blockchain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    )
+            end,
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,

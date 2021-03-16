@@ -363,11 +363,12 @@ join_offer(Offer, _Pid) ->
 ) -> ok | {error, any()}.
 maybe_buy_join_offer(Offer, _Pid, Device) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    case check_device_is_active(Device) of
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    case check_device_is_active(Device, PubKeyBin) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            case check_device_balance(PayloadSize, Device) of
+            case check_device_balance(PayloadSize, Device, PubKeyBin) of
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
@@ -452,7 +453,7 @@ validate_packet_offer(Offer, _Pid) ->
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
-                    case check_device_is_active(Device) of
+                    case check_device_is_active(Device, PubKeyBin) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
@@ -463,7 +464,7 @@ validate_packet_offer(Offer, _Pid) ->
                                     router_device_worker:handle_offer(WorkerPid, Offer)
                             end,
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-                            case check_device_balance(PayloadSize, Device) of
+                            case check_device_balance(PayloadSize, Device, PubKeyBin) of
                                 {error, _Reason} = Error -> Error;
                                 ok -> {ok, Device}
                             end
@@ -591,31 +592,37 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             end
     end.
 
--spec check_device_is_active(router_device:device()) -> ok | {error, any()}.
-check_device_is_active(Device) ->
+-spec check_device_is_active(router_device:device(), libp2p_crypto:pubkey_bin()) ->
+    ok | {error, any()}.
+check_device_is_active(Device, PubKeyBin) ->
     case router_device:is_active(Device) of
         false ->
-            ok = router_utils:event_uplink_dropped(
+            ok = router_utils:event_uncharged_uplink_dropped(
                 <<"Device inactive packet dropped">>,
                 erlang:system_time(millisecond),
                 router_device:fcnt(Device),
-                Device
+                Device,
+                get_chain(),
+                PubKeyBin
             ),
             {error, ?DEVICE_INACTIVE};
         true ->
             ok
     end.
 
--spec check_device_balance(non_neg_integer(), router_device:device()) -> ok | {error, any()}.
-check_device_balance(PayloadSize, Device) ->
+-spec check_device_balance(non_neg_integer(), router_device:device(), libp2p_crypto:pubkey_bin()) ->
+    ok | {error, any()}.
+check_device_balance(PayloadSize, Device, PubKeyBin) ->
     Chain = get_chain(),
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
-            ok = router_utils:event_uplink_dropped(
+            ok = router_utils:event_uncharged_uplink_dropped(
                 <<"Not enough DC">>,
                 erlang:system_time(millisecond),
                 router_device:fcnt(Device),
-                Device
+                Device,
+                get_chain(),
+                PubKeyBin
             ),
             {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} ->

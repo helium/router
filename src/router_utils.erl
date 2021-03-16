@@ -7,7 +7,8 @@
     event_join_request/7,
     event_join_accept/5,
     event_uplink/9,
-    event_uplink_dropped/4,
+    event_charged_uplink_dropped/8,
+    event_uncharged_uplink_dropped/6,
     event_downlink/10,
     event_downlink_dropped/5,
     event_downlink_queued/5,
@@ -130,13 +131,15 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
     },
     ok = router_console_api:event(Device, Map).
 
--spec event_uplink_dropped(
+-spec event_uncharged_uplink_dropped(
     Desc :: binary(),
     Timestamp :: non_neg_integer(),
     FCnt :: non_neg_integer(),
-    Device :: router_device:device()
+    Device :: router_device:device(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> ok.
-event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
+event_uncharged_uplink_dropped(Desc, Timestamp, FCnt, Device, Chain, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink,
@@ -148,7 +151,33 @@ event_uplink_dropped(Desc, Timestamp, FCnt, Device) ->
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        hotspot => #{}
+        hotspot => format_uncharged_hotspot(Chain, PubKeyBin)
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_charged_uplink_dropped(
+    Desc :: binary(),
+    Timestamp :: non_neg_integer(),
+    FCnt :: non_neg_integer(),
+    Device :: router_device:device(),
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Region :: atom()
+) -> ok.
+event_charged_uplink_dropped(Desc, Timestamp, FCnt, Device, Chain, PubKeyBin, Packet, Region) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => uplink,
+        sub_category => uplink_dropped,
+        description => Desc,
+        reported_at => Timestamp,
+        fcnt => FCnt,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => router_device:devaddr(Device),
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
     },
     ok = router_console_api:event(Device, Map).
 
@@ -475,6 +504,21 @@ join_timeout() ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec format_uncharged_hotspot(
+    Chain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> map().
+format_uncharged_hotspot(Chain, PubKeyBin) ->
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    #{
+        id => erlang:list_to_binary(B58),
+        name => erlang:list_to_binary(HotspotName),
+        lat => Lat,
+        long => Long
+    }.
 
 -spec format_hotspot(
     Chain :: blockchain:blockchain(),

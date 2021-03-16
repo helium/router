@@ -404,7 +404,7 @@ join_test(Config) ->
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
-    test_utils:wait_for_console_event(<<"join_request">>, #{
+    {ok, #{<<"id">> := JoinUUID}} = test_utils:wait_for_console_event(<<"join_request">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"join_request">>,
         <<"sub_category">> => <<"undefined">>,
@@ -431,7 +431,7 @@ join_test(Config) ->
         }
     }),
     test_utils:wait_for_console_event(<<"join_request">>, #{
-        <<"id">> => fun erlang:is_binary/1,
+        <<"id">> => JoinUUID,
         <<"category">> => <<"join_request">>,
         <<"sub_category">> => <<"undefined">>,
         <<"description">> => fun erlang:is_binary/1,

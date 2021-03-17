@@ -578,9 +578,10 @@ handle_cast(
                             device = Device2,
                             frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                         }};
-                    #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
+                    #frame_cache{uuid = OldUUID, rssi = OldRSSI, pid = OldPid, count = OldCount} =
+                        OldFrameCache ->
                         ok = router_utils:event_uplink(
-                            OldFrameCache#frame_cache.uuid,
+                            OldUUID,
                             PacketTime,
                             Frame,
                             Device2,
@@ -603,11 +604,11 @@ handle_cast(
                                     packet,
                                     false
                                 ),
-                                {OldFrameCache#frame_cache.uuid, State#state{
+                                {OldUUID, State#state{
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
-                                        OldFrameCache#frame_cache{count = Count + 1},
+                                        OldFrameCache#frame_cache{count = OldCount + 1},
                                         Cache0
                                     )
                                 }};
@@ -616,13 +617,13 @@ handle_cast(
                                     OldPid,
                                     blockchain_state_channel_response_v1:new(true)
                                 ),
-                                {OldFrameCache#frame_cache.uuid, State#state{
+                                {OldUUID, State#state{
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
                                         NewFrameCache#frame_cache{
-                                            uuid = OldFrameCache#frame_cache.uuid,
-                                            count = Count + 1
+                                            uuid = OldUUID,
+                                            count = OldCount + 1
                                         },
                                         Cache0
                                     )
@@ -791,7 +792,6 @@ handle_info(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
-
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,

@@ -209,7 +209,7 @@ handle_cast(
     case router_device:can_queue_payload(Payload, Device0) of
         {false, Size, MaxSize, Datarate} ->
             Desc = io_lib:format(
-                "Payload too big for ~p max size is ~p (payload was ~p)",
+                "Payload too big for DR~p max size is ~p (payload was ~p)",
                 [Datarate, MaxSize, Size]
             ),
             ok = router_utils:event_downlink_dropped_payload_size_exceeded(
@@ -219,11 +219,10 @@ handle_cast(
                 Device0,
                 router_channel:to_map(Channel)
             ),
-            lager:debug("failed to queue downlink message, too big (~p > ~p), using datarate ~p", [
-                Size,
-                MaxSize,
-                Datarate
-            ]),
+            lager:debug(
+                "failed to queue downlink message, too big (~p > ~p), using datarate DR~p",
+                [Size, MaxSize, Datarate]
+            ),
             {noreply, State};
         {true, Size, MaxSize, _Datarate} ->
             OldQueue = router_device:queue(Device0),

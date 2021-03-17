@@ -168,10 +168,10 @@ console_tool_downlink_order_test(Config) ->
 
     %% Queue Downlinks with last message asking for priority
     WSPid ! {downlink, Downlink0},
+    ExpectDownlinkQueuedMessageFun(<<"last">>),
     WSPid ! {downlink, Downlink1},
+    ExpectDownlinkQueuedMessageFun(<<"last">>),
     WSPid ! {downlink, maps:merge(Downlink2, #{position => <<"first">>})},
-    ExpectDownlinkQueuedMessageFun(<<"last">>),
-    ExpectDownlinkQueuedMessageFun(<<"last">>),
     ExpectDownlinkQueuedMessageFun(<<"first">>),
 
     %% Expect last Downlink first, then in order

@@ -219,7 +219,8 @@ event(Device, Map) ->
                         end;
                     {_C, uplink_dropped} ->
                         #{
-                            fcnt => maps:get(fcnt, Map)
+                            fcnt => maps:get(fcnt, Map),
+                            hotspot => maps:get(hotspot, Map)
                         };
                     {uplink, SC} when SC == uplink_confirmed orelse SC == uplink_unconfirmed ->
                         #{

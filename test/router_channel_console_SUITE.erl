@@ -294,14 +294,20 @@ inactive_test(Config) ->
                 1
             )},
 
-    test_utils:wait_for_console_event(<<"uplink">>, #{
+    test_utils:wait_for_console_event_sub(<<"uplink_dropped_device_inactive">>, #{
         <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_dropped">>,
+        <<"category">> => <<"uplink_dropped">>,
+        <<"sub_category">> => <<"uplink_dropped_device_inactive">>,
         <<"description">> => <<"Device inactive packet dropped">>,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{<<"fcnt">> => 1}
+        <<"data">> => #{
+            <<"fcnt">> => 1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName)
+            }
+        }
     }),
 
     ets:insert(Tab, {is_active, true}),

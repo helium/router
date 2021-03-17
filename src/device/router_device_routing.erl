@@ -597,12 +597,10 @@ maybe_multi_buy(Offer, Attempts, Device) ->
 check_device_is_active(Device, PubKeyBin) ->
     case router_device:is_active(Device) of
         false ->
-            ok = router_utils:event_uncharged_uplink_dropped(
-                <<"Device inactive packet dropped">>,
+            ok = router_utils:event_uplink_dropped_device_inactive(
                 erlang:system_time(millisecond),
                 router_device:fcnt(Device),
                 Device,
-                get_chain(),
                 PubKeyBin
             ),
             {error, ?DEVICE_INACTIVE};
@@ -616,12 +614,10 @@ check_device_balance(PayloadSize, Device, PubKeyBin) ->
     Chain = get_chain(),
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
-            ok = router_utils:event_uncharged_uplink_dropped(
-                <<"Not enough DC">>,
+            ok = router_utils:event_uplink_dropped_not_enough_dc(
                 erlang:system_time(millisecond),
                 router_device:fcnt(Device),
                 Device,
-                get_chain(),
                 PubKeyBin
             ),
             {error, ?DEVICE_NO_DC};

@@ -408,7 +408,6 @@ handle_cast(
 handle_cast(
     {frame, _NwkSKey, Packet, PacketTime, PubKeyBin, _Region, _Pid},
     #state{
-        chain = Blockchain,
         device = Device,
         is_active = false
     } = State
@@ -419,13 +418,10 @@ handle_cast(
     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-    Desc = <<"Device inactive packet dropped">>,
-    ok = router_utils:event_uncharged_uplink_dropped(
-        Desc,
+    ok = router_utils:event_uplink_dropped_device_inactive(
         PacketTime,
         FCnt,
         Device,
-        Blockchain,
         PubKeyBin
     ),
     {noreply, State};
@@ -487,12 +483,10 @@ handle_cast(
         )
     of
         {error, {not_enough_dc, _Reason, Device2}} ->
-            ok = router_utils:event_uncharged_uplink_dropped(
-                <<"Not enough DC">>,
+            ok = router_utils:event_uplink_dropped_not_enough_dc(
                 PacketTime,
                 router_device:fcnt(Device2),
                 Device2,
-                Blockchain,
                 PubKeyBin
             ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
@@ -509,17 +503,15 @@ handle_cast(
             lager:debug("packet not validated: ~p", [Reason]),
             case Reason of
                 late_packet ->
-                    ok = router_utils:event_uncharged_uplink_dropped(
-                        <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
+                    ok = router_utils:event_uplink_dropped_late_packet(
                         PacketTime,
                         router_device:fcnt(Device1),
                         Device1,
-                        Blockchain,
                         PubKeyBin
                     );
                 _ ->
-                    ok = router_utils:event_charged_uplink_dropped(
-                        <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
+                    ok = router_utils:event_uplink_dropped_invalid_packet(
+                        Reason,
                         PacketTime,
                         router_device:fcnt(Device1),
                         Device1,

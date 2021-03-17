@@ -7,8 +7,10 @@
     event_join_request/7,
     event_join_accept/5,
     event_uplink/9,
-    event_charged_uplink_dropped/8,
-    event_uncharged_uplink_dropped/6,
+    event_uplink_dropped_device_inactive/4,
+    event_uplink_dropped_not_enough_dc/4,
+    event_uplink_dropped_late_packet/4,
+    event_uplink_dropped_invalid_packet/8,
     event_downlink/10,
     event_downlink_dropped/5,
     event_downlink_queued/5,
@@ -131,32 +133,77 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
     },
     ok = router_console_api:event(Device, Map).
 
--spec event_uncharged_uplink_dropped(
-    Desc :: binary(),
+-spec event_uplink_dropped_device_inactive(
     Timestamp :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> ok.
-event_uncharged_uplink_dropped(Desc, Timestamp, FCnt, Device, Chain, PubKeyBin) ->
+event_uplink_dropped_device_inactive(Timestamp, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
-        category => uplink,
-        sub_category => uplink_dropped,
-        description => Desc,
+        category => uplink_dropped,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        hotspot => format_uncharged_hotspot(Chain, PubKeyBin)
+        %%
+        description => <<"Device inactive packet dropped">>,
+        sub_category => uplink_dropped_device_inactive,
+        hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
 
--spec event_charged_uplink_dropped(
-    Desc :: binary(),
+-spec event_uplink_dropped_not_enough_dc(
+    Timestamp :: non_neg_integer(),
+    FCnt :: non_neg_integer(),
+    Device :: router_device:device(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> ok.
+event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => uplink_dropped,
+        reported_at => Timestamp,
+        fcnt => FCnt,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => router_device:devaddr(Device),
+        %%
+        description => <<"Not enough DC">>,
+        sub_category => uplink_dropped_not_enough_dc,
+        hotspot => format_uncharged_hotspot(PubKeyBin)
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_uplink_dropped_late_packet(
+    Timestamp :: non_neg_integer(),
+    FCnt :: non_neg_integer(),
+    Device :: router_device:device(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> ok.
+event_uplink_dropped_late_packet(Timestamp, FCnt, Device, PubKeyBin) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => uplink_dropped,
+        reported_at => Timestamp,
+        fcnt => FCnt,
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
+        devaddr => router_device:devaddr(Device),
+        %%
+        description => <<"Late packet">>,
+        sub_category => uplink_dropped_late,
+        hotspot => format_uncharged_hotspot(PubKeyBin)
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_uplink_dropped_invalid_packet(
+    Reason :: atom(),
     Timestamp :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
@@ -165,20 +212,31 @@ event_uncharged_uplink_dropped(Desc, Timestamp, FCnt, Device, Chain, PubKeyBin) 
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom()
 ) -> ok.
-event_charged_uplink_dropped(Desc, Timestamp, FCnt, Device, Chain, PubKeyBin, Packet, Region) ->
+event_uplink_dropped_invalid_packet(
+    Reason,
+    Timestamp,
+    FCnt,
+    Device,
+    Chain,
+    PubKeyBin,
+    Packet,
+    Region
+) ->
     Map = #{
         id => router_utils:uuid_v4(),
-        category => uplink,
-        sub_category => uplink_dropped,
-        description => Desc,
+        category => uplink_dropped,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
+        %%
+        description => <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
+        sub_category => uplink_dropped_invalid,
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
     },
+
     ok = router_console_api:event(Device, Map).
 
 -spec event_downlink(
@@ -506,18 +564,15 @@ join_timeout() ->
 %% ------------------------------------------------------------------
 
 -spec format_uncharged_hotspot(
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> map().
-format_uncharged_hotspot(Chain, PubKeyBin) ->
+format_uncharged_hotspot(PubKeyBin) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
-    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+
     #{
         id => erlang:list_to_binary(B58),
-        name => erlang:list_to_binary(HotspotName),
-        lat => Lat,
-        long => Long
+        name => erlang:list_to_binary(HotspotName)
     }.
 
 -spec format_hotspot(

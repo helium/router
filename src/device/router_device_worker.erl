@@ -212,7 +212,7 @@ handle_cast(
                 "Payload too big for ~p max size is ~p (payload was ~p)",
                 [Datarate, MaxSize, Size]
             ),
-            ok = router_utils:event_downlink_dropped(
+            ok = router_utils:event_downlink_dropped_payload_size_exceeded(
                 erlang:list_to_binary(Desc),
                 Port,
                 Payload,
@@ -250,7 +250,7 @@ handle_cast(
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
             Desc = io_lib:format("Failed to queue downlink: ~p", [_Reason]),
-            ok = router_utils:event_downlink_dropped(
+            ok = router_utils:event_downlink_dropped_misc(
                 erlang:list_to_binary(Desc),
                 Port,
                 Payload,

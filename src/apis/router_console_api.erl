@@ -180,7 +180,15 @@ event(Device, Map) ->
             DeviceID = router_device:id(Device),
             Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
             Category = maps:get(category, Map),
-            true = lists:member(Category, [uplink, uplink_dropped, downlink, join_request, join_accept, misc]),
+            true = lists:member(Category, [
+                uplink,
+                uplink_dropped,
+                downlink,
+                downlink_dropped,
+                join_request,
+                join_accept,
+                misc
+            ]),
             SubCategory = maps:get(sub_category, Map, undefined),
             true = lists:member(SubCategory, [
                 undefined,
@@ -189,12 +197,13 @@ event(Device, Map) ->
                 uplink_integration_req,
                 uplink_integration_res,
                 uplink_dropped_device_inactive,
-                                              uplink_dropped_not_enough_dc,
-                                              uplink_dropped_late,
-                                              uplink_dropped_invalid,
+                uplink_dropped_not_enough_dc,
+                uplink_dropped_late,
+                uplink_dropped_invalid,
                 downlink_confirmed,
                 downlink_unconfirmed,
-                downlink_dropped,
+                downlink_dropped_payload_size_exceeded,
+                downlink_dropped_misc,
                 downlink_queued,
                 downlink_ack,
                 misc_integration_error
@@ -204,7 +213,8 @@ event(Device, Map) ->
                     {_C, SC} when
                         SC == uplink_integration_req orelse
                             SC == uplink_integration_res orelse
-                            SC == downlink_dropped orelse
+                            SC == downlink_dropped_payload_size_exceeded orelse
+                            SC == downlink_dropped_misc orelse
                             SC == downlink_queued orelse
                             SC == misc_integration_error
                     ->

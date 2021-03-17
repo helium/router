@@ -12,7 +12,8 @@
     event_uplink_dropped_late_packet/4,
     event_uplink_dropped_invalid_packet/8,
     event_downlink/10,
-    event_downlink_dropped/5,
+    event_downlink_dropped_payload_size_exceeded/5,
+    event_downlink_dropped_misc/5,
     event_downlink_queued/5,
     event_uplink_integration_req/6,
     event_uplink_integration_res/6,
@@ -287,18 +288,17 @@ event_downlink(
     },
     ok = router_console_api:event(Device, Map).
 
--spec event_downlink_dropped(
+-spec event_downlink_dropped_payload_size_exceeded(
     Desc :: binary(),
     Port :: non_neg_integer(),
     Payload :: binary(),
     Device :: router_device:device(),
     ChannelMap :: map()
 ) -> ok.
-event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
+event_downlink_dropped_payload_size_exceeded(Desc, Port, Payload, Device, ChannelMap) ->
     Map = #{
         id => router_utils:uuid_v4(),
-        category => downlink,
-        sub_category => downlink_dropped,
+        category => downlink_dropped,
         description => Desc,
         reported_at => erlang:system_time(millisecond),
         fcnt => router_device:fcntdown(Device),
@@ -309,7 +309,36 @@ event_downlink_dropped(Desc, Port, Payload, Device, ChannelMap) ->
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
-        channel_status => <<"error">>
+        channel_status => <<"error">>,
+        %%
+        sub_category => downlink_dropped_payload_size_exceeded
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_downlink_dropped_misc(
+    Desc :: binary(),
+    Port :: non_neg_integer(),
+    Payload :: binary(),
+    Device :: router_device:device(),
+    ChannelMap :: map()
+) -> ok.
+event_downlink_dropped_misc(Desc, Port, Payload, Device, ChannelMap) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => downlink_dropped,
+        description => Desc,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => router_device:fcntdown(Device),
+        payload_size => erlang:byte_size(Payload),
+        payload => Payload,
+        port => Port,
+        devaddr => router_device:devaddr(Device),
+        hotspot => #{},
+        channel_id => maps:get(id, ChannelMap),
+        channel_name => maps:get(name, ChannelMap),
+        channel_status => <<"error">>,
+        %%
+        sub_category => downlink_dropped_misc
     },
     ok = router_console_api:event(Device, Map).
 

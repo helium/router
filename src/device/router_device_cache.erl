@@ -78,19 +78,11 @@ init_from_db() ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-uuid_v4() ->
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    Str = io_lib:format(
-        "~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]
-    ),
-    list_to_binary(Str).
-
 init_from_db_test() ->
     Dir = test_utils:tmp_dir("init_from_db_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     ok = init(),
-    ID = uuid_v4(),
+    ID = router_utils:uuid_v4(),
     Device = router_device:new(ID),
 
     {ok, DB, [_, CF]} = router_db:get(),
@@ -106,7 +98,7 @@ get_save_delete_test() ->
     Dir = test_utils:tmp_dir("get_save_delete_test"),
     {ok, Pid} = router_db:start_link([Dir]),
     ok = init(),
-    ID = uuid_v4(),
+    ID = router_utils:uuid_v4(),
     Device = router_device:new(ID),
 
     ?assertEqual({ok, Device}, save(Device)),

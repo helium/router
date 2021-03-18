@@ -21,6 +21,7 @@
 -export([
     start_link/1,
     handle_offer/2,
+    accept_uplink/4,
     handle_join/8,
     handle_frame/7,
     queue_message/2,
@@ -62,6 +63,7 @@
     last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
+    offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
     is_active = true :: boolean()
 }).
@@ -75,6 +77,15 @@ start_link(Args) ->
 -spec handle_offer(pid(), blockchain_state_channel_offer_v1:offer()) -> ok.
 handle_offer(WorkerPid, Offer) ->
     gen_server:cast(WorkerPid, {handle_offer, Offer}).
+
+-spec accept_uplink(
+    WorkerPid :: pid(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> boolean().
+accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
+    gen_server:call(WorkerPid, {accept_uplink, Packet, PacketTime, PubKeyBin}).
 
 -spec handle_join(
     pid(),
@@ -125,7 +136,7 @@ device_update(Pid) ->
 %% ------------------------------------------------------------------
 init(#{db := DB, cf := CF, id := ID} = Args) ->
     Blockchain = blockchain_worker:blockchain(),
-    OUI = router_device_utils:get_router_oui(),
+    OUI = router_utils:get_oui(),
     Device = get_device(DB, CF, ID),
     {ok, Pid} =
         router_device_channels_worker:start_link(#{
@@ -147,13 +158,61 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
         is_active = IsActive
     }}.
 
+handle_call(
+    {accept_uplink, Packet, PacketTime, PubKeyBin},
+    _From,
+    #state{device = Device, offer_cache = OfferCache0} = State
+) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    case maps:get({PubKeyBin, PHash}, OfferCache0, undefined) of
+        undefined ->
+            lager:debug("accepting, we got a packet from ~p with no matching offer (~p)", [
+                blockchain_utils:addr2name(PubKeyBin),
+                PHash
+            ]),
+            {reply, true, State};
+        OfferTime ->
+            OfferCache1 = maps:remove({PubKeyBin, PHash}, OfferCache0),
+            DeliveryTime = erlang:system_time(millisecond) - OfferTime,
+            case DeliveryTime >= ?RX_MAX_WINDOW of
+                true ->
+                    lager:info("refusing, we got a packet delivered ~p ms too late from ~p (~p)", [
+                        DeliveryTime,
+                        blockchain_utils:addr2name(PubKeyBin),
+                        PHash
+                    ]),
+                    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
+                        _ACK:1, _RFU:1, _FOptsLen:4, FCnt:16/little-unsigned-integer,
+                        _FOpts:_FOptsLen/binary,
+                        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+                    ok = router_utils:event_uplink_dropped_late_packet(
+                        PacketTime,
+                        FCnt,
+                        Device,
+                        PubKeyBin
+                    ),
+                    {reply, false, State#state{offer_cache = OfferCache1}};
+                false ->
+                    lager:debug("accepting, we got a packet from ~p (~p)", [
+                        blockchain_utils:addr2name(PubKeyBin),
+                        PHash
+                    ]),
+                    {reply, true, State#state{offer_cache = OfferCache1}}
+            end
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({handle_offer, Offer}, #state{device = Device, adr_engine = ADREngine0} = State) ->
+handle_cast(
+    {handle_offer, Offer},
+    #state{device = Device, offer_cache = OfferCache0, adr_engine = ADREngine0} = State
+) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    OfferCache1 = maps:put({PubKeyBin, PHash}, erlang:system_time(millisecond), OfferCache0),
     ADREngine1 = maybe_track_adr_offer(Device, ADREngine0, Offer),
-    {noreply, State#state{adr_engine = ADREngine1}};
+    {noreply, State#state{offer_cache = OfferCache1, adr_engine = ADREngine1}};
 handle_cast(
     device_update,
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
@@ -197,7 +256,8 @@ handle_cast(
     ok = save_and_update(DB, CF, ChannelsWorkerPid, Device1),
     {noreply, State#state{device = Device1}};
 handle_cast(
-    {queue_message, #downlink{port = Port, payload = Payload} = Downlink, Position},
+    {queue_message, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
+        Position},
     #state{
         db = DB,
         cf = CF,
@@ -207,12 +267,21 @@ handle_cast(
 ) ->
     case router_device:can_queue_payload(Payload, Device0) of
         {false, Size, MaxSize, Datarate} ->
-            ok = router_device_utils:report_status_max_size(Device0, Payload, MaxSize, Port),
-            lager:debug("failed to queue downlink message, too big (~p > ~p), using datarate ~p", [
-                Size,
-                MaxSize,
-                Datarate
-            ]),
+            Desc = io_lib:format(
+                "Payload too big for DR~p max size is ~p (payload was ~p)",
+                [Datarate, MaxSize, Size]
+            ),
+            ok = router_utils:event_downlink_dropped_payload_size_exceeded(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device0,
+                router_channel:to_map(Channel)
+            ),
+            lager:debug(
+                "failed to queue downlink message, too big (~p > ~p), using datarate DR~p",
+                [Size, MaxSize, Datarate]
+            ),
             {noreply, State};
         {true, Size, MaxSize, _Datarate} ->
             OldQueue = router_device:queue(Device0),
@@ -223,11 +292,30 @@ handle_cast(
                 end,
             Device1 = router_device:queue(NewQueue, Device0),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            Desc = io_lib:format(
+                "Downlink queued in ~p place",
+                [Position]
+            ),
+            ok = router_utils:event_downlink_queued(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device1,
+                router_channel:to_map(Channel)
+            ),
+
             lager:debug("queued downlink message of size ~p < ~p", [Size, MaxSize]),
             {noreply, State#state{device = Device1}};
         {error, _Reason} ->
+            Desc = io_lib:format("Failed to queue downlink: ~p", [_Reason]),
+            ok = router_utils:event_downlink_dropped_misc(
+                erlang:list_to_binary(Desc),
+                Port,
+                Payload,
+                Device0,
+                router_channel:to_map(Channel)
+            ),
             lager:debug("failed to queue downlink message, ~p", [_Reason]),
-            %% TODO: Send update to console
             {noreply, State}
     end;
 handle_cast(
@@ -271,6 +359,7 @@ handle_cast(
                 undefined ->
                     lager:debug("got a first join: ~p", [DevNonce]),
                     JoinCache = #join_cache{
+                        uuid = router_utils:uuid_v4(),
                         rssi = NewRSSI,
                         reply = Reply,
                         packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
@@ -281,7 +370,7 @@ handle_cast(
                     ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     Timeout = max(
                         0,
-                        router_device_utils:join_timeout() -
+                        router_utils:join_timeout() -
                             (erlang:system_time(millisecond) - PacketTime)
                     ),
                     lager:debug("setting join timeout [dev_nonce: ~p] [timeout: ~p]", [
@@ -289,6 +378,15 @@ handle_cast(
                         Timeout
                     ]),
                     _ = erlang:send_after(Timeout, self(), {join_timeout, DevNonce}),
+                    ok = router_utils:event_join_request(
+                        JoinCache#join_cache.uuid,
+                        PacketTime,
+                        Device1,
+                        Chain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     {noreply, State#state{
                         device = Device1,
                         last_dev_nonce = DevNonce,
@@ -298,11 +396,21 @@ handle_cast(
                         fcnt = -1
                     }};
                 #join_cache{
+                    uuid = UUID,
                     rssi = OldRSSI,
                     packet_selected = {OldPacket, _, _, _} = OldSelected,
                     packets = OldPackets,
                     pid = OldPid
                 } = JoinCache1 ->
+                    ok = router_utils:event_join_request(
+                        UUID,
+                        PacketTime,
+                        Device1,
+                        Chain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    ),
                     case NewRSSI > OldRSSI of
                         false ->
                             lager:debug("got another join for ~p with worst RSSI ~p", [
@@ -356,15 +464,24 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, _PacketTime, _PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
     _ = router_device_routing:deny_more(PHash),
-    ok = router_device_utils:report_status_inactive(Device),
+    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
+        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+    ok = router_utils:event_uplink_dropped_device_inactive(
+        PacketTime,
+        FCnt,
+        Device,
+        PubKeyBin
+    ),
     {noreply, State};
 handle_cast(
     {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},
@@ -379,7 +496,11 @@ handle_cast(
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
-    lager:debug("got packet (~p) ~p", [PHash, lager:pr(Packet0, blockchain_helium_packet_v1)]),
+    lager:debug("got packet (~p) ~p from ~p", [
+        PHash,
+        lager:pr(Packet0, blockchain_helium_packet_v1),
+        blockchain_utils:addr2name(PubKeyBin)
+    ]),
     Device1 =
         case LastDevNonce == undefined of
             true ->
@@ -420,7 +541,12 @@ handle_cast(
         )
     of
         {error, {not_enough_dc, _Reason, Device2}} ->
-            ok = router_device_utils:report_status_no_dc(Device2),
+            ok = router_utils:event_uplink_dropped_not_enough_dc(
+                PacketTime,
+                router_device:fcnt(Device2),
+                Device2,
+                PubKeyBin
+            ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
@@ -431,8 +557,28 @@ handle_cast(
                 false
             ),
             {noreply, State#state{device = Device2}};
-        {error, _Reason} ->
-            lager:debug("packet not validated: ~p", [_Reason]),
+        {error, Reason} ->
+            lager:debug("packet not validated: ~p", [Reason]),
+            case Reason of
+                late_packet ->
+                    ok = router_utils:event_uplink_dropped_late_packet(
+                        PacketTime,
+                        router_device:fcnt(Device1),
+                        Device1,
+                        PubKeyBin
+                    );
+                _ ->
+                    ok = router_utils:event_uplink_dropped_invalid_packet(
+                        Reason,
+                        PacketTime,
+                        router_device:fcnt(Device1),
+                        Device1,
+                        Blockchain,
+                        PubKeyBin,
+                        Packet0,
+                        Region
+                    )
+            end,
             _ = router_device_routing:deny_more(PHash),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
@@ -442,29 +588,11 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, SendToChannels, {Balance, Nonce}} ->
-            %% TODO: Maybe move this down a little?
-            case SendToChannels of
-                true ->
-                    Data = router_device_channels_worker:new_data_cache(
-                        PubKeyBin,
-                        Packet0,
-                        Frame,
-                        Region,
-                        router_device_utils:milli_to_sec(PacketTime)
-                    ),
-                    ok = router_device_channels_worker:handle_frame(
-                        ChannelsWorker,
-                        Device2,
-                        Data,
-                        {Balance, Nonce}
-                    );
-                false ->
-                    ok
-            end,
+        {ok, Frame, Device2, SendToChannels, BalanceNonce} ->
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device2),
             NewFrameCache = #frame_cache{
+                uuid = router_utils:uuid_v4(),
                 rssi = RSSI0,
                 packet = Packet0,
                 pubkey_bin = PubKeyBin,
@@ -472,57 +600,101 @@ handle_cast(
                 pid = Pid,
                 region = Region
             },
-
-            case maps:get(FCnt, Cache0, undefined) of
-                undefined ->
-                    Timeout = max(
-                        0,
-                        router_device_utils:frame_timeout() -
-                            (erlang:system_time(millisecond) - PacketTime)
+            {UUID, State1} =
+                case maps:get(FCnt, Cache0, undefined) of
+                    undefined ->
+                        ok = router_utils:event_uplink(
+                            NewFrameCache#frame_cache.uuid,
+                            PacketTime,
+                            Frame,
+                            Device2,
+                            Blockchain,
+                            PubKeyBin,
+                            Packet0,
+                            Region,
+                            BalanceNonce
+                        ),
+                        Timeout = max(
+                            0,
+                            router_utils:frame_timeout() -
+                                (erlang:system_time(millisecond) - PacketTime)
+                        ),
+                        lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [
+                            FCnt,
+                            Timeout
+                        ]),
+                        _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
+                        {NewFrameCache#frame_cache.uuid, State#state{
+                            device = Device2,
+                            frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
+                        }};
+                    #frame_cache{uuid = OldUUID, rssi = OldRSSI, pid = OldPid, count = OldCount} =
+                        OldFrameCache ->
+                        ok = router_utils:event_uplink(
+                            OldUUID,
+                            PacketTime,
+                            Frame,
+                            Device2,
+                            Blockchain,
+                            PubKeyBin,
+                            Packet0,
+                            Region,
+                            BalanceNonce
+                        ),
+                        case RSSI0 > OldRSSI of
+                            false ->
+                                catch blockchain_state_channel_handler:send_response(
+                                    Pid,
+                                    blockchain_state_channel_response_v1:new(true)
+                                ),
+                                ok = router_metrics:packet_trip_observe_end(
+                                    PHash,
+                                    PubKeyBin,
+                                    erlang:system_time(millisecond),
+                                    packet,
+                                    false
+                                ),
+                                {OldUUID, State#state{
+                                    device = Device2,
+                                    frame_cache = maps:put(
+                                        FCnt,
+                                        OldFrameCache#frame_cache{count = OldCount + 1},
+                                        Cache0
+                                    )
+                                }};
+                            true ->
+                                catch blockchain_state_channel_handler:send_response(
+                                    OldPid,
+                                    blockchain_state_channel_response_v1:new(true)
+                                ),
+                                {OldUUID, State#state{
+                                    device = Device2,
+                                    frame_cache = maps:put(
+                                        FCnt,
+                                        NewFrameCache#frame_cache{
+                                            uuid = OldUUID,
+                                            count = OldCount + 1
+                                        },
+                                        Cache0
+                                    )
+                                }}
+                        end
+                end,
+            case SendToChannels of
+                true ->
+                    Data = router_device_channels_worker:new_data_cache(
+                        PubKeyBin,
+                        UUID,
+                        Packet0,
+                        Frame,
+                        Region,
+                        PacketTime
                     ),
-                    lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [FCnt, Timeout]),
-                    _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
-                    {noreply, State#state{
-                        device = Device2,
-                        frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
-                    }};
-                #frame_cache{rssi = OldRSSI, pid = OldPid, count = Count} = OldFrameCache ->
-                    case RSSI0 > OldRSSI of
-                        false ->
-                            catch blockchain_state_channel_handler:send_response(
-                                Pid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
-                            ok = router_metrics:packet_trip_observe_end(
-                                PHash,
-                                PubKeyBin,
-                                erlang:system_time(millisecond),
-                                packet,
-                                false
-                            ),
-                            {noreply, State#state{
-                                device = Device2,
-                                frame_cache = maps:put(
-                                    FCnt,
-                                    OldFrameCache#frame_cache{count = Count + 1},
-                                    Cache0
-                                )
-                            }};
-                        true ->
-                            catch blockchain_state_channel_handler:send_response(
-                                OldPid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
-                            {noreply, State#state{
-                                device = Device2,
-                                frame_cache = maps:put(
-                                    FCnt,
-                                    NewFrameCache#frame_cache{count = Count + 1},
-                                    Cache0
-                                )
-                            }}
-                    end
-            end
+                    ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
+                false ->
+                    ok
+            end,
+            {noreply, State1}
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -558,7 +730,6 @@ handle_info(
         0,
         packet_to_rxq(Packet)
     ),
-    ok = router_device_utils:report_join_request(Device0, PacketSelected, Packets, Blockchain),
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         Reply,
@@ -581,12 +752,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
-    ok = router_device_utils:report_join_accept(
-        Device0,
-        PacketSelected,
-        DownlinkPacket,
-        Blockchain
-    ),
+    ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, Packet, Region),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
@@ -602,6 +768,7 @@ handle_info(
 ) ->
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
+        uuid = UUID,
         packet = Packet,
         pubkey_bin = PubKeyBin,
         frame = Frame,
@@ -611,20 +778,19 @@ handle_info(
     } = FrameCache,
     Cache1 = maps:remove(FCnt, Cache0),
     ok = router_device_routing:clear_multi_buy(Packet),
+    ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),
     case
         handle_frame_timeout(
             Packet,
-            PacketTime,
-            PubKeyBin,
             Region,
             Device0,
             Frame,
             Count,
-            Blockchain,
-            ADRAdjustment
+            ADRAdjustment,
+            router_device:queue(Device0)
         )
     of
         {ok, Device1} ->
@@ -648,8 +814,25 @@ handle_info(
                 frame_cache = Cache1,
                 fcnt = FCnt
             }};
-        {send, Device1, DownlinkPacket} ->
-            case router_device_utils:mtype_to_ack(Frame#frame.mtype) of
+        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, Reply, ChannelMap}} ->
+            IsDownlinkAck =
+                case ACK of
+                    1 -> true;
+                    0 -> false
+                end,
+            ok = router_utils:event_downlink(
+                IsDownlinkAck,
+                ConfirmedDown,
+                Port,
+                Reply,
+                Device1,
+                ChannelMap,
+                Blockchain,
+                PubKeyBin,
+                Packet,
+                Region
+            ),
+            case router_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
@@ -659,7 +842,6 @@ handle_info(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
-
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -929,11 +1111,11 @@ validate_frame(
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
-    FrameAck = router_device_utils:mtype_to_ack(MType),
+    FrameAck = router_utils:mtype_to_ack(MType),
     Window = erlang:system_time(millisecond) - PacketTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
         undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
             lager:debug("we got a late unconfirmed up packet for ~p: lastSeendFCnt: ~p", [
                 FCnt,
@@ -955,15 +1137,14 @@ validate_frame(
                 "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
                 [FCnt, DownlinkHandledAt, Window]
             ),
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
         undefined ->
             ok = do_multi_buy(Packet, Device0, FrameAck),
-            validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain)
+            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain)
     end.
 
 -spec validate_frame_(
     Packet :: blockchain_helium_packet_v1:packet(),
-    PacketTime :: non_neg_integer(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
     Device :: router_device:device(),
@@ -972,7 +1153,7 @@ validate_frame(
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
         {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1047,23 +1228,6 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                         fport = FPort,
                         data = undefined
                     },
-                    Desc =
-                        <<"Packet with empty fopts received from AppEUI: ",
-                            (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                            (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_device_utils:report_status(
-                        up,
-                        Desc,
-                        Device0,
-                        success,
-                        PubKeyBin,
-                        Region,
-                        {Packet, PacketTime},
-                        undefined,
-                        0,
-                        DevAddr,
-                        Blockchain
-                    ),
                     {ok, Frame, Device1, false, {Balance, Nonce}};
                 0 when FOptsLen /= 0 ->
                     lager:debug(
@@ -1074,23 +1238,6 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
                             lorawan_utils:binary_to_hex(AppEUI),
                             AName
                         ]
-                    ),
-                    Desc =
-                        <<"Packet with double fopts received from AppEUI: ",
-                            (lorawan_utils:binary_to_hex(AppEUI))/binary, " DevEUI: ",
-                            (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
-                    ok = router_device_utils:report_status(
-                        up,
-                        Desc,
-                        Device0,
-                        error,
-                        PubKeyBin,
-                        Region,
-                        {Packet, PacketTime},
-                        undefined,
-                        0,
-                        DevAddr,
-                        Blockchain
                     ),
                     {error, double_fopts};
                 _N ->
@@ -1156,73 +1303,28 @@ validate_frame_(Packet, PacketTime, PubKeyBin, Region, Device0, Blockchain) ->
 %% right away
 %% @end
 %%%-------------------------------------------------------------------
-
 -spec handle_frame_timeout(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    #frame{},
-    pos_integer(),
-    blockchain:blockchain(),
-    lorwan_adr:adjustment()
-) ->
-    noop
-    | {ok, router_device:device()}
-    | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
-handle_frame_timeout(
-    Packet,
-    PacketTime,
-    PubKeyBin,
-    Region,
-    Device,
-    Frame,
-    Count,
-    Blockchain,
-    ADRAdjustment
-) ->
-    handle_frame_timeout(
-        Packet,
-        PacketTime,
-        PubKeyBin,
-        Region,
-        Device,
-        Frame,
-        Count,
-        Blockchain,
-        ADRAdjustment,
-        router_device:queue(Device)
-    ).
-
--spec handle_frame_timeout(
-    blockchain_helium_packet_v1:packet(),
-    non_neg_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    #frame{},
-    pos_integer(),
-    blockchain:blockchain(),
-    lorwan_adr:adjustment(),
+    Packet0 :: blockchain_helium_packet_v1:packet(),
+    Region :: atom(),
+    Device0 :: router_device:device(),
+    Frame :: #frame{},
+    Count :: pos_integer(),
+    ADRAdjustment :: lorwan_adr:adjustment(),
     [#downlink{}]
 ) ->
     noop
     | {ok, router_device:device()}
-    | {send, router_device:device(), blockchain_helium_packet_v1:packet()}.
+    | {send, router_device:device(), blockchain_helium_packet_v1:packet(), tuple()}.
 handle_frame_timeout(
     Packet0,
-    PacketTime,
-    PubKeyBin,
     Region,
     Device0,
     Frame,
     Count,
-    Blockchain,
     ADRAdjustment,
     []
 ) ->
-    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
+    ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
@@ -1285,23 +1387,13 @@ handle_frame_timeout(
                 {fcntdown, (FCntDown + 1)}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                undefined,
-                Frame,
-                Blockchain
-            ),
+            EventTuple =
+                {ACK, ConfirmedDown, Port, Reply, #{id => undefined, name => <<"router">>}},
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
-                    {send, router_device:channel_correction(true, Device1), Packet1};
+                    {send, router_device:channel_correction(true, Device1), Packet1, EventTuple};
                 false ->
-                    {send, Device1, Packet1}
+                    {send, Device1, Packet1, EventTuple}
             end;
         _ when ChannelCorrection == false andalso WereChannelsCorrected == true ->
             %% we corrected the channels but don't have anything else to send
@@ -1312,20 +1404,17 @@ handle_frame_timeout(
     end;
 handle_frame_timeout(
     Packet0,
-    PacketTime,
-    PubKeyBin,
     Region,
     Device0,
     Frame,
     Count,
-    Blockchain,
     ADRAdjustment,
     [
         #downlink{confirmed = ConfirmedDown, port = Port, payload = ReplyPayload, channel = Channel}
         | T
     ]
 ) ->
-    ACK = router_device_utils:mtype_to_ack(Frame#frame.mtype),
+    ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
@@ -1391,28 +1480,11 @@ handle_frame_timeout(
         binary_to_list(TxDataRate),
         Rx2
     ),
-    MapChannel = maps:merge(router_channel:to_map(Channel), #{
-        status => success,
-        reported_at => erlang:system_time(seconds),
-        description => <<"downlink sent">>
-    }),
+    EventTuple = {ACK, ConfirmedDown, Port, Reply, router_channel:to_map(Channel)},
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                ReplyPayload,
-                Frame,
-                Blockchain,
-                [MapChannel]
-            ),
-            {send, Device1, Packet1};
+            {send, Device1, Packet1, EventTuple};
         false ->
             DeviceUpdates = [
                 {queue, T},
@@ -1420,20 +1492,7 @@ handle_frame_timeout(
                 {fcntdown, (FCntDown + 1)}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
-            ok = router_device_utils:report_frame_status(
-                ACK,
-                ConfirmedDown,
-                Port,
-                PubKeyBin,
-                Region,
-                Device1,
-                {Packet1, PacketTime},
-                ReplyPayload,
-                Frame,
-                Blockchain,
-                [MapChannel]
-            ),
-            {send, Device1, Packet1}
+            {send, Device1, Packet1, EventTuple}
     end.
 
 %% TODO: we need `link_adr_answer' for ADR. Suggest refactoring this.

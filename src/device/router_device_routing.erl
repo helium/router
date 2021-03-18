@@ -60,7 +60,7 @@
 -define(MB_FUN(Hash), [
     {
         {Hash, '$1', '$2'},
-        [{'<', '$2', '$1'}],
+        [{'=<', '$2', '$1'}],
         [{{Hash, '$1', {'+', '$2', 1}}}]
     }
 ]).
@@ -198,7 +198,9 @@ accept_more(PHash, Max) ->
         [{PHash, Max, _}] ->
             ok;
         _ ->
-            true = ets:insert(?MB_ETS, {PHash, Max, 1}),
+            %% NOTE: Only called for packets. When this is called the first
+            %% time, we've already purchased a packet.
+            true = ets:insert(?MB_ETS, {PHash, Max, 2}),
             ok
     end.
 
@@ -363,11 +365,12 @@ join_offer(Offer, _Pid) ->
 ) -> ok | {error, any()}.
 maybe_buy_join_offer(Offer, _Pid, Device) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    case check_device_is_active(Device) of
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    case check_device_is_active(Device, PubKeyBin) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            case check_device_balance(PayloadSize, Device) of
+            case check_device_balance(PayloadSize, Device, PubKeyBin) of
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
@@ -452,7 +455,7 @@ validate_packet_offer(Offer, _Pid) ->
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
-                    case check_device_is_active(Device) of
+                    case check_device_is_active(Device, PubKeyBin) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
@@ -463,7 +466,7 @@ validate_packet_offer(Offer, _Pid) ->
                                     router_device_worker:handle_offer(WorkerPid, Offer)
                             end,
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-                            case check_device_balance(PayloadSize, Device) of
+                            case check_device_balance(PayloadSize, Device, PubKeyBin) of
                                 {error, _Reason} = Error -> Error;
                                 ok -> {ok, Device}
                             end
@@ -476,7 +479,7 @@ validate_devaddr(DevAddr) ->
     case <<DevAddr:32/integer-unsigned-little>> of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI = router_device_utils:get_router_oui(),
+            OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -591,22 +594,34 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             end
     end.
 
--spec check_device_is_active(router_device:device()) -> ok | {error, any()}.
-check_device_is_active(Device) ->
+-spec check_device_is_active(router_device:device(), libp2p_crypto:pubkey_bin()) ->
+    ok | {error, any()}.
+check_device_is_active(Device, PubKeyBin) ->
     case router_device:is_active(Device) of
         false ->
-            ok = router_device_utils:report_status_inactive(Device),
+            ok = router_utils:event_uplink_dropped_device_inactive(
+                erlang:system_time(millisecond),
+                router_device:fcnt(Device),
+                Device,
+                PubKeyBin
+            ),
             {error, ?DEVICE_INACTIVE};
         true ->
             ok
     end.
 
--spec check_device_balance(non_neg_integer(), router_device:device()) -> ok | {error, any()}.
-check_device_balance(PayloadSize, Device) ->
+-spec check_device_balance(non_neg_integer(), router_device:device(), libp2p_crypto:pubkey_bin()) ->
+    ok | {error, any()}.
+check_device_balance(PayloadSize, Device, PubKeyBin) ->
     Chain = get_chain(),
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
-            ok = router_device_utils:report_status_no_dc(Device),
+            ok = router_utils:event_uplink_dropped_not_enough_dc(
+                erlang:system_time(millisecond),
+                router_device:fcnt(Device),
+                Device,
+                PubKeyBin
+            ),
             {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} ->
             ok
@@ -705,7 +720,7 @@ packet(
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
             Chain = get_chain(),
-            OUI = router_device_utils:get_router_oui(),
+            OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
@@ -809,15 +824,22 @@ send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, 
                 {error, _Reason} = Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    router_device_worker:handle_frame(
-                        WorkerPid,
-                        NwkSKey,
-                        Packet,
-                        PacketTime,
-                        PubKeyBin,
-                        Region,
-                        Pid
-                    )
+                    case
+                        router_device_worker:accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin)
+                    of
+                        false ->
+                            lager:info("device worker refused to pick up the packet");
+                        true ->
+                            router_device_worker:handle_frame(
+                                WorkerPid,
+                                NwkSKey,
+                                Packet,
+                                PacketTime,
+                                PubKeyBin,
+                                Region,
+                                Pid
+                            )
+                    end
             end
     end.
 
@@ -1020,7 +1042,7 @@ multi_buy_test() ->
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, accept_more(PHash)),
-    ?assertEqual([{PHash, ?PACKET_MAX, 1}], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual([{PHash, ?PACKET_MAX, 2}], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
@@ -1108,111 +1130,6 @@ handle_join_offer_test() ->
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
     application:stop(lager),
-    ok.
-
-handle_packet_offer_test() ->
-    Dir = test_utils:tmp_dir("handle_packet_offer_test"),
-    {ok, Pid} = router_db:start_link([Dir]),
-
-    Subnet = <<0, 0, 0, 127, 255, 0>>,
-    <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = Subnet,
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    <<DevAddr:32/integer-unsigned-little>> =
-        <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
-
-    DeviceUpdates = [{devaddr, <<DevAddr:32/integer-unsigned-little>>}],
-    Device0 = router_device:new(<<"device_id">>),
-    Device1 = router_device:update(DeviceUpdates, Device0),
-    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    {ok, Device1} = router_device:save(DB, CF, Device1),
-
-    {ok, _} = router_devices_sup:start_link(),
-
-    meck:new(blockchain_worker, [passthrough]),
-    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(_) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
-    meck:new(blockchain_ledger_routing_v1, [passthrough]),
-    meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
-    meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _, _) -> ok end),
-    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
-    meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),
-    meck:new(router_device_devaddr, [passthrough]),
-    meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
-    meck:new(router_console_dc_tracker, [passthrough]),
-    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
-
-    NewOffer = fun(Payload) ->
-        Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, Payload),
-        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
-        {Offer, PHash}
-    end,
-
-    %% Deny more packets after first
-    {Offer0, PHash0} = NewOffer(<<"payload0">>),
-    ?assertEqual(ok, handle_offer(Offer0, self())),
-    ok = ?MODULE:deny_more(PHash0),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
-
-    %% Accept MAX packets
-    {Offer1, PHash1} = NewOffer(<<"payload1">>),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ok = ?MODULE:accept_more(PHash1),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
-
-    %% Accept more than MAX packets
-    {Offer2, PHash2} = NewOffer(<<"payload2">>),
-    ok = ?MODULE:accept_more(PHash2, ?PACKET_MAX * 2),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer2, self())),
-
-    %% Accept Unlimited Packets
-    {Offer3, PHash3} = NewOffer(<<"paylaod3">>),
-    ok = ?MODULE:accept_more(PHash3, ?MB_UNLIMITED),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    %% exceeding PACKET_MAX
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-
-    gen_server:stop(Pid),
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
-    ?assert(meck:validate(blockchain_ledger_routing_v1)),
-    meck:unload(blockchain_ledger_routing_v1),
-    ?assert(meck:validate(router_metrics)),
-    meck:unload(router_metrics),
-    ?assert(meck:validate(router_device_devaddr)),
-    meck:unload(router_device_devaddr),
-    ?assert(meck:validate(router_console_dc_tracker)),
-    meck:unload(router_console_dc_tracker),
-    ets:delete(?ETS),
-    ets:delete(?BF_ETS),
-    ets:delete(?MB_ETS),
-    ets:delete(?REPLAY_ETS),
-    ets:delete(router_devices_ets),
-    ets:delete(router_device_cache_ets),
     ok.
 
 -endif.

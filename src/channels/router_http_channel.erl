@@ -45,23 +45,31 @@ init({[Channel, Device], _}) ->
     {ok, #state{channel = Channel, url = URL, headers = Headers1, method = Method}}.
 
 handle_event(
-    {data, Ref, Data},
+    {data, UUIDRef, Data},
     #state{channel = Channel, url = URL, headers = Headers, method = Method} = State
 ) ->
     lager:debug("got data: ~p", [Data]),
+    Pid = router_channel:controller(Channel),
     DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
+
     Res = make_http_req(Method, URL, Headers, Body),
+
+    RequestReport = make_request_report(Res, Body, State),
+    ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
+
+    case Res of
+        {ok, {ok, StatusCode, _Headers, ResponseBody}} when StatusCode >= 200, StatusCode =< 300 ->
+            ok = router_device_channels_worker:handle_downlink(Pid, ResponseBody, Channel);
+        _ ->
+            ok
+    end,
+
     lager:debug("published: ~p result: ~p", [Body, Res]),
-    Debug = #{
-        req => #{
-            method => Method,
-            url => URL,
-            headers => Headers,
-            body => Body
-        }
-    },
-    ok = handle_http_res(Res, Channel, Ref, Debug),
+
+    ResponseReport = make_response_report(Res, Channel),
+    ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
+
     {ok, State};
 handle_event(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -99,7 +107,7 @@ make_http_req(Method, URL, Headers, Payload) ->
             Error;
         ok ->
             try hackney:request(Method, URL, Headers, Payload, [with_body]) of
-                Res -> Res
+                Res -> {ok, Res}
             catch
                 _What:_Why:_Stacktrace ->
                     lager:warning("failed http req ~p,  What: ~p Why: ~p / ~p", [
@@ -174,64 +182,101 @@ is_non_local_address(Host) ->
             ok
     end.
 
--spec handle_http_res(any(), router_channel:channel(), reference(), map()) -> ok.
-handle_http_res(Res, Channel, Ref, Debug) ->
-    Pid = router_channel:controller(Channel),
-    Result0 = #{
+-spec make_request_report(HeliumError | HackneyResponse, any(), #state{}) -> map() when
+    HeliumError :: {error, atom()},
+    HackneyResponse :: {ok, any()}.
+make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+    %% Helium Error
+    #{
+        request => #{
+            method => Method,
+            url => URL,
+            headers => Headers,
+            body => Body
+        },
+        status => error,
+        description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
+    };
+make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+    Request = #{
+        method => Method,
+        url => URL,
+        headers => Headers,
+        body => Body
+    },
+    case Response of
+        {error, Reason} ->
+            %% Hackney Error
+            #{
+                status => error,
+                description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason])),
+                request => Request
+            };
+        {ok, _, _, _} ->
+            #{
+                request => Request,
+                status => success
+            }
+    end.
+
+-spec make_response_report(HeliumError | HackneyResponse, router_channel:channel()) -> map() when
+    HeliumError :: {error, atom()},
+    HackneyResponse :: {ok, any()}.
+make_response_report({error, Reason}, Channel) ->
+    %% Helium Error
+    #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel),
-        reported_at => erlang:system_time(seconds)
+        response => #{},
+        status => error,
+        description => list_to_binary(io_lib:format("Error: ~p", [Reason]))
+    };
+make_response_report({ok, Res}, Channel) ->
+    Result0 = #{
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel)
     },
-    Result1 =
-        case Res of
-            {ok, StatusCode, ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => <<>>
-                        }
-                    }),
-                    status => success,
-                    description => <<"Connection established">>
-                });
-            {ok, StatusCode, ResponseHeaders, ResponseBody} when
-                StatusCode >= 200, StatusCode =< 300
-            ->
-                router_device_channels_worker:handle_downlink(Pid, ResponseBody, Channel),
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => ResponseBody
-                        }
-                    }),
-                    status => success,
-                    description => ResponseBody
-                });
-            {ok, StatusCode, ResponseHeaders, ResponseBody} ->
-                SCBin = erlang:integer_to_binary(StatusCode),
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{
-                        res => #{
-                            code => StatusCode,
-                            headers => ResponseHeaders,
-                            body => ResponseBody
-                        }
-                    }),
-                    status => failure,
-                    description => <<"ResponseCode: ", SCBin/binary, " Body ", ResponseBody/binary>>
-                });
-            {error, Reason} ->
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
-                    status => failure,
-                    description => list_to_binary(io_lib:format("~p", [Reason]))
-                })
-        end,
-    router_device_channels_worker:report_status(Pid, Ref, Result1).
+
+    case Res of
+        {ok, StatusCode, ResponseHeaders, <<>>} when StatusCode >= 200, StatusCode =< 300 ->
+            maps:merge(Result0, #{
+                response => #{
+                    code => StatusCode,
+                    headers => ResponseHeaders,
+                    body => <<>>
+                },
+                status => success,
+                description => <<"Connection established">>
+            });
+        {ok, StatusCode, ResponseHeaders, ResponseBody} when StatusCode >= 200, StatusCode =< 300 ->
+            maps:merge(Result0, #{
+                response => #{
+                    code => StatusCode,
+                    headers => ResponseHeaders,
+                    body => ResponseBody
+                },
+                status => success,
+                description => <<"Connection Success">>
+            });
+        {ok, StatusCode, ResponseHeaders, ResponseBody} ->
+            SCBin = erlang:integer_to_binary(StatusCode),
+            maps:merge(Result0, #{
+                response => #{
+                    code => StatusCode,
+                    headers => ResponseHeaders,
+                    body => ResponseBody
+                },
+                status => error,
+                description => <<"Error ResponseCode: ", SCBin/binary>>
+            });
+        {error, Reason} ->
+            %% Hackney Error
+            maps:merge(Result0, #{
+                response => #{},
+                status => error,
+                description => list_to_binary(io_lib:format("Error: ~p", [Reason]))
+            })
+    end.
 
 -spec content_type_or_default(list()) -> list().
 content_type_or_default(Headers) ->

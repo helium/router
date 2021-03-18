@@ -76,8 +76,28 @@ init({[Channel, Device], _}) ->
             }}
     end.
 
-handle_event({data, Ref, Data}, State) ->
-    publish(Ref, Data, State);
+handle_event({data, UUIDRef, Data}, #state{channel = Channel} = State0) ->
+    Pid = router_channel:controller(Channel),
+
+    Response = publish(Data, State0),
+
+    RequestReport = make_request_report(Response, Data, State0),
+    ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
+
+    State1 =
+        case Response of
+            {error, failed_to_publish} ->
+                #state{channel_id = ChannelID, connection_backoff = Backoff0} = State0,
+                Backoff1 = reconnect(ChannelID, Backoff0),
+                State0#state{connection_backoff = Backoff1};
+            _ ->
+                State0
+        end,
+
+    ResponseReport = make_response_report(Response, Channel),
+    ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
+
+    {ok, State1};
 handle_event(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown cast msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
@@ -199,60 +219,26 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec publish(reference(), map(), #state{}) -> {ok, #state{}}.
-publish(
-    Ref,
-    Data,
-    #state{
-        channel = Channel,
-        connection = undefined,
-        endpoint = Endpoint,
-        uplink_topic = Topic
-    } = State
-) ->
+-spec publish(map(), #state{}) -> {ok, any()} | {error, not_connected | failed_to_publish}.
+publish(_Data, #state{connection = undefined}) ->
+    {error, not_connected};
+publish(Data, #state{
+    channel = Channel,
+    channel_id = ChannelID,
+    connection = Conn,
+    uplink_topic = Topic
+}) ->
     Body = router_channel:encode_data(Channel, Data),
-    Debug = #{
-        req => #{
-            endpoint => Endpoint,
-            topic => Topic,
-            qos => 0,
-            body => Body
-        }
-    },
-    ok = handle_publish_res({error, not_connected}, Channel, Ref, Debug),
-    {ok, State};
-publish(
-    Ref,
-    Data,
-    #state{
-        channel = Channel,
-        channel_id = ChannelID,
-        connection = Conn,
-        connection_backoff = Backoff0,
-        endpoint = Endpoint,
-        uplink_topic = Topic
-    } = State
-) ->
-    Body = router_channel:encode_data(Channel, Data),
-    Debug = #{
-        req => #{
-            endpoint => Endpoint,
-            topic => Topic,
-            qos => 0,
-            body => Body
-        }
-    },
+
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
             lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
-            ok = handle_publish_res(Resp, Channel, Ref, Debug),
-            {ok, State}
+            {ok, Resp}
     catch
         _:_ ->
+            %% TODO: log more of the errors
             lager:error("[~s] failed to publish", [ChannelID]),
-            ok = handle_publish_res({error, publish_failed}, Channel, Ref, Debug),
-            Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff = Backoff1}}
+            {error, failed_to_publish}
     end.
 
 -spec ping(binary()) -> reference().
@@ -275,36 +261,47 @@ cleanup_connection(Conn) ->
     (catch emqtt:stop(Conn)),
     ok.
 
--spec handle_publish_res(any(), router_channel:channel(), reference(), map()) -> ok.
-handle_publish_res(Res, Channel, Ref, Debug) ->
-    Pid = router_channel:controller(Channel),
+-spec make_request_report({ok | error, any()}, any(), #state{}) -> map().
+make_request_report(Request, Data, #state{
+    channel = Channel,
+    endpoint = Endpoint,
+    uplink_topic = Topic
+}) ->
+    Map = #{
+        endpoint => Endpoint,
+        topic => Topic,
+        qos => 0,
+        body => router_channel:encode_data(Channel, Data)
+    },
+    case Request of
+        {error, Reason} ->
+            Description = list_to_binary(io_lib:format("~p", [Reason])),
+            maps:merge(Map, #{status => error, description => Description});
+        {ok, _} ->
+            maps:merge(Map, #{status => success, description => <<"published">>})
+    end.
+
+-spec make_response_report(any(), router_channel:channel()) -> map().
+make_response_report(Res, Channel) ->
     Result0 = #{
         id => router_channel:id(Channel),
-        name => router_channel:name(Channel),
-        reported_at => erlang:system_time(seconds)
+        name => router_channel:name(Channel)
     },
-    Result1 =
-        case Res of
-            {ok, PacketID} ->
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{packet_id => PacketID}}),
-                    status => success,
-                    description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))
-                });
-            ok ->
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
-                    status => success,
-                    description => <<"ok">>
-                });
-            {error, Reason} ->
-                maps:merge(Result0, #{
-                    debug => maps:merge(Debug, #{res => #{}}),
-                    status => failure,
-                    description => list_to_binary(io_lib:format("~p", [Reason]))
-                })
-        end,
-    router_device_channels_worker:report_status(Pid, Ref, Result1).
+
+    case Res of
+        {ok, PacketID} ->
+            maps:merge(Result0, #{
+                response => #{packet_id => PacketID},
+                status => success,
+                description => list_to_binary(io_lib:format("Packet ID: ~b", [PacketID]))
+            });
+        {error, Reason} ->
+            maps:merge(Result0, #{
+                response => #{},
+                status => error,
+                description => list_to_binary(io_lib:format("~p", [Reason]))
+            })
+    end.
 
 -spec connect(
     DeviceID :: binary(),

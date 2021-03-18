@@ -16,7 +16,7 @@
     get_devices_by_deveui_appeui/2,
     get_all_devices/0,
     get_channels/2,
-    report_status/2,
+    event/2,
     get_downlink_url/2,
     get_org/1,
     organizations_burned/3
@@ -34,14 +34,9 @@
     code_change/3
 ]).
 
-%% ------------------------------------------------------------------
-%% Channel Function Exports
-%% ------------------------------------------------------------------
--export([debug_active_for_device/1]).
-
 -define(SERVER, ?MODULE).
 -define(POOL, router_console_api_pool).
--define(ETS, router_console_debug_ets).
+-define(ETS, router_console_api_ets).
 -define(TOKEN_CACHE_TIME, timer:hours(23)).
 -define(TICK_INTERVAL, 1000).
 -define(TICK, '__router_console_api_tick').
@@ -57,10 +52,9 @@
 -define(GET_DEVICES_LIFETIME, 10).
 -define(GET_ORG_EVICTION_TIMEOUT, timer:seconds(10)).
 
--type uuid_v4() :: binary().
 -type request_body() :: maps:map().
--type pending() :: #{uuid_v4() => request_body()}.
--type inflight() :: {uuid_v4(), pid()}.
+-type pending() :: #{router_utils:uuid_v4() => request_body()}.
+-type inflight() :: {router_utils:uuid_v4(), pid()}.
 
 -record(state, {
     endpoint :: binary(),
@@ -176,81 +170,120 @@ get_channels(Device, DeviceWorkerPid) ->
             Channels1
     end.
 
--spec report_status(Device :: router_device:device(), Map :: map()) -> ok.
-report_status(Device, Map) ->
+-spec event(Device :: router_device:device(), Map :: map()) -> ok.
+event(Device, Map) ->
     erlang:spawn(
         fun() ->
             ok = router_utils:lager_md(Device),
+            lager:debug("event ~p", [Map]),
             {Endpoint, Token} = token_lookup(),
             DeviceID = router_device:id(Device),
             Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
             Category = maps:get(category, Map),
-            Channels = maps:get(channels, Map),
-            FrameUp = maps:get(fcnt, Map, router_device:fcnt(Device)),
-            DCMap0 =
-                case maps:get(dc, Map, undefined) of
-                    undefined ->
-                        Metadata = router_device:metadata(Device),
-                        OrgID = maps:get(organization_id, Metadata, <<>>),
-                        {B, N} = router_console_dc_tracker:current_balance(OrgID),
-                        #{balance => B, nonce => N};
-                    BN ->
-                        BN
+            true = lists:member(Category, [
+                uplink,
+                uplink_dropped,
+                downlink,
+                downlink_dropped,
+                join_request,
+                join_accept,
+                misc
+            ]),
+            SubCategory = maps:get(sub_category, Map, undefined),
+            true = lists:member(SubCategory, [
+                undefined,
+                uplink_confirmed,
+                uplink_unconfirmed,
+                uplink_integration_req,
+                uplink_integration_res,
+                uplink_dropped_device_inactive,
+                uplink_dropped_not_enough_dc,
+                uplink_dropped_late,
+                uplink_dropped_invalid,
+                downlink_confirmed,
+                downlink_unconfirmed,
+                downlink_dropped_payload_size_exceeded,
+                downlink_dropped_misc,
+                downlink_queued,
+                downlink_ack,
+                misc_integration_error
+            ]),
+            Data =
+                case {Category, SubCategory} of
+                    {_C, SC} when
+                        SC == uplink_integration_req orelse
+                            SC == uplink_integration_res orelse
+                            SC == downlink_dropped_payload_size_exceeded orelse
+                            SC == downlink_dropped_misc orelse
+                            SC == downlink_queued orelse
+                            SC == misc_integration_error
+                    ->
+                        Report = #{
+                            integration => #{
+                                id => maps:get(channel_id, Map),
+                                name => maps:get(channel_name, Map),
+                                status => maps:get(channel_status, Map)
+                            }
+                        },
+                        case SC of
+                            uplink_integration_req -> Report#{req => maps:get(request, Map)};
+                            uplink_integration_res -> Report#{res => maps:get(response, Map)};
+                            _ -> Report
+                        end;
+                    {uplink_dropped, _SC} ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            hotspot => maps:get(hotspot, Map)
+                        };
+                    {uplink, SC} when SC == uplink_confirmed orelse SC == uplink_unconfirmed ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            dc => maps:get(dc, Map)
+                        };
+                    {C, _SC} when
+                        C == uplink orelse
+                            C == downlink orelse
+                            C == join_request orelse
+                            C == join_accept
+                    ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map)
+                        }
                 end,
-            PayloadSize = maps:get(payload_size, Map),
-            Hotspots = maps:get(hotspots, Map),
-            DCMap1 =
-                case lists:member(Category, [<<"up">>, join_req]) of
-                    false ->
-                        DCMap0;
-                    true ->
-                        Ledger = blockchain:ledger(blockchain_worker:blockchain()),
-                        Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
-                        maps:put(used, Used * erlang:length(Hotspots), DCMap0)
-                end,
-            Body0 = #{
+            Body = #{
+                id => maps:get(id, Map),
                 category => Category,
+                sub_category => SubCategory,
                 description => maps:get(description, Map),
                 reported_at => maps:get(reported_at, Map),
-                device_id => DeviceID,
-                frame_up => FrameUp,
-                frame_down => router_device:fcntdown(Device),
-                payload_size => maps:get(payload_size, Map),
-                port => maps:get(port, Map, 0),
-                devaddr => maps:get(devaddr, Map),
-                hotspots => Hotspots,
-                channels => [maps:remove(debug, C) || C <- Channels],
-                dc => DCMap1
+                device_id => router_device:id(Device),
+                data => Data
             },
-            DebugLeft = debug_lookup(DeviceID),
-            Body1 =
-                case
-                    DebugLeft > 0 andalso lists:member(Category, [<<"up">>, <<"down">>, down, ack])
-                of
-                    false ->
-                        Body0;
-                    true ->
-                        case DebugLeft - 1 =< 0 of
-                            false -> debug_insert(DeviceID, DebugLeft - 1);
-                            true -> debug_delete(DeviceID)
-                        end,
-                        B0 = maps:put(payload, maps:get(payload, Map), Body0),
-                        maps:put(channels, Channels, B0)
-                end,
-            lager:debug("post ~p to ~p", [Body1, Url]),
+            lager:debug("post ~p to ~p", [Body, Url]),
             Start = erlang:system_time(millisecond),
             case
                 hackney:post(
                     Url,
                     [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                    jsx:encode(Body1),
+                    jsx:encode(Body),
                     [with_body, {pool, ?POOL}]
                 )
             of
                 {ok, 200, _Headers, _Body} ->
                     End = erlang:system_time(millisecond),
                     ok = router_metrics:console_api_observe(report_status, ok, End - Start);
-                _ ->
+                _Other ->
+                    lager:warning("got non 200 resp ~p", [_Other]),
                     End = erlang:system_time(millisecond),
                     ok = router_metrics:console_api_observe(report_status, error, End - Start)
             end
@@ -285,13 +318,6 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
-
-%% ------------------------------------------------------------------
-%% Channel Function Definitions
-%% ------------------------------------------------------------------
--spec debug_active_for_device(DeviceID :: binary()) -> boolean().
-debug_active_for_device(DeviceID) ->
-    debug_lookup(DeviceID) > 0.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -330,7 +356,7 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({hnt_burn, Body}, #state{db = DB, pending_burns = P, inflight = I} = State) ->
-    Uuid = uuid_v4(),
+    Uuid = router_utils:uuid_v4(),
     ReqBody = Body#{request_id => Uuid},
     NewP = maps:put(Uuid, ReqBody, P),
     ok = store_pending_burns(DB, NewP),
@@ -401,18 +427,6 @@ handle_info(ws_joined, #state{ws = WSPid} = State) ->
         #{address => B58}
     ),
     WSPid ! {ws_resp, Payload},
-    {noreply, State};
-handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:debug:devices">>, #{<<"devices">> := DeviceIDs}},
-    State
-) ->
-    lager:info("turning debug on for devices ~p", [DeviceIDs]),
-    lists:foreach(
-        fun(DeviceID) ->
-            ok = debug_insert(DeviceID, 10)
-        end,
-        DeviceIDs
-    ),
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:clear_downlink_queue:devices">>, #{
@@ -862,23 +876,6 @@ token_insert(Endpoint, Token) ->
     true = ets:insert(?ETS, {token, {Endpoint, Token}}),
     ok.
 
--spec debug_lookup(DeviceID :: binary()) -> non_neg_integer().
-debug_lookup(DeviceID) ->
-    case ets:lookup(?ETS, DeviceID) of
-        [] -> 0;
-        [{DeviceID, Limit}] -> Limit
-    end.
-
--spec debug_insert(DeviceID :: binary(), Limit :: non_neg_integer()) -> ok.
-debug_insert(DeviceID, Limit) ->
-    true = ets:insert(?ETS, {DeviceID, Limit}),
-    ok.
-
--spec debug_delete(binary()) -> ok.
-debug_delete(DeviceID) ->
-    true = ets:delete(?ETS, DeviceID),
-    ok.
-
 -spec schedule_next_tick() -> reference().
 schedule_next_tick() ->
     erlang:send_after(?TICK_INTERVAL, self(), ?TICK).
@@ -958,7 +955,7 @@ maybe_spawn_pending_burns(P, I) ->
     ).
 
 -spec spawn_pending_burn(
-    Uuid :: uuid_v4(),
+    Uuid :: router_utils:uuid_v4(),
     Body :: maps:map()
 ) -> pid().
 spawn_pending_burn(Uuid, Body) ->
@@ -968,13 +965,13 @@ spawn_pending_burn(Uuid, Body) ->
     end).
 
 -spec do_hnt_burn_post(
-    Uuid :: uuid_v4(),
+    Uuid :: router_utils:uuid_v4(),
     ReplyPid :: pid(),
     Body :: request_body(),
     Delay :: pos_integer(),
     Next :: pos_integer(),
     Retries :: non_neg_integer()
-) -> {hnt_burn, success | fail, uuid_v4()}.
+) -> {hnt_burn, success | fail, router_utils:uuid_v4()}.
 do_hnt_burn_post(Uuid, ReplyPid, _Body, _Delay, _Next, 0) ->
     ReplyPid ! {hnt_burn, fail, Uuid};
 do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
@@ -1008,14 +1005,3 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
             %% fibonacci delay timer
             do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)
     end.
-
-%% quoted from https://github.com/afiskon/erlang-uuid-v4/blob/master/src/uuid.erl
-%% MIT License
--spec uuid_v4() -> uuid_v4().
-uuid_v4() ->
-    <<A:32, B:16, C:16, D:16, E:48>> = crypto:strong_rand_bytes(16),
-    Str = io_lib:format(
-        "~8.16.0b-~4.16.0b-4~3.16.0b-~4.16.0b-~12.16.0b",
-        [A, B, C band 16#0fff, D band 16#3fff bor 16#8000, E]
-    ),
-    list_to_binary(Str).

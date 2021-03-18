@@ -156,34 +156,31 @@ lw_join_test(Config) ->
     end,
 
     {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-    test_utils:wait_for_console_event(<<"join_req">>, #{
-        <<"category">> => <<"join_req">>,
-        <<"description">> => '_',
+    test_utils:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"selected">> => true,
-                <<"rssi">> => '_',
-                <<"snr">> => '_',
+                <<"rssi">> => -35.0,
+                <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF7BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',
                 <<"long">> => '_'
             }
-        ],
-        <<"channels">> => []
+        }
     }),
 
     %% Waiting for reply resp form router
@@ -227,6 +224,7 @@ lw_join_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -244,7 +242,7 @@ lw_join_test(Config) ->
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => 2,
         <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
+
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
@@ -263,61 +261,22 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from console downlink
-    test_utils:wait_for_console_event(<<"down">>, #{
-        <<"category">> => <<"down">>,
-        <<"description">> => '_',
+    test_utils:wait_for_console_event_sub(<<"downlink_confirmed">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_confirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
+        <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 27,
-                <<"snr">> => 0.0,
-                <<"spreading">> => fun erlang:is_binary/1,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => '_',
-                <<"long">> => '_'
-            }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
-    }),
-
-    %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"up">>, #{
-        <<"category">> => <<"up">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => 1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
                 <<"rssi">> => -35.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF7BW125">>,
@@ -326,19 +285,89 @@ lw_join_test(Config) ->
                 <<"lat">> => '_',
                 <<"long">> => '_'
             }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
+        }
     }),
 
-    test_utils:wait_state_channel_message(router_device_utils:frame_timeout() + 250, PubKeyBin0),
+    %% Waiting for report channel status from HTTP channel
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                    <<"name">> => erlang:list_to_binary(HotspotName0),
+                    <<"rssi">> => -35.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF7BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => '_',
+                    <<"long">> => '_'
+                }
+            }
+        }
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => UplinkUUID1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"method">> => fun erlang:is_binary/1,
+                <<"url">> => fun erlang:is_binary/1,
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
+        <<"id">> => UplinkUUID1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_res">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"res">> => #{
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1,
+                <<"code">> => fun erlang:is_integer/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin0),
 
     receive
         rx -> ok
@@ -348,6 +377,7 @@ lw_join_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
@@ -365,7 +395,7 @@ lw_join_test(Config) ->
         <<"payload_size">> => fun erlang:is_integer/1,
         <<"port">> => 2,
         <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
+
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
@@ -384,81 +414,112 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"up">>, #{
-        <<"category">> => <<"up">>,
-        <<"description">> => '_',
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_confirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_confirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+                    <<"name">> => erlang:list_to_binary(HotspotName0),
+                    <<"rssi">> => -35.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF7BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => '_',
+                    <<"long">> => '_'
+                }
+            }
+        }
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => UplinkUUID2,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => 1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"method">> => fun erlang:is_binary/1,
+                <<"url">> => fun erlang:is_binary/1,
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
+        <<"id">> => UplinkUUID2,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_res">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"res">> => #{
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1,
+                <<"code">> => fun erlang:is_integer/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"downlink_ack">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_ack">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 2,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => -35.0,
-                <<"snr">> => 0.0,
+                <<"rssi">> => '_',
+                <<"snr">> => '_',
                 <<"spreading">> => <<"SF7BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',
                 <<"long">> => '_'
             }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
+        }
     }),
 
-    test_utils:wait_for_console_event(<<"ack">>, #{
-        <<"category">> => <<"ack">>,
-        <<"description">> => '_',
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"frame_up">> => fun erlang:is_integer/1,
-        <<"frame_down">> => fun erlang:is_integer/1,
-        <<"payload_size">> => fun erlang:is_integer/1,
-        <<"port">> => '_',
-        <<"devaddr">> => '_',
-        <<"dc">> => fun erlang:is_map/1,
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => '_',
-                <<"snr">> => '_',
-                <<"spreading">> => '_',
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => '_',
-                <<"long">> => '_'
-            }
-        ],
-        <<"channels">> => [
-            #{
-                <<"id">> => router_channel:id(Channel),
-                <<"name">> => router_channel:name(Channel),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"description">> => '_'
-            }
-        ]
-    }),
-
-    test_utils:wait_state_channel_message(router_device_utils:frame_timeout() + 250, PubKeyBin0),
+    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin0),
 
     Stream0 ! get_channel_mask,
     receive

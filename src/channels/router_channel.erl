@@ -104,10 +104,10 @@ update(Pid, Channel, Device) ->
 -spec handle_data(
     EventManagerPid :: pid(),
     Data :: map(),
-    Ref :: reference()
+    UUID :: router_utils:uuid_v4()
 ) -> ok.
-handle_data(Pid, Data, Ref) ->
-    ok = gen_event:notify(Pid, {data, Ref, Data}).
+handle_data(Pid, Data, UUID) ->
+    ok = gen_event:notify(Pid, {data, UUID, Data}).
 
 %% ------------------------------------------------------------------
 %% Channel Functions

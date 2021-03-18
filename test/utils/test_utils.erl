@@ -9,15 +9,18 @@
     get_device_last_seen_fcnt/1,
     get_last_dev_nonce/1,
     get_device_worker_device/1,
+    get_device_worker_offer_cache/1,
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
+    wait_for_console_event_sub/2,
     wait_for_join_resp/3,
     wait_channel_data/1,
     wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
     wait_organizations_burned/1,
     join_payload/2,
     join_packet/3, join_packet/4,
+    join_device/1,
     frame_payload/6,
     frame_packet/5, frame_packet/6,
     deframe_packet/2,
@@ -184,10 +187,96 @@ start_swarm(BaseDir, Name, Port) ->
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     {Swarm, Keys}.
 
+join_device(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packet
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, ?MODULE:join_packet(PubKeyBin, AppKey, DevNonce)},
+    timer:sleep(router_utils:join_timeout()),
+
+    %% Waiting for report device status on that join request
+    ?MODULE:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    %% Waiting for report device status on that join request
+    ?MODULE:wait_for_console_event(<<"join_accept">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_accept">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                %% TODO: Accept RSSI 27 like old times?
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    #{
+        app_key => AppKey,
+        dev_nonce => DevNonce,
+        hotspot_name => HotspotName,
+        stream => Stream,
+        pubkey_bin => PubKeyBin
+    }.
+
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADREngine, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
+        _IsActive} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
@@ -195,7 +284,7 @@ get_device_channels_worker(DeviceID) ->
 get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
-        LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     LastDevNonce.
@@ -203,13 +292,13 @@ get_last_dev_nonce(DeviceID) ->
 get_channel_worker_event_manager(DeviceID) ->
     ChannelWorkerPid = get_device_channels_worker(DeviceID),
     {state, _Chain, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs,
-        _DataCache, _BalanceCache, _FCnt, _ChannelsRespCache} = sys:get_state(ChannelWorkerPid),
+        _DataCache} = sys:get_state(ChannelWorkerPid),
     EventManagerPid.
 
 get_device_last_seen_fcnt(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, FCnt, _OUI, _ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     FCnt.
@@ -217,10 +306,18 @@ get_device_last_seen_fcnt(DeviceID) ->
 get_device_worker_device(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     Device.
+
+get_device_worker_offer_cache(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
+        _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
+    OfferCache.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),
@@ -236,14 +333,40 @@ ignore_messages() ->
     after 2000 -> ok
     end.
 
-% "category": "up | down | join_req | join_accept | ack | packet_dropped | channel_crash | channel_start_error"
+% "category": "uplink | downlink | misc"
+wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
+    erlang:is_binary(ExpectedUUID)
+->
+    try
+        receive
+            {console_event, Category, _, #{<<"id">> := ExpectedUUID} = Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        {ok, Got};
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event (explicit id) ~p data failed ~p", [
+                            Category,
+                            Reason
+                        ])
+                end
+        after 4250 -> ct:fail("wait_for_console_event (explicit id) ~p timeout", [Category])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~p~n", [
+                Category,
+                {_Reason, _Stacktrace}
+            ]),
+            ct:fail("wait_for_console_event (explicit id) ~p failed", [Category])
+    end;
 wait_for_console_event(Category, Expected) ->
     try
         receive
-            {console_event, Category, Got} ->
+            {console_event, Category, _, Got} ->
                 case match_map(Expected, Got) of
                     true ->
-                        ok;
+                        {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_for_console_event ~p data failed ~p", [Category, Reason])
@@ -254,6 +377,62 @@ wait_for_console_event(Category, Expected) ->
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
             ct:fail("wait_for_console_event ~p failed", [Category])
+    end.
+
+% "sub_category":
+%   "undefined
+%   | uplink_confirmed | uplink_unconfirmed | uplink_integration_req | uplink_integration_res | uplink_dropped
+%   | downlink_confirmed | downlink_unconfirmed | downlink_dropped | downlink_queued | downlink_ack
+%   | misc_integration_error"
+wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) when
+    erlang:is_binary(ExpectedUUID)
+->
+    try
+        receive
+            {console_event, _, SubCategory, #{<<"id">> := ExpectedUUID} = Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        {ok, Got};
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event_sub (explicit id) ~p data failed ~n~p", [
+                            SubCategory,
+                            Reason
+                        ])
+                end
+        after 4250 -> ct:fail("wait_for_console_event_sub (explicit id) ~p timeout", [SubCategory])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event_sub (explicit id) ~p stacktrace ~p~n", [
+                SubCategory,
+                {_Reason, _Stacktrace}
+            ]),
+            ct:fail("wait_for_console_event_sub (explicit id) ~p failed", [SubCategory])
+    end;
+wait_for_console_event_sub(SubCategory, Expected) ->
+    try
+        receive
+            {console_event, _, SubCategory, Got} ->
+                case match_map(Expected, Got) of
+                    true ->
+                        {ok, Got};
+                    {false, Reason} ->
+                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+                        ct:fail("wait_for_console_event_sub ~p data failed ~p", [
+                            SubCategory,
+                            Reason
+                        ])
+                end
+        after 4250 -> ct:fail("wait_for_console_event_sub ~p timeout", [SubCategory])
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_for_console_event_sub ~p stacktrace ~p~n", [
+                SubCategory,
+                {_Reason, _Stacktrace}
+            ]),
+            ct:fail("wait_for_console_event_sub ~p failed", [SubCategory])
     end.
 
 wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->
@@ -285,7 +464,7 @@ wait_channel_data(Expected) ->
             {channel_data, Got} ->
                 case match_map(Expected, Got) of
                     true ->
-                        ok;
+                        {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
                         ct:fail("wait_channel_data failed ~p", [Reason])
@@ -449,21 +628,35 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     DevAddr = maps:get(devaddr, Options, <<33554431:25/integer-unsigned-little, $H:7/integer>>),
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
+    Routing =
+        case maps:get(routing, Options, false) of
+            true ->
+                <<DevNum:32/integer-unsigned-little>> = DevAddr,
+                blockchain_helium_packet_v1:make_routing_info({devaddr, DevNum});
+            false ->
+                undefined
+        end,
     HeliumPacket = #packet_pb{
         type = lorawan,
         payload = Payload1,
         frequency = 923.3,
         datarate = maps:get(datarate, Options, <<"SF8BW125">>),
         signal_strength = maps:get(rssi, Options, 0.0),
-        snr = maps:get(snr, Options, 0.0)
+        snr = maps:get(snr, Options, 0.0),
+        routing = Routing
     },
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
         region = 'US915'
     },
-    Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    case maps:get(dont_encode, Options, false) of
+        true ->
+            Packet;
+        false ->
+            Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
+            blockchain_state_channel_v1_pb:encode_msg(Msg)
+    end.
 
 frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     OptionsBoolToBit = fun(Key) ->

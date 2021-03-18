@@ -144,15 +144,14 @@ event_uplink_dropped_device_inactive(Timestamp, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
+        sub_category => uplink_dropped_device_inactive,
+        description => <<"Device inactive packet dropped">>,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        %%
-        description => <<"Device inactive packet dropped">>,
-        sub_category => uplink_dropped_device_inactive,
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -167,15 +166,14 @@ event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
+        sub_category => uplink_dropped_not_enough_dc,
+        description => <<"Not enough DC">>,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        %%
-        description => <<"Not enough DC">>,
-        sub_category => uplink_dropped_not_enough_dc,
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -190,15 +188,14 @@ event_uplink_dropped_late_packet(Timestamp, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
+        sub_category => uplink_dropped_late,
+        description => <<"Late packet">>,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        %%
-        description => <<"Late packet">>,
-        sub_category => uplink_dropped_late,
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -226,15 +223,14 @@ event_uplink_dropped_invalid_packet(
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
+        sub_category => uplink_dropped_invalid,
+        description => <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,
         port => 0,
         devaddr => router_device:devaddr(Device),
-        %%
-        description => <<"Invalid Packet: ", (erlang:atom_to_binary(Reason, utf8))/binary>>,
-        sub_category => uplink_dropped_invalid,
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
     },
 
@@ -299,6 +295,7 @@ event_downlink_dropped_payload_size_exceeded(Desc, Port, Payload, Device, Channe
     Map = #{
         id => router_utils:uuid_v4(),
         category => downlink_dropped,
+        sub_category => downlink_dropped_payload_size_exceeded,
         description => Desc,
         reported_at => erlang:system_time(millisecond),
         fcnt => router_device:fcntdown(Device),
@@ -309,9 +306,7 @@ event_downlink_dropped_payload_size_exceeded(Desc, Port, Payload, Device, Channe
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
-        channel_status => <<"error">>,
-        %%
-        sub_category => downlink_dropped_payload_size_exceeded
+        channel_status => <<"error">>
     },
     ok = router_console_api:event(Device, Map).
 
@@ -326,6 +321,7 @@ event_downlink_dropped_misc(Desc, Port, Payload, Device, ChannelMap) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => downlink_dropped,
+        sub_category => downlink_dropped_misc,
         description => Desc,
         reported_at => erlang:system_time(millisecond),
         fcnt => router_device:fcntdown(Device),
@@ -336,9 +332,7 @@ event_downlink_dropped_misc(Desc, Port, Payload, Device, ChannelMap) ->
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
-        channel_status => <<"error">>,
-        %%
-        sub_category => downlink_dropped_misc
+        channel_status => <<"error">>
     },
     ok = router_console_api:event(Device, Map).
 
@@ -383,7 +377,6 @@ event_uplink_integration_req(UUID, Device, Status, Description, Request, Channel
         sub_category => uplink_integration_req,
         description => Description,
         reported_at => erlang:system_time(millisecond),
-        %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
         channel_status => Status,
@@ -406,7 +399,6 @@ event_uplink_integration_res(UUID, Device, Status, Description, Response, Channe
         sub_category => uplink_integration_res,
         description => Description,
         reported_at => erlang:system_time(millisecond),
-        %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
         channel_status => Status,
@@ -426,7 +418,6 @@ event_misc_integration_error(Device, Description, ChannelInfo) ->
         sub_category => misc_integration_error,
         description => Description,
         reported_at => erlang:system_time(millisecond),
-        %%
         channel_id => maps:get(id, ChannelInfo),
         channel_name => maps:get(name, ChannelInfo),
         channel_status => error

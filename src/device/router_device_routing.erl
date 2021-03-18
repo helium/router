@@ -198,7 +198,9 @@ accept_more(PHash, Max) ->
         [{PHash, Max, _}] ->
             ok;
         _ ->
-            true = ets:insert(?MB_ETS, {PHash, Max, 1}),
+            %% NOTE: Only called for packets. When this is called the first
+            %% time, we've already purchased a packet.
+            true = ets:insert(?MB_ETS, {PHash, Max, 2}),
             ok
     end.
 

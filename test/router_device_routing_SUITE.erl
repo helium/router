@@ -7,7 +7,8 @@
 ]).
 
 -export([
-    bad_fcnt_test/1
+    bad_fcnt_test/1,
+    multi_buy_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -35,7 +36,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        bad_fcnt_test
+        bad_fcnt_test,
+        multi_buy_test
     ].
 
 %%--------------------------------------------------------------------
@@ -53,6 +55,184 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+multi_buy_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    Swarm = proplists:get_value(swarm, Config),
+    Keys = proplists:get_value(keys, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    ConsensusMembers = proplists:get_value(consensus_member, Config),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self()]
+    ),
+    PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+
+    Chain = blockchain_worker:blockchain(),
+    Ledger = blockchain:ledger(Chain),
+
+    %% Inserting OUI into chain for routing
+    OUI1 = 1,
+    {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin1, [PubKeyBin1], Filter, 8),
+    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+
+    #{secret := PrivKey} = Keys,
+    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
+
+    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+
+    %% device should join under OUI 1
+    %% Send join packet
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce)},
+    timer:sleep(router_utils:join_timeout()),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    %% Waiting for report device status on that join request
+    test_utils:wait_for_console_event(<<"join_accept">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_accept">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Hotspot 2
+    #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey2),
+    {ok, _HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+
+    %% Hotspot 3
+    #{public := PubKey3} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin3 = libp2p_crypto:pubkey_to_bin(PubKey3),
+    {ok, _HotspotName3} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin3)),
+
+    %% Hotspot 4
+    #{public := PubKey4} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin4 = libp2p_crypto:pubkey_to_bin(PubKey4),
+    {ok, _HotspotName4} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin4)),
+
+    %% Hotspot 5
+    #{public := PubKey5} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin5 = libp2p_crypto:pubkey_to_bin(PubKey5),
+    {ok, _HotspotName5} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin5)),
+
+    HandleOfferForHotspotFun = fun(PubKeyBin, Device, FCnt) ->
+        SCPacket = test_utils:frame_packet(
+            ?UNCONFIRMED_UP,
+            PubKeyBin,
+            router_device:nwk_s_key(Device),
+            router_device:app_s_key(Device),
+            FCnt,
+            #{dont_encode => true, routing => true, devaddr => router_device:devaddr(Device)}
+        ),
+        Offer = blockchain_state_channel_offer_v1:from_packet(
+            blockchain_state_channel_packet_v1:packet(SCPacket),
+            blockchain_state_channel_packet_v1:hotspot(SCPacket),
+            blockchain_state_channel_packet_v1:region(SCPacket)
+        ),
+        router_device_routing:handle_offer(Offer, self())
+    end,
+
+    %% Multi buy for device is set to 2
+    Device1 = router_device:metadata(
+        maps:merge(router_device:metadata(Device0), #{multi_buy => 2}),
+        Device0
+    ),
+    {ok, Device2} = router_device:save(DB, CF, Device1),
+    {ok, _} = router_device_cache:save(Device2),
+
+    %% Send the same packet from all hotspots
+    ok = HandleOfferForHotspotFun(PubKeyBin1, Device2, 0),
+    ok = HandleOfferForHotspotFun(PubKeyBin2, Device2, 0),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin3, Device2, 0),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin4, Device2, 0),
+
+    %% Change multi-buy to 4
+    Device3 = router_device:metadata(
+        maps:merge(router_device:metadata(Device0), #{multi_buy => 4}),
+        Device0
+    ),
+    {ok, Device4} = router_device:save(DB, CF, Device3),
+    {ok, _} = router_device_cache:save(Device3),
+
+    %% Send the same packet from all hotspots
+    ok = HandleOfferForHotspotFun(PubKeyBin1, Device4, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin2, Device4, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin3, Device4, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin4, Device4, 1),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin5, Device4, 1),
+
+    ok.
 
 bad_fcnt_test(Config) ->
     #{

@@ -1042,7 +1042,7 @@ multi_buy_test() ->
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, accept_more(PHash)),
-    ?assertEqual([{PHash, ?PACKET_MAX, 1}], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual([{PHash, ?PACKET_MAX, 2}], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
@@ -1130,111 +1130,6 @@ handle_join_offer_test() ->
     ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
     application:stop(lager),
-    ok.
-
-handle_packet_offer_test() ->
-    Dir = test_utils:tmp_dir("handle_packet_offer_test"),
-    {ok, Pid} = router_db:start_link([Dir]),
-
-    Subnet = <<0, 0, 0, 127, 255, 0>>,
-    <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = Subnet,
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    <<DevAddr:32/integer-unsigned-little>> =
-        <<Base:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
-
-    DeviceUpdates = [{devaddr, <<DevAddr:32/integer-unsigned-little>>}],
-    Device0 = router_device:new(<<"device_id">>),
-    Device1 = router_device:update(DeviceUpdates, Device0),
-    {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-    {ok, Device1} = router_device:save(DB, CF, Device1),
-
-    {ok, _} = router_devices_sup:start_link(),
-
-    meck:new(blockchain_worker, [passthrough]),
-    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(_) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_routing, fun(_, _) -> {ok, entry} end),
-    meck:new(blockchain_ledger_routing_v1, [passthrough]),
-    meck:expect(blockchain_ledger_routing_v1, subnets, fun(_) -> [Subnet] end),
-    meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, routing_packet_observe, fun(_, _, _, _) -> ok end),
-    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
-    meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),
-    meck:new(router_device_devaddr, [passthrough]),
-    meck:expect(router_device_devaddr, sort_devices, fun(Devices, _) -> Devices end),
-    meck:new(router_console_dc_tracker, [passthrough]),
-    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
-
-    NewOffer = fun(Payload) ->
-        Packet = blockchain_helium_packet_v1:new({devaddr, DevAddr}, Payload),
-        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, <<"hotspot">>, 'REGION'),
-        {Offer, PHash}
-    end,
-
-    %% Deny more packets after first
-    {Offer0, PHash0} = NewOffer(<<"payload0">>),
-    ?assertEqual(ok, handle_offer(Offer0, self())),
-    ok = ?MODULE:deny_more(PHash0),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
-    ?assertEqual({error, ?MB_DENY_MORE}, handle_offer(Offer0, self())),
-
-    %% Accept MAX packets
-    {Offer1, PHash1} = NewOffer(<<"payload1">>),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ok = ?MODULE:accept_more(PHash1),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual(ok, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer1, self())),
-
-    %% Accept more than MAX packets
-    {Offer2, PHash2} = NewOffer(<<"payload2">>),
-    ok = ?MODULE:accept_more(PHash2, ?PACKET_MAX * 2),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual(ok, handle_offer(Offer2, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(Offer2, self())),
-
-    %% Accept Unlimited Packets
-    {Offer3, PHash3} = NewOffer(<<"paylaod3">>),
-    ok = ?MODULE:accept_more(PHash3, ?MB_UNLIMITED),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    %% exceeding PACKET_MAX
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-    ?assertEqual(ok, handle_offer(Offer3, self())),
-
-    gen_server:stop(Pid),
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
-    ?assert(meck:validate(blockchain_ledger_routing_v1)),
-    meck:unload(blockchain_ledger_routing_v1),
-    ?assert(meck:validate(router_metrics)),
-    meck:unload(router_metrics),
-    ?assert(meck:validate(router_device_devaddr)),
-    meck:unload(router_device_devaddr),
-    ?assert(meck:validate(router_console_dc_tracker)),
-    meck:unload(router_console_dc_tracker),
-    ets:delete(?ETS),
-    ets:delete(?BF_ETS),
-    ets:delete(?MB_ETS),
-    ets:delete(?REPLAY_ETS),
-    ets:delete(router_devices_ets),
-    ets:delete(router_device_cache_ets),
     ok.
 
 -endif.

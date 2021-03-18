@@ -11,7 +11,8 @@
     drop_downlink_test/1,
     replay_joins_test/1,
     device_worker_stop_children_test/1,
-    device_worker_late_packet_double_charge_test/1
+    device_worker_late_packet_double_charge_test/1,
+    offer_cache_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -42,7 +43,8 @@ all() ->
         device_update_test,
         drop_downlink_test,
         replay_joins_test,
-        device_worker_late_packet_double_charge_test
+        device_worker_late_packet_double_charge_test,
+        offer_cache_test
     ].
 
 %%--------------------------------------------------------------------
@@ -674,6 +676,153 @@ replay_joins_test(Config) ->
         undefined,
         test_utils:get_last_dev_nonce(DeviceID)
     ),
+
+    ok.
+
+offer_cache_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin1
+    } = test_utils:join_device(Config),
+
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device_cache:get(DeviceID),
+
+    SCPacket1 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin1,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        1,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    SCPacket2 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin2,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        1,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    Offer1 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket1),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket1),
+        blockchain_state_channel_packet_v1:region(SCPacket1)
+    ),
+    Offer2 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket2),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket2),
+        blockchain_state_channel_packet_v1:region(SCPacket2)
+    ),
+
+    {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    router_device_worker:handle_offer(DeviceWorkerPid, Offer1),
+    router_device_worker:handle_offer(DeviceWorkerPid, Offer2),
+
+    OfferCache1 = test_utils:get_device_worker_offer_cache(DeviceID),
+    ?assert(
+        maps:is_key(
+            {PubKeyBin1, blockchain_state_channel_offer_v1:packet_hash(Offer1)},
+            OfferCache1
+        )
+    ),
+    ?assert(
+        maps:is_key(
+            {PubKeyBin2, blockchain_state_channel_offer_v1:packet_hash(Offer2)},
+            OfferCache1
+        )
+    ),
+    ?assert(
+        router_device_worker:accept_uplink(
+            DeviceWorkerPid,
+            blockchain_state_channel_packet_v1:packet(SCPacket1),
+            1,
+            PubKeyBin1
+        )
+    ),
+    ?assert(
+        router_device_worker:accept_uplink(
+            DeviceWorkerPid,
+            blockchain_state_channel_packet_v1:packet(SCPacket2),
+            1,
+            PubKeyBin2
+        )
+    ),
+    ?assertEqual(#{}, test_utils:get_device_worker_offer_cache(DeviceID)),
+
+    SCPacket3 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin1,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        2,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    ?assert(
+        router_device_worker:accept_uplink(
+            DeviceWorkerPid,
+            blockchain_state_channel_packet_v1:packet(SCPacket3),
+            1,
+            PubKeyBin1
+        )
+    ),
+
+    SCPacket4 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin1,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        3,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    Offer4 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket4),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket4),
+        blockchain_state_channel_packet_v1:region(SCPacket4)
+    ),
+    router_device_worker:handle_offer(DeviceWorkerPid, Offer4),
+    timer:sleep(4000),
+
+    ?assertNot(
+        router_device_worker:accept_uplink(
+            DeviceWorkerPid,
+            blockchain_state_channel_packet_v1:packet(SCPacket4),
+            1,
+            PubKeyBin1
+        )
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_dropped_late">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink_dropped">>,
+        <<"sub_category">> => <<"uplink_dropped_late">>,
+        <<"description">> => <<"Late packet">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 3,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin1))
+            }
+        }
+    }),
 
     ok.
 

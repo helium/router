@@ -21,6 +21,7 @@
 -export([
     start_link/1,
     handle_offer/2,
+    accept_uplink/4,
     handle_join/8,
     handle_frame/7,
     queue_message/2,
@@ -62,6 +63,7 @@
     last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
+    offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
     is_active = true :: boolean()
 }).
@@ -75,6 +77,15 @@ start_link(Args) ->
 -spec handle_offer(pid(), blockchain_state_channel_offer_v1:offer()) -> ok.
 handle_offer(WorkerPid, Offer) ->
     gen_server:cast(WorkerPid, {handle_offer, Offer}).
+
+-spec accept_uplink(
+    WorkerPid :: pid(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> boolean().
+accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
+    gen_server:call(WorkerPid, {accept_uplink, Packet, PacketTime, PubKeyBin}).
 
 -spec handle_join(
     pid(),
@@ -147,13 +158,61 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
         is_active = IsActive
     }}.
 
+handle_call(
+    {accept_uplink, Packet, PacketTime, PubKeyBin},
+    _From,
+    #state{device = Device, offer_cache = OfferCache0} = State
+) ->
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    case maps:get({PubKeyBin, PHash}, OfferCache0, undefined) of
+        undefined ->
+            lager:debug("accepting, we got a packet from ~p with no matching offer (~p)", [
+                blockchain_utils:addr2name(PubKeyBin),
+                PHash
+            ]),
+            {reply, true, State};
+        OfferTime ->
+            OfferCache1 = maps:remove({PubKeyBin, PHash}, OfferCache0),
+            DeliveryTime = erlang:system_time(millisecond) - OfferTime,
+            case DeliveryTime >= ?RX_MAX_WINDOW of
+                true ->
+                    lager:info("refusing, we got a packet delivered ~p ms too late from ~p (~p)", [
+                        DeliveryTime,
+                        blockchain_utils:addr2name(PubKeyBin),
+                        PHash
+                    ]),
+                    <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
+                        _ACK:1, _RFU:1, _FOptsLen:4, FCnt:16/little-unsigned-integer,
+                        _FOpts:_FOptsLen/binary,
+                        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+                    ok = router_utils:event_uplink_dropped_late_packet(
+                        PacketTime,
+                        FCnt,
+                        Device,
+                        PubKeyBin
+                    ),
+                    {reply, false, State#state{offer_cache = OfferCache1}};
+                false ->
+                    lager:debug("accepting, we got a packet from ~p (~p)", [
+                        blockchain_utils:addr2name(PubKeyBin),
+                        PHash
+                    ]),
+                    {reply, true, State#state{offer_cache = OfferCache1}}
+            end
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({handle_offer, Offer}, #state{device = Device, adr_engine = ADREngine0} = State) ->
+handle_cast(
+    {handle_offer, Offer},
+    #state{device = Device, offer_cache = OfferCache0, adr_engine = ADREngine0} = State
+) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    OfferCache1 = maps:put({PubKeyBin, PHash}, erlang:system_time(millisecond), OfferCache0),
     ADREngine1 = maybe_track_adr_offer(Device, ADREngine0, Offer),
-    {noreply, State#state{adr_engine = ADREngine1}};
+    {noreply, State#state{offer_cache = OfferCache1, adr_engine = ADREngine1}};
 handle_cast(
     device_update,
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State

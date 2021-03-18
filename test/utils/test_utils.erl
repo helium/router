@@ -9,6 +9,7 @@
     get_device_last_seen_fcnt/1,
     get_last_dev_nonce/1,
     get_device_worker_device/1,
+    get_device_worker_offer_cache/1,
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
@@ -203,11 +204,11 @@ join_device(Config) ->
 
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce)},
+    Stream ! {send, ?MODULE:join_packet(PubKeyBin, AppKey, DevNonce)},
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"join_request">>, #{
+    ?MODULE:wait_for_console_event(<<"join_request">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"join_request">>,
         <<"sub_category">> => <<"undefined">>,
@@ -235,7 +236,7 @@ join_device(Config) ->
     }),
 
     %% Waiting for report device status on that join request
-    test_utils:wait_for_console_event(<<"join_accept">>, #{
+    ?MODULE:wait_for_console_event(<<"join_accept">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"join_accept">>,
         <<"sub_category">> => <<"undefined">>,
@@ -274,7 +275,8 @@ join_device(Config) ->
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADREngine, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
+        _IsActive} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
@@ -282,7 +284,7 @@ get_device_channels_worker(DeviceID) ->
 get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
-        LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     LastDevNonce.
@@ -296,7 +298,7 @@ get_channel_worker_event_manager(DeviceID) ->
 get_device_last_seen_fcnt(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, FCnt, _OUI, _ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     FCnt.
@@ -304,10 +306,18 @@ get_device_last_seen_fcnt(DeviceID) ->
 get_device_worker_device(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
-        _LastDevNonce, _JoinChache, _FrameCache, _ADRCache, _IsActive} = sys:get_state(
+        _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache, _IsActive} = sys:get_state(
         WorkerPid
     ),
     Device.
+
+get_device_worker_offer_cache(DeviceID) ->
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    {state, _Chain, _DB, _CF, _Device, _DownlinkHandlkedAt, _FCnt, _OUI, _ChannelsWorkerPid,
+        _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache, _IsActive} = sys:get_state(
+        WorkerPid
+    ),
+    OfferCache.
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),
@@ -618,21 +628,32 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     DevAddr = maps:get(devaddr, Options, <<33554431:25/integer-unsigned-little, $H:7/integer>>),
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
+    Routing =
+        case maps:get(routing, Options, false) of
+            true -> blockchain_helium_packet_v1:make_routing_info({devaddr, DevAddr});
+            false -> undefined
+        end,
     HeliumPacket = #packet_pb{
         type = lorawan,
         payload = Payload1,
         frequency = 923.3,
         datarate = maps:get(datarate, Options, <<"SF8BW125">>),
         signal_strength = maps:get(rssi, Options, 0.0),
-        snr = maps:get(snr, Options, 0.0)
+        snr = maps:get(snr, Options, 0.0),
+        routing = Routing
     },
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
         region = 'US915'
     },
-    Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    case maps:get(dont_encode, Options, false) of
+        true ->
+            Packet;
+        false ->
+            Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
+            blockchain_state_channel_v1_pb:encode_msg(Msg)
+    end.
 
 frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     OptionsBoolToBit = fun(Key) ->

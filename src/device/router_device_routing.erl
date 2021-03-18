@@ -822,15 +822,22 @@ send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, 
                 {error, _Reason} = Error ->
                     Error;
                 {ok, WorkerPid} ->
-                    router_device_worker:handle_frame(
-                        WorkerPid,
-                        NwkSKey,
-                        Packet,
-                        PacketTime,
-                        PubKeyBin,
-                        Region,
-                        Pid
-                    )
+                    case
+                        router_device_worker:accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin)
+                    of
+                        false ->
+                            lager:info("device worker refused to pick up the packet");
+                        true ->
+                            router_device_worker:handle_frame(
+                                WorkerPid,
+                                NwkSKey,
+                                Packet,
+                                PacketTime,
+                                PubKeyBin,
+                                Region,
+                                Pid
+                            )
+                    end
             end
     end.
 

@@ -262,33 +262,66 @@ cleanup_connection(Conn) ->
     ok.
 
 -spec make_request_report({ok | error, any()}, any(), #state{}) -> map().
-make_request_report(Request, Data, #state{
+make_request_report({error, Reason}, Data, #state{
     channel = Channel,
     endpoint = Endpoint,
     uplink_topic = Topic
 }) ->
-    Map = #{
+    %% Helium Error
+    #{
+        request => #{
+            endpoint => Endpoint,
+            topic => Topic,
+            qos => 0,
+            body => router_channel:encode_data(Channel, Data)
+        },
+        status => error,
+        description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
+    };
+make_request_report({ok, Response}, Data, #state{
+    channel = Channel,
+    endpoint = Endpoint,
+    uplink_topic = Topic
+}) ->
+    Request = #{
         endpoint => Endpoint,
         topic => Topic,
         qos => 0,
         body => router_channel:encode_data(Channel, Data)
     },
-    case Request of
+    case Response of
         {error, Reason} ->
-            Description = list_to_binary(io_lib:format("~p", [Reason])),
-            maps:merge(Map, #{status => error, description => Description});
+            %% Emqtt Error
+            Description = list_to_binary(io_lib:format("Error: ~p", [Reason])),
+            #{request => Request, status => error, description => Description};
+        ok ->
+            #{request => Request, status => success, description => <<"published">>};
         {ok, _} ->
-            maps:merge(Map, #{status => success, description => <<"published">>})
+            #{request => Request, status => success, description => <<"published">>}
     end.
 
--spec make_response_report(any(), router_channel:channel()) -> map().
-make_response_report(Res, Channel) ->
+-spec make_response_report({ok | error, any()}, router_channel:channel()) -> map().
+make_response_report({error, Reason}, Channel) ->
+    #{
+        id => router_channel:id(Channel),
+        name => router_channel:name(Channel),
+        response => #{},
+        status => error,
+        description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
+    };
+make_response_report({ok, Response}, Channel) ->
     Result0 = #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel)
     },
 
-    case Res of
+    case Response of
+        ok ->
+            maps:merge(Result0, #{
+                response => #{},
+                status => success,
+                description => <<"ok">>
+            });
         {ok, PacketID} ->
             maps:merge(Result0, #{
                 response => #{packet_id => PacketID},

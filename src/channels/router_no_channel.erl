@@ -38,8 +38,6 @@ handle_event({data, Ref, _Data}, #state{channel = Channel} = State) ->
     Report = #{
         status => no_channel,
         description => <<"no channels configured">>,
-        id => router_channel:id(Channel),
-        name => router_channel:name(Channel),
         request => #{}
     },
     router_device_channels_worker:report_request(Pid, Ref, Channel, Report),

@@ -278,7 +278,7 @@ make_request_report({error, Reason}, Data, #state{
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
-make_request_report(Request, Data, #state{
+make_request_report({ok, Response}, Data, #state{
     channel = Channel,
     endpoint = Endpoint,
     uplink_topic = Topic
@@ -289,7 +289,7 @@ make_request_report(Request, Data, #state{
         qos => 0,
         body => router_channel:encode_data(Channel, Data)
     },
-    case Request of
+    case Response of
         {error, Reason} ->
             %% Emqtt Error
             Description = list_to_binary(io_lib:format("Error: ~p", [Reason])),
@@ -309,13 +309,13 @@ make_response_report({error, Reason}, Channel) ->
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
-make_response_report(Res, Channel) ->
+make_response_report({ok, Response}, Channel) ->
     Result0 = #{
         id => router_channel:id(Channel),
         name => router_channel:name(Channel)
     },
 
-    case Res of
+    case Response of
         ok ->
             maps:merge(Result0, #{
                 response => #{},

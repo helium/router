@@ -1088,6 +1088,9 @@ false_positive_test() ->
     ok.
 
 handle_join_offer_test() ->
+    {timeout, 15, fun test_for_handle_join_offer/0}.
+
+test_for_handle_join_offer() ->
     ok = init(),
     application:ensure_all_started(lager),
     meck:new(router_console_api, [passthrough]),

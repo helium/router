@@ -11,7 +11,7 @@
     event_uplink_dropped_not_enough_dc/4,
     event_uplink_dropped_late_packet/4,
     event_uplink_dropped_invalid_packet/8,
-    event_downlink/10,
+    event_downlink/9,
     event_downlink_dropped_payload_size_exceeded/5,
     event_downlink_dropped_misc/5,
     event_downlink_queued/5,
@@ -76,6 +76,7 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
 event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
+    Payload = blockchain_helium_packet_v1:payload(Packet),
     Map = #{
         id => router_utils:uuid_v4(),
         category => join_accept,
@@ -85,8 +86,8 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
                 " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
         reported_at => erlang:system_time(millisecond),
         fcnt => 0,
-        payload_size => 0,
-        payload => <<>>,
+        payload_size => erlang:byte_size(Payload),
+        payload => base64:encode(Payload),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
@@ -105,13 +106,20 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
 event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
-    #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload} = Frame,
+    #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload0} = Frame,
     {SubCategory, Desc} =
         case MType of
             ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up received">>};
             ?UNCONFIRMED_UP -> {uplink_unconfirmed, <<"Unconfirmed data up received">>}
         end,
-    PayloadSize = erlang:byte_size(Payload),
+    Payload1 =
+        case Payload0 of
+            undefined ->
+                <<>>;
+            _ ->
+                Payload0
+        end,
+    PayloadSize = erlang:byte_size(Payload1),
     Ledger = blockchain:ledger(Chain),
     Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
     Map = #{
@@ -122,7 +130,7 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
         reported_at => Timestamp,
         fcnt => FCnt,
         payload_size => PayloadSize,
-        payload => base64:encode(Payload),
+        payload => base64:encode(Payload1),
         port => FPort,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
@@ -240,7 +248,6 @@ event_uplink_dropped_invalid_packet(
     IsDownlinkAck :: boolean(),
     ConfirmedDown :: boolean(),
     Port :: non_neg_integer(),
-    Payload :: binary(),
     Device :: router_device:device(),
     ChannelMap :: map(),
     Chain :: blockchain:blockchain(),
@@ -252,7 +259,6 @@ event_downlink(
     IsDownlinkAck,
     ConfirmedDown,
     Port,
-    Payload,
     Device,
     ChannelMap,
     Chain,
@@ -266,13 +272,14 @@ event_downlink(
             {_, true} -> {downlink_confirmed, <<"Confirmed data down sent">>};
             {_, false} -> {downlink_unconfirmed, <<"Unconfirmed data down sent">>}
         end,
+    Payload = blockchain_helium_packet_v1:payload(Packet),
     Map = #{
         id => router_utils:uuid_v4(),
         category => downlink,
         sub_category => SubCategory,
         description => Desc,
         reported_at => erlang:system_time(millisecond),
-        fcnt => router_device:fcntdown(Device),
+        fcnt => router_device:fcntdown(Device) - 1,
         payload_size => erlang:byte_size(Payload),
         payload => base64:encode(Payload),
         port => Port,

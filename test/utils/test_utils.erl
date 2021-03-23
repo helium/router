@@ -245,17 +245,16 @@ join_device(Config) ->
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
             <<"fcnt">> => 0,
-            <<"payload_size">> => 0,
-            <<"payload">> => <<>>,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                %% TODO: Accept RSSI 27 like old times?
-                <<"rssi">> => 0.0,
+                <<"rssi">> => 27,
                 <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,

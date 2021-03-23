@@ -498,6 +498,7 @@ send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     ),
     [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
+    %% No touchy, this is set in STONE
     Map = #{
         uuid => UUID,
         id => router_device:id(Device),

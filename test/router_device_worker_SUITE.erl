@@ -242,9 +242,9 @@ device_worker_late_packet_double_charge_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 0.0,
+                <<"rssi">> => 27,
                 <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
+                <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
@@ -692,6 +692,7 @@ offer_cache_test(Config) ->
     DeviceID = ?CONSOLE_DEVICE_ID,
     {ok, Device0} = router_device_cache:get(DeviceID),
 
+    %% Testing with 2 offers / packets
     SCPacket1 = test_utils:frame_packet(
         ?UNCONFIRMED_UP,
         PubKeyBin1,
@@ -760,12 +761,13 @@ offer_cache_test(Config) ->
     ),
     ?assertEqual(#{}, test_utils:get_device_worker_offer_cache(DeviceID)),
 
+    %% Now testing with a late packet (SCPacket4) we set fcnt to 0
     SCPacket3 = test_utils:frame_packet(
         ?UNCONFIRMED_UP,
         PubKeyBin1,
         router_device:nwk_s_key(Device0),
         router_device:app_s_key(Device0),
-        2,
+        0,
         #{
             dont_encode => true,
             routing => true
@@ -785,7 +787,7 @@ offer_cache_test(Config) ->
         PubKeyBin1,
         router_device:nwk_s_key(Device0),
         router_device:app_s_key(Device0),
-        3,
+        0,
         #{
             dont_encode => true,
             routing => true
@@ -816,13 +818,42 @@ offer_cache_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
-            <<"fcnt">> => 3,
+            <<"fcnt">> => 0,
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin1))
             }
         }
     }),
+
+    %% Now testing with a late packet (SCPacket5) we set fcnt to 1 > current device fcnt
+    SCPacket5 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin1,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        1,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    Offer5 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket5),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket5),
+        blockchain_state_channel_packet_v1:region(SCPacket5)
+    ),
+    router_device_worker:handle_offer(DeviceWorkerPid, Offer5),
+    timer:sleep(4000),
+
+    ?assert(
+        router_device_worker:accept_uplink(
+            DeviceWorkerPid,
+            blockchain_state_channel_packet_v1:packet(SCPacket5),
+            1,
+            PubKeyBin1
+        )
+    ),
 
     ok.
 

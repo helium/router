@@ -176,22 +176,41 @@ handle_call(
             DeliveryTime = erlang:system_time(millisecond) - OfferTime,
             case DeliveryTime >= ?RX_MAX_WINDOW of
                 true ->
-                    lager:info("refusing, we got a packet delivered ~p ms too late from ~p (~p)", [
-                        DeliveryTime,
-                        blockchain_utils:addr2name(PubKeyBin),
-                        PHash
-                    ]),
                     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1,
                         _ACK:1, _RFU:1, _FOptsLen:4, FCnt:16/little-unsigned-integer,
                         _FOpts:_FOptsLen/binary,
                         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-                    ok = router_utils:event_uplink_dropped_late_packet(
-                        PacketTime,
-                        FCnt,
-                        Device,
-                        PubKeyBin
-                    ),
-                    {reply, false, State#state{offer_cache = OfferCache1}};
+
+                    case FCnt > router_device:fcnt(Device) of
+                        false ->
+                            lager:info(
+                                "refusing, we got a packet (~p) delivered ~p ms too late from ~p (~p)",
+                                [
+                                    FCnt,
+                                    DeliveryTime,
+                                    blockchain_utils:addr2name(PubKeyBin),
+                                    PHash
+                                ]
+                            ),
+                            ok = router_utils:event_uplink_dropped_late_packet(
+                                PacketTime,
+                                FCnt,
+                                Device,
+                                PubKeyBin
+                            ),
+                            {reply, false, State#state{offer_cache = OfferCache1}};
+                        true ->
+                            lager:info(
+                                "accepting even if we got packet (~p) delivered ~p ms too late from ~p (~p)",
+                                [
+                                    FCnt,
+                                    DeliveryTime,
+                                    blockchain_utils:addr2name(PubKeyBin),
+                                    PHash
+                                ]
+                            ),
+                            {reply, true, State#state{offer_cache = OfferCache1}}
+                    end;
                 false ->
                     lager:debug("accepting, we got a packet from ~p (~p)", [
                         blockchain_utils:addr2name(PubKeyBin),
@@ -752,7 +771,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
-    ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, Packet, Region),
+    ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
     {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
@@ -814,7 +833,7 @@ handle_info(
                 frame_cache = Cache1,
                 fcnt = FCnt
             }};
-        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, Reply, ChannelMap}} ->
+        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, ChannelMap}} ->
             IsDownlinkAck =
                 case ACK of
                     1 -> true;
@@ -824,12 +843,11 @@ handle_info(
                 IsDownlinkAck,
                 ConfirmedDown,
                 Port,
-                Reply,
                 Device1,
                 ChannelMap,
                 Blockchain,
                 PubKeyBin,
-                Packet,
+                DownlinkPacket,
                 Region
             ),
             case router_utils:mtype_to_ack(Frame#frame.mtype) of
@@ -1388,7 +1406,7 @@ handle_frame_timeout(
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             EventTuple =
-                {ACK, ConfirmedDown, Port, Reply, #{id => undefined, name => <<"router">>}},
+                {ACK, ConfirmedDown, Port, #{id => undefined, name => <<"router">>}},
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1, EventTuple};
@@ -1480,7 +1498,7 @@ handle_frame_timeout(
         binary_to_list(TxDataRate),
         Rx2
     ),
-    EventTuple = {ACK, ConfirmedDown, Port, Reply, router_channel:to_map(Channel)},
+    EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel)},
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),

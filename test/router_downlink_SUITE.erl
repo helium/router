@@ -132,6 +132,12 @@ console_tool_downlink_order_test(Config) ->
             <<"reported_at">> => fun erlang:is_integer/1,
             <<"device_id">> => ?CONSOLE_DEVICE_ID,
             <<"data">> => #{
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device0)),
+                <<"hotspot">> => #{},
                 <<"integration">> => #{
                     <<"id">> => <<"console_websocket">>,
                     <<"name">> => <<"fake_http">>,
@@ -214,6 +220,12 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device0)),
+            <<"hotspot">> => #{},
             <<"integration">> => #{
                 <<"id">> => <<"console_websocket">>,
                 <<"name">> => ExpectedChannelName,

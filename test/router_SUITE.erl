@@ -585,6 +585,12 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device0)),
+            <<"hotspot">> => #{},
             <<"integration">> => #{
                 <<"id">> => router_channel:id(Msg0#downlink.channel),
                 <<"name">> => router_channel:name(Msg0#downlink.channel),
@@ -610,6 +616,12 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device0)),
+            <<"hotspot">> => #{},
             <<"integration">> => #{
                 <<"id">> => router_channel:id(Msg1#downlink.channel),
                 <<"name">> => router_channel:name(Msg1#downlink.channel),

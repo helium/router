@@ -210,12 +210,25 @@ event(Device, Map) ->
             ]),
             Data =
                 case {Category, SubCategory} of
+                    {downlink, downlink_queued} ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            integration => #{
+                                id => maps:get(channel_id, Map),
+                                name => maps:get(channel_name, Map),
+                                status => maps:get(channel_status, Map)
+                            }
+                        };
                     {_C, SC} when
                         SC == uplink_integration_req orelse
                             SC == uplink_integration_res orelse
                             SC == downlink_dropped_payload_size_exceeded orelse
                             SC == downlink_dropped_misc orelse
-                            SC == downlink_queued orelse
                             SC == misc_integration_error
                     ->
                         Report = #{

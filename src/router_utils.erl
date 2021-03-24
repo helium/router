@@ -13,6 +13,7 @@
     event_uplink_dropped_invalid_packet/8,
     event_downlink/9,
     event_downlink_dropped_payload_size_exceeded/5,
+    event_downlink_dropped_misc/3,
     event_downlink_dropped_misc/5,
     event_downlink_queued/5,
     event_uplink_integration_req/6,
@@ -309,6 +310,30 @@ event_downlink_dropped_payload_size_exceeded(Desc, Port, Payload, Device, Channe
         payload_size => erlang:byte_size(Payload),
         payload => Payload,
         port => Port,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+        hotspot => #{},
+        channel_id => maps:get(id, ChannelMap),
+        channel_name => maps:get(name, ChannelMap),
+        channel_status => <<"error">>
+    },
+    ok = router_console_api:event(Device, Map).
+
+-spec event_downlink_dropped_misc(
+    Desc :: binary(),
+    Device :: router_device:device(),
+    ChannelMap :: map()
+) -> ok.
+event_downlink_dropped_misc(Desc, Device, ChannelMap) ->
+    Map = #{
+        id => router_utils:uuid_v4(),
+        category => downlink_dropped,
+        sub_category => downlink_dropped_misc,
+        description => Desc,
+        reported_at => erlang:system_time(millisecond),
+        fcnt => router_device:fcntdown(Device),
+        payload_size => 0,
+        payload => <<>>,
+        port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),

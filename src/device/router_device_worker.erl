@@ -1112,7 +1112,7 @@ do_multi_buy(Packet, Device, FrameAck) ->
     Region :: atom(),
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
-    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: integer()},
+    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
     FrameCache :: #{integer() => #frame_cache{}}
 ) ->
     {error, any()}

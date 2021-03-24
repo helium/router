@@ -219,7 +219,7 @@ handle_cast(
     {noreply, State#state{data_cache = DataCache1}};
 handle_cast(
     {handle_downlink, BinaryPayload, Channel},
-    #state{device = Device, device_worker = DeviceWorker} = State
+    #state{device_worker = DeviceWorker} = State
 ) ->
     {ChannelHandler, _} = router_channel:handler(Channel),
     case downlink_decode(BinaryPayload) of
@@ -232,10 +232,6 @@ handle_cast(
                 channel = Channel
             });
         {error, _Reason} ->
-            Desc = io_lib:format("Failed to queue downlink (downlink_decode failed): ~p", [
-                _Reason
-            ]),
-            ok = maybe_report_downlink_dropped(router_device:id(Device), Desc, Channel),
             ok = router_metrics:downlink_inc(ChannelHandler, error),
             lager:info("could not parse json downlink message ~p", [_Reason])
     end,

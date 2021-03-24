@@ -280,6 +280,7 @@ event_downlink(
         sub_category => SubCategory,
         description => Desc,
         reported_at => erlang:system_time(millisecond),
+        % We are doing -1 here because at that point the device already updated and +1 its count
         fcnt => router_device:fcntdown(Device) - 1,
         payload_size => erlang:byte_size(Payload),
         payload => base64:encode(Payload),

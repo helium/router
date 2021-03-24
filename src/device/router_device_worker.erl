@@ -56,7 +56,7 @@
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
     device :: router_device:device(),
-    downlink_handled_at = -1 :: integer(),
+    downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
     fcnt = -1 :: integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid(),
@@ -180,7 +180,6 @@ handle_call(
                         _ACK:1, _RFU:1, _FOptsLen:4, FCnt:16/little-unsigned-integer,
                         _FOpts:_FOptsLen/binary,
                         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-
                     case FCnt > router_device:fcnt(Device) of
                         false ->
                             lager:info(
@@ -229,6 +228,10 @@ handle_cast(
 ) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+    lager:debug("handle offer for ~p PHash=~p", [
+        blockchain_utils:addr2name(PubKeyBin),
+        PHash
+    ]),
     OfferCache1 = maps:put({PubKeyBin, PHash}, erlang:system_time(millisecond), OfferCache0),
     ADREngine1 = maybe_track_adr_offer(Device, ADREngine0, Offer),
     {noreply, State#state{offer_cache = OfferCache1, adr_engine = ADREngine1}};
@@ -411,7 +414,7 @@ handle_cast(
                         last_dev_nonce = DevNonce,
                         join_cache = Cache1,
                         adr_engine = undefined,
-                        downlink_handled_at = -1,
+                        downlink_handled_at = {-1, erlang:system_time(millisecond)},
                         fcnt = -1
                     }};
                 #join_cache{
@@ -872,7 +875,7 @@ handle_info(
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
                 frame_cache = Cache1,
-                downlink_handled_at = FCnt,
+                downlink_handled_at = {FCnt, erlang:system_time(millisecond)},
                 fcnt = FCnt
             }};
         noop ->
@@ -1122,7 +1125,7 @@ validate_frame(
     Region,
     Device0,
     Blockchain,
-    {LastSeenFCnt, DownlinkHandledAt},
+    {LastSeenFCnt, {DownlinkHandledAtFCnt, DownlinkHandledAtTime}},
     FrameCache
 ) ->
     <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
@@ -1130,7 +1133,7 @@ validate_frame(
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
     FrameAck = router_utils:mtype_to_ack(MType),
-    Window = erlang:system_time(millisecond) - PacketTime,
+    Window = DownlinkHandledAtTime - PacketTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
             validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
@@ -1141,19 +1144,19 @@ validate_frame(
             ]),
             {error, late_packet};
         undefined when
-            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window < ?RX_MAX_WINDOW
+            FrameAck == 1 andalso FCnt == DownlinkHandledAtFCnt andalso Window < ?RX_MAX_WINDOW
         ->
             lager:debug(
                 "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
-                [FCnt, DownlinkHandledAt, Window]
+                [FCnt, DownlinkHandledAtFCnt, Window]
             ),
             {error, late_packet};
         undefined when
-            FrameAck == 1 andalso FCnt == DownlinkHandledAt andalso Window >= ?RX_MAX_WINDOW
+            FrameAck == 1 andalso FCnt == DownlinkHandledAtFCnt andalso Window >= ?RX_MAX_WINDOW
         ->
             lager:debug(
                 "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
-                [FCnt, DownlinkHandledAt, Window]
+                [FCnt, DownlinkHandledAtFCnt, Window]
             ),
             validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
         undefined ->

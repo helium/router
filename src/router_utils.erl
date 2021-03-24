@@ -159,7 +159,7 @@ event_uplink_dropped_device_inactive(Timestamp, FCnt, Device, PubKeyBin) ->
         payload_size => 0,
         payload => <<>>,
         port => 0,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -181,7 +181,7 @@ event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
         payload_size => 0,
         payload => <<>>,
         port => 0,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -203,7 +203,7 @@ event_uplink_dropped_late_packet(Timestamp, FCnt, Device, PubKeyBin) ->
         payload_size => 0,
         payload => <<>>,
         port => 0,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_uncharged_hotspot(PubKeyBin)
     },
     ok = router_console_api:event(Device, Map).
@@ -238,7 +238,7 @@ event_uplink_dropped_invalid_packet(
         payload_size => 0,
         payload => <<>>,
         port => 0,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
     },
 
@@ -309,7 +309,7 @@ event_downlink_dropped_payload_size_exceeded(Desc, Port, Payload, Device, Channe
         payload_size => erlang:byte_size(Payload),
         payload => Payload,
         port => Port,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
@@ -335,7 +335,7 @@ event_downlink_dropped_misc(Desc, Port, Payload, Device, ChannelMap) ->
         payload_size => erlang:byte_size(Payload),
         payload => Payload,
         port => Port,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
@@ -361,7 +361,7 @@ event_downlink_queued(Desc, Port, Payload, Device, ChannelMap) ->
         payload_size => erlang:byte_size(Payload),
         payload => Payload,
         port => Port,
-        devaddr => router_device:devaddr(Device),
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => #{},
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),

@@ -1128,7 +1128,7 @@ validate_frame(
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
     FrameAck = router_utils:mtype_to_ack(MType),
-    Window = DownlinkHandledAtTime - PacketTime,
+    Window = PacketTime - DownlinkHandledAtTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
             validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);

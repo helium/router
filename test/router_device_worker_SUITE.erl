@@ -499,7 +499,7 @@ replay_joins_test(Config) ->
         test_utils:get_last_dev_nonce(DeviceID)
     ),
 
-    %% We ignore the channel correction  and down messages
+    %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
 
     %% This will act as an old valid nonce cause we have the right app key
@@ -526,10 +526,6 @@ replay_joins_test(Config) ->
     ?assertNotEqual(
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device2)
-    ),
-    ?assertEqual(
-        DevNonce2,
-        test_utils:get_last_dev_nonce(DeviceID)
     ),
 
     %% We repeat again to add a second "bad" attempt
@@ -558,10 +554,6 @@ replay_joins_test(Config) ->
     ?assertNotEqual(
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device3)
-    ),
-    ?assertEqual(
-        DevNonce3,
-        test_utils:get_last_dev_nonce(DeviceID)
     ),
 
     %% The device then sends another normal packet linked to dev nonce 1
@@ -671,10 +663,6 @@ replay_joins_test(Config) ->
     ?assertEqual(
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device4)
-    ),
-    ?assertEqual(
-        undefined,
-        test_utils:get_last_dev_nonce(DeviceID)
     ),
 
     ok.

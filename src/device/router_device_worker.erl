@@ -355,7 +355,8 @@ handle_cast(
         device = Device0,
         join_cache = Cache0,
         oui = OUI,
-        channels_worker = ChannelsWorker
+        channels_worker = ChannelsWorker,
+        last_dev_nonce = LastDevNonce
     } = State
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
@@ -369,11 +370,6 @@ handle_cast(
             {noreply, State};
         {ok, Device1, DevNonce, Reply} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
-            LastDevNonce =
-                case router_device:dev_nonces(Device0) of
-                    [D | _] -> D;
-                    [] -> <<>>
-                end,
             case maps:get(DevNonce, Cache0, undefined) of
                 undefined when LastDevNonce == DevNonce ->
                     lager:debug("got a late join: ~p", [DevNonce]),
@@ -411,7 +407,6 @@ handle_cast(
                     ),
                     {noreply, State#state{
                         device = Device1,
-                        last_dev_nonce = DevNonce,
                         join_cache = Cache1,
                         adr_engine = undefined,
                         downlink_handled_at = {-1, erlang:system_time(millisecond)},
@@ -775,7 +770,7 @@ handle_info(
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
-    {noreply, State#state{join_cache = maps:remove(DevNonce, JoinCache)}};
+    {noreply, State#state{last_dev_nonce = DevNonce, join_cache = maps:remove(DevNonce, JoinCache)}};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
     #state{

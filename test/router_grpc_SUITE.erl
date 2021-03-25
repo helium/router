@@ -36,10 +36,6 @@ all() ->
 init_per_testcase(TestCase, Config) ->
     %% setup test dirs
     Config0 = test_utils:init_per_testcase(TestCase, Config),
-    LogDir = ?config(log_dir, Config0),
-    application:ensure_all_started(lager),
-    lager:set_loglevel(lager_console_backend, debug),
-    lager:set_loglevel({lager_file_backend, LogDir}, debug),
     Config0.
 
 %%--------------------------------------------------------------------
@@ -56,27 +52,15 @@ end_per_testcase(TestCase, Config) ->
 %% verify we get a response
 join_grpc_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    BaseDir = proplists:get_value(base_dir, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [_Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm0, 0),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
+    RouterSwarm = proplists:get_value(swarm, Config),
+    PubKeyBin0 = libp2p_swarm:pubkey_bin(RouterSwarm),
 
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     Packet = join_packet(PubKeyBin0, AppKey, JoinNonce, -40),
 
-    %% submit the packet via grpc to router
-    {ok, Connection} = grpc_client:connect(tcp, "localhost", 8080),
-
-    %% helium.router = service, route = RPC call, router_client_pb is the an auto generated PB file
-    {ok, #{headers := Headers, result := #{msg := {response, ResponseMsg}} = Result}} = grpc_client:unary(
-        Connection,
-        Packet,
-        'helium.router',
-        'route',
-        router_client_pb,
-        []
+    {ok, #{msg := {response, ResponseMsg}} = Result, #{headers := Headers, trailers := _Trailers}} = helium_router_client:route(
+        Packet
     ),
     ct:pal("Response Headers: ~p", [Headers]),
     ct:pal("Response Body: ~p", [Result]),
@@ -84,44 +68,28 @@ join_grpc_test(Config) ->
     ?assertEqual(HttpStatus, <<"200">>),
     ?assertEqual(ResponseMsg, ResponseMsg#{accepted := true}),
 
-    libp2p_swarm:stop(Swarm0),
     ok.
 
 %% send a packet from an unknown device
 %% we will fail to get a response
 join_from_unknown_device_grpc_test(Config) ->
-    _AppKey = proplists:get_value(app_key, Config),
-    BaseDir = proplists:get_value(base_dir, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [_Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm0, _} = test_utils:start_swarm(BaseDir, swarm1, 0),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
+    RouterSwarm = proplists:get_value(swarm, Config),
+    PubKeyBin0 = libp2p_swarm:pubkey_bin(RouterSwarm),
 
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     BadAppKey = crypto:strong_rand_bytes(16),
     Packet = join_packet(PubKeyBin0, BadAppKey, JoinNonce, -40),
 
-    %% submit the packet via grpc to router
-    {ok, Connection} = grpc_client:connect(tcp, "localhost", 8080),
-
-    %% helium.router = service, route = RPC call, router_client_pb is an auto generated PB file
-    {error, #{headers := Headers, status_message := StatusMsg, result := Result}} = grpc_client:unary(
-        Connection,
-        Packet,
-        'helium.router',
-        'route',
-        router_client_pb,
-        []
+    {error, {_ErrorCode, ResponseMsg}, #{headers := Headers, trailers := _Trailers}} = helium_router_client:route(
+        Packet
     ),
     ct:pal("Response Headers: ~p", [Headers]),
-    ct:pal("Response Body: ~p", [Result]),
+    ct:pal("Response Body: ~p", [ResponseMsg]),
     #{<<":status">> := HttpStatus} = Headers,
     ?assertEqual(HttpStatus, <<"200">>),
-    ?assertEqual(StatusMsg, <<"no response">>),
-    ?assertEqual(Result, #{}),
+    ?assertEqual(ResponseMsg, <<"no response">>),
 
-    libp2p_swarm:stop(Swarm0),
     ok.
 
 %% ------------------------------------------------------------------

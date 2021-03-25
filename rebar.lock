@@ -68,7 +68,7 @@
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.8.0">>},1},
  {<<"grpc_client">>,
   {git,"https://github.com/Bluehouse-Technology/grpc_client.git",
-       {ref,"04c24590a23b22ec5bd87e7f4ba92152310a41b6"}},
+       {ref,"cc5f47a954d0286144678f37a3ad1db70377d3f4"}},
   0},
  {<<"grpc_lib">>,
   {git,"https://github.com/Bluehouse-Technology/grpc_lib",

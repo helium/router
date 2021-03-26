@@ -277,9 +277,9 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => -35.0,
+                <<"rssi">> => 27,
                 <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF7BW125">>,
+                <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',
@@ -500,7 +500,7 @@ lw_join_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
-            <<"fcnt">> => 2,
+            <<"fcnt">> => 1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
@@ -508,9 +508,9 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => '_',
+                <<"rssi">> => 27,
                 <<"snr">> => '_',
-                <<"spreading">> => <<"SF7BW125">>,
+                <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',

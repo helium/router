@@ -141,7 +141,7 @@ websocket_info(_Msg, _Req, State) ->
 
 websocket_terminate(Reason, _ConnState, _State) ->
     lager:warning("websocket closed wih reason ~p", [Reason]),
-    router_metrics:ws_state(true),
+    router_metrics:ws_state(false),
     ok.
 
 %% ------------------------------------------------------------------

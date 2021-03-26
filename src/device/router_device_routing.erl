@@ -395,6 +395,24 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
     {ok, router_device:device()} | {error, any()}.
 packet_offer(Offer, Pid) ->
+    Resp = packet_offer_(Offer, Pid),
+    case Resp of
+        {ok, Device} ->
+            case maybe_start_worker(router_device:id(Device)) of
+                {error, _} ->
+                    ok;
+                {ok, WorkerPid} ->
+                    router_device_worker:handle_offer(WorkerPid, Offer)
+            end;
+        _ ->
+            ok
+    end,
+    Resp.
+
+-spec packet_offer_(blockchain_state_channel_offer_v1:offer(), pid()) ->
+    {ok, router_device:device()} | {error, any()}.
+
+packet_offer_(Offer, Pid) ->
     case validate_packet_offer(Offer, Pid) of
         {error, _} = Error ->
             Error;
@@ -459,12 +477,6 @@ validate_packet_offer(Offer, _Pid) ->
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
-                            case maybe_start_worker(router_device:id(Device)) of
-                                {error, _} ->
-                                    ok;
-                                {ok, WorkerPid} ->
-                                    router_device_worker:handle_offer(WorkerPid, Offer)
-                            end,
                             PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
                             case check_device_balance(PayloadSize, Device, PubKeyBin) of
                                 {error, _Reason} = Error -> Error;
@@ -1088,6 +1100,9 @@ false_positive_test() ->
     ok.
 
 handle_join_offer_test() ->
+    {timeout, 15, fun test_for_handle_join_offer/0}.
+
+test_for_handle_join_offer() ->
     ok = init(),
     application:ensure_all_started(lager),
     meck:new(router_console_api, [passthrough]),

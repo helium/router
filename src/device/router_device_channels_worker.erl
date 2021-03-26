@@ -99,10 +99,12 @@ frame_timeout(Pid, UUID) ->
 -spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
 handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
     {ChannelHandler, _} = router_channel:handler(Channel),
-    case router_devices_sup:lookup_device_worker(DeviceID) of
+    case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
         {error, _Reason} ->
             ok = router_metrics:downlink_inc(ChannelHandler, error),
-            lager:info("failed to find device ~p: ~p", [DeviceID, _Reason]);
+            Desc = io_lib:format("Failed to queue downlink (worker failed): ~p", [_Reason]),
+            ok = maybe_report_downlink_dropped(DeviceID, Desc, Channel),
+            lager:info("failed to start/find device ~p: ~p", [DeviceID, _Reason]);
         {ok, Pid} ->
             case downlink_decode(MapPayload) of
                 {ok, {Confirmed, Port, Payload}} ->
@@ -118,6 +120,10 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                         Position
                     );
                 {error, _Reason} ->
+                    Desc = io_lib:format("Failed to queue downlink (downlink_decode failed): ~p", [
+                        _Reason
+                    ]),
+                    ok = maybe_report_downlink_dropped(DeviceID, Desc, Channel),
                     ok = router_metrics:downlink_inc(ChannelHandler, error),
                     lager:info("could not parse json downlink message ~p for ~p", [
                         _Reason,
@@ -126,25 +132,16 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
             end
     end.
 
--spec handle_downlink(pid(), binary(), router_channel:channel()) -> ok.
+-spec handle_downlink(
+    Pid :: pid(),
+    BinaryPayload :: binary(),
+    Channel :: router_channel:channel()
+) -> ok.
 handle_downlink(Pid, BinaryPayload, Channel) ->
-    {ChannelHandler, _} = router_channel:handler(Channel),
-    case downlink_decode(BinaryPayload) of
-        {ok, {Confirmed, Port, Payload}} ->
-            ok = router_metrics:downlink_inc(ChannelHandler, ok),
-            gen_server:cast(
-                Pid,
-                {handle_downlink, #downlink{
-                    confirmed = Confirmed,
-                    port = Port,
-                    payload = Payload,
-                    channel = Channel
-                }}
-            );
-        {error, _Reason} ->
-            ok = router_metrics:downlink_inc(ChannelHandler, error),
-            lager:info("could not parse json downlink message ~p", [_Reason])
-    end.
+    gen_server:cast(
+        Pid,
+        {handle_downlink, BinaryPayload, Channel}
+    ).
 
 -spec new_data_cache(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
@@ -220,8 +217,24 @@ handle_cast(
         end,
     DataCache1 = maps:put(UUID, UUIDCache1, DataCache),
     {noreply, State#state{data_cache = DataCache1}};
-handle_cast({handle_downlink, Msg}, #state{device_worker = DeviceWorker} = State) ->
-    ok = router_device_worker:queue_message(DeviceWorker, Msg),
+handle_cast(
+    {handle_downlink, BinaryPayload, Channel},
+    #state{device_worker = DeviceWorker} = State
+) ->
+    {ChannelHandler, _} = router_channel:handler(Channel),
+    case downlink_decode(BinaryPayload) of
+        {ok, {Confirmed, Port, Payload}} ->
+            ok = router_metrics:downlink_inc(ChannelHandler, ok),
+            ok = router_device_worker:queue_message(DeviceWorker, #downlink{
+                confirmed = Confirmed,
+                port = Port,
+                payload = Payload,
+                channel = Channel
+            });
+        {error, _Reason} ->
+            ok = router_metrics:downlink_inc(ChannelHandler, error),
+            lager:info("could not parse json downlink message ~p", [_Reason])
+    end,
     {noreply, State};
 handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = State) ->
     ChannelName = router_channel:name(Channel),
@@ -441,6 +454,22 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+-spec maybe_report_downlink_dropped(
+    DeviceID :: binary(),
+    Desc :: string(),
+    Channel :: router_channel:channel()
+) -> ok.
+maybe_report_downlink_dropped(DeviceID, Desc, Channel) ->
+    case router_device_cache:get(DeviceID) of
+        {ok, Device} ->
+            ok = router_utils:event_downlink_dropped_misc(
+                erlang:list_to_binary(Desc),
+                Device,
+                router_channel:to_map(Channel)
+            );
+        {error, not_found} ->
+            lager:info([{device_id, DeviceID}], "failed to get device ~p from cache", [DeviceID])
+    end.
 
 -spec downlink_decode(binary() | map()) -> {ok, {boolean(), integer(), binary()}} | {error, any()}.
 downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
@@ -498,6 +527,7 @@ send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     ),
     [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
+    %% No touchy, this is set in STONE
     Map = #{
         uuid => UUID,
         id => router_device:id(Device),

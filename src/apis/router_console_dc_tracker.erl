@@ -296,6 +296,9 @@ refill_test() ->
     ok.
 
 has_enough_dc_test() ->
+    {timeout, 15, fun test_for_has_enough_dc/0}.
+
+test_for_has_enough_dc() ->
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),
@@ -322,6 +325,9 @@ has_enough_dc_test() ->
     ok.
 
 charge_test() ->
+    {timeout, 15, fun test_for_charge/0}.
+
+test_for_charge() ->
     _ = ets:new(?ETS, [public, named_table, set]),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(_) -> undefined end),

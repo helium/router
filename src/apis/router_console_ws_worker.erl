@@ -236,6 +236,21 @@ handle_info(
     end,
     {noreply, State};
 handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:discover:devices">>, Map},
+    State
+) ->
+    DeviceID = maps:get(<<"device_id">>, Map),
+    Hostpost = maps:get(<<"hotspot">>, Map),
+    PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Hostpost)),
+    TxnID = maps:get(<<"transaction_id">>, Map),
+    lager:debug([{device_id, DeviceID}], "starting discovery for ~p/~p (txn id=~p)", [
+        DeviceID,
+        blockchain_utils:addr2name(PubKeyBin),
+        TxnID
+    ]),
+    _ = erlang:spawn(router_discovery, start, [Map]),
+    {noreply, State};
+handle_info(
     {router_device_worker, queue_update, LabelID, DeviceID, Queue},
     #state{ws = WSPid} = State
 ) ->

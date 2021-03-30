@@ -97,7 +97,7 @@ fetch_queue_test(Config) ->
     end,
 
     receive
-        {websocket_msg, #{event := <<"device:all:downlink:update_queue">>, payload := Payload1}} ->
+        {websocket_msg, #{event := <<"downlink:update_queue">>, payload := Payload1}} ->
             ?assertEqual(
                 #{
                     <<"device">> => ?CONSOLE_DEVICE_ID,
@@ -127,7 +127,7 @@ fetch_queue_test(Config) ->
     ok = router_device_worker:queue_message(Pid, Downlink1),
 
     receive
-        {websocket_msg, #{event := <<"device:all:downlink:update_queue">>, payload := Payload2}} ->
+        {websocket_msg, #{event := <<"downlink:update_queue">>, payload := Payload2}} ->
             ?assertEqual(
                 #{
                     <<"device">> => ?CONSOLE_DEVICE_ID,
@@ -152,7 +152,7 @@ fetch_queue_test(Config) ->
     WSPid ! {label_fetch_queue, LabelID},
 
     receive
-        {websocket_msg, #{event := <<"label:all:downlink:update_queue">>, payload := Payload3}} ->
+        {websocket_msg, #{event := <<"downlink:update_queue">>, payload := Payload3}} ->
             ?assertEqual(
                 #{
                     <<"device">> => ?CONSOLE_DEVICE_ID,

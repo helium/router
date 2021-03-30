@@ -29,7 +29,8 @@
             {router_metrics_reporter_prometheus, [{port, 3000}]}
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
-        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"}
+        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
+        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"}
     ]},
     {grpcbox, [
         {servers, [

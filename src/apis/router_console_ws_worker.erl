@@ -98,7 +98,7 @@ handle_info(
     lager:info("console triggered clearing downlink for devices ~p", [DeviceIDs]),
     lists:foreach(
         fun(DeviceID) ->
-            case router_devices_sup:lookup_device_worker(DeviceID) of
+            case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
                 {error, _Reason} ->
                     lager:info("failed to clear queue, could not find device ~p: ~p", [
                         DeviceID,
@@ -201,7 +201,7 @@ handle_info(
     lager:info("got label ~p fetch_queue message for devices: ~p", [LabelID, DeviceIDs]),
     lists:foreach(
         fun(DeviceID) ->
-            case router_devices_sup:lookup_device_worker(DeviceID) of
+            case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
                 {error, _Reason} ->
                     lager:info(
                         [{device_id, DeviceID}],
@@ -225,7 +225,7 @@ handle_info(
     State
 ) ->
     lager:info([{device_id, DeviceID}], "got device fetch_queue message for device: ~p", [DeviceID]),
-    case router_devices_sup:lookup_device_worker(DeviceID) of
+    case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
         {error, _Reason} ->
             lager:warning([{device_id, DeviceID}], "fetch_queue could not find device ~p: ~p", [
                 DeviceID,
@@ -250,14 +250,14 @@ handle_info(
                 router_console_ws_handler:encode_msg(
                     <<"0">>,
                     <<"device:all">>,
-                    <<"device:all:downlink:update_queue">>,
+                    <<"downlink:update_queue">>,
                     #{device => DeviceID, queue => Queue}
                 );
             LabelID ->
                 router_console_ws_handler:encode_msg(
                     <<"0">>,
                     <<"label:all">>,
-                    <<"label:all:downlink:update_queue">>,
+                    <<"downlink:update_queue">>,
                     #{label => LabelID, device => DeviceID, queue => Queue}
                 )
         end,

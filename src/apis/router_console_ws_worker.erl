@@ -225,7 +225,6 @@ handle_info(
     State
 ) ->
     lager:info([{device_id, DeviceID}], "got device fetch_queue message for device: ~p", [DeviceID]),
-    % TODO
     case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
         {error, _Reason} ->
             lager:warning([{device_id, DeviceID}], "fetch_queue could not find device ~p: ~p", [

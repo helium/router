@@ -1834,20 +1834,33 @@ maybe_track_adr_offer(Device, ADREngine0, Offer) ->
 ) -> {undefined | lorawan_adr:handle(), lorawan_adr:adjustment()}.
 maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
     Metadata = router_device:metadata(Device),
-    case maps:get(adr_allowed, Metadata, false) of
-        %% The device owner can disable ADR (wants_adr == false) and
-        %% supersede the device's desire to be ADR controlled.
-        false ->
+    #frame_cache{
+        rssi = RSSI,
+        packet = Packet,
+        pubkey_bin = PubKeyBin,
+        frame = Frame,
+        region = Region
+    } = FrameCache,
+    #frame{fopts = FOpts, adr = ADRBit, adrackreq = ADRAckReqBit} = Frame,
+    ADRAllowed = maps:get(adr_allowed, Metadata, false),
+    case {ADRAllowed, ADRAckReqBit == 1} of
+        %% ADR is disallowed for this device AND this is packet does
+        %% not have ADRAckReq bit set. Do nothing.
+        {false, false} ->
             {undefined, hold};
-        true ->
-            #frame_cache{
-                rssi = RSSI,
-                packet = Packet,
-                pubkey_bin = PubKeyBin,
-                frame = Frame,
-                region = Region
-            } = FrameCache,
-            #frame{fopts = FOpts, adr = ADRBit, adrackreq = ADRAckReqBit} = Frame,
+        %% ADR is disallowed for this device, but it set
+        %% ADRAckReq. We'll downlink an ADRRequest with packet's
+        %% datarate and default power. Ideally, we'd request the same
+        %% power this packet transmitted at, but that value is
+        %% unknowable.
+        {false, true} ->
+            DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
+            DataRateIdx = lorawan_mac_region:datar_to_dr(Region, DataRateStr),
+            TxPowerIdx = 0,
+            {undefined, {DataRateIdx, TxPowerIdx}};
+        %% ADR is allowed for this device so no special handling for
+        %% this packet.
+        {true, _} ->
             ADREngine1 = maybe_construct_adr_engine(ADREngine0, Region),
             AlreadyHasChannelCorrection = router_device:channel_correction(Device),
             ADRAns = lists:keyfind(link_adr_ans, 1, FOpts),
@@ -1884,13 +1897,13 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
 
             %% TODO: when purchasing multiple packets, is the best SNR/RSSI
             %%       packet reported here? If not, may need to refactor to do so.
-            DataRate = blockchain_helium_packet_v1:datarate(Packet),
-            DataRateConfig = lorawan_utils:parse_datarate(DataRate),
+            DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
+            DataRatePair = lorawan_utils:parse_datarate(DataRateStr),
             AdrPacket = #adr_packet{
                 packet_hash = blockchain_helium_packet_v1:packet_hash(Packet),
                 wants_adr = ADRBit == 1,
                 wants_adr_ack = ADRAckReqBit == 1,
-                datarate_config = DataRateConfig,
+                datarate_config = DataRatePair,
                 snr = blockchain_helium_packet_v1:snr(Packet),
                 rssi = RSSI,
                 hotspot = PubKeyBin

@@ -100,9 +100,17 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec url_check_enabled() -> boolean().
+url_check_enabled() ->
+    case application:get_env(router, router_http_channel_url_check, true) of
+        "false" -> false;
+        false -> false;
+        _ -> true
+    end.
+
 -spec make_http_req(atom(), binary(), list(), binary()) -> any().
 make_http_req(Method, URL, Headers, Payload) ->
-    case check_url(URL, application:get_env(router, router_http_channel_url_check, true)) of
+    case check_url(URL, url_check_enabled()) of
         {error, _Reason} = Error ->
             Error;
         ok ->

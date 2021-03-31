@@ -19,6 +19,7 @@
     console_api_observe/3,
     downlink_inc/2,
     ws_state/1,
+    network_id_inc/1,
     get_reporter_props/1
 ]).
 
@@ -96,6 +97,10 @@ downlink_inc(Type, Status) ->
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
     ok = notify(?METRICS_WS, State).
+
+-spec network_id_inc(any()) -> ok.
+network_id_inc(NetID) ->
+    ok = notify(?METRICS_NETWORK_ID, undefined, [NetID]).
 
 -spec get_reporter_props(atom()) -> list().
 get_reporter_props(Reporter) ->

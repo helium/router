@@ -54,7 +54,9 @@ handle_event({data, Key, Data, MetaData}, State) when
 ->
     _ = prometheus_histogram:observe(erlang:atom_to_list(Key), MetaData, Data),
     {ok, State};
-handle_event({data, Key, _Data, MetaData}, State) when Key == ?METRICS_DOWNLINK ->
+handle_event({data, Key, _Data, MetaData}, State) when
+    Key == ?METRICS_DOWNLINK; Key == ?METRICS_NETWORK_ID
+->
     _ = prometheus_counter:inc(erlang:atom_to_list(Key), MetaData),
     {ok, State};
 handle_event({data, Key, Data, _MetaData}, State) when Key == ?METRICS_WS ->
@@ -113,7 +115,7 @@ declare_metric(Key, Meta, Desc) when
         {labels, Meta},
         {buckets, [50, 100, 250, 500, 1000, 2000]}
     ]);
-declare_metric(Key, Meta, Desc) when Key == ?METRICS_DOWNLINK ->
+declare_metric(Key, Meta, Desc) when Key == ?METRICS_DOWNLINK; Key == ?METRICS_NETWORK_ID ->
     _ = prometheus_counter:declare([
         {name, erlang:atom_to_list(Key)},
         {help, Desc},

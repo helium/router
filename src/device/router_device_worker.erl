@@ -750,7 +750,7 @@ handle_info(
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         Reply,
-        27,
+        lorawan_mac_region:downlink_signal_strength(Region),
         TxTime,
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1392,7 +1392,7 @@ handle_frame_timeout(
             Rx2 = rx2_from_packet(Region, Packet0),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
-                27,
+                lorawan_mac_region:downlink_signal_strength(Region),
                 adjust_rx_time(TxTime),
                 TxFreq,
                 binary_to_list(TxDataRate),
@@ -1490,7 +1490,7 @@ handle_frame_timeout(
     Rx2 = rx2_from_packet(Region, Packet0),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
-        27,
+        lorawan_mac_region:downlink_signal_strength(Region),
         adjust_rx_time(TxTime),
         TxFreq,
         binary_to_list(TxDataRate),

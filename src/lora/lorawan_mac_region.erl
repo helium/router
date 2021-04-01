@@ -17,8 +17,11 @@
 -export([f2uch/2]).
 -export([uplink_power_table/1]).
 -export([max_payload_size/2]).
+-export([downlink_signal_strength/1]).
 
 -include("lorawan_db.hrl").
+
+-define(DEFAULT_DOWNLINK_TX_POWER, 27).
 
 -define(US915_MAX_DOWNLINK_SIZE, 242).
 -define(CN470_MAX_DOWNLINK_SIZE, 242).
@@ -629,6 +632,16 @@ max_payload_size(Region, DR) ->
         'AU915' -> maps:get(DR, ?AU915_PAYLOAD_SIZE_MAP, ?AU915_MAX_DOWNLINK_SIZE);
         _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
     end.
+
+%% ------------------------------------------------------------------
+%% @doc
+%% Bobcat team was testing and noticed downlink `rf_power' was too high for CN470.
+%% NOTE: We may want to reduce to default tx_power
+%% @end
+%% ------------------------------------------------------------------
+-spec downlink_signal_strength(atom()) -> non_neg_integer().
+downlink_signal_strength('CN470') -> 16;
+downlink_signal_strength(_Region) -> ?DEFAULT_DOWNLINK_TX_POWER.
 
 %% static channel plan parameters
 freq('EU868') ->

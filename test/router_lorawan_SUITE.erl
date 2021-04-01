@@ -277,7 +277,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => 27,
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region),
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -508,7 +508,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => 27,
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region),
                 <<"snr">> => '_',
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

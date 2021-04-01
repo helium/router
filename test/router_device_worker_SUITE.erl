@@ -249,6 +249,11 @@ device_worker_late_packet_double_charge_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
+            },
+            <<"integration">> => #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"name">> => fun erlang:is_binary/1,
+                <<"status">> => <<"success">>
             }
         }
     }),

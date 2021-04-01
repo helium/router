@@ -212,7 +212,11 @@ event(Device, Map) ->
             ]),
             Data =
                 case {Category, SubCategory} of
-                    {downlink, downlink_queued} ->
+                    {downlink, SC} when
+                        SC == downlink_queued orelse
+                            SC == downlink_confirmed orelse
+                            SC == downlink_unconfirmed
+                    ->
                         #{
                             fcnt => maps:get(fcnt, Map),
                             payload_size => maps:get(payload_size, Map),

@@ -83,7 +83,7 @@ get_device(DeviceID) ->
         {error, _Reason} = Error ->
             Error;
         {ok, JSONDevice} ->
-            {ok, json_device_to_record(JSONDevice)}
+            {ok, json_device_to_record(JSONDevice, false)}
     end.
 
 -spec get_all_devices() -> {ok, [router_device:device()]} | {error, any()}.
@@ -103,7 +103,7 @@ get_all_devices() ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_all_devices, ok, End - Start),
             FilterMapFun = fun(JSONDevice) ->
-                try json_device_to_record(JSONDevice) of
+                try json_device_to_record(JSONDevice, undefined) of
                     Device -> {true, Device}
                 catch
                     _E:_R ->
@@ -623,7 +623,7 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
                     AppKey = lorawan_utils:hex_to_binary(
                         kvc:path([<<"app_key">>], JSONDevice)
                     ),
-                    {AppKey, json_device_to_record(JSONDevice)}
+                    {AppKey, json_device_to_record(JSONDevice, undefined)}
                 end,
                 jsx:decode(Body, [return_maps])
             );
@@ -666,14 +666,15 @@ get_org_(OrgID) ->
             {error, {get_org_failed, _Other}}
     end.
 
--spec json_device_to_record(JSONDevice :: map()) -> router_device:device().
-json_device_to_record(JSONDevice) ->
+-spec json_device_to_record(JSONDevice :: map(), ADRDefault :: undefined | boolean()) ->
+    router_device:device().
+json_device_to_record(JSONDevice, ADRDefault) ->
     ID = kvc:path([<<"id">>], JSONDevice),
     Metadata = #{
         labels => kvc:path([<<"labels">>], JSONDevice, undefined),
         organization_id => kvc:path([<<"organization_id">>], JSONDevice, undefined),
         multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
-        adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, undefined)
+        adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault)
     },
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},

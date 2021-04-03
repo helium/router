@@ -1009,8 +1009,20 @@ handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {ok, _}, Time) ->
     ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
-handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {ok, _}, Time) ->
-    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
+handle_offer_metrics(#routing_information_pb{data = {devaddr, DevAddr}}, {ok, _}, Time) ->
+    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time),
+    <<_AddrBase:25/integer-unsigned-little, NetID:7/integer>> =
+        <<DevAddr:32/integer-unsigned-little>>,
+    ok = router_metrics:network_id_inc(erlang:integer_to_list(NetID));
+handle_offer_metrics(
+    #routing_information_pb{data = {devaddr, DevAddr}},
+    {error, ?DEVADDR_NOT_IN_SUBNET},
+    Time
+) ->
+    <<_AddrBase:25/integer-unsigned-little, NetID:7/integer>> =
+        <<DevAddr:32/integer-unsigned-little>>,
+    ok = router_metrics:network_id_inc(erlang:integer_to_list(NetID)),
+    ok = router_metrics:routing_offer_observe(packet, rejected, ?DEVADDR_NOT_IN_SUBNET, Time);
 handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
 

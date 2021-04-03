@@ -289,10 +289,15 @@ handle_cast(
         device = Device
     } = State
 ) ->
-    {CachedData, DataCache1} = maps:take(UUID, DataCache0),
-    {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
-    lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
-    {noreply, State#state{data_cache = DataCache1}};
+    case maps:take(UUID, DataCache0) of
+        {CachedData, DataCache1} ->
+            {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
+            lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
+            {noreply, State#state{data_cache = DataCache1}};
+        error ->
+            lager:debug("frame_timeout unknown UUID", [UUID]),
+            {noreply, State}
+    end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.

@@ -15,6 +15,7 @@
 -define(METRICS_CONSOLE_API_TIME, router_console_api_duration).
 -define(METRICS_DOWNLINK, router_device_downlink_packet).
 -define(METRICS_WS, router_ws_state).
+-define(METRICS_NETWORK_ID, router_device_routing_offer_network_id).
 
 -define(METRICS, [
     {?METRICS_SC_ACTIVE, [], "Active State Channel balance"},
@@ -27,5 +28,6 @@
     {?METRICS_FUN_DURATION, [function], "Function duration"},
     {?METRICS_CONSOLE_API_TIME, [type, status], "Console API duration"},
     {?METRICS_DOWNLINK, [type, status], "Downlink count"},
-    {?METRICS_WS, [], "Websocket State"}
+    {?METRICS_WS, [], "Websocket State"},
+    {?METRICS_NETWORK_ID, [network_id], "Offer by network ID"}
 ]).

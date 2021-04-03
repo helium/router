@@ -36,7 +36,7 @@ device_usage() ->
             "  device                                        - this message\n",
             "  device all                                    - All devices in rocksdb\n",
             "  device --id=<id>                              - Info for a device\n",
-            "  device trace --id=<id>                        - Tracing device's log\n",
+            "  device trace --id=<id> [--stop]               - Tracing device's log\n",
             "  device trace stop --id=<id>                   - Stop tracing device's log\n",
             "  device xor --commit                           - Update XOR filter\n",
             "  device queue --id=<id>                        - Queue of messages for device\n",
@@ -60,7 +60,12 @@ device_cmd() ->
     [
         [["device"], [], [id_flag()], prepend_device_id(fun device_info/4)],
         [["device", "all"], [], [], fun device_list_all/3],
-        [["device", "trace"], [], [id_flag()], prepend_device_id(fun trace/4)],
+        [
+            ["device", "trace"],
+            [],
+            [id_flag(), {stop, [{longname, "stop"}, {datatype, boolean}]}],
+            prepend_device_id(fun trace/4)
+        ],
         [["device", "trace", "stop"], [], [id_flag()], prepend_device_id(fun stop_trace/4)],
         [
             ["device", "xor"],
@@ -92,7 +97,9 @@ device_cmd() ->
 trace(ID, ["device", "trace"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     erlang:spawn(router_utils, trace, [DeviceID]),
-    c_text("Tracing device " ++ ID).
+    c_text("Tracing device " ++ ID);
+trace(ID, ["device", "trace"], [], [{id, ID}, {stop, _}]) ->
+    stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]).
 
 xor_filter(["device", "xor"], [], Flags) ->
     Options = maps:from_list(Flags),

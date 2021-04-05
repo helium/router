@@ -284,6 +284,11 @@ lw_join_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',
                 <<"long">> => '_'
+            },
+            <<"integration">> => #{
+                <<"id">> => <<"fake_lorawan_channel">>,
+                <<"name">> => <<"fake_lorawan_channel">>,
+                <<"status">> => <<"success">>
             }
         }
     }),

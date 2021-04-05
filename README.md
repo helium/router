@@ -214,6 +214,7 @@ Data payload example sent to integrations
             "spreading": "SF9BW125",
             "frequency": 923.3,
             "channel": 12,
+            // WARNING: if the hotspot is not found (or asserted) in the chain the lat/long will come in as a string "unknown"
             "lat": 37.00001962582851,
             "long": -120.9000053210367
         }

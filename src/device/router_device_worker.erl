@@ -165,6 +165,7 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
         db = DB,
         cf = CF,
         device = Device,
+        fcnt = router_device:fcnt(Device),
         oui = OUI,
         channels_worker = Pid,
         is_active = IsActive

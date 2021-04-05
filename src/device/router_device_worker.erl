@@ -1381,7 +1381,7 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     Frame :: #frame{},
     Count :: pos_integer(),
     ADRAdjustment :: lorwan_adr:adjustment(),
-    [#downlink{}]
+    [#downlink{} | any()]
 ) ->
     noop
     | {ok, router_device:device()}
@@ -1564,7 +1564,30 @@ handle_frame_timeout(
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             {send, Device1, Packet1, EventTuple}
-    end.
+    end;
+%% This is due to some old downlink being left in the queue
+handle_frame_timeout(
+    Packet0,
+    Region,
+    Device0,
+    Frame,
+    Count,
+    ADRAdjustment,
+    [
+        UknownDonlinkFormat
+        | T
+    ]
+) ->
+    lager:info("we skipped an old downlink ~p", [UknownDonlinkFormat]),
+    handle_frame_timeout(
+        Packet0,
+        Region,
+        Device0,
+        Frame,
+        Count,
+        ADRAdjustment,
+        T
+    ).
 
 %% TODO: we need `link_adr_answer' for ADR. Suggest refactoring this.
 -spec channel_correction_and_fopts(

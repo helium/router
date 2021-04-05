@@ -166,7 +166,7 @@ channel_correction(Device) ->
 channel_correction(Correct, Device) ->
     Device#device_v6{channel_correction = Correct}.
 
--spec queue(device()) -> [#downlink{}].
+-spec queue(device()) -> [#downlink{} | any()].
 queue(Device) ->
     Device#device_v6.queue.
 

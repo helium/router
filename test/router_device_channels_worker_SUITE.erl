@@ -287,7 +287,10 @@ crashing_channel_test(Config) ->
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"misc">>,
         <<"sub_category">> => <<"misc_integration_error">>,
-        <<"description">> => <<"channel_crash: crash_http_channel">>,
+        <<"description">> => fun(Desc) ->
+            Desc == <<"channel_start_error: error init_failed">> orelse
+                Desc == <<"channel_crash: crash_http_channel">>
+        end,
 
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => DeviceID,
@@ -304,7 +307,10 @@ crashing_channel_test(Config) ->
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"misc">>,
         <<"sub_category">> => <<"misc_integration_error">>,
-        <<"description">> => <<"channel_start_error: error init_failed">>,
+        <<"description">> => fun(Desc) ->
+            Desc == <<"channel_start_error: error init_failed">> orelse
+                Desc == <<"channel_crash: crash_http_channel">>
+        end,
 
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => DeviceID,

@@ -107,7 +107,14 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
 event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
-    #frame{mtype = MType, devaddr = DevAddr, fport = FPort, fcnt = FCnt, data = Payload0} = Frame,
+    #frame{
+        mtype = MType,
+        devaddr = DevAddr,
+        fport = FPort,
+        fcnt = FCnt,
+        data = Payload0,
+        fopts = FOpts
+    } = Frame,
     {SubCategory, Desc} =
         case MType of
             ?CONFIRMED_UP -> {uplink_confirmed, <<"Confirmed data up received">>};
@@ -139,7 +146,8 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
             balance => Balance,
             nonce => Nonce,
             used => Used
-        }
+        },
+        mac => parse_fopts(FOpts)
     },
     ok = router_console_api:event(Device, Map).
 
@@ -615,6 +623,50 @@ join_timeout() ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec parse_fopts(FOpts :: list()) -> list(map()).
+parse_fopts(FOpts) ->
+    lists:map(
+        fun(FOpt) ->
+            case FOpt of
+                FOpt when is_atom(FOpt) ->
+                    #{command => FOpt};
+                {link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} ->
+                    #{
+                        command => link_adr_ans,
+                        power_ack => PowerACK,
+                        data_rate_ack => DataRateACK,
+                        channel_mask_ack => ChannelMaskACK
+                    };
+                {rx_param_setup_ans, RX1DROffsetACK, RX2DataRateACK, ChannelACK} ->
+                    #{
+                        command => rx_param_setup_ans,
+                        rx1_offset_ack => RX1DROffsetACK,
+                        rx2_data_rate_ack => RX2DataRateACK,
+                        channel_ack => ChannelACK
+                    };
+                {dev_status_ans, Battery, Margin} ->
+                    #{
+                        command => dev_status_ans,
+                        battery => Battery,
+                        margin => Margin
+                    };
+                {new_channel_ans, DataRateRangeOK, ChannelFreqOK} ->
+                    #{
+                        command => new_channel_ans,
+                        data_rate_ok => DataRateRangeOK,
+                        channel_freq_ok => ChannelFreqOK
+                    };
+                {di_channel_ans, UplinkFreqExists, ChannelFreqOK} ->
+                    #{
+                        command => di_channel_ans,
+                        uplink_freq_exists => UplinkFreqExists,
+                        channel_freq_ok => ChannelFreqOK
+                    }
+            end
+        end,
+        FOpts
+    ).
 
 -spec format_uncharged_hotspot(
     PubKeyBin :: libp2p_crypto:pubkey_bin()

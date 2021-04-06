@@ -258,7 +258,8 @@ event(Device, Map) ->
                             port => maps:get(port, Map),
                             devaddr => maps:get(devaddr, Map),
                             hotspot => maps:get(hotspot, Map),
-                            dc => maps:get(dc, Map)
+                            dc => maps:get(dc, Map),
+                            mac => maps:get(mac, Map)
                         };
                     {C, _SC} when
                         C == uplink orelse

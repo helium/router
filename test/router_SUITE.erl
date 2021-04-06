@@ -245,7 +245,8 @@ dupes_test(Config) ->
                     <<"channel">> => fun erlang:is_number/1,
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
-                }
+                },
+                <<"mac">> => []
             }
         }
     ),
@@ -276,7 +277,8 @@ dupes_test(Config) ->
                     <<"channel">> => fun erlang:is_number/1,
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
-                }
+                },
+                <<"mac">> => []
             }
         }
     ),
@@ -530,7 +532,8 @@ join_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -736,7 +739,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -910,7 +914,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -1088,7 +1093,15 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => [
+                #{
+                    <<"channel_mask_ack">> => 1,
+                    <<"command">> => <<"link_adr_ans">>,
+                    <<"data_rate_ack">> => 1,
+                    <<"power_ack">> => 1
+                }
+            ]
         }
     }),
 
@@ -1231,7 +1244,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -1372,7 +1386,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 

@@ -143,7 +143,8 @@ http_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -301,7 +302,8 @@ http_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -460,7 +462,8 @@ http_update_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 
@@ -567,7 +570,8 @@ http_update_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => []
         }
     }),
 

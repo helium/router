@@ -337,7 +337,8 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
                     <<"channel">> => fun erlang:is_number/1,
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
-                }
+                },
+                <<"mac">> => []
             }
         }
     ),

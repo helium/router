@@ -1181,7 +1181,6 @@ validate_frame(
     <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-
     FrameAck = router_utils:mtype_to_ack(MType),
     Window = PacketTime - DownlinkHandledAtTime,
     case maps:get(FCnt, FrameCache, undefined) of

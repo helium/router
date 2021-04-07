@@ -7,6 +7,7 @@
 ]).
 
 -export([
+    mac_commands_test/1,
     dupes_test/1,
     join_test/1,
     adr_test/1
@@ -57,6 +58,90 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+mac_commands_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    Fopts = [
+        link_check_req,
+        {link_adr_ans, 1, 1, 1},
+        duty_cycle_ans,
+        {rx_param_setup_ans, 1, 1, 1},
+        {dev_status_ans, 100, -1},
+        {new_channel_ans, 1, 1},
+        rx_timing_setup_ans,
+        tx_param_setup_ans,
+        {di_channel_ans, 1, 1},
+        device_time_req
+    ],
+
+    lists:foreach(
+        fun({Index, Fopt}) ->
+            %% Send UNCONFIRMED_UP frame packet
+            Stream !
+                {send,
+                    test_utils:frame_packet(
+                        ?UNCONFIRMED_UP,
+                        PubKeyBin,
+                        router_device:nwk_s_key(Device0),
+                        router_device:app_s_key(Device0),
+                        Index,
+                        #{
+                            fopts => [Fopt]
+                        }
+                    )},
+
+            ExpectedFopts = parse_fopts([lists:nth(Index, Fopts)]),
+
+            %% Waiting for report channel status from HTTP channel
+            {ok, _} = test_utils:wait_for_console_event(<<"uplink">>, #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"category">> => <<"uplink">>,
+                <<"sub_category">> => <<"uplink_unconfirmed">>,
+                <<"description">> => fun erlang:is_binary/1,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"device_id">> => ?CONSOLE_DEVICE_ID,
+                <<"data">> => #{
+                    <<"dc">> => fun erlang:is_map/1,
+                    <<"fcnt">> => Index,
+                    <<"payload_size">> => fun erlang:is_integer/1,
+                    <<"payload">> => fun erlang:is_binary/1,
+                    <<"port">> => fun erlang:is_integer/1,
+                    <<"devaddr">> => fun erlang:is_binary/1,
+                    <<"hotspot">> => #{
+                        <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                        <<"name">> => erlang:list_to_binary(HotspotName),
+                        <<"rssi">> => 0.0,
+                        <<"snr">> => 0.0,
+                        <<"spreading">> => <<"SF8BW125">>,
+                        <<"frequency">> => fun erlang:is_float/1,
+                        <<"channel">> => fun erlang:is_number/1,
+                        <<"lat">> => fun erlang:is_float/1,
+                        <<"long">> => fun erlang:is_float/1
+                    },
+                    <<"mac">> => ExpectedFopts
+                }
+            })
+        end,
+        lists:zip(lists:seq(1, length(Fopts)), Fopts)
+    ),
+
+    %% Ignore down messages updates
+    ok = test_utils:ignore_messages(),
+
+    ok.
 
 dupes_test(Config) ->
     #{
@@ -1489,3 +1574,48 @@ adr_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+parse_fopts(FOpts) ->
+    lists:map(
+        fun(FOpt) ->
+            case FOpt of
+                FOpt when is_atom(FOpt) ->
+                    #{<<"command">> => atom_to_binary(FOpt, utf8)};
+                {link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} ->
+                    #{
+                        <<"command">> => <<"link_adr_ans">>,
+                        <<"power_ack">> => PowerACK,
+                        <<"data_rate_ack">> => DataRateACK,
+                        <<"channel_mask_ack">> => ChannelMaskACK
+                    };
+                {rx_param_setup_ans, RX1DROffsetACK, RX2DataRateACK, ChannelACK} ->
+                    #{
+                        <<"command">> => <<"rx_param_setup_ans">>,
+                        <<"rx1_offset_ack">> => RX1DROffsetACK,
+                        <<"rx2_data_rate_ack">> => RX2DataRateACK,
+                        <<"channel_ack">> => ChannelACK
+                    };
+                {dev_status_ans, Battery, Margin} ->
+                    #{
+                        <<"command">> => <<"dev_status_ans">>,
+                        <<"battery">> => Battery,
+                        <<"margin">> => Margin
+                    };
+                {new_channel_ans, DataRateRangeOK, ChannelFreqOK} ->
+                    #{
+                        <<"command">> => <<"new_channel_ans">>,
+                        <<"data_rate_ok">> => DataRateRangeOK,
+                        <<"channel_freq_ok">> => ChannelFreqOK
+                    };
+                {di_channel_ans, UplinkFreqExists, ChannelFreqOK} ->
+                    #{
+                        <<"command">> => <<"di_channel_ans">>,
+                        <<"uplink_freq_exists">> => UplinkFreqExists,
+                        <<"channel_freq_ok">> => ChannelFreqOK
+                    };
+                _FOpt ->
+                    #{<<"command">> => <<"unknown">>}
+            end
+        end,
+        FOpts
+    ).

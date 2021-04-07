@@ -662,7 +662,9 @@ parse_fopts(FOpts) ->
                         command => di_channel_ans,
                         uplink_freq_exists => UplinkFreqExists,
                         channel_freq_ok => ChannelFreqOK
-                    }
+                    };
+                _FOpt ->
+                    #{command => unknown}
             end
         end,
         FOpts

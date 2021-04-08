@@ -80,7 +80,7 @@ maybe_fetch_offer_location(Offer) ->
 -spec get_country_code(libp2p_crypto:pubkey_bin()) -> {ok, country_code()} | {error, any()}.
 get_country_code(PubKeyBin) ->
     case ets:lookup(?ETS, PubKeyBin) of
-        [{PubKeyBin, CountryCode, _}] -> {ok, CountryCode};
+        [{PubKeyBin, {CountryCode, _}}] -> {ok, CountryCode};
         [] -> {error, pubkey_not_present}
     end.
 
@@ -109,7 +109,7 @@ handle_cast({fetch, Offer}, State) ->
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
 
-    Url = erlang:list_to_binary(io_lib:format("~p~p", [?HOTSPOT_URL_PREFIX, B58])),
+    Url = erlang:list_to_binary(io_lib:format("~s~s", [?HOTSPOT_URL_PREFIX, B58])),
     case hackney:get(Url, [], <<>>, [with_body]) of
         {ok, 200, _Headers, Body} ->
             Map = jsx:decode(Body, [return_maps]),

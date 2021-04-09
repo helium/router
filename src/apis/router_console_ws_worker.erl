@@ -295,21 +295,22 @@ start_ws(WSEndpoint, Token) ->
 update_devices(DB, CF, DeviceIDs) ->
     erlang:spawn(
         fun() ->
-            lager:info("got update for devices: ~p from WS", [DeviceIDs]),
+            Total = erlang:length(DeviceIDs),
+            lager:info("got update for ~p devices: ~p from WS", [Total, DeviceIDs]),
             lists:foreach(
-                fun(DeviceID) ->
+                fun({Index, DeviceID}) ->
                     case router_devices_sup:lookup_device_worker(DeviceID) of
                         {error, not_found} ->
                             lager:info(
-                                "device worker not running for device ~p, updating DB record",
-                                [DeviceID]
+                                "[~p/~p] device worker not running for device ~p, updating DB record",
+                                [Index, Total, DeviceID]
                             ),
                             update_device_record(DB, CF, DeviceID);
                         {ok, Pid} ->
                             router_device_worker:device_update(Pid)
                     end
                 end,
-                DeviceIDs
+                lists:zip(lists:seq(1, Total), DeviceIDs)
             )
         end
     ).

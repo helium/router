@@ -39,11 +39,6 @@ init(Args) ->
     ),
     {ok, #state{}}.
 
-handle_event({data, Key, Data, _MetaData}, State) when
-    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
-->
-    _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
-    {ok, State};
 handle_event({data, Key, Data, MetaData}, State) when
     Key == ?METRICS_ROUTING_OFFER;
     Key == ?METRICS_ROUTING_PACKET;
@@ -63,9 +58,15 @@ handle_event({data, Key, Data, _MetaData}, State) when Key == ?METRICS_WS ->
     _ = prometheus_boolean:set(erlang:atom_to_list(Key), Data),
     {ok, State};
 handle_event({data, Key, Data, _MetaData}, State) when
-    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
+    Key == ?METRICS_SC_ACTIVE;
+    Key == ?METRICS_SC_ACTIVE_COUNT;
+    Key == ?METRICS_DC;
+    Key == ?METRICS_CHAIN_BLOCKS
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
+    {ok, State};
+handle_event({data, Key, Data, MetaData}, State) when Key == ?METRICS_VM_CPU ->
+    _ = prometheus_gauge:set(erlang:atom_to_list(Key), MetaData, Data),
     {ok, State};
 handle_event({data, _Key, _Data, _MetaData}, State) ->
     lager:debug("ignore data ~p ~p ~p", [_Key, _Data, _MetaData]),
@@ -94,7 +95,11 @@ terminate(_Reason, _State) ->
 
 -spec declare_metric(atom(), list(), string()) -> any().
 declare_metric(Key, Meta, Desc) when
-    Key == ?METRICS_SC_ACTIVE; Key == ?METRICS_SC_ACTIVE_COUNT; Key == ?METRICS_DC
+    Key == ?METRICS_SC_ACTIVE;
+    Key == ?METRICS_SC_ACTIVE_COUNT;
+    Key == ?METRICS_DC;
+    Key == ?METRICS_CHAIN_BLOCKS;
+    Key == ?METRICS_VM_CPU
 ->
     _ = prometheus_gauge:declare([
         {name, erlang:atom_to_list(Key)},

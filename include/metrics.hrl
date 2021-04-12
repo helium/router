@@ -16,6 +16,8 @@
 -define(METRICS_DOWNLINK, router_device_downlink_packet).
 -define(METRICS_WS, router_ws_state).
 -define(METRICS_NETWORK_ID, router_device_routing_offer_network_id).
+-define(METRICS_CHAIN_BLOCKS, router_blockchain_blocks).
+-define(METRICS_VM_CPU, router_vm_cpu).
 
 -define(METRICS, [
     {?METRICS_SC_ACTIVE, [], "Active State Channel balance"},
@@ -29,5 +31,7 @@
     {?METRICS_CONSOLE_API_TIME, [type, status], "Console API duration"},
     {?METRICS_DOWNLINK, [type, status], "Downlink count"},
     {?METRICS_WS, [], "Websocket State"},
-    {?METRICS_NETWORK_ID, [network_id], "Offer by network ID"}
+    {?METRICS_NETWORK_ID, [network_id], "Offer by network ID"},
+    {?METRICS_CHAIN_BLOCKS, [], "Router's blockchain blocks"},
+    {?METRICS_VM_CPU, [cpu], "Router CPU usage"}
 ]).

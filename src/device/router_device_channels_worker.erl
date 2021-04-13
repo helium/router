@@ -250,7 +250,9 @@ handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = S
             success ->
                 io_lib:format("Request sent to ~p", [ChannelName]);
             error ->
-                maps:get(description, Report, <<"Error">>)
+                maps:get(description, Report, <<"Error">>);
+            no_channel ->
+                "No Channel Configured"
         end,
 
     ok = router_utils:event_uplink_integration_req(
@@ -275,7 +277,9 @@ handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = 
             success ->
                 io_lib:format("Response received from ~p", [ChannelName]);
             error ->
-                maps:get(description, Report, <<"Error">>)
+                maps:get(description, Report, <<"Error">>);
+            no_channel ->
+                "No Channel Configured"
         end,
 
     case maps:get(status, Report) of

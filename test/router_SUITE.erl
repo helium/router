@@ -1320,8 +1320,7 @@ adr_test(Config) ->
                 4,
                 #{
                     snr => 20.0,
-                    wants_adr => true,
-                    wants_adr_false
+                    wants_adr => false
                 }
             )},
 

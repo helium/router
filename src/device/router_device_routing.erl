@@ -315,7 +315,24 @@ print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
 
 -spec join_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
     {ok, router_device:device()} | {error, any()}.
-join_offer(Offer, _Pid) ->
+join_offer(Offer, Pid) ->
+    Resp = join_offer_(Offer, Pid),
+    case Resp of
+        {ok, Device} ->
+            case maybe_start_worker(router_device:id(Device)) of
+                {error, _} ->
+                    ok;
+                {ok, WorkerPid} ->
+                    router_device_worker:handle_offer(WorkerPid, Offer)
+            end;
+        _ ->
+            ok
+    end,
+    Resp.
+
+-spec join_offer_(blockchain_state_channel_offer_v1:offer(), pid()) ->
+    {ok, router_device:device()} | {error, any()}.
+join_offer_(Offer, _Pid) ->
     #routing_information_pb{
         data = {eui, #eui_pb{deveui = DevEUI0, appeui = AppEUI0}}
     } = blockchain_state_channel_offer_v1:routing(Offer),

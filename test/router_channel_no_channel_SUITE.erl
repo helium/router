@@ -116,9 +116,7 @@ no_channel_test(Config) ->
         <<"id">> => UplinkUUID1,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [<<"no_channel">>])
-        ),
+        <<"description">> => <<"No Channel Configured">>,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{

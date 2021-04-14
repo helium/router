@@ -608,9 +608,7 @@ http_update_test(Config) ->
         <<"id">> => UplinkUUID2,
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
-        ),
+        <<"description">> => <<"Error ResponseCode: 404">>,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{

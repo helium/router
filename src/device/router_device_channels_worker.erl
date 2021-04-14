@@ -125,7 +125,7 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                     ]),
                     ok = maybe_report_downlink_dropped(DeviceID, Desc, Channel),
                     ok = router_metrics:downlink_inc(ChannelHandler, error),
-                    lager:info("could not parse json downlink message ~p for ~p", [
+                    lager:debug("could not parse json downlink message ~p for ~p", [
                         _Reason,
                         DeviceID
                     ])
@@ -233,7 +233,7 @@ handle_cast(
             });
         {error, _Reason} ->
             ok = router_metrics:downlink_inc(ChannelHandler, error),
-            lager:info("could not parse json downlink message ~p", [_Reason])
+            lager:debug("could not parse json downlink message ~p", [_Reason])
     end,
     {noreply, State};
 handle_cast({report_request, UUID, Channel, Report}, #state{device = Device} = State) ->

@@ -184,8 +184,28 @@ encode_fopts([{device_time_ans, MsSinceEpoch} | Rest]) ->
 encode_fopts([]) ->
     <<>>.
 
+encode_fupopts([link_check_req | Rest]) ->
+    <<16#02, (encode_fupopts(Rest))/binary>>;
 encode_fupopts([{link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} | Rest]) ->
-    <<16#03, 0:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, (encode_fopts(Rest))/binary>>;
+    <<16#03, 0:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([duty_cycle_ans | Rest]) ->
+    <<16#04, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([{rx_param_setup_ans, RX1DROffsetACK, RX2DataRateACK, ChannelACK} | Rest]) ->
+    <<16#05, 0:5, RX1DROffsetACK:1, RX2DataRateACK:1, ChannelACK:1, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([{dev_status_ans, Battery, Margin} | Rest]) ->
+    <<16#06, Battery:8, 0:2, Margin:6, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([{new_channel_ans, DataRateRangeOK, ChannelFreqOK} | Rest]) ->
+    <<16#07, 0:6, DataRateRangeOK:1, ChannelFreqOK:1, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([rx_timing_setup_ans | Rest]) ->
+    <<16#08, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([tx_param_setup_ans | Rest]) ->
+    <<16#09, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([{di_channel_ans, UplinkFreqExists, ChannelFreqOK} | Rest]) ->
+    <<16#0A, 0:6, UplinkFreqExists:1, ChannelFreqOK:1, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([device_time_req | Rest]) ->
+    <<16#0D, (encode_fupopts(Rest))/binary>>;
+encode_fupopts([_ | Rest]) ->
+    <<(encode_fupopts(Rest))/binary>>;
 encode_fupopts([]) ->
     <<>>.
 

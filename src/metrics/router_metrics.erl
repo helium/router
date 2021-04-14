@@ -179,7 +179,9 @@ handle_info(
     erlang:spawn(
         fun() ->
             ok = record_dc_balance(),
-            ok = record_state_channels()
+            ok = record_state_channels(),
+            ok = record_chain_blocks(),
+            ok = record_vm_stats()
         end
     ),
     _ = schedule_next_tick(),
@@ -230,6 +232,36 @@ record_state_channels() ->
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
             ok = notify(?METRICS_SC_ACTIVE, DCLeft)
     end.
+
+-spec record_chain_blocks() -> ok.
+record_chain_blocks() ->
+    Chain = blockchain_worker:blockchain(),
+    case blockchain:height(Chain) of
+        {error, _} ->
+            ok;
+        {ok, Height} ->
+            case hackney:get(<<"https://api.helium.io/v1/blocks/height">>, [], <<>>, [with_body]) of
+                {ok, 200, _, Body} ->
+                    CurHeight = kvc:path(
+                        [<<"data">>, <<"height">>],
+                        jsx:decode(Body, [return_maps])
+                    ),
+                    ok = notify(?METRICS_CHAIN_BLOCKS, CurHeight - Height);
+                _ ->
+                    ok
+            end
+    end.
+
+-spec record_vm_stats() -> ok.
+record_vm_stats() ->
+    [{_Mem, CPU}] = recon:node_stats_list(1, 1),
+    lists:foreach(
+        fun({Num, Usage}) ->
+            ok = notify(?METRICS_VM_CPU, Usage, [Num])
+        end,
+        proplists:get_value(scheduler_usage, CPU, [])
+    ),
+    ok.
 
 -spec notify(atom(), any()) -> ok.
 notify(Key, Data) ->

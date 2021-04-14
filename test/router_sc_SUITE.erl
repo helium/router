@@ -252,7 +252,6 @@ maintain_channels_test(Config) ->
                 RouterPubkeyBin,
                 RouterLedger
             ]),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {MySCs, SCs}]),
             map_size(SCs) == 2 andalso map_size(MySCs) == 2
         end,
         30,

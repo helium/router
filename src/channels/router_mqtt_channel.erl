@@ -469,7 +469,7 @@ connect(URI, DeviceID, Name) ->
                     {error, Reason}
             end;
         _ ->
-            lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
+            lager:info("BAD MQTT URI ~p for channel ~p", [URI, Name]),
             {error, invalid_mqtt_uri}
     end.
 

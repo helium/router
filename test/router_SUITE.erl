@@ -213,8 +213,32 @@ dupes_test(Config) ->
         }
     }),
 
+    %% NOTE: Order of the packets in the mailbox is finicky. And the hotspots are
+    %% different enough that the can cause matching problems for each other if
+    %% we directly target either uplink first.
     IsFirstCouplePacketsFun = fun
         (Balance) when Balance == 98 orelse Balance == 97 -> true;
+        (_) -> false
+    end,
+
+    HSID1 = erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+    HSID2 = erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+    HSName1 = erlang:list_to_binary(HotspotName1),
+    HSName2 = erlang:list_to_binary(HotspotName2),
+
+    HotspotBinIdFun = fun
+        (Bin) when Bin == HSID1 orelse Bin == HSID2 -> true;
+        (_) -> false
+    end,
+
+    HotspotBinNameFun = fun
+        (Bin) when Bin == HSName1 orelse Bin == HSName2 -> true;
+        (_) -> false
+    end,
+
+    IsFloatOrBinary = fun
+        (Value) when is_float(Value) -> true;
+        (Value) when is_binary(Value) -> true;
         (_) -> false
     end,
 
@@ -234,22 +258,21 @@ dupes_test(Config) ->
                     <<"nonce">> => 1,
                     <<"used">> => 1
                 },
-                %% <<"dc">> => fun erlang:is_map/1,
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"id">> => HotspotBinIdFun,
+                    <<"name">> => HotspotBinNameFun,
                     <<"rssi">> => fun erlang:is_float/1,
                     <<"snr">> => fun erlang:is_float/1,
                     <<"spreading">> => <<"SF8BW125">>,
                     <<"frequency">> => fun erlang:is_float/1,
                     <<"channel">> => fun erlang:is_number/1,
-                    <<"lat">> => fun erlang:is_float/1,
-                    <<"long">> => fun erlang:is_float/1
+                    <<"lat">> => IsFloatOrBinary,
+                    <<"long">> => IsFloatOrBinary
                 }
             }
         }
@@ -272,15 +295,16 @@ dupes_test(Config) ->
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"id">> => HotspotBinIdFun,
+                    %% <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+                    <<"name">> => HotspotBinNameFun,
                     <<"rssi">> => fun erlang:is_float/1,
                     <<"snr">> => fun erlang:is_float/1,
                     <<"spreading">> => <<"SF8BW125">>,
                     <<"frequency">> => fun erlang:is_float/1,
                     <<"channel">> => fun erlang:is_number/1,
-                    <<"lat">> => fun erlang:is_float/1,
-                    <<"long">> => fun erlang:is_float/1
+                    <<"lat">> => IsFloatOrBinary,
+                    <<"long">> => IsFloatOrBinary
                 }
             }
         }

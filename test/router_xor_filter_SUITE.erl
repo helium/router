@@ -23,11 +23,13 @@
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 -record(state, {
-    chain :: undefined | blockchain:blockchain(),
-    oui :: undefined | non_neg_integer(),
-    pending_txns = #{} :: #{blockchain_txn:hash() => blockchain_txn_routing_v1:txn_routing()},
-    filter_to_devices = #{} :: map(),
-    check_filters_ref :: undefined | reference()
+    pubkey,
+    sig_fun,
+    chain,
+    oui,
+    pending_txns = #{},
+    filter_to_devices = #{},
+    check_filters_ref
 }).
 
 %%--------------------------------------------------------------------
@@ -100,6 +102,16 @@ publish_xor_test(Config) ->
     _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+
+    application:set_env(router, router_xor_filter_worker, true),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [
+        ?MODULE,
+        ?FUNCTION_NAME,
+        ?LINE,
+        application:get_env(router, router_xor_filter_worker, false)
+    ]),
 
     %% Wait until xor filter worker started properly
     test_utils:wait_until(fun() ->

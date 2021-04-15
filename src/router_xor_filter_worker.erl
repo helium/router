@@ -41,6 +41,8 @@
 -type devices_dev_eui_app_eui() :: list(device_dev_eui_app_eui()).
 
 -record(state, {
+    pubkey :: libp2p_crypto:public_key(),
+    sig_fun :: libp2p_crypto:sig_fun(),
     chain :: undefined | blockchain:blockchain(),
     oui :: undefined | non_neg_integer(),
     pending_txns = #{} :: #{
@@ -76,8 +78,9 @@ deveui_appeui(Device) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
     ok = schedule_post_init(),
-    {ok, #state{}}.
+    {ok, #state{pubkey = PubKey, sig_fun = SigFun}}.
 
 handle_call(estimate_cost, _From, State) ->
     Reply = estimate_cost(State),
@@ -91,14 +94,15 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain = undefined} = State) ->
+handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
     case blockchain_worker:blockchain() of
         undefined ->
             ok = schedule_post_init(),
             {noreply, State};
         Chain ->
-            case router_utils:get_oui(Chain) of
+            case router_utils:get_oui() of
                 undefined ->
+                    lager:warning("OUI undefined"),
                     ok = schedule_post_init(),
                     {noreply, State};
                 OUI ->
@@ -118,6 +122,8 @@ handle_info(post_init, #state{chain = undefined} = State) ->
 handle_info(
     ?CHECK_FILTERS_TICK,
     #state{
+        pubkey = PubKey,
+        sig_fun = SigFun,
         chain = Chain,
         oui = OUI,
         filter_to_devices = FilterToDevices,
@@ -141,7 +147,7 @@ handle_info(
                     ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                        Txn = craft_new_filter_txn(Chain, OUI, Filter, Nonce + 1),
+                        Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
                         lager:info("new filter txn ~p submitted ~p", [
                             Hash,
@@ -153,7 +159,15 @@ handle_info(
                     ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("updating filter @ index ~p", [Index]),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                        Txn = craft_update_filter_txn(Chain, OUI, Filter, Nonce + 1, Index),
+                        Txn = craft_update_filter_txn(
+                            PubKey,
+                            SigFun,
+                            Chain,
+                            OUI,
+                            Filter,
+                            Nonce + 1,
+                            Index
+                        ),
                         Hash = submit_txn(Txn),
                         lager:info("updating filter txn ~p submitted ~p", [
                             Hash,
@@ -228,6 +242,8 @@ terminate(_Reason, #state{}) ->
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost(#state{
+    pubkey = PubKey,
+    sig_fun = SigFun,
     chain = Chain,
     oui = OUI,
     filter_to_devices = FilterToDevices
@@ -240,12 +256,12 @@ estimate_cost(#state{
                 fun
                     ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                        Txn = craft_new_filter_txn(Chain, OUI, Filter, 1),
+                        Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1),
                         {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
                             N + erlang:length(NewDevicesDevEuiAppEui)};
                     ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
-                        Txn = craft_update_filter_txn(Chain, OUI, Filter, 1, Index),
+                        Txn = craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1, Index),
                         {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
                             N + erlang:length(NewDevicesDevEuiAppEui)}
                 end,
@@ -399,13 +415,14 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
     {CurrFilter, Added, Removed}.
 
 -spec craft_new_filter_txn(
+    PubKey :: libp2p_crypto:public_key(),
+    SigFun :: libp2p_crypto:sig_fun(),
     Chain :: blockchain:blockchain(),
     OUI :: non_neg_integer(),
     Filter :: reference(),
     Nonce :: non_neg_integer()
 ) -> blockchain_txn_routing_v1:txn_routing().
-craft_new_filter_txn(Chain, OUI, Filter, Nonce) ->
-    {ok, PubKey, SignFun, _} = blockchain_swarm:keys(),
+craft_new_filter_txn(PubKey, SignFun, Chain, OUI, Filter, Nonce) ->
     {BinFilter, _} = xor16:to_bin({Filter, ?HASH_FUN}),
     Txn0 = blockchain_txn_routing_v1:new_xor(
         OUI,
@@ -418,14 +435,15 @@ craft_new_filter_txn(Chain, OUI, Filter, Nonce) ->
     blockchain_txn_routing_v1:sign(Txn1, SignFun).
 
 -spec craft_update_filter_txn(
+    PubKey :: libp2p_crypto:public_key(),
+    SigFun :: libp2p_crypto:sig_fun(),
     Chain :: blockchain:blockchain(),
     OUI :: non_neg_integer(),
     Filter :: reference(),
     Nonce :: non_neg_integer(),
     Index :: non_neg_integer()
 ) -> blockchain_txn_routing_v1:txn_routing().
-craft_update_filter_txn(Chain, OUI, Filter, Nonce, Index) ->
-    {ok, PubKey, SignFun, _} = blockchain_swarm:keys(),
+craft_update_filter_txn(PubKey, SignFun, Chain, OUI, Filter, Nonce, Index) ->
     {BinFilter, _} = xor16:to_bin({Filter, ?HASH_FUN}),
     Txn0 = blockchain_txn_routing_v1:update_xor(
         OUI,

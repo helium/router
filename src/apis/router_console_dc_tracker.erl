@@ -51,7 +51,10 @@
 -define(SERVER, ?MODULE).
 -define(ETS, router_console_dc_tracker_ets).
 
--record(state, {chain = undefined :: undefined | blockchain:blockchain()}).
+-record(state, {
+    pubkey_bin :: libp2p_crypto:pubkey_bin(),
+    chain = undefined :: undefined | blockchain:blockchain()
+}).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -147,8 +150,10 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ?ETS = ets:new(?ETS, [public, named_table, set]),
     ok = blockchain_event:add_handler(self()),
+    {ok, PubKey, _, _} = blockchain_swarm:keys(),
+    PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = erlang:send_after(500, self(), post_init),
-    {ok, #state{}}.
+    {ok, #state{pubkey_bin = PubkeyBin}}.
 
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -173,13 +178,16 @@ handle_info(
     {noreply, State};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, Ledger}},
-    #state{chain = Chain} = State
+    #state{pubkey_bin = PubkeyBin, chain = Chain} = State
 ) ->
     case blockchain:get_block(BlockHash, Chain) of
         {error, Reason} ->
             lager:error("couldn't get block with hash: ~p, reason: ~p", [BlockHash, Reason]);
         {ok, Block} ->
-            BurnTxns = lists:filter(fun txn_filter_fun/1, blockchain_block:transactions(Block)),
+            BurnTxns = lists:filter(
+                fun(Txn) -> txn_filter_fun(PubkeyBin, Txn) end,
+                blockchain_block:transactions(Block)
+            ),
             case BurnTxns of
                 [] ->
                     lager:info("no burn txn found in block ~p", [BlockHash]);
@@ -220,15 +228,16 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec txn_filter_fun(blockchain_txn:txn()) -> boolean().
-txn_filter_fun(Txn) ->
+-spec txn_filter_fun(PubKeyBin :: libp2p_crypto:public_key(), Txn :: blockchain_txn:txn()) ->
+    boolean().
+txn_filter_fun(PubKeyBin, Txn) ->
     case blockchain_txn:type(Txn) == blockchain_txn_token_burn_v1 of
         false ->
             false;
         true ->
             Payee = blockchain_txn_token_burn_v1:payee(Txn),
             Memo = blockchain_txn_token_burn_v1:memo(Txn),
-            Payee == blockchain_swarm:pubkey_bin() andalso Memo =/= 0
+            Payee == PubKeyBin andalso Memo =/= 0
     end.
 
 -spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.

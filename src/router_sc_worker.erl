@@ -60,6 +60,8 @@
 -define(SC_TICK, '__router_sc_tick').
 
 -record(state, {
+    pubkey :: libp2p_crypto:public_key(),
+    sig_fun :: libp2p_crypto:sig_fun(),
     oui = undefined :: undefined | non_neg_integer(),
     chain = undefined :: undefined | blockchain:blockchain(),
     tref = undefined :: undefined | reference(),
@@ -90,7 +92,8 @@ init(Args) ->
     ok = blockchain_event:add_handler(self()),
     erlang:send_after(500, self(), post_init),
     Tref = schedule_next_tick(),
-    {ok, #state{tref = Tref}}.
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {ok, #state{pubkey = PubKey, sig_fun = SigFun, tref = Tref}}.
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
@@ -109,8 +112,9 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            case router_utils:get_oui(Chain) of
+            case router_utils:get_oui() of
                 undefined ->
+                    lager:warning("OUI undefined"),
                     {noreply, State#state{chain = Chain}};
                 OUI ->
                     %% We have a chain and an oui on chain
@@ -139,9 +143,10 @@ handle_info(
     #state{is_active = false, chain = Chain} = State
 ) ->
     %% We're inactive, check if we have an oui
-    case router_utils:get_oui(Chain) of
+    case router_utils:get_oui() of
         undefined ->
             %% stay inactive
+            lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
             %% Only activate if we're on sc_version=2
@@ -222,9 +227,8 @@ maybe_start_state_channel(#state{in_flight = F, tombstones = T} = State) ->
 
 -spec init_state_channels(State :: state()) ->
     {ok, blockchain_txn_open_state_channel_v1:id(), blockchain_txn_open_state_channel_v1:id()}.
-init_state_channels(#state{oui = OUI, chain = Chain}) ->
-    PubkeyBin = blockchain_swarm:pubkey_bin(),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+init_state_channels(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, chain = Chain}) ->
+    PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     Ledger = blockchain:ledger(Chain),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
@@ -249,7 +253,7 @@ init_state_channels(#state{oui = OUI, chain = Chain}) ->
     {ok, Id0, Id1}.
 
 -spec open_next_state_channel(State :: state()) -> {ok, blockchain_txn_state_channel_open_v1:id()}.
-open_next_state_channel(#state{oui = OUI, chain = Chain}) ->
+open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, chain = Chain}) ->
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
     NextExpiration =
@@ -262,9 +266,7 @@ open_next_state_channel(#state{oui = OUI, chain = Chain}) ->
                 %% current chain height and active plus the expiration_interval
                 abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
         end,
-
-    PubkeyBin = blockchain_swarm:pubkey_bin(),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+    PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     Nonce = get_nonce(PubkeyBin, Ledger),
     %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     Id = create_and_send_sc_open_txn(

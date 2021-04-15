@@ -104,8 +104,8 @@ init([]) ->
 
     {ok,
         {?FLAGS, [
-            ?WORKER(router_metrics, [MetricsOpts]),
             ?SUP(blockchain_sup, [BlockchainOpts]),
+            ?WORKER(router_metrics, [MetricsOpts]),
             ?WORKER(router_db, [DBOpts]),
             ?SUP(router_devices_sup, []),
             ?WORKER(lorawan_location, []),

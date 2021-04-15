@@ -38,6 +38,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+    pubkey_bin :: libp2p_crypto:pubkey_bin(),
     routing_packet_duration :: map(),
     packet_duration :: map()
 }).
@@ -122,8 +123,11 @@ init(Args) ->
         end,
         proplists:get_value(reporters, MetricsEnv, [])
     ),
+    {ok, PubKey, _, _} = blockchain_swarm:keys(),
+    PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = schedule_next_tick(),
     {ok, #state{
+        pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
         packet_duration = #{}
     }}.
@@ -174,11 +178,11 @@ handle_cast(_Msg, State) ->
 
 handle_info(
     ?METRICS_TICK,
-    #state{routing_packet_duration = RPD, packet_duration = PD} = State
+    #state{pubkey_bin = PubkeyBin, routing_packet_duration = RPD, packet_duration = PD} = State
 ) ->
     erlang:spawn(
         fun() ->
-            ok = record_dc_balance(),
+            ok = record_dc_balance(PubkeyBin),
             ok = record_state_channels(),
             ok = record_chain_blocks(),
             ok = record_vm_stats()
@@ -208,11 +212,10 @@ cleanup_pd(PD) ->
     End = erlang:system_time(millisecond),
     maps:filter(fun(_K, Start) -> End - Start < timer:seconds(10) end, PD).
 
--spec record_dc_balance() -> ok.
-record_dc_balance() ->
+-spec record_dc_balance(PubkeyBin :: libp2p_crypto:pubkey_bin()) -> ok.
+record_dc_balance(PubkeyBin) ->
     Ledger = blockchain:ledger(blockchain_worker:blockchain()),
-    Owner = blockchain_swarm:pubkey_bin(),
-    case blockchain_ledger_v1:find_dc_entry(Owner, Ledger) of
+    case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
         {error, _} ->
             ok;
         {ok, Entry} ->

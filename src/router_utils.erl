@@ -20,7 +20,7 @@
     event_uplink_integration_res/6,
     event_misc_integration_error/3,
     uuid_v4/0,
-    get_oui/1,
+    get_oui/0,
     get_hotspot_location/2,
     to_bin/1,
     b0/4,
@@ -28,7 +28,6 @@
     trace/1,
     stop_trace/1,
     maybe_update_trace/1,
-    get_oui/0,
     mtype_to_ack/1,
     frame_timeout/0,
     join_timeout/0
@@ -476,18 +475,16 @@ uuid_v4() ->
     ),
     list_to_binary(Str).
 
--spec get_oui(Chain :: blockchain:blockchain()) -> non_neg_integer() | undefined.
-get_oui(Chain) ->
-    Ledger = blockchain:ledger(Chain),
-    PubkeyBin = blockchain_swarm:pubkey_bin(),
-    case blockchain_ledger_v1:get_oui_counter(Ledger) of
-        {error, _} ->
+-spec get_oui() -> undefined | non_neg_integer().
+get_oui() ->
+    case application:get_env(router, oui, undefined) of
+        undefined ->
             undefined;
-        {ok, 0} ->
-            undefined;
-        {ok, _OUICounter} ->
-            %% there are some ouis on chain
-            find_oui(PubkeyBin, Ledger)
+        %% app env comes in as a string
+        OUI0 when is_list(OUI0) ->
+            erlang:list_to_integer(OUI0);
+        OUI0 ->
+            OUI0
     end.
 
 -spec get_hotspot_location(
@@ -586,18 +583,6 @@ maybe_update_trace(DeviceID) ->
         _ ->
             ok = ?MODULE:stop_trace(DeviceID),
             ok = ?MODULE:trace(DeviceID)
-    end.
-
--spec get_oui() -> undefined | non_neg_integer().
-get_oui() ->
-    case application:get_env(router, oui, undefined) of
-        undefined ->
-            undefined;
-        %% app env comes in as a string
-        OUI0 when is_list(OUI0) ->
-            erlang:list_to_integer(OUI0);
-        OUI0 ->
-            OUI0
     end.
 
 -spec mtype_to_ack(integer()) -> 0 | 1.
@@ -704,34 +689,6 @@ format_hotspot(Chain, PubKeyBin, Packet, Region) ->
         lat => Lat,
         long => Long
     }.
-
--spec find_oui(
-    PubkeyBin :: libp2p_crypto:pubkey_bin(),
-    Ledger :: blockchain_ledger_v1:ledger()
-) -> non_neg_integer() | undefined.
-
-find_oui(PubkeyBin, Ledger) ->
-    MyOUIs = blockchain_ledger_v1:find_router_ouis(PubkeyBin, Ledger),
-    case router_utils:get_oui() of
-        undefined ->
-            %% still check on chain
-            case MyOUIs of
-                [] -> undefined;
-                [OUI] -> OUI;
-                [H | _T] -> H
-            end;
-        OUI ->
-            check_oui_on_chain(OUI, MyOUIs)
-    end.
-
--spec check_oui_on_chain(non_neg_integer(), [non_neg_integer()]) -> non_neg_integer() | undefined.
-check_oui_on_chain(OUI, OUIsOnChain) ->
-    case lists:member(OUI, OUIsOnChain) of
-        false ->
-            undefined;
-        true ->
-            OUI
-    end.
 
 -spec get_device_traces(DeviceID :: binary()) ->
     list({{lager_file_backend, string()}, list(), atom()}).

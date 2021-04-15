@@ -101,7 +101,7 @@
 %% ------------------------------------------------------------------
 
 %%        <<"SFxxBWxxx">> | FSK
--type datar() :: binary() | non_neg_integer().
+-type datar() :: string() | binary() | non_neg_integer().
 -type dr() :: non_neg_integer().
 -type datarate() :: {Spreading :: non_neg_integer(), Bandwidth :: non_neg_integer()}.
 -type freq_float() :: float().
@@ -536,6 +536,8 @@ tuple_to_datar(DataRate) ->
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),
     {binary_to_integer(SF), binary_to_integer(BW)};
+datar_to_tuple(DataRate) when is_list(DataRate) ->
+    datar_to_tuple(erlang:list_to_binary(DataRate));
 datar_to_tuple(DataRate) when is_integer(DataRate) ->
     %% FSK
     DataRate.

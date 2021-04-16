@@ -185,7 +185,6 @@ handle_call(
             ]),
             {reply, true, State};
         OfferTime ->
-            OfferCache1 = maps:remove({PubKeyBin, PHash}, OfferCache0),
             DeliveryTime = erlang:system_time(millisecond) - OfferTime,
             case DeliveryTime >= ?RX_MAX_WINDOW of
                 true ->
@@ -210,7 +209,7 @@ handle_call(
                                 Device,
                                 PubKeyBin
                             ),
-                            {reply, false, State#state{offer_cache = OfferCache1}};
+                            {reply, false, State};
                         true ->
                             lager:info(
                                 "accepting even if we got packet (~p) delivered ~p ms too late from ~p (~p)",
@@ -221,14 +220,14 @@ handle_call(
                                     PHash
                                 ]
                             ),
-                            {reply, true, State#state{offer_cache = OfferCache1}}
+                            {reply, true, State}
                     end;
                 false ->
                     lager:debug("accepting, we got a packet from ~p (~p)", [
                         blockchain_utils:addr2name(PubKeyBin),
                         PHash
                     ]),
-                    {reply, true, State#state{offer_cache = OfferCache1}}
+                    {reply, true, State}
             end
     end;
 handle_call(_Msg, _From, State) ->
@@ -834,6 +833,7 @@ handle_info(
         adr_engine = ADREngine0
     } = State
 ) ->
+    self() ! cleanup_offer_cache,
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
         uuid = UUID,
@@ -945,6 +945,14 @@ handle_info(
                 fcnt = FCnt
             }}
     end;
+handle_info(cleanup_offer_cache, #state{offer_cache = OfferCache0} = State) ->
+    Now = erlang:system_time(millisecond),
+    TenMin = timer:minutes(10),
+    FilterFun = fun(_, OfferTime) ->
+        Now - OfferTime < TenMin
+    end,
+    OfferCache1 = maps:filter(FilterFun, OfferCache0),
+    {noreply, State#state{offer_cache = OfferCache1}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

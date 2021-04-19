@@ -755,7 +755,6 @@ offer_cache_test(Config) ->
             PubKeyBin2
         )
     ),
-    ?assertEqual(#{}, test_utils:get_device_worker_offer_cache(DeviceID)),
 
     %% Now testing with a late packet (SCPacket4) we set fcnt to 0
     SCPacket3 = test_utils:frame_packet(

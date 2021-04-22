@@ -185,7 +185,6 @@ handle_call(
             ]),
             {reply, true, State};
         OfferTime ->
-            OfferCache1 = maps:remove({PubKeyBin, PHash}, OfferCache0),
             DeliveryTime = erlang:system_time(millisecond) - OfferTime,
             case DeliveryTime >= ?RX_MAX_WINDOW of
                 true ->
@@ -210,7 +209,7 @@ handle_call(
                                 Device,
                                 PubKeyBin
                             ),
-                            {reply, false, State#state{offer_cache = OfferCache1}};
+                            {reply, false, State};
                         true ->
                             lager:info(
                                 "accepting even if we got packet (~p) delivered ~p ms too late from ~p (~p)",
@@ -221,14 +220,14 @@ handle_call(
                                     PHash
                                 ]
                             ),
-                            {reply, true, State#state{offer_cache = OfferCache1}}
+                            {reply, true, State}
                     end;
                 false ->
                     lager:debug("accepting, we got a packet from ~p (~p)", [
                         blockchain_utils:addr2name(PubKeyBin),
                         PHash
                     ]),
-                    {reply, true, State#state{offer_cache = OfferCache1}}
+                    {reply, true, State}
             end
     end;
 handle_call(_Msg, _From, State) ->
@@ -386,6 +385,7 @@ handle_cast(
         cf = CF,
         device = Device0,
         join_cache = Cache0,
+        offer_cache = OfferCache,
         oui = OUI,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
@@ -396,7 +396,19 @@ handle_cast(
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
-    case validate_join(Packet0, PubKeyBin, Region, OUI, APIDevice, AppKey, Device0, Chain) of
+    case
+        validate_join(
+            Packet0,
+            PubKeyBin,
+            Region,
+            OUI,
+            APIDevice,
+            AppKey,
+            Device0,
+            Chain,
+            OfferCache
+        )
+    of
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State};
@@ -538,6 +550,7 @@ handle_cast(
         chain = Blockchain,
         device = Device0,
         frame_cache = Cache0,
+        offer_cache = OfferCache,
         downlink_handled_at = DownlinkHandledAt,
         fcnt = LastSeenFCnt,
         channels_worker = ChannelsWorker,
@@ -586,7 +599,8 @@ handle_cast(
             Device1,
             Blockchain,
             {LastSeenFCnt, DownlinkHandledAt},
-            Cache0
+            Cache0,
+            OfferCache
         )
     of
         {error, {not_enough_dc, _Reason, Device2}} ->
@@ -819,6 +833,7 @@ handle_info(
         adr_engine = ADREngine0
     } = State
 ) ->
+    self() ! cleanup_offer_cache,
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
         uuid = UUID,
@@ -930,6 +945,14 @@ handle_info(
                 fcnt = FCnt
             }}
     end;
+handle_info(cleanup_offer_cache, #state{offer_cache = OfferCache0} = State) ->
+    Now = erlang:system_time(millisecond),
+    TenMin = timer:minutes(10),
+    FilterFun = fun(_, OfferTime) ->
+        Now - OfferTime < TenMin
+    end,
+    OfferCache1 = maps:filter(FilterFun, OfferCache0),
+    {noreply, State#state{offer_cache = OfferCache1}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -966,14 +989,15 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     ok.
 
 -spec validate_join(
-    blockchain_helium_packet_v1:packet(),
-    libp2p_crypto:pubkey_to_bin(),
-    atom(),
-    non_neg_integer(),
-    router_device:device(),
-    binary(),
-    router_device:device(),
-    blockchain:blockchain()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PubKeyBin :: libp2p_crypto:pubkey_to_bin(),
+    Region :: atom(),
+    OUI :: non_neg_integer(),
+    APIDevice :: router_device:device(),
+    AppKey :: binary(),
+    Device :: router_device:device(),
+    Blockchain :: blockchain:blockchain(),
+    OfferCache :: map()
 ) -> {ok, router_device:device(), binary(), binary()} | {error, any()}.
 validate_join(
     #packet_pb{
@@ -987,21 +1011,33 @@ validate_join(
     APIDevice,
     AppKey,
     Device,
-    Blockchain
+    Blockchain,
+    OfferCache
 ) when MType == ?JOIN_REQ ->
-    PayloadSize = erlang:byte_size(Payload),
-    case router_console_dc_tracker:charge(Device, PayloadSize, Blockchain) of
-        {error, _} = Error ->
-            Error;
-        {ok, _, _} ->
-            case lists:member(DevNonce, router_device:dev_nonces(Device)) of
-                true ->
-                    {error, bad_nonce};
-                false ->
+    case lists:member(DevNonce, router_device:dev_nonces(Device)) of
+        true ->
+            {error, bad_nonce};
+        false ->
+            PayloadSize = erlang:byte_size(Payload),
+            PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+            case maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
+                {error, _} = Error ->
+                    Error;
+                {ok, _, _} ->
                     handle_join(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device)
             end
     end;
-validate_join(_Packet, _PubKeyBin, _Region, _OUI, _APIDevice, _AppKey, _Device, _Blockchain) ->
+validate_join(
+    _Packet,
+    _PubKeyBin,
+    _Region,
+    _OUI,
+    _APIDevice,
+    _AppKey,
+    _Device,
+    _Blockchain,
+    _OfferCache
+) ->
     {error, not_join_req}.
 
 %%%-------------------------------------------------------------------
@@ -1165,7 +1201,8 @@ do_multi_buy(Packet, Device, FrameAck) ->
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
     {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
-    FrameCache :: #{integer() => #frame_cache{}}
+    FrameCache :: #{integer() => #frame_cache{}},
+    OfferCache :: map()
 ) ->
     {error, any()}
     | {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
@@ -1178,7 +1215,8 @@ validate_frame(
     Device0,
     Blockchain,
     {LastSeenFCnt, {DownlinkHandledAtFCnt, DownlinkHandledAtTime}},
-    FrameCache
+    FrameCache,
+    OfferCache
 ) ->
     <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
@@ -1187,7 +1225,7 @@ validate_frame(
     Window = PacketTime - DownlinkHandledAtTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain);
         undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
             lager:debug("we got a late unconfirmed up packet for ~p: lastSeendFCnt: ~p", [
                 FCnt,
@@ -1209,10 +1247,10 @@ validate_frame(
                 "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
                 [FCnt, DownlinkHandledAtFCnt, Window]
             ),
-            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain);
         undefined ->
             ok = do_multi_buy(Packet, Device0, FrameAck),
-            validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain)
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain)
     end.
 
 -spec validate_frame_(
@@ -1220,12 +1258,13 @@ validate_frame(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
     Device :: router_device:device(),
+    OfferCache :: map(),
     Blockchain :: blockchain:blockchain()
 ) ->
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
         {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
+validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1236,7 +1275,8 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
     PayloadSize = erlang:byte_size(FRMPayload),
-    case router_console_dc_tracker:charge(Device0, PayloadSize, Blockchain) of
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    case maybe_charge(Device0, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
         {error, Reason} ->
             %% REVIEW: Do we want to update region and datarate for an uncharged packet?
             DeviceUpdates = [{fcnt, FCnt}, {location, PubKeyBin}],
@@ -1369,6 +1409,35 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
             end
     end.
 
+-spec maybe_charge(
+    Device :: router_device:device(),
+    PayloadSize :: non_neg_integer(),
+    Blockchain :: blockchain:blockchain(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    PHash :: binary(),
+    OfferCache :: map()
+) -> {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
+maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) ->
+    case maps:get({PubKeyBin, PHash}, OfferCache, undefined) of
+        undefined ->
+            case application:get_env(router, charge_when_no_offer, false) of
+                false ->
+                    Metadata = router_device:metadata(Device),
+                    {Balance, Nonce} =
+                        case maps:get(organization_id, Metadata, undefined) of
+                            undefined ->
+                                {0, 0};
+                            OrgID ->
+                                router_console_dc_tracker:current_balance(OrgID)
+                        end,
+                    {ok, Balance, Nonce};
+                true ->
+                    router_console_dc_tracker:charge(Device, PayloadSize, Blockchain)
+            end;
+        _ ->
+            router_console_dc_tracker:charge(Device, PayloadSize, Blockchain)
+    end.
+
 %%%-------------------------------------------------------------------
 %% @doc
 %% Check device's message queue to potentially wait or send reply
@@ -1387,6 +1456,7 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, Blockchain) ->
     noop
     | {ok, router_device:device()}
     | {send, router_device:device(), blockchain_helium_packet_v1:packet(), tuple()}.
+
 handle_frame_timeout(
     Packet0,
     Region,

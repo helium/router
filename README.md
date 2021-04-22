@@ -228,4 +228,44 @@ Data payload example sent to integrations
 
 ## Metrics
 
-Coming soon...
+Router includes metrics that can be retreived via [prometheus](https://prometheus.io/docs/introduction/overview/).
+
+### Enable metrics
+
+To enable Router's metrics you will need to add a new container for Prometheus, you can find an example of the setup in any of the `docker-compose` files.
+You can also get a basic configuration for prometheus in `prometheus-template.yml`, [more config here](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
+
+### Available metrics
+
+- `router_blockchain_blocks` Gauge, difference between Router's local blockchain and Helium's main API (a negative number means Router is ahead).
+- `router_console_api_duration` Histogram,  caculate time for API calls made to console.
+- `router_dc_balance` Gauge, how many DC are left in Router's account.
+- `router_decoder_decoded_duration` Histogram, calculate decoders running time (with status).
+- `router_device_downlink_packet` Counter, count number of downlinks (with their origin).
+- `router_device_packet_trip_duration` Histogram, time taking by an uplink (or join) from offer to packet handling (potentialy including downlink).
+- `router_device_routing_offer_duration` Histogram, time to handle any type of offer (include reason for success or failure).
+- `router_device_routing_packet_duration` Histogram, time to handle any type of packet (include reason for success or failure).
+- `router_function_duration` Histogram, time for some specific function to run.
+- `router_state_channel_active` Gauge, active state channel balance.
+- `router_state_channel_active_count` Gauge, number of open state channels.
+- `router_vm_cpu` Gauge, indidual CPU usage
+- `router_ws_state` Gauge, websocket connection to Console (1 connected, 0 disconnected).
+- `erlang_vm_memory_*` Gauge, Erlang internal memory usage.
+- `erlang_vm_process_count` Gague, number of processes running in the Erlang VM.
+
+Note that any [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) will include `_count`, `_sum` and `_bucket`.
+
+
+### Displaying metrics
+
+##### Grafana
+
+Here are some of the most commun queries that can be added into grafana.
+
+`sum(rate(router_device_routing_packet_duration_count{type="packet", status="accepted"}[5m]))` Rate of accepted packet.
+
+`rate(router_device_routing_offer_duration_sum{status="accepted"}[5m])/rate(router_device_routing_offer_duration_count{status="accepted"}[5m])` Time (is ms) to handle offer (accepted)
+
+`router_dc_balance{}` Simple count of your Router's balance
+
+`sum(rate(router_console_api_duration_count{status="ok"}[5m])) / (sum(rate(router_console_api_duration_count{status="error"}[5m])) + sum(rate(router_console_api_duration_count{status="ok"}[5m]))) * 100` API success rate

@@ -175,10 +175,11 @@ device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
         DeviceID,
         self()
     ),
+    Payload = maps:get(payload, Options, <<"Test cli downlink message">>),
     Msg = #downlink{
         confirmed = maps:is_key(confirmed, Options),
         port = maps:get(port, Options, 1),
-        payload = maps:get(payload, Options, <<"Test cli downlink message">>),
+        payload = router_utils:to_bin(Payload),
         channel = Channel
     },
 

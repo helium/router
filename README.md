@@ -248,7 +248,7 @@ You can also get a basic configuration for prometheus in `prometheus-template.ym
 - `router_function_duration` Histogram, time for some specific function to run.
 - `router_state_channel_active` Gauge, active state channel balance.
 - `router_state_channel_active_count` Gauge, number of open state channels.
-- `router_vm_cpu` Gauge, indidual CPU usage
+- `router_vm_cpu` Gauge, individual CPU usage
 - `router_ws_state` Gauge, websocket connection to Console (1 connected, 0 disconnected).
 - `erlang_vm_memory_*` Gauge, Erlang internal memory usage.
 - `erlang_vm_process_count` Gauge, number of processes running in the Erlang VM.

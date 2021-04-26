@@ -228,7 +228,7 @@ Data payload example sent to integrations
 
 ## Metrics
 
-Router includes metrics that can be retreived via [prometheus](https://prometheus.io/docs/introduction/overview/).
+Router includes metrics that can be retrieved via [prometheus](https://prometheus.io/docs/introduction/overview/).
 
 ### Enable metrics
 

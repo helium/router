@@ -242,7 +242,7 @@ You can also get a basic configuration for prometheus in `prometheus-template.ym
 - `router_dc_balance` Gauge, how many DC are left in Router's account.
 - `router_decoder_decoded_duration` Histogram, calculate decoders running time (with status).
 - `router_device_downlink_packet` Counter, count number of downlinks (with their origin).
-- `router_device_packet_trip_duration` Histogram, time taking by an uplink (or join) from offer to packet handling (potentialy including downlink).
+- `router_device_packet_trip_duration` Histogram, time taken by an uplink (or join) from offer to packet handling (potentially including downlink).
 - `router_device_routing_offer_duration` Histogram, time to handle any type of offer (include reason for success or failure).
 - `router_device_routing_packet_duration` Histogram, time to handle any type of packet (include reason for success or failure).
 - `router_function_duration` Histogram, time for some specific function to run.

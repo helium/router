@@ -264,7 +264,7 @@ Here are some of the most commun queries that can be added into grafana.
 
 `sum(rate(router_device_routing_packet_duration_count{type="packet", status="accepted"}[5m]))` Rate of accepted packet.
 
-`rate(router_device_routing_offer_duration_sum{status="accepted"}[5m])/rate(router_device_routing_offer_duration_count{status="accepted"}[5m])` Time (is ms) to handle offer (accepted)
+`rate(router_device_routing_offer_duration_sum{status="accepted"}[5m])/rate(router_device_routing_offer_duration_count{status="accepted"}[5m])` Time (in ms) to handle offer (accepted)
 
 `router_dc_balance{}` Simple count of your Router's balance
 

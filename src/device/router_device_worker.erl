@@ -885,6 +885,7 @@ handle_info(
                 DownlinkPacket,
                 Region
             ),
+            ok = maybe_send_queue_update(Device1, State),
             case router_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)

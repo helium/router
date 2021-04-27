@@ -44,6 +44,20 @@
 -define(ETS, router_decoder_custom_sup_ets).
 -define(MAX_V8_CONTEXT, 100).
 
+%% erlfmt-ignore
+-define(DECODER_FUNCTION_REGEX, <<
+    "function" % function
+    "\\s+"     % one or more whitespace
+    "Decoder"  % Decoder
+    "\\s*?"    % zero or more whitespace
+    "\\("      % open paren
+    "\\w+?"    % argument of 1 or more characters
+    ","        % comma
+    "\\s*?"    % zero or more whitespace
+    "\\w+?"    % argument of 1 or more characters
+    "\\)"      % close paren
+>>).
+
 -record(custom_decoder, {
     id :: binary(),
     hash :: binary(),
@@ -103,10 +117,10 @@ init([]) ->
 
 -spec add(DecoderID :: binary(), Function :: binary()) -> {ok, pid()} | {error, any()}.
 add(ID, Function) ->
-    case binary:match(Function, <<"function Decoder(bytes, port)">>) of
-        nomatch ->
+    case is_valid_decoder_function(Function) of
+        false ->
             {error, no_decoder_fun_found};
-        _ ->
+        true ->
             Hash = crypto:hash(sha256, Function),
             case lookup(ID) of
                 {error, not_found} ->
@@ -193,6 +207,15 @@ get_oldest_decoder() ->
             end
     end.
 
+-spec is_valid_decoder_function(binary()) -> boolean().
+is_valid_decoder_function(Function) ->
+    case re:run(Function, ?DECODER_FUNCTION_REGEX) of
+        nomatch ->
+            false;
+        _ ->
+            true
+    end.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -240,5 +263,41 @@ get_oldest_decoder_test() ->
 
     ?assertEqual(CustomDecoder0, get_oldest_decoder()),
     true = ets:delete(?ETS).
+
+is_valid_decoder_function_test_() ->
+    [
+        %%% VALID FUNCTIONS
+        %% normal
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder(bytes, port) {}">>)),
+        %% single spaces
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (bytes, port) {}">>)),
+        %% multiple spaces right side
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder    (bytes, port) {}">>)),
+        %% tabs
+        ?_assertMatch(true, is_valid_decoder_function(<<"function\tDecoder\t(bytes, port) {}">>)),
+        %% newlines
+        ?_assertMatch(true, is_valid_decoder_function(<<"function\nDecoder\n(bytes, port) {}">>)),
+        %% multiple spaces both sides
+        ?_assertMatch(
+            true,
+            is_valid_decoder_function(<<"function    Decoder    (bytes, port) {}">>)
+        ),
+        %% different argument names
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (one, two) {}">>)),
+        %% single letter arguments
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (a,b) {}">>)),
+
+        %%% INVALID FUNCTIONS
+        %% lowercase function name
+        ?_assertMatch(false, is_valid_decoder_function(<<"function decoder (bytes, port) {}">>)),
+        %% single argument
+        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder (bytes) {}">>)),
+        %% no arguments
+        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder () {}">>)),
+        %% mispelled function name
+        ?_assertMatch(false, is_valid_decoder_function(<<"function Decodre (bytes, port) {}">>)),
+        %% missing space after function
+        ?_assertMatch(false, is_valid_decoder_function(<<"functionDecoder (bytes, port) {}">>))
+    ].
 
 -endif.

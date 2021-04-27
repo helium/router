@@ -137,11 +137,11 @@ handle_offer(Offer, HandlerPid) ->
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-    _AName = blockchain_utils:addr2name(PubKeyBin),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
+    HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
     Chain = get_chain(),
-    case packet(Packet, PacketTime, PubKeyBin, Region, Pid, Chain) of
+    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
             ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
@@ -165,8 +165,9 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 ) -> ok | {error, any()}.
 handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
     Start = erlang:system_time(millisecond),
+    HoldTime = 0,
     Chain = get_chain(),
-    case packet(Packet, PacketTime, PubKeyBin, Region, self(), Chain) of
+    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, self(), Chain) of
         {error, Reason} = E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
@@ -688,6 +689,7 @@ lookup_bf(Key) ->
 -spec packet(
     Packet :: blockchain_helium_packet_v1:packet(),
     PacketTime :: pos_integer(),
+    HoldTime :: pos_integer(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
     Pid :: pid(),
@@ -700,6 +702,7 @@ packet(
                 MIC:4/binary>> = Payload
     } = Packet,
     PacketTime,
+    HoldTime,
     PubKeyBin,
     Region,
     Pid,
@@ -719,6 +722,7 @@ packet(
                         WorkerPid,
                         Packet,
                         PacketTime,
+                        HoldTime,
                         PubKeyBin,
                         Region,
                         APIDevice,
@@ -754,6 +758,7 @@ packet(
                 PayloadAndMIC/binary>> = Payload
     } = Packet,
     PacketTime,
+    HoldTime,
     PubKeyBin,
     Region,
     Pid,
@@ -783,6 +788,7 @@ packet(
                             send_to_device_worker(
                                 Packet,
                                 PacketTime,
+                                HoldTime,
                                 Pid,
                                 PubKeyBin,
                                 Region,
@@ -800,6 +806,7 @@ packet(
                     send_to_device_worker(
                         Packet,
                         PacketTime,
+                        HoldTime,
                         Pid,
                         PubKeyBin,
                         Region,
@@ -815,6 +822,7 @@ packet(
                     send_to_device_worker(
                         Packet,
                         PacketTime,
+                        HoldTime,
                         Pid,
                         PubKeyBin,
                         Region,
@@ -828,7 +836,7 @@ packet(
             %% wrong devaddr prefix
             {error, {?DEVADDR_MALFORMED, DevAddr}}
     end;
-packet(#packet_pb{payload = Payload}, _PacketTime, AName, _Region, _Pid, _Chain) ->
+packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 -spec get_devices(binary(), binary()) -> {ok, [router_device:device()]} | {error, any()}.
@@ -867,6 +875,7 @@ find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
 -spec send_to_device_worker(
     Packet :: blockchain_helium_packet_v1:packet(),
     PacketTime :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     Pid :: pid(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
@@ -875,7 +884,7 @@ find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
     Payload :: binary(),
     Chain :: blockchain:blockchain()
 ) -> ok | {error, any()}.
-send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, Payload, Chain) ->
+send_to_device_worker(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, DevAddr, MIC, Payload, Chain) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
             Error;
@@ -896,6 +905,7 @@ send_to_device_worker(Packet, PacketTime, Pid, PubKeyBin, Region, DevAddr, MIC, 
                                 NwkSKey,
                                 Packet,
                                 PacketTime,
+                                HoldTime,
                                 PubKeyBin,
                                 Region,
                                 Pid

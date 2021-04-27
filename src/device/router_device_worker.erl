@@ -101,10 +101,10 @@ accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
     AppKey :: binary(),
     Pid :: pid()
 ) -> ok.
-handle_join(WorkerPid, Packet, PacketTime, _HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
+handle_join(WorkerPid, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
     gen_server:cast(
         WorkerPid,
-        {join, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid}
+        {join, Packet, PacketTime, PubKeyBin, HoldTime, Region, APIDevice, AppKey, Pid}
     ).
 
 -spec handle_frame(
@@ -117,8 +117,11 @@ handle_join(WorkerPid, Packet, PacketTime, _HoldTime, PubKeyBin, Region, APIDevi
     Region :: atom(),
     Pid :: pid()
 ) -> ok.
-handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, _HoldTime, PubKeyBin, Region, Pid) ->
-    gen_server:cast(WorkerPid, {frame, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid}).
+handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) ->
+    gen_server:cast(
+        WorkerPid,
+        {frame, NwkSKey, Packet, HoldTime, PacketTime, PubKeyBin, Region, Pid}
+    ).
 
 -spec get_queue_updates(Pid :: pid(), ForwardPid :: pid(), LabelID :: undefined | binary()) -> ok.
 get_queue_updates(Pid, ForwardPid, LabelID) ->
@@ -374,13 +377,7 @@ handle_cast(
             {noreply, State}
     end;
 handle_cast(
-    {join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid},
-    #state{oui = undefined} = State0
-) ->
-    lager:warning("got join packet when oui=undefined"),
-    {noreply, State0};
-handle_cast(
-    {join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
+    {join, Packet0, PacketTime, _HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
     #state{
         chain = Chain,
         db = DB,
@@ -527,7 +524,7 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, PacketTime, PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
@@ -547,7 +544,7 @@ handle_cast(
     ),
     {noreply, State};
 handle_cast(
-    {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},
+    {frame, UsedNwkSKey, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
     #state{
         chain = Blockchain,
         device = Device0,
@@ -753,7 +750,8 @@ handle_cast(
                         Packet0,
                         Frame,
                         Region,
-                        PacketTime
+                        PacketTime,
+                        HoldTime
                     ),
                     ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
                 false ->

@@ -26,7 +26,8 @@
     deframe_packet/2,
     deframe_join_packet/3,
     tmp_dir/0, tmp_dir/1,
-    wait_until/1, wait_until/3
+    wait_until/1, wait_until/3,
+    is_jsx_encoded_map/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -827,3 +828,17 @@ deframe_join_packet(
         lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)
     ),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey, CFList}.
+
+%%%-------------------------------------------------------------------
+%% @doc
+%%
+%% `jsx:encode/1' turns proplists into maps, but empty proplists into arrays.
+%% There are times empty "maps" are what we expect, but they're proplists before
+%% they hit the api boundary.
+%%
+%% @end
+%% %-------------------------------------------------------------------
+-spec is_jsx_encoded_map(map() | list()) -> boolean().
+is_jsx_encoded_map([]) -> true;
+is_jsx_encoded_map(M) when is_map(M) -> true;
+is_jsx_encoded_map(_) -> false.

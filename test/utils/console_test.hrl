@@ -12,6 +12,7 @@
     <<"type">> => <<"http">>,
     <<"credentials">> => #{
         <<"headers">> => #{},
+        <<"url_params">> => #{},
         <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
         <<"method">> => <<"POST">>
     },
@@ -53,6 +54,7 @@
     <<"type">> => <<"http">>,
     <<"credentials">> => #{
         <<"headers">> => #{},
+        <<"url_params">> => #{},
         <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
         <<"method">> => <<"POST">>
     },
@@ -77,6 +79,7 @@
     <<"type">> => <<"http">>,
     <<"credentials">> => #{
         <<"headers">> => #{},
+        <<"url_params">> => #{},
         <<"endpoint">> => <<?CONSOLE_URL/binary, "/channel">>,
         <<"method">> => <<"POST">>
     },

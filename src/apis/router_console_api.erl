@@ -450,6 +450,9 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
     Args = #{
         url => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
         headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
+        url_params => maps:to_list(
+            kvc:path([<<"credentials">>, <<"url_params">>], JSONChannel, #{})
+        ),
         method => list_to_existing_atom(
             binary_to_list(
                 router_utils:to_bin(kvc:path([<<"credentials">>, <<"method">>], JSONChannel))

@@ -31,6 +31,7 @@
     channel :: router_channel:channel(),
     url :: binary(),
     headers :: list(),
+    url_params :: list(),
     method :: atom()
 }).
 
@@ -40,20 +41,34 @@
 init({[Channel, Device], _}) ->
     ok = router_utils:lager_md(Device),
     lager:info("init with ~p", [Channel]),
-    #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    Args = #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    UrlParams = maps:get(url_params, Args, []),
     Headers1 = content_type_or_default(Headers0),
-    {ok, #state{channel = Channel, url = URL, headers = Headers1, method = Method}}.
+    {ok, #state{
+        channel = Channel,
+        url = URL,
+        headers = Headers1,
+        method = Method,
+        url_params = UrlParams
+    }}.
 
 handle_event(
     {data, UUIDRef, Data},
-    #state{channel = Channel, url = URL, headers = Headers, method = Method} = State
+    #state{
+        channel = Channel,
+        url = URL0,
+        headers = Headers,
+        method = Method,
+        url_params = UrlParams
+    } = State
 ) ->
     lager:debug("got data: ~p", [Data]),
     Pid = router_channel:controller(Channel),
     DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
 
-    Res = make_http_req(Method, URL, Headers, Body),
+    URL1 = router_channel_utils:make_url(URL0, UrlParams, Data),
+    Res = make_http_req(Method, URL1, Headers, Body),
 
     RequestReport = make_request_report(Res, Body, State),
     ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
@@ -197,23 +212,35 @@ is_non_local_address(Host) ->
 -spec make_request_report(HeliumError | HackneyResponse, any(), #state{}) -> map() when
     HeliumError :: {error, atom()},
     HackneyResponse :: {ok, any()}.
-make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+make_request_report({error, Reason}, Body, #state{
+    method = Method,
+    url = URL,
+    headers = Headers,
+    url_params = UrlParams
+}) ->
     %% Helium Error
     #{
         request => #{
             method => Method,
             url => URL,
             headers => Headers,
+            url_params => UrlParams,
             body => Body
         },
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
-make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+make_request_report({ok, Response}, Body, #state{
+    method = Method,
+    url = URL,
+    headers = Headers,
+    url_params = UrlParams
+}) ->
     Request = #{
         method => Method,
         url => URL,
         headers => Headers,
+        url_params => UrlParams,
         body => Body
     },
     case Response of

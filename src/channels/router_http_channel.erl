@@ -91,9 +91,16 @@ handle_event(_Msg, State) ->
     {ok, State}.
 
 handle_call({update, Channel, _Device}, State) ->
-    #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    Args = #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    UrlParams = maps:get(url_params, Args, []),
     Headers1 = content_type_or_default(Headers0),
-    {ok, ok, State#state{channel = Channel, url = URL, headers = Headers1, method = Method}};
+    {ok, ok, State#state{
+        channel = Channel,
+        url = URL,
+        headers = Headers1,
+        method = Method,
+        url_params = UrlParams
+    }};
 handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.

@@ -18,6 +18,8 @@
 -define(METRICS_NETWORK_ID, router_device_routing_offer_network_id).
 -define(METRICS_CHAIN_BLOCKS, router_blockchain_blocks).
 -define(METRICS_VM_CPU, router_vm_cpu).
+-define(METRICS_VM_PROC_Q, router_vm_process_queue).
+-define(METRICS_VM_ETS_MEMORY, router_vm_ets_memory).
 
 -define(METRICS, [
     {?METRICS_SC_ACTIVE, [], "Active State Channel balance"},
@@ -33,5 +35,7 @@
     {?METRICS_WS, [], "Websocket State"},
     {?METRICS_NETWORK_ID, [network_id], "Offer by network ID"},
     {?METRICS_CHAIN_BLOCKS, [], "Router's blockchain blocks"},
-    {?METRICS_VM_CPU, [cpu], "Router CPU usage"}
+    {?METRICS_VM_CPU, [cpu], "Router CPU usage"},
+    {?METRICS_VM_PROC_Q, [name], "Router process queue"},
+    {?METRICS_VM_ETS_MEMORY, [name], "Router ets memory"}
 ]).

@@ -23,7 +23,7 @@
     start_link/1,
     default_devaddr/0,
     allocate/2,
-    sort_devices/2,
+    sort_devices/3,
     pubkeybin_to_loc/2
 ]).
 
@@ -77,10 +77,9 @@ default_devaddr() ->
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) ->
+-spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin(), blockchain:blockchain()) ->
     [router_device:device()].
-sort_devices(Devices, PubKeyBin) ->
-    Chain = blockchain_worker:blockchain(),
+sort_devices(Devices, PubKeyBin, Chain) ->
     case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
         {error, _Reason} ->
             Devices;
@@ -309,8 +308,6 @@ sort_devices_test() ->
         <<"C">> => ?INDEX_C,
         <<"D">> => ?INDEX_D
     },
-    meck:new(blockchain_worker, [passthrough]),
-    meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(blockchain, [passthrough]),
     meck:expect(blockchain, ledger, fun(chain) -> ledger end),
     meck:new(blockchain_ledger_v1, [passthrough]),
@@ -323,26 +320,24 @@ sort_devices_test() ->
 
     ?assertEqual([<<"A">>, <<"B">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"A">>)
+        || D <- sort_devices(Devices, <<"A">>, chain)
     ]),
 
     ?assertEqual([<<"B">>, <<"A">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"B">>)
+        || D <- sort_devices(Devices, <<"B">>, chain)
     ]),
 
     ?assertEqual([<<"C">>, <<"D">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"C">>)
+        || D <- sort_devices(Devices, <<"C">>, chain)
     ]),
 
     ?assertEqual([<<"D">>, <<"C">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"D">>)
+        || D <- sort_devices(Devices, <<"D">>, chain)
     ]),
 
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
     ?assert(meck:validate(blockchain)),
     meck:unload(blockchain),
     ?assert(meck:validate(blockchain_ledger_v1)),

@@ -65,7 +65,9 @@ handle_event({data, Key, Data, _MetaData}, State) when
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
     {ok, State};
-handle_event({data, Key, Data, MetaData}, State) when Key == ?METRICS_VM_CPU ->
+handle_event({data, Key, Data, MetaData}, State) when
+    Key == ?METRICS_VM_CPU; Key == ?METRICS_VM_PROC_Q; Key == ?METRICS_VM_ETS_MEMORY
+->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), MetaData, Data),
     {ok, State};
 handle_event({data, _Key, _Data, _MetaData}, State) ->
@@ -99,7 +101,9 @@ declare_metric(Key, Meta, Desc) when
     Key == ?METRICS_SC_ACTIVE_COUNT;
     Key == ?METRICS_DC;
     Key == ?METRICS_CHAIN_BLOCKS;
-    Key == ?METRICS_VM_CPU
+    Key == ?METRICS_VM_CPU;
+    Key == ?METRICS_VM_PROC_Q;
+    Key == ?METRICS_VM_ETS_MEMORY
 ->
     _ = prometheus_gauge:declare([
         {name, erlang:atom_to_list(Key)},

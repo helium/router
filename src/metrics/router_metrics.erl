@@ -185,7 +185,9 @@ handle_info(
             ok = record_dc_balance(PubkeyBin),
             ok = record_state_channels(),
             ok = record_chain_blocks(),
-            ok = record_vm_stats()
+            ok = record_vm_stats(),
+            ok = record_queues(),
+            ok = record_ets()
         end
     ),
     _ = schedule_next_tick(),
@@ -265,6 +267,49 @@ record_vm_stats() ->
         proplists:get_value(scheduler_usage, CPU, [])
     ),
     ok.
+
+-spec record_ets() -> ok.
+record_ets() ->
+    lists:foreach(
+        fun(ETS) ->
+            Name = ets:info(ETS, name),
+            Bytes = ets:info(ETS, memory) * erlang:system_info(wordsize),
+            case Bytes > 1000000 of
+                false -> ok;
+                true -> ok = notify(?METRICS_VM_ETS_MEMORY, Bytes, [Name])
+            end
+        end,
+        ets:all()
+    ),
+    ok.
+
+-spec record_queues() -> ok.
+record_queues() ->
+    Offenders = recon:proc_count(message_queue_len, 5),
+    lists:foreach(
+        fun
+            ({_Pid, Length, _Extra}) when Length < 1000 ->
+                ok;
+            ({Pid, Length, _Extra}) ->
+                case erlang:is_process_alive(Pid) of
+                    false ->
+                        ok;
+                    true ->
+                        Name = get_pid_name(Pid),
+                        ok = notify(?METRICS_VM_CPU, Length, [Name])
+                end
+        end,
+        Offenders
+    ),
+    ok.
+
+-spec get_pid_name(pid()) -> atom().
+get_pid_name(Pid) ->
+    case recon:info(Pid, registered_name) of
+        [] -> erlang:pid_to_list(Pid);
+        {registered_name, Name} -> Name;
+        _Else -> erlang:pid_to_list(Pid)
+    end.
 
 -spec notify(atom(), any()) -> ok.
 notify(Key, Data) ->

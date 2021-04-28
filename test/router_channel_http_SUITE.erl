@@ -162,7 +162,8 @@ http_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
@@ -326,7 +327,8 @@ http_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
@@ -486,7 +488,8 @@ http_update_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
@@ -529,7 +532,8 @@ http_update_test(Config) ->
         <<"credentials">> => #{
             <<"headers">> => #{},
             <<"endpoint">> => <<"http://127.0.0.1:3000/BAD">>,
-            <<"method">> => <<"PUT">>
+            <<"method">> => <<"PUT">>,
+            <<"url_params">> => #{}
         },
         <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
         <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME
@@ -594,7 +598,8 @@ http_update_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,

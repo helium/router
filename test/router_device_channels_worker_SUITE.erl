@@ -106,6 +106,7 @@ refresh_channels_test(Config) ->
         <<"type">> => <<"http">>,
         <<"credentials">> => #{
             <<"headers">> => #{},
+            <<"url_params">> => #{},
             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
             <<"method">> => <<"POST">>
         },
@@ -117,6 +118,7 @@ refresh_channels_test(Config) ->
         <<"type">> => <<"http">>,
         <<"credentials">> => #{
             <<"headers">> => #{},
+            <<"url_params">> => #{},
             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
             <<"method">> => <<"POST">>
         },
@@ -149,6 +151,7 @@ refresh_channels_test(Config) ->
         <<"type">> => <<"http">>,
         <<"credentials">> => #{
             <<"headers">> => #{},
+            <<"url_params">> => #{},
             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
             <<"method">> => <<"PUT">>
         },
@@ -199,6 +202,7 @@ crashing_channel_test(Config) ->
         <<"type">> => <<"http">>,
         <<"credentials">> => #{
             <<"headers">> => #{},
+            <<"url_params">> => #{},
             <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
             <<"method">> => <<"POST">>
         },
@@ -512,7 +516,8 @@ late_packet_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
@@ -590,6 +595,9 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
     Args = #{
         url => kvc:path([<<"credentials">>, <<"endpoint">>], JSONChannel),
         headers => maps:to_list(kvc:path([<<"credentials">>, <<"headers">>], JSONChannel)),
+        url_params => maps:to_list(
+            kvc:path([<<"credentials">>, <<"url_params">>], JSONChannel, #{})
+        ),
         method => list_to_existing_atom(
             binary_to_list(kvc:path([<<"credentials">>, <<"method">>], JSONChannel))
         ),

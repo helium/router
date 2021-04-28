@@ -212,23 +212,35 @@ is_non_local_address(Host) ->
 -spec make_request_report(HeliumError | HackneyResponse, any(), #state{}) -> map() when
     HeliumError :: {error, atom()},
     HackneyResponse :: {ok, any()}.
-make_request_report({error, Reason}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+make_request_report({error, Reason}, Body, #state{
+    method = Method,
+    url = URL,
+    headers = Headers,
+    url_params = UrlParams
+}) ->
     %% Helium Error
     #{
         request => #{
             method => Method,
             url => URL,
             headers => Headers,
+            url_params => UrlParams,
             body => Body
         },
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
-make_request_report({ok, Response}, Body, #state{method = Method, url = URL, headers = Headers}) ->
+make_request_report({ok, Response}, Body, #state{
+    method = Method,
+    url = URL,
+    headers = Headers,
+    url_params = UrlParams
+}) ->
     Request = #{
         method => Method,
         url => URL,
         headers => Headers,
+        url_params => UrlParams,
         body => Body
     },
     case Response of

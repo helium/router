@@ -259,7 +259,8 @@ no_channel_test(Config) ->
                 <<"method">> => fun erlang:is_binary/1,
                 <<"url">> => fun erlang:is_binary/1,
                 <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
             },
             <<"integration">> => #{
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,

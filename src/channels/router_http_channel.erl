@@ -31,6 +31,7 @@
     channel :: router_channel:channel(),
     url :: binary(),
     headers :: list(),
+    url_params :: list(),
     method :: atom()
 }).
 

@@ -165,7 +165,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 ) -> ok | {error, any()}.
 handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
     Start = erlang:system_time(millisecond),
-    HoldTime = 0,
+    HoldTime = 100,
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, self(), Chain) of
         {error, Reason} = E ->
@@ -884,7 +884,18 @@ find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
     Payload :: binary(),
     Chain :: blockchain:blockchain()
 ) -> ok | {error, any()}.
-send_to_device_worker(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, DevAddr, MIC, Payload, Chain) ->
+send_to_device_worker(
+    Packet,
+    PacketTime,
+    HoldTime,
+    Pid,
+    PubKeyBin,
+    Region,
+    DevAddr,
+    MIC,
+    Payload,
+    Chain
+) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
             Error;

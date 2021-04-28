@@ -104,7 +104,7 @@ accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
 handle_join(WorkerPid, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
     gen_server:cast(
         WorkerPid,
-        {join, Packet, PacketTime, PubKeyBin, HoldTime, Region, APIDevice, AppKey, Pid}
+        {join, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid}
     ).
 
 -spec handle_frame(
@@ -120,7 +120,7 @@ handle_join(WorkerPid, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevic
 handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) ->
     gen_server:cast(
         WorkerPid,
-        {frame, NwkSKey, Packet, HoldTime, PacketTime, PubKeyBin, Region, Pid}
+        {frame, NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid}
     ).
 
 -spec get_queue_updates(Pid :: pid(), ForwardPid :: pid(), LabelID :: undefined | binary()) -> ok.

@@ -200,6 +200,7 @@ no_channel_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,

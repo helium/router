@@ -223,7 +223,7 @@ encode_data(Channel, TemplateArgs) ->
 
 -spec encode_data(router_decoder:decoder() | undefined, map(), channel()) -> binary().
 encode_data(undefined, #{payload := Payload} = TemplateArgs, Channel) ->
-    maybe_apply_template(
+    router_channel_utils:maybe_apply_template(
         ?MODULE:payload_template(Channel),
         maps:put(payload, base64:encode(Payload), TemplateArgs)
     );
@@ -231,7 +231,7 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
     DecoderID = router_decoder:id(Decoder),
     case router_decoder:decode(DecoderID, Payload, Port) of
         {ok, DecodedPayload} ->
-            maybe_apply_template(
+            router_channel_utils:maybe_apply_template(
                 ?MODULE:payload_template(Channel),
                 maps:merge(TemplateArgs, #{
                     decoded => #{
@@ -246,7 +246,7 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
                 "~p failed to decode payload ~p/~p: ~p for device ~p",
                 [DecoderID, Payload, Port, Reason, ?MODULE:device_id(Channel)]
             ),
-            maybe_apply_template(
+            router_channel_utils:maybe_apply_template(
                 ?MODULE:payload_template(Channel),
                 maps:merge(TemplateArgs, #{
                     decoded => #{
@@ -257,88 +257,6 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
                 })
             )
     end.
-
--spec maybe_apply_template(undefined | binary(), map()) -> binary().
-maybe_apply_template(undefined, Data) ->
-    jsx:encode(Data);
-maybe_apply_template(Template, TemplateArgs) ->
-    NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
-    Data = mk_data_fun(NormalMap, []),
-    try bbmustache:render(Template, Data, [{key_type, binary}]) of
-        Res -> Res
-    catch
-        _E:_R ->
-            lager:warning("mustache template render failed ~p:~p, Template: ~p Data: ~p", [
-                _E,
-                _R,
-                Template,
-                Data
-            ]),
-            <<"mustache template render failed">>
-    end.
-
-mk_data_fun(Data, FunStack) ->
-    fun(Key0) ->
-        case parse_key(Key0, FunStack) of
-            error ->
-                error;
-            {NewFunStack, Key} ->
-                case kvc:path(Key, Data) of
-                    [] ->
-                        error;
-                    Val when is_map(Val) ->
-                        {ok, mk_data_fun(Val, NewFunStack)};
-                    Val ->
-                        Res = lists:foldl(
-                            fun(Fun, Acc) ->
-                                Fun(Acc)
-                            end,
-                            Val,
-                            NewFunStack
-                        ),
-                        {ok, Res}
-                end
-        end
-    end.
-
-parse_key(<<"base64_to_hex(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun base64_to_hex/1 | FunStack]);
-parse_key(<<"hex_to_base64(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun hex_to_base64/1 | FunStack]);
-parse_key(<<"base64_to_bytes(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun base64_to_bytes/1 | FunStack]);
-parse_key(<<"hex_to_bytes(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun hex_to_bytes/1 | FunStack]);
-parse_key(<<"bytes_to_list(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun bytes_to_list/1 | FunStack]);
-parse_key(<<"epoch_to_iso8601(", Key/binary>>, FunStack) ->
-    parse_key(Key, [fun epoch_to_iso8601/1 | FunStack]);
-parse_key(Key0, FunStack) ->
-    case binary:split(Key0, <<")">>, [trim, global]) of
-        [Key] ->
-            {FunStack, Key};
-        _Other ->
-            error
-    end.
-
-base64_to_hex(Val) ->
-    Bin = base64:decode(Val),
-    lorawan_utils:binary_to_hex(Bin).
-
-hex_to_base64(Val) ->
-    base64:encode(lorawan_utils:hex_to_binary(Val)).
-
-base64_to_bytes(Val) ->
-    base64:decode_to_string(Val).
-
-hex_to_bytes(Val) ->
-    binary_to_list(lorawan_utils:hex_to_binary(Val)).
-
-epoch_to_iso8601(Val) ->
-    iso8601:format(calendar:system_time_to_universal_time(Val, second)).
-
-bytes_to_list(Val) ->
-    list_to_binary(io_lib:format("~w", [Val])).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -536,39 +454,6 @@ payload_template_test() ->
         self()
     ),
     ?assertEqual(undefined, payload_template(Channel)).
-
-template_test() ->
-    Template1 = <<"{{base64_to_hex(foo)}}">>,
-    Map1 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
-    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template1, Map1)),
-    Template2 = <<"{{base64_to_hex(foo.bar)}}">>,
-    Map2 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
-    ?assertEqual(<<"DEADBEEF">>, maybe_apply_template(Template2, Map2)),
-    Template3 = <<"{{hex_to_base64(base64_to_hex(foo))}}">>,
-    Map3 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
-    ?assertEqual(base64:encode(<<16#deadbeef:32/integer>>), maybe_apply_template(Template3, Map3)),
-    Template4 = <<"{{hex_to_base64(base64_to_hex(foo.bar))}}">>,
-    Map4 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
-    ?assertEqual(base64:encode(<<16#deadbeef:32/integer>>), maybe_apply_template(Template4, Map4)),
-    Template5 = <<"{{hex_to_bytes(base64_to_hex(foo.bar))}}">>,
-    Map5 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
-    ?assertEqual(<<16#deadbeef:32/integer>>, maybe_apply_template(Template5, Map5)),
-    Template6 = <<"{{base64_to_bytes(foo.bar))}}">>,
-    Map6 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
-    ?assertEqual(<<16#deadbeef:32/integer>>, maybe_apply_template(Template6, Map6)),
-    Template7 = <<"{{epoch_to_iso8601(time1)}} {{epoch_to_iso8601(time2)}}">>,
-    Map7 = #{time1 => 1111111111, time2 => 1234567890},
-    ?assertEqual(
-        <<"2005-03-18T01:58:31Z 2009-02-13T23:31:30Z">>,
-        maybe_apply_template(Template7, Map7)
-    ),
-    Template8 = <<"{{bytes_to_list(base64_to_bytes(foo.bar))}}">>,
-    Map8 = #{foo => #{bar => base64:encode(<<16#deadbeef:32/integer>>)}},
-    ?assertEqual(
-        list_to_binary(io_lib:format("~w", [binary_to_list(<<16#deadbeef:32/integer>>)])),
-        maybe_apply_template(Template8, Map8)
-    ),
-    ok.
 
 hash_test() ->
     Channel0 = new(

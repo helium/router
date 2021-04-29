@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([ws_get_address_test/1, fetch_queue_test/1]).
+-export([ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -29,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [ws_get_address_test, fetch_queue_test].
+    [ws_get_address_test, fetch_queue_test, consume_queue_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -69,6 +69,166 @@ ws_get_address_test(_Config) ->
             )
     after 2500 -> ct:fail(websocket_msg_timeout)
     end,
+    ok.
+
+consume_queue_test(Config) ->
+    #{stream := Stream, pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Sending debug event from websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+    WSPid ! device_fetch_queue,
+
+    receive
+        {websocket_msg, #{event := <<"router:address">>}} ->
+            ignore
+    after 500 -> ct:fail(websocket_router_address)
+    end,
+
+    receive
+        {websocket_msg, #{event := <<"downlink:update_queue">>, payload := Payload1}} ->
+            ?assertEqual(
+                #{
+                    <<"device">> => ?CONSOLE_DEVICE_ID,
+                    <<"queue">> => []
+                },
+                Payload1
+            )
+    after 500 -> ct:fail(websocket_update_queue)
+    end,
+
+    {ok, Pid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
+
+    Channel = router_channel:new(
+        <<"channel_id">>,
+        random_handler,
+        <<"channel_name">>,
+        [],
+        ?CONSOLE_DEVICE_ID,
+        self()
+    ),
+    Downlink1 = #downlink{
+        confirmed = false,
+        port = 0,
+        payload = <<"payload">>,
+        channel = Channel
+    },
+    Downlink2 = #downlink{confirmed = false, port = 0, payload = <<"payload">>, channel = Channel},
+    ok = router_device_worker:queue_message(Pid, Downlink1),
+    ok = router_device_worker:queue_message(Pid, Downlink2),
+
+    %% Message for 1st queued downlink
+    receive
+        {websocket_msg, #{
+            event := <<"downlink:update_queue">>,
+            payload := Payload2
+        }} ->
+            ?assertEqual(
+                #{
+                    <<"device">> => ?CONSOLE_DEVICE_ID,
+                    <<"queue">> => [
+                        #{
+                            <<"channel">> => #{
+                                <<"id">> => router_channel:id(Channel),
+                                <<"name">> => router_channel:name(Channel)
+                            },
+                            <<"confirmed">> => Downlink1#downlink.confirmed,
+                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"port">> => Downlink1#downlink.port
+                        }
+                    ]
+                },
+                Payload2
+            )
+    after 500 -> ct:fail(websocket_update_queue)
+    end,
+
+    %% Message for 2nd queued downlink
+    receive
+        {websocket_msg, #{
+            event := <<"downlink:update_queue">>,
+            payload := Payload3
+        }} ->
+            ?assertEqual(
+                #{
+                    <<"device">> => ?CONSOLE_DEVICE_ID,
+                    <<"queue">> => [
+                        #{
+                            <<"channel">> => #{
+                                <<"id">> => router_channel:id(Channel),
+                                <<"name">> => router_channel:name(Channel)
+                            },
+                            <<"confirmed">> => Downlink1#downlink.confirmed,
+                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"port">> => Downlink1#downlink.port
+                        },
+                        #{
+                            <<"channel">> => #{
+                                <<"id">> => router_channel:id(Channel),
+                                <<"name">> => router_channel:name(Channel)
+                            },
+                            <<"confirmed">> => Downlink2#downlink.confirmed,
+                            <<"payload">> => Downlink2#downlink.payload,
+                            <<"port">> => Downlink2#downlink.port
+                        }
+                    ]
+                },
+                Payload3
+            )
+    after 500 -> ct:fail(websocket_update_queue)
+    end,
+
+    %% Send uplink to pull downlink from queue
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                _FCnt = 0
+            )},
+    test_utils:wait_until(fun() ->
+        test_utils:get_device_last_seen_fcnt(?CONSOLE_DEVICE_ID) == 0
+    end),
+
+    %% Message for downlink being unqueued
+    receive
+        {websocket_msg, #{
+            event := <<"downlink:update_queue">>,
+            payload := Payload4
+        }} ->
+            ?assertEqual(
+                #{
+                    <<"device">> => ?CONSOLE_DEVICE_ID,
+                    <<"queue">> => [
+                        #{
+                            <<"channel">> => #{
+                                <<"id">> => router_channel:id(Channel),
+                                <<"name">> => router_channel:name(Channel)
+                            },
+                            <<"confirmed">> => Downlink2#downlink.confirmed,
+                            <<"payload">> => Downlink2#downlink.payload,
+                            <<"port">> => Downlink2#downlink.port
+                        }
+                    ]
+                },
+                Payload4
+            )
+    after 500 -> ct:fail(websocket_update_queue)
+    end,
+
     ok.
 
 fetch_queue_test(Config) ->
@@ -119,7 +279,7 @@ fetch_queue_test(Config) ->
         self()
     ),
     Downlink1 = #downlink{
-        confirmed = 1,
+        confirmed = true,
         port = 0,
         payload = <<"payload">>,
         channel = Channel

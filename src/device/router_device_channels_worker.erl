@@ -23,7 +23,7 @@
     report_response/4,
     handle_downlink/3,
     handle_console_downlink/4,
-    new_data_cache/6,
+    new_data_cache/7,
     refresh_channels/1,
     frame_timeout/2
 ]).
@@ -53,7 +53,8 @@
     packet :: #packet_pb{},
     frame :: #frame{},
     region :: atom(),
-    time :: integer()
+    time :: non_neg_integer(),
+    hold_time :: non_neg_integer()
 }).
 
 -record(state, {
@@ -149,16 +150,18 @@ handle_downlink(Pid, BinaryPayload, Channel) ->
     Packet :: #packet_pb{},
     Frame :: #frame{},
     Region :: atom(),
-    Time :: non_neg_integer()
+    Time :: non_neg_integer(),
+    HoldTime :: non_neg_integer()
 ) -> #data_cache{}.
-new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time) ->
+new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time, HoldTime) ->
     #data_cache{
         pubkey_bin = PubKeyBin,
         uuid = UUID,
         packet = Packet,
         frame = Frame,
         region = Region,
-        time = Time
+        time = Time,
+        hold_time = HoldTime
     }.
 
 -spec refresh_channels(Pid :: pid()) -> ok.
@@ -217,6 +220,24 @@ handle_cast(
         end,
     DataCache1 = maps:put(UUID, UUIDCache1, DataCache),
     {noreply, State#state{data_cache = DataCache1}};
+handle_cast(
+    {frame_timeout, UUID},
+    #state{
+        data_cache = DataCache0,
+        chain = Blockchain,
+        event_mgr = EventMgrPid,
+        device = Device
+    } = State
+) ->
+    case maps:take(UUID, DataCache0) of
+        {CachedData, DataCache1} ->
+            {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
+            lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
+            {noreply, State#state{data_cache = DataCache1}};
+        error ->
+            lager:debug("frame_timeout unknown UUID", [UUID]),
+            {noreply, State}
+    end;
 handle_cast(
     {handle_downlink, BinaryPayload, Channel},
     #state{device_worker = DeviceWorker} = State
@@ -297,24 +318,6 @@ handle_cast({report_response, UUID, Channel, Report}, #state{device = Device} = 
     end,
 
     {noreply, State};
-handle_cast(
-    {frame_timeout, UUID},
-    #state{
-        data_cache = DataCache0,
-        chain = Blockchain,
-        event_mgr = EventMgrPid,
-        device = Device
-    } = State
-) ->
-    case maps:take(UUID, DataCache0) of
-        {CachedData, DataCache1} ->
-            {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
-            lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
-            {noreply, State#state{data_cache = DataCache1}};
-        error ->
-            lager:debug("frame_timeout unknown UUID", [UUID]),
-            {noreply, State}
-    end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -538,10 +541,8 @@ downlink_decode(Payload) ->
     Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
 send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
-    FormatHotspot = fun(
-        #data_cache{pubkey_bin = PubKeyBin, packet = Packet, region = Region, time = Time}
-    ) ->
-        format_hotspot(Blockchain, PubKeyBin, Packet, Region, Time, <<"success">>)
+    FormatHotspot = fun(DataCache) ->
+        format_hotspot(DataCache, Blockchain)
     end,
     CachedData1 = lists:sort(
         fun(A, B) -> A#data_cache.time < B#data_cache.time end,
@@ -699,14 +700,19 @@ backoff_fail(ChannelID, Backoffs0, ScheduleMessage) ->
     {Delay, maps:put(ChannelID, {NewBackoff, TimerRef}, Backoffs0)}.
 
 -spec format_hotspot(
-    blockchain:blockchain(),
-    libp2p_crypto:pubkey_bin(),
-    blockchain_helium_packet_v1:packet(),
-    atom(),
-    non_neg_integer(),
-    any()
+    DataCache :: #data_cache{},
+    Chain :: blockchain:blockchain()
 ) -> map().
-format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
+format_hotspot(
+    #data_cache{
+        pubkey_bin = PubKeyBin,
+        packet = Packet,
+        region = Region,
+        time = Time,
+        hold_time = HoldTime
+    },
+    Chain
+) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
@@ -715,12 +721,13 @@ format_hotspot(Chain, PubKeyBin, Packet, Region, Time, Status) ->
         id => erlang:list_to_binary(B58),
         name => erlang:list_to_binary(HotspotName),
         reported_at => Time,
-        status => Status,
+        status => <<"success">>,
         rssi => blockchain_helium_packet_v1:signal_strength(Packet),
         snr => blockchain_helium_packet_v1:snr(Packet),
         spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
         frequency => Freq,
         channel => lorawan_mac_region:f2uch(Region, Freq),
         lat => Lat,
-        long => Long
+        long => Long,
+        hold_time => HoldTime
     }.

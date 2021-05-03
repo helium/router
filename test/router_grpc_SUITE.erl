@@ -113,6 +113,7 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
     Packet = #{
         packet => HeliumPacket,
         hotspot => PubKeyBin,
-        region => 'US915'
+        region => 'US915',
+        hold_time => 100
     },
     #{msg => {packet, Packet}}.

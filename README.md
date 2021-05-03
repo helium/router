@@ -192,7 +192,7 @@ Data payload example sent to integrations
     "app_eui": "app_eui",
     "metadata": {},
     "fcnt": 2,
-    "reported_at": 123,
+    "reported_at": 1619562788361,
     "payload": "base64 encoded payload",
     "payload_size": 22,
      // ONLY if payload is decoded
@@ -207,7 +207,8 @@ Data payload example sent to integrations
         {
             "id": "hotspot_id",
             "name": "hotspot name",
-            "reported_at": 123,
+            "reported_at": 1619562788361,
+            "hold_time": 250,
             "status": "success | error",
             "rssi": -30,
             "snr": 0.2,

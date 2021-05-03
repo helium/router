@@ -296,7 +296,7 @@ record_queues() ->
                         ok;
                     true ->
                         Name = get_pid_name(Pid),
-                        ok = notify(?METRICS_VM_CPU, Length, [Name])
+                        ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
                 end
         end,
         Offenders

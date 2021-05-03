@@ -22,8 +22,8 @@
     start_link/1,
     handle_offer/2,
     accept_uplink/4,
-    handle_join/8,
-    handle_frame/7,
+    handle_join/9,
+    handle_frame/8,
     get_queue_updates/3,
     stop_queue_updates/1,
     queue_message/2,
@@ -91,32 +91,37 @@ accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
     gen_server:call(WorkerPid, {accept_uplink, Packet, PacketTime, PubKeyBin}).
 
 -spec handle_join(
-    pid(),
-    blockchain_helium_packet_v1:packet(),
-    pos_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    router_device:device(),
-    binary(),
-    pid()
+    WorkerPid :: pid(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: pos_integer(),
+    _HoldTime :: pos_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    APIDevice :: router_device:device(),
+    AppKey :: binary(),
+    Pid :: pid()
 ) -> ok.
-handle_join(WorkerPid, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
+handle_join(WorkerPid, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid) ->
     gen_server:cast(
         WorkerPid,
-        {join, Packet, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid}
+        {join, Packet, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid}
     ).
 
 -spec handle_frame(
-    pid(),
-    binary(),
-    blockchain_helium_packet_v1:packet(),
-    pos_integer(),
-    libp2p_crypto:pubkey_bin(),
-    atom(),
-    pid()
+    WorkerPid :: pid(),
+    NwkSKey :: binary(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    PacketTime :: pos_integer(),
+    _HoldTime :: pos_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Region :: atom(),
+    Pid :: pid()
 ) -> ok.
-handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid) ->
-    gen_server:cast(WorkerPid, {frame, NwkSKey, Packet, PacketTime, PubKeyBin, Region, Pid}).
+handle_frame(WorkerPid, NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) ->
+    gen_server:cast(
+        WorkerPid,
+        {frame, NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid}
+    ).
 
 -spec get_queue_updates(Pid :: pid(), ForwardPid :: pid(), LabelID :: undefined | binary()) -> ok.
 get_queue_updates(Pid, ForwardPid, LabelID) ->
@@ -372,13 +377,7 @@ handle_cast(
             {noreply, State}
     end;
 handle_cast(
-    {join, _Packet0, _PubKeyBin, _APIDevice, _AppKey, _Pid},
-    #state{oui = undefined} = State0
-) ->
-    lager:warning("got join packet when oui=undefined"),
-    {noreply, State0};
-handle_cast(
-    {join, Packet0, PacketTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
+    {join, Packet0, PacketTime, _HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
     #state{
         chain = Chain,
         db = DB,
@@ -525,7 +524,7 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, PacketTime, PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
@@ -545,7 +544,7 @@ handle_cast(
     ),
     {noreply, State};
 handle_cast(
-    {frame, UsedNwkSKey, Packet0, PacketTime, PubKeyBin, Region, Pid},
+    {frame, UsedNwkSKey, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
     #state{
         chain = Blockchain,
         device = Device0,
@@ -751,7 +750,8 @@ handle_cast(
                         Packet0,
                         Frame,
                         Region,
-                        PacketTime
+                        PacketTime,
+                        HoldTime
                     ),
                     ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
                 false ->

@@ -113,6 +113,7 @@ data_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => ReportedAtCheck,
+                <<"hold_time">> => 100,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => RSSI,
                 <<"snr">> => SNR,

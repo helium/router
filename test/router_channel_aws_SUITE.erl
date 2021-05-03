@@ -97,6 +97,7 @@ aws_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"selected">> => true,
                 <<"rssi">> => 0.0,
@@ -147,6 +148,7 @@ aws_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
@@ -162,6 +164,7 @@ aws_test(Config) ->
                 <<"id">> => ?CONSOLE_AWS_CHANNEL_ID,
                 <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME,
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
             }
@@ -204,6 +207,7 @@ aws_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,
@@ -219,6 +223,7 @@ aws_test(Config) ->
                 <<"id">> => ?CONSOLE_AWS_CHANNEL_ID,
                 <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME,
                 <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
                 <<"description">> => '_'
             }

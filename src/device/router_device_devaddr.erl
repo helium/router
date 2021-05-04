@@ -84,7 +84,7 @@ sort_devices(Devices, PubKeyBin, Chain) ->
         {error, _Reason} ->
             Devices;
         {ok, Index} ->
-            lists:sort(fun(A, B) -> sort_devices_fun(A, B, Index, Chain) end, Devices)
+            [D || {_, D} <- lists:sort([{distance_between(D, Index, Chain), D} || D <- Devices])]
     end.
 
 %% TODO: Maybe make this a ets table to avoid lookups all the time
@@ -238,57 +238,38 @@ next_subnet(Subnets, Nth) ->
         false -> {Nth + 1, lists:nth(Nth + 1, Subnets)}
     end.
 
--spec sort_devices_fun(
-    router_device:device(),
-    router_device:device(),
-    h3:index(),
-    blockchain:blockchain()
-) -> boolean().
-sort_devices_fun(DeviceA, DeviceB, Index, Chain) ->
-    IndexA =
-        case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceA), Chain) of
-            {error, _} -> undefined;
-            {ok, IA} -> IA
-        end,
-    IndexB =
-        case ?MODULE:pubkeybin_to_loc(router_device:location(DeviceB), Chain) of
-            {error, _} -> undefined;
-            {ok, IB} -> IB
-        end,
-    case IndexA == undefined orelse IndexB == undefined of
-        true ->
-            false;
-        false ->
-            case
-                h3:get_resolution(IndexA) == h3:get_resolution(IndexB) andalso
-                    h3:get_resolution(IndexA) == h3:get_resolution(Index)
-            of
-                false ->
-                    {IndexA1, Indexb1, Index1} = indexes_to_lowest_res(IndexA, IndexB, Index),
-                    compare_distance(Index1, IndexA1, Indexb1);
+-spec distance_between(
+    Device :: router_device:device(),
+    Index :: h3:index(),
+    Chain :: blockchain:blockchain()
+) -> non_neg_integer().
+distance_between(Device, Index, Chain) ->
+    case ?MODULE:pubkeybin_to_loc(router_device:location(Device), Chain) of
+        {error, _Reason} ->
+            %% We default to blockchain_utils:distance/2's default
+            1000;
+        {ok, DeviceIndex} ->
+            case h3:get_resolution(Index) == h3:get_resolution(DeviceIndex) of
                 true ->
-                    compare_distance(Index, IndexA, IndexB)
+                    blockchain_utils:distance(Index, DeviceIndex);
+                false ->
+                    [IndexA, IndexB] = indexes_to_lowest_res([
+                        Index,
+                        DeviceIndex
+                    ]),
+                    blockchain_utils:distance(IndexA, IndexB)
             end
     end.
 
--spec indexes_to_lowest_res(h3:index(), h3:index(), h3:index()) ->
-    {h3:index(), h3:index(), h3:index()}.
-indexes_to_lowest_res(IndexA, IndexB, IndexC) ->
-    Resolutions = [h3:get_resolution(IndexA), h3:get_resolution(IndexB), h3:get_resolution(IndexC)],
+-spec indexes_to_lowest_res([h3:index()]) -> [h3:index()].
+indexes_to_lowest_res(Indexes) ->
+    Resolutions = [h3:get_resolution(I) || I <- Indexes],
     LowestRes = lists:min(Resolutions),
-    {to_res(IndexA, LowestRes), to_res(IndexB, LowestRes), to_res(IndexC, LowestRes)}.
+    [to_res(I, LowestRes) || I <- Indexes].
 
 -spec to_res(h3:index(), non_neg_integer()) -> h3:index().
 to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
-
--spec compare_distance(h3:index(), h3:index(), h3:index()) -> boolean().
-compare_distance(Index1, Index2, Index3) ->
-    try h3:grid_distance(Index2, Index1) < h3:grid_distance(Index3, Index1) of
-        Bool -> Bool
-    catch
-        _:_ -> false
-    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -300,6 +281,10 @@ compare_distance(Index1, Index2, Index3) ->
 -define(INDEX_B, 631210973995593215).
 -define(INDEX_C, 631210968861644799).
 -define(INDEX_D, 631210968873637887).
+
+-define(HOUSTON, 631707683692833279).
+-define(SUNNYVALE, 631211238895226367).
+-define(SAN_JOSE, 631211239494330367).
 
 sort_devices_test() ->
     Hotspots = #{
@@ -344,10 +329,47 @@ sort_devices_test() ->
     meck:unload(blockchain_ledger_v1),
     ok.
 
+sort_devices_long_distance_test() ->
+    Hotspots = #{
+        <<"HOUSTON">> => ?HOUSTON,
+        <<"SUNNYVALE">> => ?SUNNYVALE,
+        <<"SAN_JOSE">> => ?SAN_JOSE
+    },
+    meck:new(blockchain, [passthrough]),
+    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
+    meck:new(blockchain_ledger_v1, [passthrough]),
+    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+        {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
+    end),
+
+    Randomized = lists:sort([{rand:uniform(), N} || N <- maps:keys(Hotspots)]),
+    Devices = [router_device:location(ID, router_device:new(ID)) || {_, ID} <- Randomized],
+
+    ?assertEqual([<<"SAN_JOSE">>, <<"SUNNYVALE">>, <<"HOUSTON">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"SAN_JOSE">>, chain)
+    ]),
+
+    ?assertEqual([<<"SUNNYVALE">>, <<"SAN_JOSE">>, <<"HOUSTON">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"SUNNYVALE">>, chain)
+    ]),
+
+    ?assertEqual([<<"HOUSTON">>, <<"SAN_JOSE">>, <<"SUNNYVALE">>], [
+        router_device:id(D)
+        || D <- sort_devices(Devices, <<"HOUSTON">>, chain)
+    ]),
+
+    ?assert(meck:validate(blockchain)),
+    meck:unload(blockchain),
+    ?assert(meck:validate(blockchain_ledger_v1)),
+    meck:unload(blockchain_ledger_v1),
+    ok.
+
 indexes_to_lowest_res_test() ->
     ?assertEqual(
-        {?INDEX_A, ?INDEX_B, ?INDEX_C},
-        indexes_to_lowest_res(?INDEX_A, ?INDEX_B, ?INDEX_C)
+        [?INDEX_A, ?INDEX_B, ?INDEX_C],
+        indexes_to_lowest_res([?INDEX_A, ?INDEX_B, ?INDEX_C])
     ).
 
 to_res_test() ->
@@ -355,12 +377,6 @@ to_res_test() ->
     ?assertEqual(?INDEX_B, to_res(?INDEX_B, 12)),
     ?assertEqual(?INDEX_C, to_res(?INDEX_C, 12)),
     ?assertEqual(?INDEX_D, to_res(?INDEX_D, 12)),
-    ok.
-
-compare_distance_test() ->
-    ?assert(compare_distance(?INDEX_A, ?INDEX_B, ?INDEX_C)),
-    ?assert(compare_distance(?INDEX_A, ?INDEX_C, ?INDEX_D)),
-    ?assert(compare_distance(?INDEX_A, ?INDEX_B, ?INDEX_D)),
     ok.
 
 -endif.

@@ -20,7 +20,8 @@
     downlink_inc/2,
     ws_state/1,
     network_id_inc/1,
-    get_reporter_props/1
+    get_reporter_props/1,
+    update_queues/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -40,7 +41,8 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     routing_packet_duration :: map(),
-    packet_duration :: map()
+    packet_duration :: map(),
+    queues = [] :: list(pid())
 }).
 
 %% ------------------------------------------------------------------
@@ -108,6 +110,13 @@ get_reporter_props(Reporter) ->
     MetricsEnv = application:get_env(router, metrics, []),
     proplists:get_value(Reporter, MetricsEnv, []).
 
+-spec update_queues([pid()]) -> ok.
+update_queues(Pids) ->
+    gen_server:cast(
+        ?MODULE,
+        {update_queues, Pids}
+    ).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -172,13 +181,20 @@ handle_cast(
                 State1#state{routing_packet_duration = maps:remove({PacketHash, PubKeyBin}, RPD)}
         end,
     {noreply, State2};
+handle_cast({update_queues, Pids}, State) ->
+    {noreply, State#state{queues = Pids}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
 handle_info(
     ?METRICS_TICK,
-    #state{pubkey_bin = PubkeyBin, routing_packet_duration = RPD, packet_duration = PD} = State
+    #state{
+        pubkey_bin = PubkeyBin,
+        routing_packet_duration = RPD,
+        packet_duration = PD,
+        queues = Pids
+    } = State
 ) ->
     erlang:spawn(
         fun() ->
@@ -186,7 +202,7 @@ handle_info(
             ok = record_state_channels(),
             ok = record_chain_blocks(),
             ok = record_vm_stats(),
-            ok = record_queues(),
+            ok = record_queues(Pids),
             ok = record_ets()
         end
     ),
@@ -283,25 +299,49 @@ record_ets() ->
     ),
     ok.
 
--spec record_queues() -> ok.
-record_queues() ->
+-spec record_queues([pid()]) -> ok.
+record_queues(Pids0) ->
     Offenders = recon:proc_count(message_queue_len, 5),
-    lists:foreach(
+    Pids1 = lists:foldl(
         fun
-            ({_Pid, Length, _Extra}) when Length < 1000 ->
-                ok;
-            ({Pid, Length, _Extra}) ->
-                case erlang:is_process_alive(Pid) of
+            ({Pid, Length, _Extra}, Acc) when Length == 0 ->
+                case lists:member(Pid, Acc) of
                     false ->
                         ok;
                     true ->
                         Name = get_pid_name(Pid),
                         ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+                end,
+                lists:delete(Pid, Acc);
+            ({Pid, Length, _Extra}, Acc) when Length < 1000 ->
+                case lists:member(Pid, Acc) of
+                    false ->
+                        Acc;
+                    true ->
+                        Name = get_pid_name(Pid),
+                        case erlang:is_process_alive(Pid) of
+                            false ->
+                                ok = notify(?METRICS_VM_PROC_Q, 0, [Name]),
+                                lists:delete(Pid, Acc);
+                            true ->
+                                ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
+                                Acc
+                        end
+                end;
+            ({Pid, Length, _Extra}, Acc) ->
+                case erlang:is_process_alive(Pid) of
+                    false ->
+                        Acc;
+                    true ->
+                        Name = get_pid_name(Pid),
+                        ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
+                        [Pid | Acc]
                 end
         end,
+        Pids0,
         Offenders
     ),
-    ok.
+    ?MODULE:update_queues(Pids1).
 
 -spec get_pid_name(pid()) -> atom().
 get_pid_name(Pid) ->

@@ -289,10 +289,15 @@ record_ets() ->
     lists:foreach(
         fun(ETS) ->
             Name = ets:info(ETS, name),
-            Bytes = ets:info(ETS, memory) * erlang:system_info(wordsize),
-            case Bytes > 1000000 of
-                false -> ok;
-                true -> ok = notify(?METRICS_VM_ETS_MEMORY, Bytes, [Name])
+            case ets:info(ETS, memory) of
+                undefined ->
+                    ok;
+                Memory ->
+                    Bytes = Memory * erlang:system_info(wordsize),
+                    case Bytes > 1000000 of
+                        false -> ok;
+                        true -> ok = notify(?METRICS_VM_ETS_MEMORY, Bytes, [Name])
+                    end
             end
         end,
         ets:all()

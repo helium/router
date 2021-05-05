@@ -6,7 +6,7 @@
 
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
--include("utils/console_test.hrl").
+-include("console_test.hrl").
 
 -export([
     groups/0,

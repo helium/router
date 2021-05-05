@@ -10,13 +10,13 @@
 
 -spec start(Map :: map()) -> ok.
 start(Map) ->
-    Hostpost = maps:get(<<"hotspot">>, Map),
-    PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Hostpost)),
+    Hotspot = maps:get(<<"hotspot">>, Map),
+    PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Hotspot)),
     TxnID = maps:get(<<"transaction_id">>, Map),
     Sig = maps:get(<<"signature">>, Map),
     DeviceID = maps:get(<<"device_id">>, Map),
     lager:md([{device_id, DeviceID}]),
-    case verify_signature(Hostpost, PubKeyBin, Sig) of
+    case verify_signature(Hotspot, PubKeyBin, Sig) of
         false ->
             lager:info("failed to verify signature for ~p (device_id=~p txn_id=~p sig=~p)", [
                 blockchain_utils:addr2name(PubKeyBin),
@@ -91,14 +91,14 @@ send_error(WorkerPid, Device, TxnID, PubKeyBin, Error) ->
     Attempts :: non_neg_integer()
 ) -> ok | error.
 send(PubKeyBin, _DeviceID, _Packets, _Sig, 0) ->
-    lager:info("failed to dial hotpost after max attempts ~p", [
+    lager:info("failed to dial hotspot after max attempts ~p", [
         blockchain_utils:addr2name(PubKeyBin)
     ]),
     error;
 send(PubKeyBin, DeviceID, Packets, Sig, Attempts) ->
     case router_discovery_handler:dial(PubKeyBin) of
         {error, _Reason} ->
-            lager:info("failed to dial hotpost ~p: ~p", [
+            lager:info("failed to dial hotspot ~p: ~p", [
                 blockchain_utils:addr2name(PubKeyBin),
                 _Reason
             ]),
@@ -122,21 +122,21 @@ send(PubKeyBin, DeviceID, Packets, Sig, Attempts) ->
     end.
 
 -spec verify_signature(
-    Hostpost :: binary(),
-    HostpostPubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Hotspot :: binary(),
+    HotspotPubKeyBin :: libp2p_crypto:pubkey_bin(),
     Sig :: binary()
 ) -> boolean().
-verify_signature(Hostpost, HostpostPubKeyBin, Sig) ->
-    case get_hotspot_owner(HostpostPubKeyBin) of
+verify_signature(Hotspot, HotspotPubKeyBin, Sig) ->
+    case get_hotspot_owner(HotspotPubKeyBin) of
         {error, _Reason} ->
             lager:info("failed to find owner for hotspot ~p: ~p", [
-                {Hostpost, HostpostPubKeyBin},
+                {Hotspot, HotspotPubKeyBin},
                 _Reason
             ]),
             false;
         {ok, OwnerPubKeyBin} ->
             libp2p_crypto:verify(
-                <<Hostpost/binary>>,
+                <<Hotspot/binary>>,
                 base64:decode(Sig),
                 libp2p_crypto:bin_to_pubkey(OwnerPubKeyBin)
             )

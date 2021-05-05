@@ -73,12 +73,12 @@ disovery_test(Config) ->
     #{secret := HotspotPrivKey, public := HotspotPubKey} = proplists:get_value(keys, Config),
     SigFun = libp2p_crypto:mk_sig_fun(HotspotPrivKey),
     HotspotPubKeyBin = libp2p_crypto:pubkey_to_bin(HotspotPubKey),
-    HostpostB58Bin = erlang:list_to_binary(libp2p_crypto:bin_to_b58(HotspotPubKeyBin)),
+    HotspotB58Bin = erlang:list_to_binary(libp2p_crypto:bin_to_b58(HotspotPubKeyBin)),
     TxnID1 = 1,
-    Sig = SigFun(HostpostB58Bin),
+    Sig = SigFun(HotspotB58Bin),
     EncodedSig = base64:encode(Sig),
     Map1 = #{
-        <<"hotspot">> => HostpostB58Bin,
+        <<"hotspot">> => HotspotB58Bin,
         <<"transaction_id">> => TxnID1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"signature">> => EncodedSig
@@ -244,7 +244,7 @@ disovery_test(Config) ->
     %% Restart process one more to make sure device worker behaves correctly
     TxnID3 = 3,
     Map3 = #{
-        <<"hotspot">> => HostpostB58Bin,
+        <<"hotspot">> => HotspotB58Bin,
         <<"transaction_id">> => TxnID3,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"signature">> => EncodedSig

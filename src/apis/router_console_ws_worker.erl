@@ -240,8 +240,8 @@ handle_info(
     State
 ) ->
     DeviceID = maps:get(<<"device_id">>, Map),
-    Hostpost = maps:get(<<"hotspot">>, Map),
-    PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Hostpost)),
+    Hotspot = maps:get(<<"hotspot">>, Map),
+    PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Hotspot)),
     TxnID = maps:get(<<"transaction_id">>, Map),
     lager:debug([{device_id, DeviceID}], "starting discovery for ~p/~p (txn id=~p)", [
         DeviceID,

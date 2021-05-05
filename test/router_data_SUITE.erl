@@ -14,7 +14,7 @@
 
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
--include("utils/console_test.hrl").
+-include("console_test.hrl").
 
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).

@@ -15,7 +15,7 @@
 
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
--include("utils/console_test.hrl").
+-include("console_test.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).

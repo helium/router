@@ -167,17 +167,11 @@ get_hotspot_owner(PubKeyBin) ->
     Options :: map()
 ) -> binary().
 frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
-    OptionsBoolToBit = fun(Key) ->
-        case maps:get(Key, Options, false) of
-            true -> 1;
-            false -> 0
-        end
-    end,
     MHDRRFU = 0,
     Major = 0,
-    ADR = OptionsBoolToBit(wants_adr),
-    ADRACKReq = OptionsBoolToBit(wants_adr_ack),
-    ACK = OptionsBoolToBit(wants_ack),
+    ADR = 0,
+    ADRACKReq = 0,
+    ACK = 0,
     RFU = 0,
     FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),

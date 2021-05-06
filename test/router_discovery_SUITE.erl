@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([disovery_test/1]).
+-export([disovery_test/1, fail_to_connect_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("helium_proto/include/discovery_pb.hrl").
@@ -33,7 +33,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [disovery_test].
+    [disovery_test, fail_to_connect_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -309,6 +309,84 @@ disovery_test(Config) ->
                 <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(HotspotPubKeyBin)),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"hold_time">> => 100,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
+
+    ok.
+
+fail_to_connect_test(Config) ->
+    HotspotSwarm = proplists:get_value(swarm, Config),
+    libp2p_swarm:add_stream_handler(
+        HotspotSwarm,
+        router_discovery_handler:version(),
+        {router_discovery_handler_test, server, [self()]}
+    ),
+
+    #{secret := HotspotPrivKey, public := HotspotPubKey} = proplists:get_value(keys, Config),
+    SigFun = libp2p_crypto:mk_sig_fun(HotspotPrivKey),
+    HotspotPubKeyBin = libp2p_crypto:pubkey_to_bin(HotspotPubKey),
+    HotspotB58Bin = erlang:list_to_binary(libp2p_crypto:bin_to_b58(HotspotPubKeyBin)),
+    TxnID1 = 1,
+    Sig = SigFun(HotspotB58Bin),
+    EncodedSig = base64:encode(Sig),
+    Map1 = #{
+        <<"hotspot">> => HotspotB58Bin,
+        <<"transaction_id">> => TxnID1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"signature">> => EncodedSig
+    },
+
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+
+    %% Start discovery process
+    WSPid ! {discovery, Map1},
+
+    %% This can take time as we will retry 10 times
+    timer:sleep(12000),
+
+    Body1 = jsx:encode(#{txn_id => TxnID1, error => 1}),
+    test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> =>
+            <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary, "/",
+                ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false
+        },
+        <<"fcnt">> => 1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => base64:encode(Body1),
+        <<"payload_size">> => erlang:byte_size(Body1),
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(HotspotPubKeyBin)),
+                <<"name">> => erlang:list_to_binary(
+                    blockchain_utils:addr2name(HotspotPubKeyBin)
+                ),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => 1,
                 <<"status">> => <<"success">>,
                 <<"rssi">> => 0.0,
                 <<"snr">> => 0.0,

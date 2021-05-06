@@ -54,35 +54,6 @@ start(Map) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec send_error(
-    WorkerPid :: pid(),
-    Device :: router_device:device(),
-    TxnID :: non_neg_integer(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Error :: non_neg_integer()
-) -> ok.
-send_error(WorkerPid, Device, TxnID, PubKeyBin, Error) ->
-    Body = jsx:encode(#{txn_id => TxnID, error => Error}),
-    Payload = frame_payload(
-        ?UNCONFIRMED_UP,
-        router_device:devaddr(Device),
-        router_device:nwk_s_key(Device),
-        router_device:app_s_key(Device),
-        1,
-        #{body => <<1:8, Body/binary>>}
-    ),
-    <<DevAddr:32/integer-unsigned-big>> = router_device:devaddr(Device),
-    router_device_worker:handle_frame(
-        WorkerPid,
-        router_device:nwk_s_key(Device),
-        blockchain_helium_packet_v1:new({devaddr, DevAddr}, Payload),
-        erlang:system_time(millisecond),
-        1,
-        PubKeyBin,
-        router_device:nwk_s_key(Device),
-        self()
-    ).
-
 -spec send(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     DeviceID :: binary(),
@@ -120,6 +91,44 @@ send(PubKeyBin, DeviceID, Packets, Sig, Attempts) ->
             }),
             ok = router_discovery_handler:send(Stream, BinMsg)
     end.
+
+-spec send_error(
+    WorkerPid :: pid(),
+    Device :: router_device:device(),
+    TxnID :: non_neg_integer(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Error :: non_neg_integer()
+) -> ok.
+send_error(WorkerPid, Device, TxnID, PubKeyBin, Error) ->
+    Body = jsx:encode(#{txn_id => TxnID, error => Error}),
+    Payload = frame_payload(
+        ?UNCONFIRMED_UP,
+        router_device:devaddr(Device),
+        router_device:nwk_s_key(Device),
+        router_device:app_s_key(Device),
+        1,
+        #{body => <<1:8, Body/binary>>}
+    ),
+    <<DevAddr:32/integer-unsigned-big>> = router_device:devaddr(Device),
+    router_device_worker:handle_frame(
+        WorkerPid,
+        router_device:nwk_s_key(Device),
+        blockchain_helium_packet_v1:new(
+            lorawan,
+            Payload,
+            erlang:system_time(millisecond),
+            0.0,
+            904.7,
+            "SF8BW125",
+            0.0,
+            {devaddr, DevAddr}
+        ),
+        erlang:system_time(millisecond),
+        1,
+        PubKeyBin,
+        'US915',
+        self()
+    ).
 
 -spec verify_signature(
     Hotspot :: binary(),

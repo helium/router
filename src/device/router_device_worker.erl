@@ -29,7 +29,8 @@
     queue_message/2,
     queue_message/3,
     device_update/1,
-    clear_queue/1
+    clear_queue/1,
+    fake_join/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -148,6 +149,10 @@ clear_queue(Pid) ->
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
+-spec fake_join(Pid :: pid(), PubkeyBin :: libp2p_crypto:pubkey_bin()) -> router_device:device().
+fake_join(Pid, PubkeyBin) ->
+    gen_server:call(Pid, {fake_join, PubkeyBin}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -235,6 +240,56 @@ handle_call(
                     {reply, true, State}
             end
     end;
+handle_call(
+    {fake_join, PubKeyBin},
+    _From,
+    #state{
+        db = DB,
+        cf = CF,
+        device = Device0,
+        channels_worker = ChannelsWorker
+    } = State
+) ->
+    lager:info("faking join"),
+    DevEui = router_device:dev_eui(Device0),
+    AppEui = router_device:app_eui(Device0),
+    [{AppKey, _} | _] = router_console_api:get_devices_by_deveui_appeui(DevEui, AppEui),
+    AppNonce = crypto:strong_rand_bytes(3),
+    DevNonce = crypto:strong_rand_bytes(2),
+    NwkSKey = crypto:block_encrypt(
+        aes_ecb,
+        AppKey,
+        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+    ),
+    AppSKey = crypto:block_encrypt(
+        aes_ecb,
+        AppKey,
+        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+    ),
+    DevAddr =
+        case router_device_devaddr:allocate(Device0, PubKeyBin) of
+            {ok, D} ->
+                D;
+            {error, _Reason} ->
+                lager:warning("failed to allocate devaddr for ~p: ~p", [
+                    router_device:id(Device0),
+                    _Reason
+                ]),
+                router_device_devaddr:default_devaddr()
+        end,
+    DeviceUpdates = [
+        {keys, [{NwkSKey, AppSKey}]},
+        {devaddr, DevAddr},
+        {fcntdown, 0},
+        {channel_correction, false}
+    ],
+    Device1 = router_device:update(DeviceUpdates, Device0),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+    {reply, Device1, State#state{
+        device = Device1,
+        downlink_handled_at = {-1, erlang:system_time(millisecond)},
+        fcnt = -1
+    }};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

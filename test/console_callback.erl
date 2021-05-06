@@ -305,6 +305,14 @@ websocket_info(_Req, device_fetch_queue, State) ->
         }
     ),
     {reply, {text, Data}, State};
+websocket_info(_Req, {discovery, Map}, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"device:all">>,
+        <<"device:all:discover:devices">>,
+        Map
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, _Msg, State) ->
     lager:info("websocket_info ~p", [_Msg]),
     {ok, State}.

@@ -638,11 +638,16 @@ max_payload_size(Region, DR) ->
 %% ------------------------------------------------------------------
 %% @doc
 %% Bobcat team was testing and noticed downlink `rf_power' was too high for CN470.
+%%
+%% longAP team was testing and also noticed `rf_power' was too high for EU868.
+%% Max for EU868 is uplink power index 0.
+%%
 %% NOTE: We may want to reduce to default tx_power
 %% @end
 %% ------------------------------------------------------------------
 -spec downlink_signal_strength(atom()) -> non_neg_integer().
 downlink_signal_strength('CN470') -> 16;
+downlink_signal_strength('EU868') -> 20;
 downlink_signal_strength(_Region) -> ?DEFAULT_DOWNLINK_TX_POWER.
 
 %% static channel plan parameters

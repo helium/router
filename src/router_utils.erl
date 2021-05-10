@@ -11,7 +11,7 @@
     event_uplink_dropped_not_enough_dc/4,
     event_uplink_dropped_late_packet/4,
     event_uplink_dropped_invalid_packet/8,
-    event_downlink/9,
+    event_downlink/10,
     event_downlink_dropped_payload_size_exceeded/5,
     event_downlink_dropped_misc/3,
     event_downlink_dropped_misc/5,
@@ -261,7 +261,8 @@ event_uplink_dropped_invalid_packet(
     Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
-    Region :: atom()
+    Region :: atom(),
+    FOpts :: any()
 ) -> ok.
 event_downlink(
     IsDownlinkAck,
@@ -272,7 +273,8 @@ event_downlink(
     Chain,
     PubKeyBin,
     Packet,
-    Region
+    Region,
+    FOpts
 ) ->
     {SubCategory, Desc} =
         case {IsDownlinkAck, ConfirmedDown} of
@@ -296,7 +298,8 @@ event_downlink(
         hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
-        channel_status => <<"success">>
+        channel_status => <<"success">>,
+        mac => parse_fopts_down(FOpts)
     },
     ok = router_console_api:event(Device, Map).
 
@@ -647,6 +650,81 @@ parse_fopts(FOpts) ->
                         command => di_channel_ans,
                         uplink_freq_exists => UplinkFreqExists,
                         channel_freq_ok => ChannelFreqOK
+                    };
+                _FOpt ->
+                    #{command => unknown}
+            end
+        end,
+        FOpts
+    ).
+
+-spec parse_fopts_down(FOpts :: list()) -> list(map()).
+parse_fopts_down(FOpts) ->
+    lists:map(
+        fun(FOpt) ->
+            case FOpt of
+                FOpt when is_atom(FOpt) ->
+                    #{command => FOpt};
+                {link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbTrans} ->
+                    #{
+                        command => link_adr_req,
+                        data_rate => DataRate,
+                        tx_power => TXPower,
+                        channel_mask => ChMask,
+                        channel_mask_control => ChMaskCntl,
+                        number_of_transmissions => NbTrans
+                    };
+                {link_check_ans, Margin, GwCnt} ->
+                    #{
+                        command => dev_status_ans,
+                        gateway_count => GwCnt,
+                        margin => Margin
+                    };
+                {duty_cycle_req, MaxDCycle} ->
+                    #{
+                        command => duty_cycle_req,
+                        max_duty_cycle => MaxDCycle
+                    };
+                {rx_param_setup_req, RX1DRoffset, RX2DataRate, Freq} ->
+                    #{
+                        command => rx_param_setup_req,
+                        rx1_data_rate_offset => RX1DRoffset,
+                        rx2_data_rate => RX2DataRate,
+                        frequency => Freq
+                    };
+                {new_channel_req, ChIndex, Freq, MaxDr, MinDr} ->
+                    #{
+                        command => new_channel_req,
+                        channel_index => ChIndex,
+                        frequency => Freq,
+                        max_data_rate => MaxDr,
+                        min_data_rate => MinDr
+                    };
+                {rx_timing_setup_req, Delay} ->
+                    #{
+                        command => rx_timing_setup_req,
+                        delay => Delay
+                    };
+                {tx_param_setup_req, DownlinkDwellTime, UplinkDwellTime, MaxEIRP} ->
+                    #{
+                        command => tx_param_setup_req,
+                        downlink_dwell_time => DownlinkDwellTime,
+                        uplink_dwell_time => UplinkDwellTime,
+                        max_effective_isotropic_radiated_power => MaxEIRP
+                    };
+                {dl_channel_req, ChIndex, Freq, MaxDr, MinDr} ->
+                    #{
+                        command => dl_channel_req,
+                        channel_index => ChIndex,
+                        frequency => Freq,
+                        mad_data_rate => MaxDr,
+                        min_data_rate => MinDr
+                    };
+                {device_time_ans, A, B} ->
+                    #{
+                        command => device_time_ans,
+                        seconds_elapsed_since_origin => A,
+                        gps_epoch => B
                     };
                 _FOpt ->
                     #{command => unknown}

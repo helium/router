@@ -144,10 +144,10 @@ parse_fopts(Unknown) ->
     [].
 
 parse_fdownopts(
-    <<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4,
+    <<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbTrans:4,
         Rest/binary>>
 ) ->
-    [{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep} | parse_fdownopts(Rest)];
+    [{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbTrans} | parse_fdownopts(Rest)];
 parse_fdownopts(<<16#02, Margin, GwCnt, Rest/binary>>) ->
     [{link_check_ans, Margin, GwCnt} | parse_fdownopts(Rest)];
 parse_fdownopts(<<16#04, _RFU:4, MaxDCycle:4, Rest/binary>>) ->
@@ -162,8 +162,8 @@ parse_fdownopts(
     <<16#07, ChIndex:8, Freq:24/little-unsigned-integer, MaxDr:4, MinDr:4, Rest/binary>>
 ) ->
     [{new_channel_req, ChIndex, Freq, MaxDr, MinDr} | parse_fdownopts(Rest)];
-parse_fdownopts(<<16#08, _RFU:4, Del:4, Rest/binary>>) ->
-    [{rx_timing_setup_req, Del} | parse_fdownopts(Rest)];
+parse_fdownopts(<<16#08, _RFU:4, Delay:4, Rest/binary>>) ->
+    [{rx_timing_setup_req, Delay} | parse_fdownopts(Rest)];
 parse_fdownopts(<<16#09, _RFU:2, DownlinkDwellTime:1, UplinkDwellTime:1, MaxEIRP:4, Rest/binary>>) ->
     [{tx_param_setup_req, DownlinkDwellTime, UplinkDwellTime, MaxEIRP} | parse_fdownopts(Rest)];
 parse_fdownopts(

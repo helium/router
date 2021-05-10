@@ -212,11 +212,7 @@ event(Device, Map) ->
             ]),
             Data =
                 case {Category, SubCategory} of
-                    {downlink, SC} when
-                        SC == downlink_queued orelse
-                            SC == downlink_confirmed orelse
-                            SC == downlink_unconfirmed
-                    ->
+                    {downlink, SC} when SC == downlink_queued ->
                         #{
                             fcnt => maps:get(fcnt, Map),
                             payload_size => maps:get(payload_size, Map),
@@ -229,6 +225,23 @@ event(Device, Map) ->
                                 name => maps:get(channel_name, Map),
                                 status => maps:get(channel_status, Map)
                             }
+                        };
+                    {downlink, SC} when
+                        SC == downlink_confirmed orelse SC == downlink_unconfirmed
+                    ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            integration => #{
+                                id => maps:get(channel_id, Map),
+                                name => maps:get(channel_name, Map),
+                                status => maps:get(channel_status, Map)
+                            },
+                            mac => maps:get(mac, Map)
                         };
                     {_C, SC} when
                         SC == uplink_integration_req orelse

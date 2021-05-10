@@ -938,7 +938,7 @@ handle_info(
                 frame_cache = Cache1,
                 fcnt = FCnt
             }};
-        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, ChannelMap}} ->
+        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, ChannelMap, FOpts}} ->
             IsDownlinkAck =
                 case ACK of
                     1 -> true;
@@ -953,7 +953,8 @@ handle_info(
                 Blockchain,
                 PubKeyBin,
                 DownlinkPacket,
-                Region
+                Region,
+                FOpts
             ),
             ok = maybe_send_queue_update(Device1, State),
             case router_utils:mtype_to_ack(Frame#frame.mtype) of
@@ -1586,7 +1587,7 @@ handle_frame_timeout(
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             EventTuple =
-                {ACK, ConfirmedDown, Port, #{id => undefined, name => <<"router">>}},
+                {ACK, ConfirmedDown, Port, #{id => undefined, name => <<"router">>}, FOpts1},
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1, EventTuple};
@@ -1678,7 +1679,7 @@ handle_frame_timeout(
         binary_to_list(TxDataRate),
         Rx2
     ),
-    EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel)},
+    EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts1},
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),

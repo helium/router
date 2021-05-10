@@ -263,7 +263,6 @@ join_device(Config) ->
             }
         }
     }),
-
     #{
         app_key => AppKey,
         dev_nonce => DevNonce,

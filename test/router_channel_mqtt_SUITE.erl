@@ -321,7 +321,8 @@ mqtt_test(Config) ->
                 <<"id">> => <<"56789">>,
                 <<"name">> => <<"fake_mqtt">>,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

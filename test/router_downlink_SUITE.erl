@@ -274,7 +274,8 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
                 <<"id">> => <<"console_websocket">>,
                 <<"name">> => ExpectedChannelName,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

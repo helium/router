@@ -105,15 +105,8 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
-%% Ignore connect message not for us
-handle_info({_, ping, _}, State) ->
-    {ok, State};
-handle_info({router_mqtt_channel, _, _}, State) ->
-    {ok, State};
-handle_info({'EXIT', _, _}, State) ->
-    {ok, State};
 handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->

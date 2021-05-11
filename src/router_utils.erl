@@ -262,7 +262,7 @@ event_uplink_dropped_invalid_packet(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom(),
-    FOpts :: any()
+    FOpts :: list()
 ) -> ok.
 event_downlink(
     IsDownlinkAck,
@@ -717,7 +717,7 @@ parse_fopts_down(FOpts) ->
                         command => dl_channel_req,
                         channel_index => ChIndex,
                         frequency => Freq,
-                        mad_data_rate => MaxDr,
+                        max_data_rate => MaxDr,
                         min_data_rate => MinDr
                     };
                 {device_time_ans, A, B} ->

@@ -715,7 +715,8 @@ handle_cast(
                 pubkey_bin = PubKeyBin,
                 frame = Frame,
                 pid = Pid,
-                region = Region
+                region = Region,
+                pubkey_bins = [PubKeyBin]
             },
             {UUID, State1} =
                 case maps:get(FCnt, Cache0, undefined) of
@@ -745,19 +746,29 @@ handle_cast(
                             device = Device2,
                             frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
                         }};
-                    #frame_cache{uuid = OldUUID, rssi = OldRSSI, pid = OldPid, count = OldCount} =
-                        OldFrameCache ->
-                        ok = router_utils:event_uplink(
-                            OldUUID,
-                            PacketTime,
-                            Frame,
-                            Device2,
-                            Blockchain,
-                            PubKeyBin,
-                            Packet0,
-                            Region,
-                            BalanceNonce
-                        ),
+                    #frame_cache{
+                        uuid = OldUUID,
+                        rssi = OldRSSI,
+                        pid = OldPid,
+                        count = OldCount,
+                        pubkey_bins = PubkeyBins
+                    } = OldFrameCache ->
+                        case lists:member(PubKeyBin, PubkeyBins) of
+                            true ->
+                                ok;
+                            false ->
+                                ok = router_utils:event_uplink(
+                                    OldUUID,
+                                    PacketTime,
+                                    Frame,
+                                    Device2,
+                                    Blockchain,
+                                    PubKeyBin,
+                                    Packet0,
+                                    Region,
+                                    BalanceNonce
+                                )
+                        end,
                         case RSSI0 > OldRSSI of
                             false ->
                                 catch blockchain_state_channel_handler:send_response(
@@ -775,7 +786,10 @@ handle_cast(
                                     device = Device2,
                                     frame_cache = maps:put(
                                         FCnt,
-                                        OldFrameCache#frame_cache{count = OldCount + 1},
+                                        OldFrameCache#frame_cache{
+                                            count = OldCount + 1,
+                                            pubkey_bins = [PubKeyBin | PubkeyBins]
+                                        },
                                         Cache0
                                     )
                                 }};
@@ -790,7 +804,8 @@ handle_cast(
                                         FCnt,
                                         NewFrameCache#frame_cache{
                                             uuid = OldUUID,
-                                            count = OldCount + 1
+                                            count = OldCount + 1,
+                                            pubkey_bins = [PubKeyBin | PubkeyBins]
                                         },
                                         Cache0
                                     )

@@ -9,6 +9,7 @@
 -export([
     mac_commands_test/1,
     dupes_test/1,
+    dupes2_test/1,
     join_test/1,
     adr_test/1
 ]).
@@ -472,6 +473,121 @@ dupes_test(Config) ->
                 )
             ])
     after 0 -> ok
+    end,
+    ok.
+
+dupes2_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin1,
+        stream := Stream,
+        hotspot_name := HotspotName1
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Send 4 similar packets to make it look like it's coming from 2 diff hotspots
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin1,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{rssi => -25.0}
+            )},
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin1,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{rssi => -50.0}
+            )},
+
+    %% Waiting for data from HTTP channel with 2 hotspots
+    test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false
+        },
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                <<"name">> => erlang:list_to_binary(HotspotName1),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => -25.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
+
+    test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => 0,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+                    <<"name">> => erlang:list_to_binary(HotspotName1),
+                    <<"rssi">> => -25.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => []
+            }
+        }
+    ),
+
+    receive
+        {console_event, <<"uplink">>, <<"uplink_unconfirmed">>, Map} ->
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+            ct:fail(extra_uplink_unconfirmed)
+    after 1000 -> ok
     end,
     ok.
 

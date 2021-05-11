@@ -35,7 +35,8 @@
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     frame :: #frame{},
     pid :: pid(),
-    region :: atom()
+    region :: atom(),
+    pubkey_bins = [] :: [libp2p_crypto:pubkey_bin()]
 }).
 
 -record(downlink, {

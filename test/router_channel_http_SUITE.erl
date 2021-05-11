@@ -281,7 +281,8 @@ http_test(Config) ->
                 <<"id">> => <<"12345">>,
                 <<"name">> => <<"fake_http">>,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

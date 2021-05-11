@@ -297,7 +297,8 @@ dupes_test(Config) ->
                 <<"id">> => fun erlang:is_binary/1,
                 <<"name">> => fun erlang:is_binary/1,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 
@@ -949,7 +950,8 @@ adr_test(Config) ->
                 <<"id">> => fun erlang:is_binary/1,
                 <<"name">> => fun erlang:is_binary/1,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 
@@ -1312,7 +1314,8 @@ adr_test(Config) ->
                 <<"id">> => fun erlang:is_binary/1,
                 <<"name">> => fun erlang:is_binary/1,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

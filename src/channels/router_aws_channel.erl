@@ -199,14 +199,8 @@ handle_info(
     lager:error("[~s] got a EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
     Backoff1 = reconnect(ChannelID, Backoff0),
     {ok, State#state{connection_backoff = Backoff1}};
-handle_info({disconnected, _Type, _Reason}, #state{channel_id = ChannelID} = State) ->
-    lager:error("[~s] got a disconnected message: ~p ~p", [ChannelID, _Type, _Reason]),
-    {ok, State};
-%% Ignore connect message not for us
-handle_info({_, ping, _}, State) ->
-    {ok, State};
 handle_info(_Msg, #state{channel_id = ChannelID} = State) ->
-    lager:warning("[~s] rcvd unknown info msg: ~p", [ChannelID, _Msg]),
+    lager:debug("[~s] rcvd unknown info msg: ~p", [ChannelID, _Msg]),
     {ok, State}.
 
 code_change(_OldVsn, State, _Extra) ->

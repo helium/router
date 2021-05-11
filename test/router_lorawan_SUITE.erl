@@ -290,7 +290,8 @@ lw_join_test(Config) ->
                 <<"id">> => <<"fake_lorawan_channel">>,
                 <<"name">> => <<"fake_lorawan_channel">>,
                 <<"status">> => <<"success">>
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

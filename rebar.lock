@@ -9,7 +9,7 @@
   0},
  {<<"blockchain">>,
   {git,"https://github.com/helium/blockchain-core.git",
-       {ref,"9b7310b7c9788ca1a9a680fe1703cb8a5a53d332"}},
+       {ref,"a2a2198bc8f81314519f34924fedfe0229b2cbf6"}},
   0},
  {<<"certifi">>,
   {git,"https://github.com/garthk/erlang-certifi",

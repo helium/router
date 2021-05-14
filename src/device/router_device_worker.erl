@@ -58,6 +58,7 @@
     chain :: blockchain:blockchain(),
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
+    frame_timeout :: non_neg_integer(),
     device :: router_device:device(),
     downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
     queue_updates :: undefined | {pid(), undefined | binary(), reference()},
@@ -169,11 +170,13 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
     IsActive = router_device:is_active(Device),
     ok = router_utils:lager_md(Device),
     ok = ?MODULE:device_update(self()),
-    lager:info("~p init with ~p", [?SERVER, Args]),
+    DefaultFrameTimeout = maps:get(frame_timeout, Args, router_utils:frame_timeout()),
+    lager:info("~p init with ~p (frame timeout=~p)", [?SERVER, Args, DefaultFrameTimeout]),
     {ok, #state{
         chain = Blockchain,
         db = DB,
         cf = CF,
+        frame_timeout = DefaultFrameTimeout,
         device = Device,
         fcnt = router_device:fcnt(Device),
         oui = OUI,
@@ -602,6 +605,7 @@ handle_cast(
     {frame, UsedNwkSKey, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
     #state{
         chain = Blockchain,
+        frame_timeout = DefaultFrameTimeout,
         device = Device0,
         frame_cache = Cache0,
         offer_cache = OfferCache,
@@ -734,7 +738,7 @@ handle_cast(
                         ),
                         Timeout = max(
                             0,
-                            router_utils:frame_timeout() -
+                            DefaultFrameTimeout -
                                 (erlang:system_time(millisecond) - PacketTime)
                         ),
                         lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [

@@ -52,6 +52,9 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 disovery_test(Config) ->
+    DiscoFrameTimeout = timer:seconds(3),
+    application:set_env(router, disco_frame_timeout, DiscoFrameTimeout),
+
     %% Setup stream stuff
     HotspotSwarm = proplists:get_value(swarm, Config),
     libp2p_swarm:add_stream_handler(
@@ -136,6 +139,8 @@ disovery_test(Config) ->
     blockchain_state_channel_v1_pb:encode_msg(SCMsg1),
     Stream ! {send, blockchain_state_channel_v1_pb:encode_msg(SCMsg1)},
 
+    timer:sleep(DiscoFrameTimeout),
+
     %% Make sure that we got our txn id in the payload
     Body1 = jsx:encode(#{txn_id => TxnID1, error => 0}),
     test_utils:wait_channel_data(#{
@@ -198,6 +203,8 @@ disovery_test(Config) ->
     SCMsg2 = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet2}},
     blockchain_state_channel_v1_pb:encode_msg(SCMsg2),
     Stream ! {send, blockchain_state_channel_v1_pb:encode_msg(SCMsg2)},
+
+    timer:sleep(DiscoFrameTimeout),
 
     %% Make sure that we got our txn id in the payload
     test_utils:wait_channel_data(#{
@@ -281,6 +288,8 @@ disovery_test(Config) ->
     blockchain_state_channel_v1_pb:encode_msg(SCMsg3),
     Stream ! {send, blockchain_state_channel_v1_pb:encode_msg(SCMsg3)},
 
+    timer:sleep(DiscoFrameTimeout),
+
     Body3 = jsx:encode(#{txn_id => TxnID3, error => 0}),
     test_utils:wait_channel_data(#{
         <<"uuid">> => fun erlang:is_binary/1,
@@ -324,6 +333,8 @@ disovery_test(Config) ->
     ok.
 
 fail_to_connect_test(Config) ->
+    application:set_env(router, disco_frame_timeout, 400),
+
     HotspotSwarm = proplists:get_value(swarm, Config),
     libp2p_swarm:add_stream_handler(
         HotspotSwarm,

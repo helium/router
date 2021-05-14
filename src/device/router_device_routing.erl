@@ -592,7 +592,7 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                         _Queue ->
                             lager:debug(
                                 [{device_id, DeviceID}],
-                                "Accepting more packets [queue_length: ~p] for ~p",
+                                "Accepting more packets [queue_length: ~p]",
                                 [
                                     length(_Queue)
                                 ]

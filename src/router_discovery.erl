@@ -5,6 +5,7 @@
 
 -define(NO_ERROR, 0).
 -define(CONNECT_ERROR, 1).
+-define(DISCO_FRAME_TIMEOUT, timer:seconds(8)).
 
 -export([start/1]).
 
@@ -26,7 +27,9 @@ start(Map) ->
             ]);
         true ->
             lager:info("starting discovery with ~p", [Map]),
-            {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+            {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{
+                frame_timeout => frame_timeout()
+            }),
             Device = router_device_worker:fake_join(WorkerPid, PubKeyBin),
             Body = jsx:encode(#{txn_id => TxnID, error => ?NO_ERROR}),
             Packets = lists:map(
@@ -187,3 +190,11 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
     <<Payload0/binary, MIC:4/binary>>.
+
+-spec frame_timeout() -> non_neg_integer().
+frame_timeout() ->
+    case application:get_env(router, disco_frame_timeout, ?DISCO_FRAME_TIMEOUT) of
+        [] -> ?DISCO_FRAME_TIMEOUT;
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.

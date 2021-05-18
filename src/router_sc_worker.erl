@@ -164,18 +164,18 @@ handle_info({sc_open_success, Id}, #state{is_active = false} = State) ->
         [Id]
     ),
     {noreply, State};
-handle_info({sc_open_failure, Id}, #state{is_active = false} = State) ->
+handle_info({sc_open_failure, Error, Id}, #state{is_active = false} = State) ->
     lager:error(
         "Got an sc_open_failure though the sc_worker is inactive." ++
-            " This should never happen. txn id: ~p",
-        [Id]
+            " This should never happen. ~p txn id: ~p",
+        [Error, Id]
     ),
     {noreply, State};
 handle_info({sc_open_success, Id}, #state{is_active = true, tombstones = T} = State) ->
     lager:debug("sc_open_success for txn id ~p", [Id]),
     {noreply, State#state{tombstones = [Id | T]}};
-handle_info({sc_open_failure, Id}, #state{is_active = true, tombstones = T} = State) ->
-    lager:debug("sc_open_failure for txn id ~p", [Id]),
+handle_info({sc_open_failure, Error, Id}, #state{is_active = true, tombstones = T} = State) ->
+    lager:debug("sc_open_failure ~p for txn id ~p", [Error, Id]),
     %% we're not going to immediately try to start a new channel, we will
     %% wait until the next tick to evaluate that decision.
     {noreply, State#state{tombstones = [Id | T]}};
@@ -355,8 +355,8 @@ get_sc_expiration_interval() ->
 ) -> {sc_open_success | sc_open_failure, blockchain_txn_state_channel_open_v1:id()}.
 handle_sc_result(ok, Id) ->
     ?SERVER ! {sc_open_success, Id};
-handle_sc_result(_Error, Id) ->
-    ?SERVER ! {sc_open_failure, Id}.
+handle_sc_result(Error, Id) ->
+    ?SERVER ! {sc_open_failure, Error, Id}.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

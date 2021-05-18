@@ -925,6 +925,9 @@ handle_info(
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),
+    %% NOTE: Disco-mode has a special frame_timeout well above what we're trying
+    %% to achieve here. We ignore those packets in metrics so they don't skew
+    %% our alerting.
     IgnoreMetrics = DefaultFrameTimeout > router_utils:frame_timeout(),
     case
         handle_frame_timeout(

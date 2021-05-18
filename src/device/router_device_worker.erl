@@ -901,6 +901,7 @@ handle_info(
         chain = Blockchain,
         db = DB,
         cf = CF,
+        frame_timeout = DefaultFrameTimeout,
         device = Device0,
         channels_worker = ChannelsWorker,
         frame_cache = Cache0,
@@ -924,6 +925,10 @@ handle_info(
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),
+    %% NOTE: Disco-mode has a special frame_timeout well above what we're trying
+    %% to achieve here. We ignore those packets in metrics so they don't skew
+    %% our alerting.
+    IgnoreMetrics = DefaultFrameTimeout > router_utils:frame_timeout(),
     case
         handle_frame_timeout(
             Packet,
@@ -948,7 +953,8 @@ handle_info(
                 PubKeyBin,
                 erlang:system_time(millisecond),
                 packet,
-                false
+                false,
+                IgnoreMetrics
             ),
             {noreply, State#state{
                 device = Device1,
@@ -991,7 +997,8 @@ handle_info(
                 PubKeyBin,
                 erlang:system_time(millisecond),
                 packet,
-                true
+                true,
+                IgnoreMetrics
             ),
             {noreply, State#state{
                 device = Device1,
@@ -1012,7 +1019,8 @@ handle_info(
                 PubKeyBin,
                 erlang:system_time(millisecond),
                 packet,
-                false
+                false,
+                IgnoreMetrics
             ),
             {noreply, State#state{
                 last_dev_nonce = undefined,

@@ -13,7 +13,7 @@
     routing_packet_observe/4,
     routing_packet_observe_start/3,
     packet_trip_observe_start/3,
-    packet_trip_observe_end/5,
+    packet_trip_observe_end/5, packet_trip_observe_end/6,
     decoder_observe/3,
     function_observe/2,
     console_api_observe/3,
@@ -76,6 +76,19 @@ packet_trip_observe_start(PacketHash, PubKeyBin, Time) ->
 
 -spec packet_trip_observe_end(binary(), binary(), non_neg_integer(), atom(), boolean()) -> ok.
 packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink) ->
+    packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false).
+
+-spec packet_trip_observe_end(
+    binary(),
+    binary(),
+    non_neg_integer(),
+    atom(),
+    boolean(),
+    boolean()
+) -> ok.
+packet_trip_observe_end(_PacketHash, _PubKeyBin, _Time, _Type, _Downlink, true) ->
+    ok;
+packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false) ->
     gen_server:cast(
         ?MODULE,
         {packet_trip_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}

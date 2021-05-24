@@ -175,7 +175,7 @@ handle_info({sc_open_success, Id}, #state{is_active = true, tombstones = T} = St
     lager:debug("sc_open_success for txn id ~p", [Id]),
     {noreply, State#state{tombstones = [Id | T]}};
 handle_info({sc_open_failure, Error, Id}, #state{is_active = true, tombstones = T} = State) ->
-    lager:debug("sc_open_failure ~p for txn id ~p", [Error, Id]),
+    lager:warning("sc_open_failure ~p for txn id ~p", [Error, Id]),
     %% we're not going to immediately try to start a new channel, we will
     %% wait until the next tick to evaluate that decision.
     {noreply, State#state{tombstones = [Id | T]}};

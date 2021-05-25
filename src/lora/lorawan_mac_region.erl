@@ -18,6 +18,7 @@
 -export([uplink_power_table/1]).
 -export([max_payload_size/2]).
 -export([downlink_signal_strength/1]).
+-export([dr_to_down/3]).
 
 -include("lorawan_db.hrl").
 

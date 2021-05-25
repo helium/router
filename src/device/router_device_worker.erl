@@ -2098,7 +2098,7 @@ lora_region(Region, PubKeyBin) ->
                         ]
                     ),
                     %% Default to AS923 region with more countries
-                    'AS923_AS2'
+                    'AS923_2'
             end;
         _ ->
             Region

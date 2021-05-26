@@ -411,11 +411,12 @@ deserialize(Binary) ->
 can_queue_payload(_Payload, #device_v6{region = undefined}) ->
     {error, device_region_unknown};
 can_queue_payload(Payload, Device) ->
-    DR = ?MODULE:last_known_datarate(Device),
     Region = ?MODULE:region(Device),
-    MaxSize = lorawan_mac_region:max_payload_size(Region, DR),
+    UpDR = ?MODULE:last_known_datarate(Device),
+    DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
+    MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
     Size = erlang:byte_size(Payload),
-    {Size < MaxSize, Size, MaxSize, DR}.
+    {Size < MaxSize, Size, MaxSize, DownDR}.
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

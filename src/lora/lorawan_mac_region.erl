@@ -128,22 +128,26 @@
 -spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
 join1_window(Region, _Delay, RxQ) ->
     TopLevelRegion = top_level_region(Region),
-    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(TopLevelRegion, RxQ, 0)).
+    TxQ = rx1_rf(TopLevelRegion, RxQ, 0),
+    tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
 -spec join2_window(atom(), #rxq{}) -> #txq{}.
 join2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
-    join2_window_(TopLevelRegion, RxQ).
+    TxQ = rx2_rf(TopLevelRegion, RxQ),
+    tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
 rx1_window(Region, _Delay, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
-    tx_window(?FUNCTION_NAME, RxQ, rx1_rf(TopLevelRegion, RxQ, Offset)).
+    TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
+    tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
 -spec rx2_window(atom(), #rxq{}) -> #txq{}.
 rx2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
-    rx2_window_(TopLevelRegion, RxQ).
+    TxQ = rx2_rf(TopLevelRegion, RxQ),
+    tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
 %% ------------------------------------------------------------------
 %% Region Wrapped Helper Functions
@@ -226,118 +230,61 @@ top_level_region(Region) -> Region.
 %% See RP002-1.0.1 LoRaWAN® Regional
 %% For CN470 See lorawan_regional_parameters_v1.0.3reva_0.pdf
 
--spec join2_window_(atom(), #rxq{}) -> #txq{}.
-%% 923.3MHz / DR8 (SF12 BW500)
-join2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.3,
-        datr = dr_to_datar(Region, 8),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 505.3 MHz / DR0 (SF12 / BW125)
-join2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 505.3,
-        datr = dr_to_datar(Region, 0),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 869.525 MHz / DR0 (SF12, 125 kHz)
-join2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 869.525,
-        datr = dr_to_datar(Region, 0),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-join2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-join2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.3,
-        datr = dr_to_datar(Region, 8),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    }.
-
-%% See RP002-1.0.1 LoRaWAN® Regional
--spec rx2_window_(atom(), #rxq{}) -> #txq{}.
-%% 923.3MHz / DR8 (SF12 BW500)
-rx2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.3,
-        datr = dr_to_datar(Region, 8),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 505.3 MHz / DR0 (SF12 / BW125)
-rx2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 505.3,
-        datr = dr_to_datar(Region, 0),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 869.525 MHz / DR0 (SF12, 125 kHz)
-rx2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 869.525,
-        datr = dr_to_datar(Region, 0),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 923.2. MHz / DR2 (SF10, 125 kHz)
-rx2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.2,
-        datr = dr_to_datar(Region, 2),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    };
-%% 923.3. MHz / DR8 (SF12, 500 kHz)
-rx2_window_(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
-    Delay = get_window(?FUNCTION_NAME),
-    #txq{
-        freq = 923.3,
-        datr = dr_to_datar(Region, 8),
-        time = Stamp + Delay,
-        codr = RxQ#rxq.codr
-    }.
-
 -spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
 %% we calculate in fixed-point numbers
-rx1_rf('US915' = Region, RxQ, Offset) ->
-    RxCh = f2uch_(RxQ#rxq.freq, {9023, 2}, {9030, 16}),
+rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'US915' ->
+    RxCh = f2uch_(Freq, {9023, 2}, {9030, 16}),
     DownFreq = dch2f(Region, RxCh rem 8),
     tx_offset(Region, RxQ, DownFreq, Offset);
-rx1_rf('AU915' = Region, RxQ, Offset) ->
-    RxCh = f2uch_(RxQ#rxq.freq, {9152, 2}, {9159, 16}),
+rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'AU915' ->
+    RxCh = f2uch_(Freq, {9152, 2}, {9159, 16}),
     DownFreq = dch2f(Region, RxCh rem 8),
     tx_offset(Region, RxQ, DownFreq, Offset);
-rx1_rf('CN470' = Region, RxQ, Offset) ->
-    RxCh = f2uch(RxQ#rxq.freq, {4703, 2}),
+rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'CN470' ->
+    RxCh = f2uch(Freq, {4703, 2}),
     DownFreq = dch2f(Region, RxCh rem 48),
     tx_offset(Region, RxQ, DownFreq, Offset);
-rx1_rf('AS923' = Region, RxQ, Offset) ->
-    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset);
-rx1_rf(Region, RxQ, Offset) ->
-    tx_offset(Region, RxQ, RxQ#rxq.freq, Offset).
+rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'AS923' ->
+    tx_offset(Region, RxQ, Freq, Offset);
+rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) ->
+    tx_offset(Region, RxQ, Freq, Offset).
+
+-spec rx2_rf(atom(), #rxq{}) -> #txq{}.
+%% 923.3MHz / DR8 (SF12 BW500)
+rx2_rf(Region, #rxq{codr = Codr}) when Region == 'US915' ->
+    #txq{
+        freq = 923.3,
+        datr = dr_to_datar(Region, 8),
+        codr = Codr
+    };
+%% 505.3 MHz / DR0 (SF12 / BW125)
+rx2_rf(Region, #rxq{codr = Codr}) when Region == 'CN470' ->
+    #txq{
+        freq = 505.3,
+        datr = dr_to_datar(Region, 0),
+        codr = Codr
+    };
+%% 869.525 MHz / DR0 (SF12, 125 kHz)
+rx2_rf(Region, #rxq{codr = Codr}) when Region == 'EU868' ->
+    #txq{
+        freq = 869.525,
+        datr = dr_to_datar(Region, 0),
+        codr = Codr
+    };
+%% 923.2. MHz / DR2 (SF10, 125 kHz)
+rx2_rf(Region, #rxq{codr = Codr}) when Region == 'AS923' ->
+    #txq{
+        freq = 923.2,
+        datr = dr_to_datar(Region, 2),
+        codr = Codr
+    };
+%% 923.3. MHz / DR8 (SF12, 500 kHz)
+rx2_rf(Region, #rxq{codr = Codr}) when Region == 'AU915' ->
+    #txq{
+        freq = 923.3,
+        datr = dr_to_datar(Region, 8),
+        codr = Codr
+    }.
 
 %% ------------------------------------------------------------------
 %% @doc Frequency to Up Channel

@@ -1057,7 +1057,7 @@ downlink_to_map(Downlink) ->
     #{
         confirmed => Downlink#downlink.confirmed,
         port => Downlink#downlink.port,
-        payload => Downlink#downlink.payload,
+        payload => base64:encode(Downlink#downlink.payload),
         channel => router_channel:to_map(Downlink#downlink.channel)
     }.
 

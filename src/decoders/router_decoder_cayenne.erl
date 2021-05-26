@@ -91,7 +91,6 @@ decode_lpp(
         Rest/binary>>,
     Acc
 ) ->
-    %% TODO is the value MSB or LSB
     decode_lpp(Rest, [
         #{channel => Channel, type => ?GENERIC_SENSOR, value => Value / 100, name => generic_sensor}
         | Acc

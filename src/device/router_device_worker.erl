@@ -1223,15 +1223,13 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
                 %% frequencies below 100 MHz are reserved for future use.
                 mk_cflist_for_freqs([8671000, 8673000, 8675000, 8677000, 8679000]);
             'AS923_1' ->
-                mk_cflist_for_freqs([9222000, 9224000, 9226000, 9228000, 9230000]);
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
             'AS923_2' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9246000]);
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
             'AS923_3' ->
-                %% TODO:
-                <<>>;
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
             'AS923_4' ->
-                %% TODO:
-                <<>>;
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
             _ ->
                 %% Not yet implemented for other regions
                 <<>>

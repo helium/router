@@ -6,6 +6,7 @@
 %%% MyDevices Cayenne LPP Docs
 %%% [https://developers.mydevices.com/cayenne/docs/lora/#lora-cayenne-low-power-payload]
 %%% Test Vectors [https://github.com/myDevicesIoT/CayenneLPP]
+%%% https://github.com/helium/router/issues/289#issuecomment-822964880
 %%%
 %%% `last' key is added to last map in collection for json templating
 %%%
@@ -19,14 +20,27 @@
 -define(DIGITAL_OUT, 1).
 -define(ANALOG_IN, 2).
 -define(ANALOG_OUT, 3).
+-define(GENERIC_SENSOR, 100).
 -define(LUMINANCE, 101).
 -define(PRESENCE, 102).
 -define(TEMPERATURE, 103).
 -define(HUMIDITY, 104).
 -define(ACCELEROMETER, 113).
 -define(BAROMETER, 115).
+-define(VOLTAGE, 116).
+-define(CURRENT, 117).
+-define(FREQUENCY, 118).
+-define(PERCENTAGE, 120).
+-define(ALTITUDE, 121).
+-define(CONCENTRATION, 125).
+-define(POWER, 128).
+-define(DISTANCE, 130).
+-define(ENERGY, 131).
+-define(DIRECTION, 132).
 -define(GYROMETER, 134).
+-define(COLOUR, 135).
 -define(GPS, 136).
+-define(SWITCH, 142).
 
 -spec decode(router_decoder:decoder(), binary(), integer()) -> {ok, binary()} | {error, any()}.
 decode(_Decoder, Payload, _Port) ->
@@ -73,6 +87,16 @@ decode_lpp(
         | Acc
     ]);
 decode_lpp(
+    <<Channel:8/unsigned-integer, ?GENERIC_SENSOR:8/integer, Value:32/integer-unsigned-big,
+        Rest/binary>>,
+    Acc
+) ->
+    %% TODO is the value MSB or LSB
+    decode_lpp(Rest, [
+        #{channel => Channel, type => ?GENERIC_SENSOR, value => Value / 100, name => generic_sensor}
+        | Acc
+    ]);
+decode_lpp(
     <<Channel:8/unsigned-integer, ?LUMINANCE:8/integer, Value:16/integer-unsigned-big,
         Rest/binary>>,
     Acc
@@ -96,7 +120,6 @@ decode_lpp(
         Rest/binary>>,
     Acc
 ) ->
-    %% TODO value is 0 or 1
     decode_lpp(Rest, [
         #{
             channel => Channel,
@@ -144,10 +167,153 @@ decode_lpp(
     decode_lpp(Rest, [
         #{
             channel => Channel,
-            type => ?HUMIDITY,
+            type => ?BAROMETER,
             value => Value / 10,
             unit => 'hPa',
             name => humidity
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?VOLTAGE:8/integer, Value:16/integer-unsigned-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?VOLTAGE,
+            value => Value / 100,
+            unit => 'V',
+            name => voltage
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?CURRENT:8/integer, Value:16/integer-unsigned-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?CURRENT,
+            value => Value / 1000,
+            unit => 'A',
+            name => current
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?FREQUENCY:8/integer, Value:32/integer-unsigned-big,
+        Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?FREQUENCY,
+            value => Value,
+            unit => 'Hz',
+            name => frequency
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?PERCENTAGE:8/integer, Value:8/integer-unsigned, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?PERCENTAGE,
+            value => Value,
+            unit => '%',
+            name => percentage
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?ALTITUDE:8/integer, Value:16/integer-signed-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?ALTITUDE,
+            value => Value,
+            unit => 'm',
+            name => altitude
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?CONCENTRATION:8/integer, Value:16/integer-unsigned,
+        Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?CONCENTRATION,
+            value => Value,
+            unit => 'PPM',
+            name => concentration
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?POWER:8/integer, Value:16/integer-unsigned-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?POWER,
+            value => Value,
+            unit => 'W',
+            name => power
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?DISTANCE:8/integer, Value:32/integer-unsigned-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?DISTANCE,
+            value => Value / 1000,
+            unit => 'm',
+            name => distance
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?ENERGY:8/integer, Value:32/integer-unsigned-big, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?ENERGY,
+            value => Value / 1000,
+            unit => 'kWh',
+            name => energy
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?DIRECTION:8/integer, Value:16/integer-unsigned-big,
+        Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?DIRECTION,
+            value => Value,
+            unit => 'º',
+            name => direction
         }
         | Acc
     ]);
@@ -167,6 +333,20 @@ decode_lpp(
         | Acc
     ]);
 decode_lpp(
+    <<Channel:8/unsigned-integer, ?COLOUR:8/integer, R:8/integer, G:8/integer, B:8/integer,
+        Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?COLOUR,
+            value => #{r => R, g => G, b => B},
+            name => colour
+        }
+        | Acc
+    ]);
+decode_lpp(
     <<Channel:8/unsigned-integer, ?GPS:8/integer, Lat:24/integer-signed-big,
         Lon:24/integer-signed-big, Alt:24/integer-signed-big, Rest/binary>>,
     Acc
@@ -177,6 +357,19 @@ decode_lpp(
             type => ?GPS,
             value => #{latitude => Lat / 10000, longitude => Lon / 10000, altitude => Alt / 100},
             name => gps
+        }
+        | Acc
+    ]);
+decode_lpp(
+    <<Channel:8/unsigned-integer, ?SWITCH:8/integer, Value:8/integer, Rest/binary>>,
+    Acc
+) ->
+    decode_lpp(Rest, [
+        #{
+            channel => Channel,
+            type => ?SWITCH,
+            value => Value,
+            name => switch
         }
         | Acc
     ]);

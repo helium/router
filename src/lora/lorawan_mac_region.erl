@@ -31,6 +31,7 @@
 -export([tx_time/2, tx_time/3]).
 
 -export([downlink_signal_strength/1]).
+-export([dr_to_down/3]).
 
 -include("lorawan_db.hrl").
 

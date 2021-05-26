@@ -375,11 +375,20 @@ drop_downlink_test(Config) ->
     Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
     ok = router_device_worker:queue_message(DeviceWorkerPid, Msg),
 
+    DatarateDown = lorawan_mac_region:dr_to_down('US915', 2, 0),
+    MaxSize = lorawan_mac_region:max_payload_size('US915', DatarateDown),
+    Description = erlang:list_to_binary(
+        io_lib:format("Payload too big for DR~p max size is ~p (payload was 243)", [
+            DatarateDown,
+            MaxSize
+        ])
+    ),
+
     test_utils:wait_for_console_event_sub(<<"downlink_dropped_payload_size_exceeded">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"downlink_dropped">>,
         <<"sub_category">> => <<"downlink_dropped_payload_size_exceeded">>,
-        <<"description">> => <<"Payload too big for DR2 max size is 125 (payload was 243)">>,
+        <<"description">> => Description,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{

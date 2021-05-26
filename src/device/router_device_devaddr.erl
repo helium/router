@@ -24,7 +24,8 @@
     default_devaddr/0,
     allocate/2,
     sort_devices/3,
-    pubkeybin_to_loc/2
+    pubkeybin_to_loc/2,
+    net_id/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -107,6 +108,24 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
                 Index -> {ok, Index}
             end
     end.
+
+-spec net_id(number() | binary()) -> {non_neg_integer(), 0..7}.
+net_id(DevAddr) when erlang:is_number(DevAddr) ->
+    net_id(binary:encode_unsigned(DevAddr, big));
+net_id(DevAddr) ->
+    Type = net_id_type(DevAddr),
+    NetID =
+        case Type of
+            0 -> get_net_id(DevAddr, 1, 6);
+            1 -> get_net_id(DevAddr, 2, 6);
+            2 -> get_net_id(DevAddr, 3, 9);
+            3 -> get_net_id(DevAddr, 4, 11);
+            4 -> get_net_id(DevAddr, 5, 12);
+            5 -> get_net_id(DevAddr, 6, 13);
+            6 -> get_net_id(DevAddr, 7, 15);
+            7 -> get_net_id(DevAddr, 8, 17)
+        end,
+    {NetID, Type}.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -271,6 +290,31 @@ indexes_to_lowest_res(Indexes) ->
 to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
 
+-spec net_id_type(binary()) -> 0..7.
+net_id_type(<<First:8/integer-unsigned, _/binary>>) ->
+    net_id_type(First, 7).
+
+-spec net_id_type(non_neg_integer(), non_neg_integer()) -> 0..7.
+net_id_type(Prefix, Index) ->
+    case Prefix band (1 bsl Index) of
+        0 -> 7 - Index;
+        _ -> net_id_type(Prefix, Index - 1)
+    end.
+
+-spec get_net_id(binary(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
+get_net_id(DevAddr, PrefixLength, NwkIDBits) ->
+    <<Temp:32/integer-unsigned>> = DevAddr,
+    One = uint32(Temp bsl PrefixLength),
+    Two = uint32(One bsr (32 - NwkIDBits)),
+
+    IgnoreSize = 32 - NwkIDBits,
+    <<_:IgnoreSize, NetID:NwkIDBits/integer-unsigned>> = <<Two:32/integer-unsigned>>,
+    NetID.
+
+-spec uint32(integer()) -> integer().
+uint32(Num) ->
+    Num band 4294967295.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -378,5 +422,66 @@ to_res_test() ->
     ?assertEqual(?INDEX_C, to_res(?INDEX_C, 12)),
     ?assertEqual(?INDEX_D, to_res(?INDEX_D, 12)),
     ok.
+
+net_id_test() ->
+    lists:foreach(
+        fun(#{expect := Expect, bin := Bin, num := Num, msg := Msg}) ->
+            %% Make sure Bin and Num are the same thing
+            Bin = <<Num:32>>,
+            ?assertEqual(Expect, net_id(Bin), "BIN: " ++ Msg),
+            ?assertEqual(Expect, net_id(Num), "NUM: " ++ Msg)
+        end,
+        [
+            #{
+                expect => {45, 0},
+                num => 1543503871,
+                bin => <<91, 255, 255, 255>>,
+                %% truncated byte output == hex == integer
+                msg => "[45] == 2D == 45"
+            },
+            #{
+                expect => {45, 1},
+                num => 2919235583,
+                bin => <<173, 255, 255, 255>>,
+                msg => "[45] == 2D == 45"
+            },
+            #{
+                expect => {365, 2},
+                num => 3605004287,
+                bin => <<214, 223, 255, 255>>,
+                msg => "[1,109] == 16D == 365"
+            },
+            #{
+                expect => {1463, 3},
+                num => 3949985791,
+                bin => <<235, 111, 255, 255>>,
+                msg => "[5,183] == 5B7 == 1463"
+            },
+            #{
+                expect => {2925, 4},
+                num => 4122411007,
+                bin => <<245, 182, 255, 255>>,
+                msg => "[11, 109] == B6D == 2925"
+            },
+            #{
+                expect => {5851, 5},
+                num => 4208689151,
+                bin => <<250, 219, 127, 255>>,
+                msg => "[22,219] == 16DB == 5851"
+            },
+            #{
+                expect => {23405, 6},
+                num => 4251826175,
+                bin => <<253, 109, 183, 255>>,
+                msg => "[91, 109] == 5B6D == 23405"
+            },
+            #{
+                expect => {93622, 7},
+                num => 4273396607,
+                bin => <<254, 182, 219, 127>>,
+                msg => "[1,109,182] == 16DB6 == 93622"
+            }
+        ]
+    ).
 
 -endif.

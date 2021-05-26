@@ -144,7 +144,7 @@ consume_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink1#downlink.confirmed,
-                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink1#downlink.payload),
                             <<"port">> => Downlink1#downlink.port
                         }
                     ]
@@ -170,7 +170,7 @@ consume_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink1#downlink.confirmed,
-                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink1#downlink.payload),
                             <<"port">> => Downlink1#downlink.port
                         },
                         #{
@@ -179,7 +179,7 @@ consume_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink2#downlink.confirmed,
-                            <<"payload">> => Downlink2#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink2#downlink.payload),
                             <<"port">> => Downlink2#downlink.port
                         }
                     ]
@@ -219,7 +219,7 @@ consume_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink2#downlink.confirmed,
-                            <<"payload">> => Downlink2#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink2#downlink.payload),
                             <<"port">> => Downlink2#downlink.port
                         }
                     ]
@@ -298,7 +298,7 @@ fetch_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink1#downlink.confirmed,
-                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink1#downlink.payload),
                             <<"port">> => Downlink1#downlink.port
                         }
                     ]
@@ -324,7 +324,7 @@ fetch_queue_test(Config) ->
                                 <<"name">> => router_channel:name(Channel)
                             },
                             <<"confirmed">> => Downlink1#downlink.confirmed,
-                            <<"payload">> => Downlink1#downlink.payload,
+                            <<"payload">> => base64:encode(Downlink1#downlink.payload),
                             <<"port">> => Downlink1#downlink.port
                         }
                     ]

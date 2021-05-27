@@ -1225,11 +1225,11 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
             'AS923_1' ->
                 mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
             'AS923_2' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
+                mk_cflist_for_freqs([9218000, 9220000, 9222000, 9224000, 9226000]);
             'AS923_3' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
+                mk_cflist_for_freqs([9170000, 9172000, 9174000, 9176000, 9178000]);
             'AS923_4' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
+                mk_cflist_for_freqs([9177000, 9179000, 9181000, 9183000, 9185000]);
             _ ->
                 %% Not yet implemented for other regions
                 <<>>

@@ -251,39 +251,44 @@ rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) ->
 
 -spec rx2_rf(atom(), #rxq{}) -> #txq{}.
 %% 923.3MHz / DR8 (SF12 BW500)
-rx2_rf(Region, #rxq{codr = Codr}) when Region == 'US915' ->
+rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'US915' ->
     #txq{
         freq = 923.3,
         datr = dr_to_datar(Region, 8),
-        codr = Codr
+        codr = Codr,
+        time = Time
     };
 %% 505.3 MHz / DR0 (SF12 / BW125)
-rx2_rf(Region, #rxq{codr = Codr}) when Region == 'CN470' ->
+rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'CN470' ->
     #txq{
         freq = 505.3,
         datr = dr_to_datar(Region, 0),
-        codr = Codr
+        codr = Codr,
+        time = Time
     };
 %% 869.525 MHz / DR0 (SF12, 125 kHz)
-rx2_rf(Region, #rxq{codr = Codr}) when Region == 'EU868' ->
+rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'EU868' ->
     #txq{
         freq = 869.525,
         datr = dr_to_datar(Region, 0),
-        codr = Codr
+        codr = Codr,
+        time = Time
     };
 %% 923.2. MHz / DR2 (SF10, 125 kHz)
-rx2_rf(Region, #rxq{codr = Codr}) when Region == 'AS923' ->
+rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AS923' ->
     #txq{
         freq = 923.2,
         datr = dr_to_datar(Region, 2),
-        codr = Codr
+        codr = Codr,
+        time = Time
     };
 %% 923.3. MHz / DR8 (SF12, 500 kHz)
-rx2_rf(Region, #rxq{codr = Codr}) when Region == 'AU915' ->
+rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AU915' ->
     #txq{
         freq = 923.3,
         datr = dr_to_datar(Region, 8),
-        codr = Codr
+        codr = Codr,
+        time = Time
     }.
 
 %% ------------------------------------------------------------------

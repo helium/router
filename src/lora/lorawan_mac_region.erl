@@ -19,6 +19,7 @@
 -export([max_payload_size/2]).
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
+-export([window2_dr/1]).
 
 -include("lorawan_db.hrl").
 
@@ -129,7 +130,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -138,7 +139,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 505.3,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -147,7 +148,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 869.525,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -156,7 +157,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.2,
-        datr = dr_to_datar(Region, 2),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -164,7 +165,7 @@ join2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     }.
@@ -186,7 +187,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'US915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -195,7 +196,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'CN470' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 505.3,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -204,7 +205,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'EU868' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 869.525,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -213,7 +214,7 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AS923' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.2,
-        datr = dr_to_datar(Region, 2),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     };
@@ -222,10 +223,18 @@ rx2_window(Region, #rxq{tmms = Stamp} = RxQ) when Region == 'AU915' ->
     Delay = get_window(?FUNCTION_NAME),
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         time = Stamp + Delay,
         codr = RxQ#rxq.codr
     }.
+
+-spec window2_dr(atom()) -> dr().
+window2_dr('US915') -> 8;
+window2_dr('AU915') -> 8;
+window2_dr('AS923') -> 2;
+window2_dr('CN470') -> 0;
+window2_dr('EU868') -> 0;
+window2_dr(_Region) -> 0.
 
 -spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
 %% we calculate in fixed-point numbers

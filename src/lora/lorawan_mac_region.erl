@@ -32,6 +32,7 @@
 
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
+-export([window2_dr/1]).
 
 -include("lorawan_db.hrl").
 
@@ -291,6 +292,14 @@ rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AU915' ->
         codr = Codr,
         time = Time
     }.
+
+-spec window2_dr(atom()) -> dr().
+window2_dr('US915') -> 8;
+window2_dr('AU915') -> 8;
+window2_dr('AS923') -> 2;
+window2_dr('CN470') -> 0;
+window2_dr('EU868') -> 0;
+window2_dr(_Region) -> 0.
 
 %% ------------------------------------------------------------------
 %% @doc Frequency to Up Channel

@@ -288,35 +288,41 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
         {ok, Devices} ->
             DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
             Ledger = blockchain:ledger(Chain),
-            {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
-            {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
-            BinFilters = blockchain_ledger_routing_v1:filters(Routing),
-            case contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) of
-                {_Map, [], Removed} when Removed == #{} ->
+            case blockchain_ledger_v1:find_routing(OUI, Ledger) of
+                {error, _Reason} ->
+                    lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
                     noop;
-                {Map, Added, Removed} when Removed == #{} ->
-                    case erlang:length(BinFilters) < MaxXorFilter of
-                        true ->
-                            {Routing, [{new, Added}]};
-                        false ->
-                            case smallest_first(maps:to_list(Map)) of
-                                [] ->
-                                    {Routing, [
-                                        {update, 0, Added}
-                                    ]};
-                                [{Index, SmallestDevicesDevEuiAppEui} | _] ->
-                                    {Routing, [
-                                        {update, Index, Added ++ SmallestDevicesDevEuiAppEui}
-                                    ]}
-                            end
-                    end;
-                {Map, [], Removed} ->
-                    {Routing, craft_remove_updates(Map, Removed)};
-                {Map, Added, Removed} ->
-                    [{update, Index, R} | OtherUpdates] = smallest_first(
-                        craft_remove_updates(Map, Removed)
-                    ),
-                    {Routing, [{update, Index, R ++ Added} | OtherUpdates]}
+                {ok, Routing} ->
+                    {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
+                    BinFilters = blockchain_ledger_routing_v1:filters(Routing),
+                    case contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) of
+                        {_Map, [], Removed} when Removed == #{} ->
+                            noop;
+                        {Map, Added, Removed} when Removed == #{} ->
+                            case erlang:length(BinFilters) < MaxXorFilter of
+                                true ->
+                                    {Routing, [{new, Added}]};
+                                false ->
+                                    case smallest_first(maps:to_list(Map)) of
+                                        [] ->
+                                            {Routing, [
+                                                {update, 0, Added}
+                                            ]};
+                                        [{Index, SmallestDevicesDevEuiAppEui} | _] ->
+                                            {Routing, [
+                                                {update, Index,
+                                                    Added ++ SmallestDevicesDevEuiAppEui}
+                                            ]}
+                                    end
+                            end;
+                        {Map, [], Removed} ->
+                            {Routing, craft_remove_updates(Map, Removed)};
+                        {Map, Added, Removed} ->
+                            [{update, Index, R} | OtherUpdates] = smallest_first(
+                                craft_remove_updates(Map, Removed)
+                            ),
+                            {Routing, [{update, Index, R ++ Added} | OtherUpdates]}
+                    end
             end
     end.
 

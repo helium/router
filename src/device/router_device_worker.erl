@@ -1236,7 +1236,7 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
                 <<>>
         end,
     ReplyPayload =
-        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings:8/integer-unsigned,
+        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(

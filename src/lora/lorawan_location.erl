@@ -36,19 +36,19 @@
 -define(ETS, lorawan_region_location_ets).
 -define(HOTSPOT_URL_PREFIX, "https://api.helium.io/v1/hotspots/").
 
--define(AS923_UNKNOWN_REGION_DEFAULT, 'AS923_AS2').
+-define(AS923_UNKNOWN_REGION_DEFAULT, 'AS923_2').
 -define(AS923_REGION_MAPPING, #{
-    {<<"JP">>, <<"Japan">>} => 'AS923_AS1',
-    {<<"MY">>, <<"Malaysia">>} => 'AS923_AS1',
-    {<<"SG">>, <<"Singapore">>} => 'AS923_AS1',
-    {<<"BN">>, <<"Brunei">>} => 'AS923_AS2',
-    {<<"KH">>, <<"Cambodia">>} => 'AS923_AS2',
-    {<<"HK">>, <<"Hong Kong">>} => 'AS923_AS2',
-    {<<"ID">>, <<"Indonesia">>} => 'AS923_AS2',
-    {<<"LA">>, <<"Laos">>} => 'AS923_AS2',
-    {<<"TW">>, <<"Taiwan">>} => 'AS923_AS2',
-    {<<"TH">>, <<"Thailand">>} => 'AS923_AS2',
-    {<<"VN">>, <<"Vietnam">>} => 'AS923_AS2'
+    {<<"JP">>, <<"Japan">>} => 'AS923_1',
+    {<<"MY">>, <<"Malaysia">>} => 'AS923_1',
+    {<<"SG">>, <<"Singapore">>} => 'AS923_1',
+    {<<"BN">>, <<"Brunei">>} => 'AS923_2',
+    {<<"KH">>, <<"Cambodia">>} => 'AS923_2',
+    {<<"HK">>, <<"Hong Kong">>} => 'AS923_2',
+    {<<"ID">>, <<"Indonesia">>} => 'AS923_2',
+    {<<"LA">>, <<"Laos">>} => 'AS923_2',
+    {<<"TW">>, <<"Taiwan">>} => 'AS923_2',
+    {<<"TH">>, <<"Thailand">>} => 'AS923_2',
+    {<<"VN">>, <<"Vietnam">>} => 'AS923_2'
 }).
 
 -type country_code() :: {binary(), binary()}.
@@ -88,7 +88,8 @@ store(PubKeyBin, CountryCode) ->
     true = ets:insert(?ETS, {PubKeyBin, CountryCode}),
     ok.
 
--spec as923_region_from_country_code(country_code()) -> 'AS923_AS1' | 'AS923_AS2'.
+-spec as923_region_from_country_code(country_code()) ->
+    'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4'.
 as923_region_from_country_code(CountryCode) ->
     maps:get(CountryCode, ?AS923_REGION_MAPPING, ?AS923_UNKNOWN_REGION_DEFAULT).
 

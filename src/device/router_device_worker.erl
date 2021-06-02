@@ -1192,8 +1192,7 @@ handle_join(
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
-    LoraRegion = lora_region(Region, PubKeyBin),
-    Reply = craft_join_reply(LoraRegion, AppNonce, DevAddr, AppKey),
+    Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
     lager:debug(
         "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
         [
@@ -1207,7 +1206,8 @@ handle_join(
 
 -spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().
 craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
-    DLSettings = 0,
+    DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
+    DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     CFList =
         case Region of
@@ -1222,16 +1222,20 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
                 %% The actual channel frequency in Hz is 100 x frequency whereby values representing
                 %% frequencies below 100 MHz are reserved for future use.
                 mk_cflist_for_freqs([8671000, 8673000, 8675000, 8677000, 8679000]);
-            'AS923_AS1' ->
-                mk_cflist_for_freqs([9222000, 9224000, 9226000, 9228000, 9230000]);
-            'AS923_AS2' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9246000]);
+            'AS923_1' ->
+                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
+            'AS923_2' ->
+                mk_cflist_for_freqs([9218000, 9220000, 9222000, 9224000, 9226000]);
+            'AS923_3' ->
+                mk_cflist_for_freqs([9170000, 9172000, 9174000, 9176000, 9178000]);
+            'AS923_4' ->
+                mk_cflist_for_freqs([9177000, 9179000, 9181000, 9183000, 9185000]);
             _ ->
                 %% Not yet implemented for other regions
                 <<>>
         end,
     ReplyPayload =
-        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings:8/integer-unsigned,
+        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(
@@ -2076,33 +2080,6 @@ mk_cflist_for_freqs(Frequencies) ->
         || X <- Frequencies
     >>,
     <<Channels/binary, 0:8/integer>>.
-
--spec lora_region(atom(), libp2p_crypto:pubkey_bin()) -> atom().
-lora_region(Region, PubKeyBin) ->
-    case Region of
-        'AS923_AS1' ->
-            Region;
-        'AS923_AS2' ->
-            Region;
-        'AS923' ->
-            case lorawan_location:get_country_code(PubKeyBin) of
-                {ok, CountryCode} ->
-                    lorawan_location:as923_region_from_country_code(CountryCode);
-                {error, _Reason} ->
-                    lager:warning(
-                        "Failed to get country for AS923: ~p [pubkeybin: ~p] [hotspot: ~p]",
-                        [
-                            _Reason,
-                            PubKeyBin,
-                            blockchain_utils:addr2name(PubKeyBin)
-                        ]
-                    ),
-                    %% Default to AS923 region with more countries
-                    'AS923_AS2'
-            end;
-        _ ->
-            Region
-    end.
 
 -spec packet_datarate_to_dr(Packet :: blockchain_helium_packet_v1:packet(), Region :: atom()) ->
     integer().

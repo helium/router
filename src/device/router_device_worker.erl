@@ -1206,7 +1206,7 @@ handle_join(
 
 -spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().
 craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
-    DR = lorawan_mac_region:window2_dr(Region),
+    DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     CFList =

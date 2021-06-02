@@ -32,7 +32,7 @@
 
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
--export([window2_dr/1]).
+-export([window2_dr/1, top_level_region/1]).
 
 -include("lorawan_db.hrl").
 

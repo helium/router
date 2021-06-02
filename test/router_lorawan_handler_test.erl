@@ -60,7 +60,11 @@ init(client, _Conn, [Pid, Pubkeybin, Region] = _Args) ->
     lager:info("client started with ~p", [_Args]),
     ct:pal("~p", [file:get_cwd()]),
     Port = erlang:open_port(
-        {spawn_executable, io_lib:format("../../../../priv/LoRaMac-classA_~s", [Region])},
+        {spawn_executable,
+            io_lib:format(
+                "../../../../priv/LoRaMac-classA_~s",
+                [lorawan_mac_region:top_level_region(Region)]
+            )},
         [
             {line, 65535},
             stream,

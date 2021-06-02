@@ -33,7 +33,10 @@ groups() ->
         {'US915', [], [lw_join_test]},
         {'EU868', [], [lw_join_test]},
         {'CN470', [], [lw_join_test]},
-        {'AS923', [], [lw_join_test]}
+        {'AS923_1', [], [lw_join_test]},
+        {'AS923_2', [], [lw_join_test]},
+        {'AS923_3', [], [lw_join_test]},
+        {'AS923_4', [], [lw_join_test]}
     ].
 
 %%--------------------------------------------------------------------
@@ -47,7 +50,10 @@ all() ->
         {group, 'US915'},
         {group, 'EU868'},
         {group, 'CN470'},
-        {group, 'AS923'}
+        {group, 'AS923_1'},
+        {group, 'AS923_2'},
+        {group, 'AS923_3'},
+        {group, 'AS923_4'}
     ].
 
 %%--------------------------------------------------------------------
@@ -150,9 +156,11 @@ lw_join_test(Config) ->
     DevNonce = <<5, 0>>,
     receive
         joining -> ok
+    after 5000 -> ct:fail("Joining failed")
     end,
     receive
         joined -> ok
+    after 5000 -> ct:fail("Joined failed")
     end,
 
     {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),

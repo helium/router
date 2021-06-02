@@ -15,7 +15,6 @@
     join2_window/2,
     rx1_window/4,
     rx2_window/2,
-    f2uch/2,
     set_channels/3,
     max_uplink_snr/2,
     max_downlink_snr/3,
@@ -32,7 +31,7 @@
 
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
--export([window2_dr/1, top_level_region/1]).
+-export([window2_dr/1, top_level_region/1, f2uch/2]).
 
 -include("lorawan_db.hrl").
 
@@ -155,18 +154,6 @@ rx2_window(Region, RxQ) ->
 %% Region Wrapped Helper Functions
 %% ------------------------------------------------------------------
 
--spec f2uch(Region | Freq, Freq | {Start, Inc}) -> UpChannel when
-    Region :: atom(),
-    Freq :: freq_float(),
-    Start :: freq_whole(),
-    Inc :: number(),
-    UpChannel :: channel().
-f2uch(Region, Freq) when is_atom(Region) ->
-    TopLevelRegion = top_level_region(Region),
-    f2uch_(TopLevelRegion, Freq);
-f2uch(Freq, Range) ->
-    f2uch_(Freq, Range).
-
 -spec datar_to_dr(atom(), datar()) -> dr().
 datar_to_dr(Region, DataRate) ->
     TopLevelRegion = top_level_region(Region),
@@ -235,11 +222,11 @@ top_level_region(Region) -> Region.
 -spec rx1_rf(atom(), #rxq{}, number()) -> #txq{}.
 %% we calculate in fixed-point numbers
 rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'US915' ->
-    RxCh = f2uch_(Freq, {9023, 2}, {9030, 16}),
+    RxCh = f2uch(Freq, {9023, 2}, {9030, 16}),
     DownFreq = dch2f(Region, RxCh rem 8),
     tx_offset(Region, RxQ, DownFreq, Offset);
 rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'AU915' ->
-    RxCh = f2uch_(Freq, {9152, 2}, {9159, 16}),
+    RxCh = f2uch(Freq, {9152, 2}, {9159, 16}),
     DownFreq = dch2f(Region, RxCh rem 8),
     tx_offset(Region, RxQ, DownFreq, Offset);
 rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) when Region == 'CN470' ->
@@ -256,7 +243,7 @@ rx1_rf(Region, #rxq{freq = Freq} = RxQ, Offset) ->
 rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'US915' ->
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         codr = Codr,
         time = Time
     };
@@ -264,7 +251,7 @@ rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'US915' ->
 rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'CN470' ->
     #txq{
         freq = 505.3,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         codr = Codr,
         time = Time
     };
@@ -272,7 +259,7 @@ rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'CN470' ->
 rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'EU868' ->
     #txq{
         freq = 869.525,
-        datr = dr_to_datar(Region, 0),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         codr = Codr,
         time = Time
     };
@@ -280,7 +267,7 @@ rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'EU868' ->
 rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AS923' ->
     #txq{
         freq = 923.2,
-        datr = dr_to_datar(Region, 2),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         codr = Codr,
         time = Time
     };
@@ -288,7 +275,7 @@ rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AS923' ->
 rx2_rf(Region, #rxq{codr = Codr, time = Time}) when Region == 'AU915' ->
     #txq{
         freq = 923.3,
-        datr = dr_to_datar(Region, 8),
+        datr = dr_to_datar(Region, window2_dr(Region)),
         codr = Codr,
         time = Time
     }.
@@ -306,35 +293,59 @@ window2_dr(_Region) -> 0.
 %% Map Frequency to Channel for region.
 %% @end
 %% ------------------------------------------------------------------
--spec f2uch_(Region | Freq, Freq | {Start, Inc}) -> UpChannel when
+-spec f2uch(Region | Freq, Freq | {Start, Inc}) -> UpChannel when
     Region :: atom(),
     Freq :: freq_float(),
     Start :: freq_whole(),
     Inc :: number(),
     UpChannel :: channel().
-f2uch_('US915', Freq) ->
-    f2uch_(Freq, {9023, 2}, {9030, 16});
-f2uch_('AU915', Freq) ->
-    f2uch_(Freq, {9152, 2}, {9159, 16});
-f2uch_('CN470', Freq) ->
-    f2uch_(Freq, {4073, 2});
-f2uch_('EU868', Freq) when Freq < 868 ->
-    f2uch_(Freq, {8671, 2}) + 3;
-f2uch_('EU868', Freq) when Freq > 868 ->
-    f2uch_(Freq, {8681, 2});
-f2uch_('AS923', Freq) ->
+f2uch('US915', Freq) ->
+    f2uch(Freq, {9023, 2}, {9030, 16});
+f2uch('AU915', Freq) ->
+    f2uch(Freq, {9152, 2}, {9159, 16});
+f2uch('CN470', Freq) ->
+    f2uch(Freq, {4073, 2});
+f2uch('EU868', Freq) when Freq < 868 ->
+    f2uch(Freq, {8671, 2}) + 3;
+f2uch('EU868', Freq) when Freq > 868 ->
+    f2uch(Freq, {8681, 2});
+f2uch('AS923_1', Freq) ->
     case Freq of
         923.2 -> 1;
         923.4 -> 2;
-        _ -> f2uch_(Freq, {9222, 2}, {9236, 2})
+        _ -> f2uch(Freq, {9236, 2}) + 2
     end;
-f2uch_(Freq, {Start, Inc}) ->
+f2uch('AS923_2', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9218, 2}) + 2
+    end;
+f2uch('AS923_3', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9170, 2}) + 2
+    end;
+f2uch('AS923_4', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9177, 2}) + 2
+    end;
+f2uch('AS923', Freq) ->
+    case Freq of
+        923.2 -> 1;
+        923.4 -> 2;
+        _ -> f2uch(Freq, {9222, 2}, {9236, 2})
+    end;
+f2uch(Freq, {Start, Inc}) ->
     round(10 * Freq - Start) div Inc.
 
 %% the channels are overlapping, return the integer value
-f2uch_(Freq, {Start1, Inc1}, _) when round(10 * Freq - Start1) rem Inc1 == 0 ->
+f2uch(Freq, {Start1, Inc1}, _) when round(10 * Freq - Start1) rem Inc1 == 0 ->
     round(10 * Freq - Start1) div Inc1;
-f2uch_(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
+f2uch(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
     64 + round(10 * Freq - Start2) div Inc2.
 
 %% ------------------------------------------------------------------

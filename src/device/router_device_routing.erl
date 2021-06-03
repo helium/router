@@ -1107,7 +1107,7 @@ handle_offer_metrics(
 ) ->
     ok =
         case router_device_devaddr:net_id(DevAddr) of
-            {id, NetID, _Type} ->
+            {ok, NetID, _Type} ->
                 router_metrics:network_id_inc(erlang:integer_to_list(NetID));
             {error, _} ->
                 router_metrics:network_id_inc("invalid_net_id")

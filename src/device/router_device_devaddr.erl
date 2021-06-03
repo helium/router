@@ -109,23 +109,28 @@ pubkeybin_to_loc(PubKeyBin, Chain) ->
             end
     end.
 
--spec net_id(number() | binary()) -> {non_neg_integer(), 0..7}.
+-spec net_id(number() | binary()) -> {ok, non_neg_integer(), 0..7} | {error, invalid_net_id_type}.
 net_id(DevAddr) when erlang:is_number(DevAddr) ->
-    net_id(binary:encode_unsigned(DevAddr, big));
+    net_id(<<DevAddr:32/integer-unsigned>>);
 net_id(DevAddr) ->
-    Type = net_id_type(DevAddr),
-    NetID =
-        case Type of
-            0 -> get_net_id(DevAddr, 1, 6);
-            1 -> get_net_id(DevAddr, 2, 6);
-            2 -> get_net_id(DevAddr, 3, 9);
-            3 -> get_net_id(DevAddr, 4, 11);
-            4 -> get_net_id(DevAddr, 5, 12);
-            5 -> get_net_id(DevAddr, 6, 13);
-            6 -> get_net_id(DevAddr, 7, 15);
-            7 -> get_net_id(DevAddr, 8, 17)
-        end,
-    {NetID, Type}.
+    try
+        Type = net_id_type(DevAddr),
+        NetID =
+            case Type of
+                0 -> get_net_id(DevAddr, 1, 6);
+                1 -> get_net_id(DevAddr, 2, 6);
+                2 -> get_net_id(DevAddr, 3, 9);
+                3 -> get_net_id(DevAddr, 4, 11);
+                4 -> get_net_id(DevAddr, 5, 12);
+                5 -> get_net_id(DevAddr, 6, 13);
+                6 -> get_net_id(DevAddr, 7, 15);
+                7 -> get_net_id(DevAddr, 8, 17)
+            end,
+        {ok, NetID, Type}
+    catch
+        throw:invalid_net_id_type:_ ->
+            {error, invalid_net_id_type}
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -295,6 +300,8 @@ net_id_type(<<First:8/integer-unsigned, _/binary>>) ->
     net_id_type(First, 7).
 
 -spec net_id_type(non_neg_integer(), non_neg_integer()) -> 0..7.
+net_id_type(_, -1) ->
+    throw(invalid_net_id_type);
 net_id_type(Prefix, Index) ->
     case Prefix band (1 bsl Index) of
         0 -> 7 - Index;
@@ -433,53 +440,72 @@ net_id_test() ->
         end,
         [
             #{
-                expect => {45, 0},
+                expect => {ok, 45, 0},
                 num => 1543503871,
                 bin => <<91, 255, 255, 255>>,
                 %% truncated byte output == hex == integer
                 msg => "[45] == 2D == 45"
             },
             #{
-                expect => {45, 1},
+                expect => {ok, 45, 1},
                 num => 2919235583,
                 bin => <<173, 255, 255, 255>>,
                 msg => "[45] == 2D == 45"
             },
             #{
-                expect => {365, 2},
+                expect => {ok, 365, 2},
                 num => 3605004287,
                 bin => <<214, 223, 255, 255>>,
                 msg => "[1,109] == 16D == 365"
             },
             #{
-                expect => {1463, 3},
+                expect => {ok, 1463, 3},
                 num => 3949985791,
                 bin => <<235, 111, 255, 255>>,
                 msg => "[5,183] == 5B7 == 1463"
             },
             #{
-                expect => {2925, 4},
+                expect => {ok, 2925, 4},
                 num => 4122411007,
                 bin => <<245, 182, 255, 255>>,
                 msg => "[11, 109] == B6D == 2925"
             },
             #{
-                expect => {5851, 5},
+                expect => {ok, 5851, 5},
                 num => 4208689151,
                 bin => <<250, 219, 127, 255>>,
                 msg => "[22,219] == 16DB == 5851"
             },
             #{
-                expect => {23405, 6},
+                expect => {ok, 23405, 6},
                 num => 4251826175,
                 bin => <<253, 109, 183, 255>>,
                 msg => "[91, 109] == 5B6D == 23405"
             },
             #{
-                expect => {93622, 7},
+                expect => {ok, 93622, 7},
                 num => 4273396607,
                 bin => <<254, 182, 219, 127>>,
                 msg => "[1,109,182] == 16DB6 == 93622"
+            },
+            #{
+                expect => {error, invalid_net_id_type},
+                num => 4294967295,
+                bin => <<255, 255, 255, 255>>,
+                msg => "Invalid DevAddr"
+            },
+            #{
+                expect => {ok, 0, 0},
+                %% Way under 32 bit number
+                num => 46377,
+                bin => <<0, 0, 181, 41>>,
+                msg => "[0] == 0 == 0"
+            },
+            #{
+                expect => {ok, 41, 1},
+                num => 2838682043,
+                bin => <<169, 50, 217, 187>>,
+                msg => "[41] == 29 == 41"
             }
         ]
     ).

@@ -1093,15 +1093,25 @@ handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {error, Reason}, 
     ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
 handle_offer_metrics(#routing_information_pb{data = {devaddr, DevAddr}}, {ok, _}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time),
-    {NetID, _Type} = router_device_devaddr:net_id(DevAddr),
-    ok = router_metrics:network_id_inc(erlang:integer_to_list(NetID));
+    ok =
+        case router_device_devaddr:net_id(DevAddr) of
+            {ok, NetID, _Type} ->
+                router_metrics:network_id_inc(erlang:integer_to_list(NetID));
+            {error, _} ->
+                router_metrics:network_id_inc("invalid_net_id")
+        end;
 handle_offer_metrics(
     #routing_information_pb{data = {devaddr, DevAddr}},
     {error, ?DEVADDR_NOT_IN_SUBNET},
     Time
 ) ->
-    {NetID, _Type} = router_device_devaddr:net_id(DevAddr),
-    ok = router_metrics:network_id_inc(erlang:integer_to_list(NetID)),
+    ok =
+        case router_device_devaddr:net_id(DevAddr) of
+            {id, NetID, _Type} ->
+                router_metrics:network_id_inc(erlang:integer_to_list(NetID));
+            {error, _} ->
+                router_metrics:network_id_inc("invalid_net_id")
+        end,
     ok = router_metrics:routing_offer_observe(packet, rejected, ?DEVADDR_NOT_IN_SUBNET, Time);
 handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).

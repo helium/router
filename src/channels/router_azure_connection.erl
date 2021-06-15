@@ -166,7 +166,6 @@ parse_connection_string_test() ->
     ok.
 
 get_device_test() ->
-    application:ensure_all_started(lager),
     application:ensure_all_started(hackney),
 
     ConnString = ?CONNECTION_STRING,
@@ -178,7 +177,6 @@ get_device_test() ->
     ok.
 
 create_and_delete_device_force_test() ->
-    application:ensure_all_started(lager),
     application:ensure_all_started(hackney),
 
     ConnString = ?CONNECTION_STRING,
@@ -193,7 +191,6 @@ create_and_delete_device_force_test() ->
     ok.
 
 create_and_delete_device_explicit_test() ->
-    application:ensure_all_started(lager),
     application:ensure_all_started(hackney),
 
     ConnString = ?CONNECTION_STRING,

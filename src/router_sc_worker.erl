@@ -206,22 +206,38 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight = F, tombstones = T} = State) ->
-    NewF = F -- T,
-    case get_active_count() + length(NewF) of
-        0 ->
-            %% initialize with two channels
-            lager:info("active_count = 0, opening two state channels"),
-            {ok, Id0, Id1} = init_state_channels(State),
-            State#state{in_flight = [Id0, Id1 | NewF], tombstones = []};
-        1 ->
-            %% open next state channel
-            lager:info("active_count = 1, opening next state channel"),
-            {ok, Id0} = open_next_state_channel(State),
-            State#state{in_flight = [Id0 | NewF], tombstones = []};
-        Other ->
-            %% don't do anything
-            lager:info("active_count = ~p, standing by...", [Other]),
+maybe_start_state_channel(#state{in_flight = F, tombstones = T, chain = Chain} = State) ->
+    NewInflight = F -- T,
+
+    Opened = get_opened_count(),
+    Active = get_active_count(),
+    {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
+
+    HaveHeadroom = Active < Opened,
+    UnderLimit = Opened < Limit,
+
+    case {HaveHeadroom, UnderLimit} of
+        {false, false} ->
+            %% All open channels are active, nothing we can do about it until some close
+            lager:warning(
+                "~p/~p [max: ~p] limit reached, cannot open more state channels",
+                [Active, Opened, Limit]
+            ),
+            State;
+        {false, true} ->
+            %% All open channels are active, getting a little tight
+            lager:info(
+                "~p/~p [max: ~p] all active, opening next state channel",
+                [Active, Opened, Limit]
+            ),
+            {ok, ID} = open_next_state_channel(State),
+            State#state{in_flight = [ID | NewInflight], tombstones = []};
+        {true, _} ->
+            %% Active is less than Opened, where we want to be
+            lager:info(
+                "~p active of ~p [max: ~p],  standing by...",
+                [Active, Opened, Limit]
+            ),
             State#state{in_flight = [], tombstones = []}
     end.
 
@@ -307,6 +323,10 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     ]),
     blockchain_worker:submit_txn(SignedTxn, fun(Result) -> handle_sc_result(Result, ID) end),
     ID.
+
+-spec get_opened_count() -> non_neg_integer().
+get_opened_count() ->
+    erlang:length(blockchain_state_channels_server:state_channels()).
 
 -spec get_active_count() -> non_neg_integer().
 get_active_count() ->

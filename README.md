@@ -270,3 +270,79 @@ Here are some of the most commun queries that can be added into grafana.
 `router_dc_balance{}` Simple count of your Router's balance
 
 `sum(rate(router_console_api_duration_count{status="ok"}[5m])) / (sum(rate(router_console_api_duration_count{status="error"}[5m])) + sum(rate(router_console_api_duration_count{status="ok"}[5m]))) * 100` API success rate
+
+## Supported Countries/Frequencies
+
+### US915
+**Uplink**
+- 902.3 MHz increment by 200 Hz
+- 903.0 MHz increment by 1600 Hz
+
+**Downlink**
+- 923.3 MHz increment by 600 Hz (RX1)
+- 923.3 MHz (RX2)
+
+### CN470
+**Uplink**
+- 470.3 MHz increment by 200 Hz
+
+**Downlink**
+- 500.3 MHz increment by 600 Hz (RX1)
+- 505.3 MHz (RX2)
+
+### AU915
+**Uplink**
+- 915.2 MHz increment by 200 Hz
+- 915.9 MHz increment by 1600 Hz
+
+**Downlink**
+- 923.3 MHz increment by 600 Hz (RX1)
+- 923.3 MHz (RX2)
+
+### EU868
+**Uplink**
+- 867.1 MHz
+- 867.3 MHz
+- 867.5 MHz
+- 867.7 MHz
+- 867.9 MHz
+
+**Downlink**
+- Same as uplink (RX1)
+- 869.525 MHz (RX2)
+
+### AS923
+
+**Default Frequencies**
+- 923.2 MHz (uplink/downlink)
+- 923.4 MHz (uplink/downlink)
+- 923.2 MHz (RX2 downlink)
+
+##### AS923_1
+- 923.6 MHz
+- 923.8 MHz
+- 924.0 MHz
+- 924.2 MHz
+- 924.4 MHz
+
+##### AS923_2
+- 921.8 MHz
+- 922.0 MHz
+- 922.2 MHz
+- 922.4 MHz
+- 922.6 MHz
+
+##### AS923_3
+- 917.0 MHz
+- 917.2 MHz
+- 917.4 MHz
+- 917.6 MHz
+- 917.8 MHz
+
+##### AS923_4
+- 917.7 MHz
+- 917.9 MHz
+- 918.1 MHz
+- 918.3 MHz
+- 918.5 MHz
+ 

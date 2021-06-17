@@ -2091,11 +2091,3 @@ packet_datarate_to_dr(Packet, Region) ->
         Region,
         Datarate
     ).
-
-%% ------------------------------------------------------------------
-%% EUNIT Tests
-%% ------------------------------------------------------------------
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
--endif.

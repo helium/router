@@ -67,7 +67,8 @@
     tref = undefined :: undefined | reference(),
     in_flight = [] :: [blockchain_txn_state_channel_open_v1:id()],
     tombstones = [] :: [blockchain_txn_state_channel_open_v1:id()],
-    is_active = false :: boolean()
+    is_active = false :: boolean(),
+    open_sc_limit = undefined :: non_neg_integer()
 }).
 
 -type state() :: #state{}.
@@ -112,18 +113,29 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
+            {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
             case router_utils:get_oui() of
                 undefined ->
                     lager:warning("OUI undefined"),
-                    {noreply, State#state{chain = Chain}};
+                    {noreply, State#state{chain = Chain, open_sc_limit = Limit}};
                 OUI ->
                     %% We have a chain and an oui on chain
                     %% Only activate if we're on sc_version=2
                     case blockchain:config(sc_version, blockchain:ledger(Chain)) of
                         {ok, 2} ->
-                            {noreply, State#state{chain = Chain, oui = OUI, is_active = true}};
+                            {noreply, State#state{
+                                chain = Chain,
+                                oui = OUI,
+                                open_sc_limit = Limit,
+                                is_active = true
+                            }};
                         _ ->
-                            {noreply, State#state{chain = Chain, oui = OUI, is_active = false}}
+                            {noreply, State#state{
+                                chain = Chain,
+                                oui = OUI,
+                                open_sc_limit = Limit,
+                                is_active = false
+                            }}
                     end
             end
     end;
@@ -149,12 +161,13 @@ handle_info(
             lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
+            {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
             %% Only activate if we're on sc_version=2
             case blockchain:config(sc_version, blockchain:ledger(Chain)) of
                 {ok, 2} ->
-                    {noreply, State#state{oui = OUI, is_active = true}};
+                    {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = true}};
                 _ ->
-                    {noreply, State#state{oui = OUI, is_active = false}}
+                    {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = false}}
             end
     end;
 handle_info({sc_open_success, Id}, #state{is_active = false} = State) ->
@@ -206,12 +219,11 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight = F, tombstones = T, chain = Chain} = State) ->
+maybe_start_state_channel(#state{in_flight = F, tombstones = T, open_sc_limit = Limit} = State) ->
     NewInflight = F -- T,
 
     Opened = get_opened_count(),
     Active = get_active_count(),
-    {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
 
     HaveHeadroom = Active < Opened,
     UnderLimit = Opened < Limit,

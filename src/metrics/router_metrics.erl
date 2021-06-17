@@ -258,12 +258,13 @@ record_dc_balance(PubkeyBin) ->
 record_state_channels() ->
     ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
     ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveSCCount),
-    case blockchain_state_channels_server:active_sc() of
-        undefined ->
+    case blockchain_state_channels_server:active_scs() of
+        [] ->
             ok = notify(?METRICS_SC_ACTIVE, 0);
-        ActiveSC ->
+        [ActiveSC | _] ->
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
+            % TODO Fix this metric
             ok = notify(?METRICS_SC_ACTIVE, DCLeft)
     end.
 

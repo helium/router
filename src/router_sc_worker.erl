@@ -68,7 +68,7 @@
     in_flight = [] :: [blockchain_txn_state_channel_open_v1:id()],
     tombstones = [] :: [blockchain_txn_state_channel_open_v1:id()],
     is_active = false :: boolean(),
-    open_sc_limit = undefined :: non_neg_integer()
+    open_sc_limit = undefined :: undefined | non_neg_integer()
 }).
 
 -type state() :: #state{}.
@@ -358,13 +358,22 @@ get_nonce(PubkeyBin, Ledger) ->
 
 -spec active_sc_expiration() -> {error, no_active_sc} | {ok, pos_integer()}.
 active_sc_expiration() ->
-    case blockchain_state_channels_server:active_sc_id() of
-        undefined ->
+    case blockchain_state_channels_server:active_sc_ids() of
+        [] ->
             {error, no_active_sc};
-        ActiveSCID ->
+        ActiveSCIDs ->
             SCs = blockchain_state_channels_server:state_channels(),
-            {ActiveSC, _} = maps:get(ActiveSCID, SCs),
-            {ok, blockchain_state_channel_v1:expire_at_block(ActiveSC)}
+            [SoonestScToExpire | _] =
+                lists:sort(
+                    fun(SCIDA, SCIDB) ->
+                        {ActiveSCA, _} = maps:get(SCIDA, SCs),
+                        {ActiveSCB, _} = maps:get(SCIDB, SCs),
+                        blockchain_state_channel_v1:expire_at_block(ActiveSCA) <
+                            blockchain_state_channel_v1:expire_at_block(ActiveSCB)
+                    end,
+                    ActiveSCIDs
+                ),
+            {ok, blockchain_state_channel_v1:expire_at_block(SoonestScToExpire)}
     end.
 
 -spec get_sc_amount() -> pos_integer().

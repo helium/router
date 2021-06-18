@@ -11,8 +11,7 @@
 ]).
 
 -export([
-    mocked_sc_worker_test/1,
-    full_sc_worker_test/1
+    sc_worker_test/1
 ]).
 
 -record(state, {
@@ -38,8 +37,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        mocked_sc_worker_test,
-        full_sc_worker_test
+        sc_worker_test
     ].
 
 %%--------------------------------------------------------------------
@@ -58,52 +56,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-mocked_sc_worker_test(_Config) ->
-    % Wait until sc worker ative
-    test_utils:wait_until(fun() ->
-        State = sys:get_state(router_sc_worker),
-        State#state.is_active
-    end),
-
-    % Mock submit_txn to clear in_flight txns
-    meck:new(blockchain_worker, [passthrough]),
-    meck:new(blockchain_state_channels_server, [passthrough]),
-    meck:expect(blockchain_worker, submit_txn, fun(Txn) ->
-        router_sc_worker ! {sc_open_success, blockchain_txn_state_channel_open_v1:id(Txn)}
-    end),
-
-    % Force tick
-    router_sc_worker ! '__router_sc_tick',
-
-    % wait until we got a txn submitted
-    test_utils:wait_until(fun() ->
-        State = sys:get_state(router_sc_worker),
-        erlang:length(State#state.in_flight) == 1
-    end),
-
-    % mock server to act like a SC was opened correctly
-    meck:expect(blockchain_state_channels_server, state_channels, fun() ->
-        #{sc1 => sc1}
-    end),
-    meck:expect(blockchain_state_channels_server, get_active_sc_count, fun() -> 1 end),
-
-    % Force tick another tick
-    router_sc_worker ! '__router_sc_tick',
-
-    % By then last inflight txn should have cleared and we should still be at 1
-    test_utils:wait_until(fun() ->
-        State = sys:get_state(router_sc_worker),
-        erlang:length(State#state.in_flight) == 1
-    end),
-
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ?assert(meck:validate(blockchain_state_channels_server)),
-    meck:unload(blockchain_state_channels_server),
-
-    ok.
-
-full_sc_worker_test(Config) ->
+sc_worker_test(Config) ->
     {ok, _} = lager:trace_console(
         [{module, blockchain_state_channels_server}],
         debug

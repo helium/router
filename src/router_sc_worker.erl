@@ -102,7 +102,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            Limit = mac_sc_open(Chain),
+            Limit = max_sc_open(Chain),
             case router_utils:get_oui() of
                 undefined ->
                     lager:warning("OUI undefined"),

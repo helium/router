@@ -215,10 +215,10 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
+maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
     OpenedCount = maps:size(blockchain_state_channels_server:state_channels()),
     ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
-    InFlightCount = erlang:length(InFlight),
+    InFlightCount = 0,
 
     HaveHeadroom = ActiveCount < OpenedCount,
     UnderLimit = OpenedCount + InFlightCount < Limit,
@@ -238,7 +238,7 @@ maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = 
                 [ActiveCount, OpenedCount, InFlightCount, Limit]
             ),
             {ok, ID} = open_next_state_channel(State),
-            State#state{in_flight = [ID | InFlight]};
+            State#state{in_flight = [ID]};
         {true, _} ->
             %% ActiveCount is less than OpenedCount, where we want to be
             lager:info(
@@ -246,7 +246,16 @@ maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = 
                 [ActiveCount, OpenedCount, InFlightCount, Limit]
             ),
             State
-    end.
+    end;
+maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
+    OpenedCount = maps:size(blockchain_state_channels_server:state_channels()),
+    ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
+    InFlightCount = erlang:length(InFlight),
+    lager:info(
+        "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
+        [ActiveCount, OpenedCount, InFlightCount, Limit]
+    ),
+    State.
 
 -spec open_next_state_channel(State :: state()) -> {ok, blockchain_txn_state_channel_open_v1:id()}.
 open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, chain = Chain}) ->

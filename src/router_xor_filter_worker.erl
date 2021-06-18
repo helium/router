@@ -692,14 +692,14 @@ test_for_should_update_filters_test() ->
 
     %% ------------------------
     % Testing Duplicate eui pairs for new filters
-    DeviceLastUpdates = [
+    DeviceUpdates5 = [
         {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
-    DeviceLast = router_device:update(DeviceLastUpdates, router_device:new(<<"ID0">>)),
-    DeviceLastCopy = router_device:update(DeviceLastUpdates, router_device:new(<<"ID0Copy">>)),
+    Device5 = router_device:update(DeviceUpdates5, router_device:new(<<"ID0">>)),
+    Device5Copy = router_device:update(DeviceUpdates5, router_device:new(<<"ID0Copy">>)),
     meck:expect(router_console_api, get_all_devices, fun() ->
-        {ok, [DeviceLast, DeviceLastCopy]}
+        {ok, [Device5, Device5Copy]}
     end),
 
     {EmptyFilter2, _} = xor16:new([], ?HASH_FUN),
@@ -711,9 +711,28 @@ test_for_should_update_filters_test() ->
 
     %% Devices with matching app/dev eui should be deduplicated
     ?assertEqual(
-        {EmptyRouting2, [{new, [deveui_appeui(DeviceLast)]}]},
+        {EmptyRouting2, [{new, [deveui_appeui(Device5)]}]},
         should_update_filters(chain, OUI, #{})
     ),
+
+    %% ------------------------
+    % Devices already in Filter should not cause updates
+    {FilterLast, _} = xor16:new([deveui_appeui(Device5)], ?HASH_FUN),
+    {BinFilterLast, _} = xor16:to_bin({FilterLast, ?HASH_FUN}),
+    RoutingLast = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilterLast, [], 1),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
+        {ok, RoutingLast}
+    end),
+
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device5Copy]}
+    end),
+
+    ?assertEqual(
+        noop,
+        should_update_filters(chain, OUI, #{})
+    ),
+
 
     meck:unload(blockchain_ledger_v1),
     meck:unload(router_console_api),

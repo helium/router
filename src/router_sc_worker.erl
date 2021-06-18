@@ -204,7 +204,7 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 
 -spec max_sc_open(Chain :: blockchain:blockchain()) -> pos_integer().
-mac_sc_open(Chain) ->
+max_sc_open(Chain) ->
     case blockchain:config(?max_open_sc, blockchain:ledger(Chain)) of
         {ok, Max} -> Max;
         _ -> 5

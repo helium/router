@@ -359,10 +359,3 @@ handle_sc_result(ok, Id) ->
     ?SERVER ! {sc_open_success, Id};
 handle_sc_result(Error, Id) ->
     ?SERVER ! {sc_open_failure, Error, Id}.
-
-%% ------------------------------------------------------------------
-%% EUNIT Tests
-%% ------------------------------------------------------------------
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.

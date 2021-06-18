@@ -323,7 +323,7 @@ active_sc_expiration() ->
             {error, no_active_sc};
         ActiveSCIDs ->
             SCs = blockchain_state_channels_server:state_channels(),
-            [SoonestScToExpire | _] =
+            [SoonestSCIDToExpire | _] =
                 lists:sort(
                     fun(SCIDA, SCIDB) ->
                         {ActiveSCA, _} = maps:get(SCIDA, SCs),
@@ -333,7 +333,8 @@ active_sc_expiration() ->
                     end,
                     ActiveSCIDs
                 ),
-            {ok, blockchain_state_channel_v1:expire_at_block(SoonestScToExpire)}
+            {SoonestSCToExpire, _} = maps:get(SoonestSCIDToExpire, SCs),
+            {ok, blockchain_state_channel_v1:expire_at_block(SoonestSCToExpire)}
     end.
 
 -spec get_sc_amount() -> pos_integer().

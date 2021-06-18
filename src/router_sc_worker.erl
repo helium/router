@@ -41,13 +41,6 @@
     code_change/3
 ]).
 
--export([
-    init_state_channels/1,
-    open_next_state_channel/1,
-    get_active_count/0,
-    handle_sc_result/2
-]).
-
 -define(SERVER, ?MODULE).
 -define(SC_EXPIRATION, 25).
 % budget 100 data credits
@@ -59,12 +52,11 @@
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
     sig_fun :: libp2p_crypto:sig_fun(),
-    oui = undefined :: undefined | non_neg_integer(),
     chain = undefined :: undefined | blockchain:blockchain(),
+    oui = undefined :: undefined | non_neg_integer(),
+    is_active = false :: boolean(),
     tref = undefined :: undefined | reference(),
     in_flight = [] :: [blockchain_txn_state_channel_open_v1:id()],
-    tombstones = [] :: [blockchain_txn_state_channel_open_v1:id()],
-    is_active = false :: boolean(),
     open_sc_limit = undefined :: undefined | non_neg_integer()
 }).
 
@@ -167,28 +159,6 @@ handle_info(
                     {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = false}}
             end
     end;
-handle_info({sc_open_success, Id}, #state{is_active = false} = State) ->
-    lager:error(
-        "Got an sc_open_success though the sc_worker is inactive." ++
-            " This should never happen. txn id: ~p",
-        [Id]
-    ),
-    {noreply, State};
-handle_info({sc_open_failure, Error, Id}, #state{is_active = false} = State) ->
-    lager:error(
-        "Got an sc_open_failure though the sc_worker is inactive." ++
-            " This should never happen. ~p txn id: ~p",
-        [Error, Id]
-    ),
-    {noreply, State};
-handle_info({sc_open_success, Id}, #state{is_active = true, tombstones = T} = State) ->
-    lager:debug("sc_open_success for txn id ~p", [Id]),
-    {noreply, State#state{tombstones = [Id | T]}};
-handle_info({sc_open_failure, Error, Id}, #state{is_active = true, tombstones = T} = State) ->
-    lager:warning("sc_open_failure ~p for txn id ~p", [Error, Id]),
-    %% we're not going to immediately try to start a new channel, we will
-    %% wait until the next tick to evaluate that decision.
-    {noreply, State#state{tombstones = [Id | T]}};
 handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),
@@ -197,6 +167,28 @@ handle_info(?SC_TICK, #state{is_active = true} = State) ->
     NewState = maybe_start_state_channel(State),
     Tref = schedule_next_tick(),
     {noreply, NewState#state{tref = Tref}};
+handle_info({sc_open_success, ID}, #state{is_active = true, in_flight = InFlight} = State) ->
+    lager:debug("sc_open_success for txn id ~p", [ID]),
+    {noreply, State#state{in_flight = lists:delete(ID, InFlight)}};
+handle_info({sc_open_failure, Error, ID}, #state{is_active = true, in_flight = InFlight} = State) ->
+    lager:warning("sc_open_failure ~p for txn id ~p", [Error, ID]),
+    %% we're not going to immediately try to start a new channel, we will
+    %% wait until the next tick to evaluate that decision.
+    {noreply, State#state{in_flight = lists:delete(ID, InFlight)}};
+handle_info({sc_open_success, ID}, #state{is_active = false} = State) ->
+    lager:error(
+        "Got an sc_open_success though the sc_worker is inactive." ++
+            " This should never happen. txn id: ~p",
+        [ID]
+    ),
+    {noreply, State};
+handle_info({sc_open_failure, Error, ID}, #state{is_active = false} = State) ->
+    lager:error(
+        "Got an sc_open_failure though the sc_worker is inactive." ++
+            " This should never happen. ~p txn id: ~p",
+        [Error, ID]
+    ),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -223,66 +215,38 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight = F, tombstones = T, open_sc_limit = Limit} = State) ->
-    NewInflight = F -- T,
+maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
+    OpenedCount = maps:size(blockchain_state_channels_server:state_channels()),
+    ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
+    InFlightCount = erlang:length(InFlight),
 
-    Opened = get_opened_count(),
-    Active = get_active_count(),
-
-    HaveHeadroom = Active < Opened,
-    UnderLimit = Opened < Limit,
+    HaveHeadroom = ActiveCount < OpenedCount,
+    UnderLimit = OpenedCount + InFlightCount < Limit,
 
     case {HaveHeadroom, UnderLimit} of
         {false, false} ->
             %% All open channels are active, nothing we can do about it until some close
             lager:warning(
-                "~p/~p [max: ~p] limit reached, cannot open more state channels",
-                [Active, Opened, Limit]
+                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
+                [ActiveCount, OpenedCount, InFlightCount, Limit]
             ),
             State;
         {false, true} ->
             %% All open channels are active, getting a little tight
             lager:info(
-                "~p/~p [max: ~p] all active, opening next state channel",
-                [Active, Opened, Limit]
+                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] all active, opening more",
+                [ActiveCount, OpenedCount, InFlightCount, Limit]
             ),
             {ok, ID} = open_next_state_channel(State),
-            State#state{in_flight = [ID | NewInflight], tombstones = []};
+            State#state{in_flight = [ID | InFlight]};
         {true, _} ->
-            %% Active is less than Opened, where we want to be
+            %% ActiveCount is less than OpenedCount, where we want to be
             lager:info(
-                "~p active of ~p [max: ~p],  standing by...",
-                [Active, Opened, Limit]
+                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] standing by...",
+                [ActiveCount, OpenedCount, InFlightCount, Limit]
             ),
-            State#state{in_flight = [], tombstones = []}
+            State
     end.
-
--spec init_state_channels(State :: state()) ->
-    {ok, blockchain_txn_open_state_channel_v1:id(), blockchain_txn_open_state_channel_v1:id()}.
-init_state_channels(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, chain = Chain}) ->
-    PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    Ledger = blockchain:ledger(Chain),
-    Nonce = get_nonce(PubkeyBin, Ledger),
-    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
-    Id0 = create_and_send_sc_open_txn(
-        PubkeyBin,
-        SigFun,
-        Nonce + 1,
-        OUI,
-        get_sc_expiration_interval(),
-        get_sc_amount(),
-        Chain
-    ),
-    Id1 = create_and_send_sc_open_txn(
-        PubkeyBin,
-        SigFun,
-        Nonce + 2,
-        OUI,
-        get_sc_expiration_interval() * 2,
-        get_sc_amount(),
-        Chain
-    ),
-    {ok, Id0, Id1}.
 
 -spec open_next_state_channel(State :: state()) -> {ok, blockchain_txn_state_channel_open_v1:id()}.
 open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, chain = Chain}) ->
@@ -339,14 +303,6 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     ]),
     blockchain_worker:submit_txn(SignedTxn, fun(Result) -> handle_sc_result(Result, ID) end),
     ID.
-
--spec get_opened_count() -> non_neg_integer().
-get_opened_count() ->
-    erlang:length(blockchain_state_channels_server:state_channels()).
-
--spec get_active_count() -> non_neg_integer().
-get_active_count() ->
-    blockchain_state_channels_server:get_active_sc_count().
 
 -spec get_nonce(
     PubkeyBin :: libp2p_crypto:pubkey_bin(),

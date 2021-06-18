@@ -301,7 +301,7 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                         {Map, Added, Removed} when Removed == #{} ->
                             case erlang:length(BinFilters) < MaxXorFilter of
                                 true ->
-                                    {Routing, [{new, uniq(Added)}]};
+                                    {Routing, [{new, Added}]};
                                 false ->
                                     case smallest_first(maps:to_list(Map)) of
                                         [] ->
@@ -418,7 +418,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui},
             BinFiltersWithIndex
         ),
-    {CurrFilter, Added, Removed}.
+    {CurrFilter, uniq(Added), Removed}.
 
 -spec craft_new_filter_txn(
     PubKey :: libp2p_crypto:public_key(),
@@ -496,7 +496,17 @@ default_timer() ->
 
 -spec uniq(list()) -> list().
 uniq(L) ->
-    sets:to_list(sets:from_list(L)).
+    uniq(L, []).
+
+%% Unique check preserving order
+-spec uniq(list(), list()) -> list().
+uniq([], Acc) ->
+    lists:reverse(Acc);
+uniq([X | Xs], Acc) ->
+    case lists:member(X, Acc) of
+        true -> uniq(Xs, Acc);
+        false -> uniq(Xs, [X | Acc])
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -693,7 +703,7 @@ test_for_should_update_filters_test() ->
     %% ------------------------
     % Testing Duplicate eui pairs for new filters
     DeviceUpdates5 = [
-        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 5>>},
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device5 = router_device:update(DeviceUpdates5, router_device:new(<<"ID0">>)),
@@ -733,6 +743,25 @@ test_for_should_update_filters_test() ->
         should_update_filters(chain, OUI, #{})
     ),
 
+    %% ------------------------
+    % Testing duplicate eui pairs for a filter that already has a device
+    DeviceUpdates6 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 6>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
+    ],
+    Device6 = router_device:update(DeviceUpdates6, router_device:new(<<"ID6">>)),
+    Device6Copy = router_device:update(DeviceUpdates6, router_device:new(<<"ID6Copy">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device6, Device6Copy]}
+    end),
+
+    %% Force 1 filter so we update the existing
+    meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
+
+    ?assertEqual(
+        {RoutingLast, [{update, 0, [deveui_appeui(Device6)]}]},
+        should_update_filters(chain, OUI, #{})
+    ),
 
     meck:unload(blockchain_ledger_v1),
     meck:unload(router_console_api),

@@ -301,7 +301,7 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                         {Map, Added, Removed} when Removed == #{} ->
                             case erlang:length(BinFilters) < MaxXorFilter of
                                 true ->
-                                    {Routing, [{new, Added}]};
+                                    {Routing, [{new, uniq(Added)}]};
                                 false ->
                                     case smallest_first(maps:to_list(Map)) of
                                         [] ->
@@ -494,6 +494,10 @@ default_timer() ->
         I -> I
     end.
 
+-spec uniq(list()) -> list().
+uniq(L) ->
+    sets:to_list(sets:from_list(L)).
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -683,6 +687,31 @@ test_for_should_update_filters_test() ->
 
     ?assertEqual(
         {RoutingEmptyMap1, [{update, 0, [deveui_appeui(Device4)]}]},
+        should_update_filters(chain, OUI, #{})
+    ),
+
+    %% ------------------------
+    % Testing Duplicate eui pairs for new filters
+    DeviceLastUpdates = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
+    ],
+    DeviceLast = router_device:update(DeviceLastUpdates, router_device:new(<<"ID0">>)),
+    DeviceLastCopy = router_device:update(DeviceLastUpdates, router_device:new(<<"ID0Copy">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [DeviceLast, DeviceLastCopy]}
+    end),
+
+    {EmptyFilter2, _} = xor16:new([], ?HASH_FUN),
+    {BinEmptyFilter2, _} = xor16:to_bin({EmptyFilter2, ?HASH_FUN}),
+    EmptyRouting2 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinEmptyFilter2, [], 1),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
+        {ok, EmptyRouting}
+    end),
+
+    %% Devices with matching app/dev eui should be deduplicated
+    ?assertEqual(
+        {EmptyRouting2, [{new, [deveui_appeui(DeviceLast)]}]},
         should_update_filters(chain, OUI, #{})
     ),
 

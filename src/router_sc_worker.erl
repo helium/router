@@ -19,6 +19,7 @@
 -behavior(gen_server).
 
 -include_lib("blockchain/include/blockchain_utils.hrl").
+-include_lib("blockchain/include/blockchain_vars.hrl").
 
 %% ------------------------------------------------------------------
 %% API
@@ -46,10 +47,6 @@
     get_active_count/0,
     handle_sc_result/2
 ]).
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
 
 -define(SERVER, ?MODULE).
 -define(SC_EXPIRATION, 25).
@@ -113,7 +110,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
-            {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
+            Limit = mac_sc_open(Chain),
             case router_utils:get_oui() of
                 undefined ->
                     lager:warning("OUI undefined"),
@@ -121,7 +118,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                 OUI ->
                     %% We have a chain and an oui on chain
                     %% Only activate if we're on sc_version=2
-                    case blockchain:config(sc_version, blockchain:ledger(Chain)) of
+                    case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
                         {ok, 2} ->
                             {noreply, State#state{
                                 chain = Chain,
@@ -161,9 +158,9 @@ handle_info(
             lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
-            {ok, Limit} = blockchain:config(max_open_sc, blockchain:ledger(Chain)),
+            Limit = mac_sc_open(Chain),
             %% Only activate if we're on sc_version=2
-            case blockchain:config(sc_version, blockchain:ledger(Chain)) of
+            case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
                 {ok, 2} ->
                     {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = true}};
                 _ ->
@@ -213,6 +210,13 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Helper funs
 %% ------------------------------------------------------------------
+
+-spec mac_sc_open(Chain :: blockchain:blockchain()) -> pos_integer().
+mac_sc_open(Chain) ->
+    case blockchain:config(?max_open_sc, blockchain:ledger(Chain)) of
+        {ok, Max} -> Max;
+        _ -> 5
+    end.
 
 -spec schedule_next_tick() -> reference().
 schedule_next_tick() ->
@@ -403,7 +407,5 @@ handle_sc_result(Error, Id) ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
-
-%% TODO: add some eunits here...
-
+-include_lib("eunit/include/eunit.hrl").
 -endif.

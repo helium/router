@@ -150,7 +150,7 @@ handle_info(
             lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
-            Limit = mac_sc_open(Chain),
+            Limit = max_sc_open(Chain),
             %% Only activate if we're on sc_version=2
             case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
                 {ok, 2} ->

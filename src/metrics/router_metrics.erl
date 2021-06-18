@@ -206,16 +206,17 @@ handle_info(
         pubkey_bin = PubkeyBin,
         routing_packet_duration = RPD,
         packet_duration = PD,
-        queues = Pids
+        queues = _Pids
     } = State
 ) ->
+    lager:info("running metrcis"),
     erlang:spawn(
         fun() ->
             ok = record_dc_balance(PubkeyBin),
             ok = record_state_channels(),
             ok = record_chain_blocks(),
             ok = record_vm_stats(),
-            ok = record_queues(Pids),
+            % ok = record_queues(Pids),
             ok = record_ets()
         end
     ),
@@ -256,17 +257,19 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
-    ActiveSCCount = blockchain_state_channels_server:get_active_sc_count(),
-    ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveSCCount),
-    case blockchain_state_channels_server:active_scs() of
-        [] ->
-            ok = notify(?METRICS_SC_ACTIVE, 0);
-        [ActiveSC | _] ->
+    OpenedSCs = blockchain_state_channels_server:state_channels(),
+    ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),
+    ActiveSCs = blockchain_state_channels_server:active_scs(),
+    lists:foreach(
+        fun({I, ActiveSC}) ->
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            % TODO Fix this metric
-            ok = notify(?METRICS_SC_ACTIVE, DCLeft)
-    end.
+            ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [I]),
+            Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
+            ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [I])
+        end,
+        lists:zip(lists:seq(1, erlang:length(ActiveSCs)), ActiveSCs)
+    ).
 
 -spec record_chain_blocks() -> ok.
 record_chain_blocks() ->
@@ -318,57 +321,58 @@ record_ets() ->
     ),
     ok.
 
--spec record_queues([pid()]) -> ok.
-record_queues(Pids0) ->
-    Offenders = recon:proc_count(message_queue_len, 5),
-    Pids1 = lists:foldl(
-        fun
-            ({Pid, Length, _Extra}, Acc) when Length == 0 ->
-                case lists:member(Pid, Acc) of
-                    false ->
-                        ok;
-                    true ->
-                        Name = get_pid_name(Pid),
-                        ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
-                end,
-                lists:delete(Pid, Acc);
-            ({Pid, Length, _Extra}, Acc) when Length < 1000 ->
-                case lists:member(Pid, Acc) of
-                    false ->
-                        Acc;
-                    true ->
-                        Name = get_pid_name(Pid),
-                        case erlang:is_process_alive(Pid) of
-                            false ->
-                                ok = notify(?METRICS_VM_PROC_Q, 0, [Name]),
-                                lists:delete(Pid, Acc);
-                            true ->
-                                ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
-                                Acc
-                        end
-                end;
-            ({Pid, Length, _Extra}, Acc) ->
-                case erlang:is_process_alive(Pid) of
-                    false ->
-                        Acc;
-                    true ->
-                        Name = get_pid_name(Pid),
-                        ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
-                        [Pid | Acc]
-                end
-        end,
-        Pids0,
-        Offenders
-    ),
-    ?MODULE:update_queues(Pids1).
+% This function needs to be reworked
+% -spec record_queues([pid()]) -> ok.
+% record_queues(Pids0) ->
+%     Offenders = recon:proc_count(message_queue_len, 5),
+%     Pids1 = lists:foldl(
+%         fun
+%             ({Pid, Length, _Extra}, Acc) when Length == 0 ->
+%                 case lists:member(Pid, Acc) of
+%                     false ->
+%                         ok;
+%                     true ->
+%                         Name = get_pid_name(Pid),
+%                         ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+%                 end,
+%                 lists:delete(Pid, Acc);
+%             ({Pid, Length, _Extra}, Acc) when Length < 1000 ->
+%                 case lists:member(Pid, Acc) of
+%                     false ->
+%                         Acc;
+%                     true ->
+%                         Name = get_pid_name(Pid),
+%                         case erlang:is_process_alive(Pid) of
+%                             false ->
+%                                 ok = notify(?METRICS_VM_PROC_Q, 0, [Name]),
+%                                 lists:delete(Pid, Acc);
+%                             true ->
+%                                 ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
+%                                 Acc
+%                         end
+%                 end;
+%             ({Pid, Length, _Extra}, Acc) ->
+%                 case erlang:is_process_alive(Pid) of
+%                     false ->
+%                         Acc;
+%                     true ->
+%                         Name = get_pid_name(Pid),
+%                         ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
+%                         [Pid | Acc]
+%                 end
+%         end,
+%         Pids0,
+%         Offenders
+%     ),
+%     ?MODULE:update_queues(Pids1).
 
--spec get_pid_name(pid()) -> atom().
-get_pid_name(Pid) ->
-    case recon:info(Pid, registered_name) of
-        [] -> erlang:pid_to_list(Pid);
-        {registered_name, Name} -> Name;
-        _Else -> erlang:pid_to_list(Pid)
-    end.
+% -spec get_pid_name(pid()) -> atom().
+% get_pid_name(Pid) ->
+%     case recon:info(Pid, registered_name) of
+%         [] -> erlang:pid_to_list(Pid);
+%         {registered_name, Name} -> Name;
+%         _Else -> erlang:pid_to_list(Pid)
+%     end.
 
 -spec notify(atom(), any()) -> ok.
 notify(Key, Data) ->

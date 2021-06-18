@@ -135,7 +135,9 @@
             {{lager_file_backend, "router.log"}, [{application, router}], info},
             {{lager_file_backend, "router.log"}, [{module, router_console_api}], info},
             {{lager_file_backend, "router.log"}, [{module, router_device_routing}], info},
-            {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], debug}
+            {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], debug},
+            {{lager_file_backend, "state_channel.log"}, [{module, blockchain_state_channel_handler}], debug},
+            {{lager_file_backend, "state_channel.log"}, [{module, blockchain_state_channels_server}], debug}
         ]}
     ]}
 ].

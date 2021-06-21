@@ -159,6 +159,12 @@ handle_info(
                     {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = false}}
             end
     end;
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{is_active = true, chain = Chain} = State
+) ->
+    Limit = max_sc_open(Chain),
+    {noreply, State#state{open_sc_limit = Limit}};
 handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),

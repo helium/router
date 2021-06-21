@@ -418,7 +418,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui},
             BinFiltersWithIndex
         ),
-    {CurrFilter, uniq(Added), Removed}.
+    {CurrFilter, lists:usort(Added), Removed}.
 
 -spec craft_new_filter_txn(
     PubKey :: libp2p_crypto:public_key(),
@@ -492,20 +492,6 @@ default_timer() ->
     case application:get_env(router, router_xor_filter_worker_timer, ?CHECK_FILTERS_TIMER) of
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
-    end.
-
--spec uniq(list()) -> list().
-uniq(L) ->
-    uniq(L, []).
-
-%% Unique check preserving order
--spec uniq(list(), list()) -> list().
-uniq([], Acc) ->
-    lists:reverse(Acc);
-uniq([X | Xs], Acc) ->
-    case lists:member(X, Acc) of
-        true -> uniq(Xs, Acc);
-        false -> uniq(Xs, [X | Acc])
     end.
 
 %% ------------------------------------------------------------------
@@ -782,19 +768,35 @@ contained_in_filters_test() ->
     {Filter2, _} = xor16:new(BinDevices2, ?HASH_FUN),
     {BinFilter2, _} = xor16:to_bin({Filter2, ?HASH_FUN}),
     ?assertEqual(
-        {#{0 => BinDevices1, 1 => BinDevices2}, [], #{}},
+        {
+            #{0 => BinDevices1, 1 => BinDevices2},
+            lists:sort([]),
+            #{}
+        },
         contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{0 => BinDevices1}, BinDevices2, #{}},
+        {
+            #{0 => BinDevices1},
+            lists:sort(BinDevices2),
+            #{}
+        },
         contained_in_filters([BinFilter1], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{0 => BinDevices1}, [], #{1 => BinDevices2}},
+        {
+            #{0 => BinDevices1},
+            lists:sort([]),
+            #{1 => BinDevices2}
+        },
         contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
     ),
     ?assertEqual(
-        {#{}, BinDevices2, #{0 => BinDevices1}},
+        {
+            #{},
+            lists:sort(BinDevices2),
+            #{0 => BinDevices1}
+        },
         contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
     ),
     ok.

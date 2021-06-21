@@ -6,7 +6,8 @@
 
 -define(METRICS_DC, router_dc_balance).
 -define(METRICS_SC_OPENED_COUNT, router_state_channel_opened_count).
--define(METRICS_SC_ACTIVE_BALANCE, router_state_channel_active).
+-define(METRICS_SC_ACTIVE_COUNT, router_state_channel_active_count).
+-define(METRICS_SC_ACTIVE_BALANCE, router_state_channel_active_balance).
 -define(METRICS_SC_ACTIVE_ACTORS, router_state_channel_actors).
 -define(METRICS_ROUTING_OFFER, router_device_routing_offer_duration).
 -define(METRICS_ROUTING_PACKET, router_device_routing_packet_duration).
@@ -25,6 +26,7 @@
 -define(METRICS, [
     {?METRICS_DC, [], "Active State Channel balance"},
     {?METRICS_SC_OPENED_COUNT, [], "Opened State Channel count"},
+    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channel count"},
     {?METRICS_SC_ACTIVE_BALANCE, [index], "Active State Channel balance"},
     {?METRICS_SC_ACTIVE_ACTORS, [index], "Active State Channel actors"},
     {?METRICS_ROUTING_OFFER, [type, status, reason], "Routing Offer duration"},

@@ -260,15 +260,18 @@ record_state_channels() ->
     OpenedSCs = blockchain_state_channels_server:state_channels(),
     ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),
     ActiveSCs = blockchain_state_channels_server:active_scs(),
+    ActiveCount = erlang:length(ActiveSCs),
+    ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
     lists:foreach(
-        fun({I, ActiveSC}) ->
+        fun({_I, ActiveSC}) ->
+            ID = libp2p_crypto:bin_to_b58(blockchain_state_channel_v1:id(ActiveSC)),
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [I]),
+            ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [ID]),
             Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
-            ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [I])
+            ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [ID])
         end,
-        lists:zip(lists:seq(1, erlang:length(ActiveSCs)), ActiveSCs)
+        lists:zip(lists:seq(1, ActiveCount), ActiveSCs)
     ).
 
 -spec record_chain_blocks() -> ok.

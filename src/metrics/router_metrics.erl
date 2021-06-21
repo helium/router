@@ -272,7 +272,39 @@ record_state_channels() ->
             ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [ID])
         end,
         lists:zip(lists:seq(1, ActiveCount), ActiveSCs)
-    ).
+    ),
+    ok = cleanup_old_active_scs(ActiveSCs),
+    ok.
+
+-spec cleanup_old_active_scs(ActiveSCs :: [blockchain_state_channel_v1:state_channel()]) -> ok.
+cleanup_old_active_scs(ActiveSCs) ->
+    ActiveSCNames = [
+        blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC))
+        || SC <- ActiveSCs
+    ],
+    lists:foreach(
+        fun({[{"name", Name} | _], _V}) ->
+            case lists:member(Name, ActiveSCNames) of
+                true ->
+                    ok;
+                false ->
+                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE), [Name])
+            end
+        end,
+        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE))
+    ),
+    lists:foreach(
+        fun({[{"name", Name} | _], _V}) ->
+            case lists:member(Name, ActiveSCNames) of
+                true ->
+                    ok;
+                false ->
+                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS), [Name])
+            end
+        end,
+        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS))
+    ),
+    ok.
 
 -spec record_chain_blocks() -> ok.
 record_chain_blocks() ->

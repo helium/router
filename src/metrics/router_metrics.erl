@@ -264,7 +264,7 @@ record_state_channels() ->
     ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
     lists:foreach(
         fun({_I, ActiveSC}) ->
-            ID = libp2p_crypto:bin_to_b58(blockchain_state_channel_v1:id(ActiveSC)),
+            ID = blockchain_utils:addr2name(blockchain_state_channel_v1:id(ActiveSC)),
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
             ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [ID]),

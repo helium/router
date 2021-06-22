@@ -1095,7 +1095,7 @@ handle_offer_metrics(#routing_information_pb{data = {devaddr, DevAddr}}, {ok, _}
     ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time),
     ok =
         case router_device_devaddr:net_id(DevAddr) of
-            {ok, NetID, _Type} ->
+            {ok, NetID} ->
                 router_metrics:network_id_inc(erlang:integer_to_list(NetID));
             {error, _} ->
                 router_metrics:network_id_inc("invalid_net_id")
@@ -1107,7 +1107,7 @@ handle_offer_metrics(
 ) ->
     ok =
         case router_device_devaddr:net_id(DevAddr) of
-            {ok, NetID, _Type} ->
+            {ok, NetID} ->
                 router_metrics:network_id_inc(erlang:integer_to_list(NetID));
             {error, _} ->
                 router_metrics:network_id_inc("invalid_net_id")

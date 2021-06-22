@@ -309,7 +309,16 @@ handle_cast(
     ]),
     OfferCache1 = maps:put({PubKeyBin, PHash}, erlang:system_time(millisecond), OfferCache0),
     ADREngine1 = maybe_track_adr_offer(Device, ADREngine0, Offer),
-    {noreply, State#state{offer_cache = OfferCache1, adr_engine = ADREngine1}};
+
+    Now = erlang:system_time(millisecond),
+    TenMin = application:get_env(router, offer_cache_timeout, timer:minutes(2)),
+    FilterFun = fun(_, OfferTime) ->
+        Now - OfferTime < TenMin
+    end,
+    OfferCache2 = maps:filter(FilterFun, OfferCache1),
+    lager:debug("we got ~p offers in cache", [maps:size(OfferCache2)]),
+
+    {noreply, State#state{offer_cache = OfferCache2, adr_engine = ADREngine1}};
 handle_cast(
     device_update,
     #state{db = DB, cf = CF, device = Device0, channels_worker = ChannelsWorker} = State
@@ -908,7 +917,6 @@ handle_info(
         adr_engine = ADREngine0
     } = State
 ) ->
-    self() ! cleanup_offer_cache,
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
         uuid = UUID,
@@ -1029,14 +1037,6 @@ handle_info(
                 fcnt = FCnt
             }}
     end;
-handle_info(cleanup_offer_cache, #state{offer_cache = OfferCache0} = State) ->
-    Now = erlang:system_time(millisecond),
-    TenMin = timer:minutes(10),
-    FilterFun = fun(_, OfferTime) ->
-        Now - OfferTime < TenMin
-    end,
-    OfferCache1 = maps:filter(FilterFun, OfferCache0),
-    {noreply, State#state{offer_cache = OfferCache1}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

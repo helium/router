@@ -12,7 +12,8 @@
     replay_joins_test/1,
     device_worker_stop_children_test/1,
     device_worker_late_packet_double_charge_test/1,
-    offer_cache_test/1
+    offer_cache_test/1,
+    load_offer_cache_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -44,7 +45,8 @@ all() ->
         drop_downlink_test,
         replay_joins_test,
         device_worker_late_packet_double_charge_test,
-        offer_cache_test
+        offer_cache_test,
+        load_offer_cache_test
     ].
 
 %%--------------------------------------------------------------------
@@ -881,6 +883,87 @@ offer_cache_test(Config) ->
         )
     ),
 
+    ok.
+
+load_offer_cache_test(Config) ->
+    ok = application:set_env(router, offer_cache_timeout, timer:seconds(5)),
+    _ = test_utils:join_device(Config),
+
+    test_utils:wait_state_channel_message(1250),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device_cache:get(DeviceID),
+    {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+
+    Offers = lists:foldl(
+        fun(_I, Acc) ->
+            #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+            PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+            SCPacket = test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1,
+                #{
+                    dont_encode => true,
+                    routing => true
+                }
+            ),
+            Offer = blockchain_state_channel_offer_v1:from_packet(
+                blockchain_state_channel_packet_v1:packet(SCPacket),
+                blockchain_state_channel_packet_v1:hotspot(SCPacket),
+                blockchain_state_channel_packet_v1:region(SCPacket)
+            ),
+            router_device_worker:handle_offer(DeviceWorkerPid, Offer),
+            maps:put(PubKeyBin, Offer, Acc)
+        end,
+        #{},
+        lists:seq(1, 100)
+    ),
+
+    OfferCache1 = test_utils:get_device_worker_offer_cache(DeviceID),
+
+    ?assertEqual(100, maps:size(OfferCache1)),
+
+    lists:foreach(
+        fun({PubKeyBin, Offer}) ->
+            ?assert(
+                maps:is_key(
+                    {PubKeyBin, blockchain_state_channel_offer_v1:packet_hash(Offer)},
+                    OfferCache1
+                )
+            )
+        end,
+        maps:to_list(Offers)
+    ),
+
+    timer:sleep(timer:seconds(5)),
+
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    SCPacket = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        1,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    Offer = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket),
+        blockchain_state_channel_packet_v1:region(SCPacket)
+    ),
+    router_device_worker:handle_offer(DeviceWorkerPid, Offer),
+
+    OfferCache2 = test_utils:get_device_worker_offer_cache(DeviceID),
+
+    ?assertEqual(1, maps:size(OfferCache2)),
     ok.
 
 %% ------------------------------------------------------------------

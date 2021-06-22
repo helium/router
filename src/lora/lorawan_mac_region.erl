@@ -32,6 +32,7 @@
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
 -export([window2_dr/1, top_level_region/1, f2uch/2]).
+-export([mk_join_accept_cf_list/1]).
 
 -include("lorawan_db.hrl").
 
@@ -758,6 +759,61 @@ max_snr(SF) ->
     %% dB
     -5 - 2.5 * (SF - 6).
 
+%% -------------------------------------------------------------------
+%% CFList functions
+%% -------------------------------------------------------------------
+
+mk_join_accept_cf_list('US915') ->
+    %% https://lora-alliance.org/wp-content/uploads/2021/05/RP-2-1.0.3.pdf
+    %% Page 33
+    Chans = [{8, 15}],
+    ChMaskTable = [
+        {2, mask, build_bin(Chans, {0, 15})},
+        {2, mask, build_bin(Chans, {16, 31})},
+        {2, mask, build_bin(Chans, {32, 47})},
+        {2, mask, build_bin(Chans, {48, 63})},
+        {2, mask, build_bin(Chans, {64, 71})},
+        {2, rfu, 0},
+        {3, rfu, 0},
+        {1, cf_list_type, 1}
+    ],
+    cf_list_for_channel_mask_table(ChMaskTable);
+mk_join_accept_cf_list('EU868') ->
+    %% In this case the CFList is a list of five channel frequencies for the channels
+    %% three to seven whereby each frequency is encoded as a 24 bits unsigned integer
+    %% (three octets). All these channels are usable for DR0 to DR5 125kHz LoRa
+    %% modulation. The list of frequencies is followed by a single CFListType octet
+    %% for a total of 16 octets. The CFListType SHALL be equal to zero (0) to indicate
+    %% that the CFList contains a list of frequencies.
+    %%
+    %% The actual channel frequency in Hz is 100 x frequency whereby values representing
+    %% frequencies below 100 MHz are reserved for future use.
+    cflist_for_frequencies([8671000, 8673000, 8675000, 8677000, 8679000]);
+mk_join_accept_cf_list('AS923_1') ->
+    cflist_for_frequencies([9236000, 9238000, 9240000, 9242000, 9244000]);
+mk_join_accept_cf_list('AS923_2') ->
+    cflist_for_frequencies([9218000, 9220000, 9222000, 9224000, 9226000]);
+mk_join_accept_cf_list('AS923_3') ->
+    cflist_for_frequencies([9170000, 9172000, 9174000, 9176000, 9178000]);
+mk_join_accept_cf_list('AS923_4') ->
+    cflist_for_frequencies([9177000, 9179000, 9181000, 9183000, 9185000]);
+mk_join_accept_cf_list(_Region) ->
+    <<>>.
+
+-spec cflist_for_frequencies(list(non_neg_integer())) -> binary().
+cflist_for_frequencies(Frequencies) ->
+    Channels = <<
+        <<X:24/integer-unsigned-little>>
+        || X <- Frequencies
+    >>,
+    <<Channels/binary, 0:8/integer>>.
+
+-spec cf_list_for_channel_mask_table([
+    {ByteSize :: pos_integer(), Type :: atom(), Value :: non_neg_integer()}
+]) -> binary().
+cf_list_for_channel_mask_table(ChMaskTable) ->
+    <<<<Val:Size/unit:8>> || {Size, _, Val} <- ChMaskTable>>.
+
 %% link_adr_req command
 
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
@@ -1141,6 +1197,45 @@ bits_test_() ->
                 {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])
+        )
+    ].
+
+us915_join_accept_cf_list_structure_test() ->
+    Bin = mk_join_accept_cf_list('US915'),
+    ?assertEqual(16, erlang:byte_size(Bin), "Correct size"),
+    ?assertEqual(1, binary:last(Bin), "CFListType field SHALL contain the value 0x01").
+
+mk_join_accept_cf_list_test_() ->
+    [
+        ?_assertEqual(
+            %% Active Channels 8-15
+            <<255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
+            mk_join_accept_cf_list('US915')
+        ),
+        ?_assertEqual(
+            %% Freqs 923.6, 923.8, 924.0, 924.2, 924.4
+            <<32, 238, 140, 240, 245, 140, 192, 253, 140, 144, 5, 141, 96, 13, 141, 0>>,
+            mk_join_accept_cf_list('AS923_1')
+        ),
+        ?_assertEqual(
+            %% Freqs 921.8, 922.0, 922.2, 922.4, 922.6
+            <<208, 167, 140, 160, 175, 140, 112, 183, 140, 64, 191, 140, 16, 199, 140, 0>>,
+            mk_join_accept_cf_list('AS923_2')
+        ),
+        ?_assertEqual(
+            %% Freqs 917.0, 917.2, 917.4, 917.6, 917.8
+            <<80, 236, 139, 32, 244, 139, 240, 251, 139, 192, 3, 140, 144, 11, 140, 0>>,
+            mk_join_accept_cf_list('AS923_3')
+        ),
+        ?_assertEqual(
+            %% Freqs 917.7, 917.9, 918.1, 918.3, 918.5
+            <<168, 7, 140, 120, 15, 140, 72, 23, 140, 24, 31, 140, 232, 38, 140, 0>>,
+            mk_join_accept_cf_list('AS923_4')
+        ),
+        ?_assertEqual(
+            %% Freqs 867.1, 867.3, 867.5, 867.7, 867.9
+            <<24, 79, 132, 232, 86, 132, 184, 94, 132, 136, 102, 132, 88, 110, 132, 0>>,
+            mk_join_accept_cf_list('EU868')
         )
     ].
 

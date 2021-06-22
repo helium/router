@@ -418,7 +418,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui},
             BinFiltersWithIndex
         ),
-    {CurrFilter, Added, Removed}.
+    {CurrFilter, lists:usort(Added), Removed}.
 
 -spec craft_new_filter_txn(
     PubKey :: libp2p_crypto:public_key(),
@@ -686,6 +686,69 @@ test_for_should_update_filters_test() ->
         should_update_filters(chain, OUI, #{})
     ),
 
+    %% ------------------------
+    % Testing Duplicate eui pairs for new filters
+    DeviceUpdates5 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 5>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
+    ],
+    Device5 = router_device:update(DeviceUpdates5, router_device:new(<<"ID0">>)),
+    Device5Copy = router_device:update(DeviceUpdates5, router_device:new(<<"ID0Copy">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device5, Device5Copy]}
+    end),
+
+    {EmptyFilter2, _} = xor16:new([], ?HASH_FUN),
+    {BinEmptyFilter2, _} = xor16:to_bin({EmptyFilter2, ?HASH_FUN}),
+    EmptyRouting2 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinEmptyFilter2, [], 1),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
+        {ok, EmptyRouting}
+    end),
+
+    %% Devices with matching app/dev eui should be deduplicated
+    ?assertEqual(
+        {EmptyRouting2, [{new, [deveui_appeui(Device5)]}]},
+        should_update_filters(chain, OUI, #{})
+    ),
+
+    %% ------------------------
+    % Devices already in Filter should not cause updates
+    {FilterLast, _} = xor16:new([deveui_appeui(Device5)], ?HASH_FUN),
+    {BinFilterLast, _} = xor16:to_bin({FilterLast, ?HASH_FUN}),
+    RoutingLast = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilterLast, [], 1),
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
+        {ok, RoutingLast}
+    end),
+
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device5Copy]}
+    end),
+
+    ?assertEqual(
+        noop,
+        should_update_filters(chain, OUI, #{})
+    ),
+
+    %% ------------------------
+    % Testing duplicate eui pairs for a filter that already has a device
+    DeviceUpdates6 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 6>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
+    ],
+    Device6 = router_device:update(DeviceUpdates6, router_device:new(<<"ID6">>)),
+    Device6Copy = router_device:update(DeviceUpdates6, router_device:new(<<"ID6Copy">>)),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {ok, [Device6, Device6Copy]}
+    end),
+
+    %% Force 1 filter so we update the existing
+    meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
+
+    ?assertEqual(
+        {RoutingLast, [{update, 0, [deveui_appeui(Device6)]}]},
+        should_update_filters(chain, OUI, #{})
+    ),
+
     meck:unload(blockchain_ledger_v1),
     meck:unload(router_console_api),
     meck:unload(blockchain),
@@ -705,19 +768,35 @@ contained_in_filters_test() ->
     {Filter2, _} = xor16:new(BinDevices2, ?HASH_FUN),
     {BinFilter2, _} = xor16:to_bin({Filter2, ?HASH_FUN}),
     ?assertEqual(
-        {#{0 => BinDevices1, 1 => BinDevices2}, [], #{}},
+        {
+            #{0 => BinDevices1, 1 => BinDevices2},
+            lists:sort([]),
+            #{}
+        },
         contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{0 => BinDevices1}, BinDevices2, #{}},
+        {
+            #{0 => BinDevices1},
+            lists:sort(BinDevices2),
+            #{}
+        },
         contained_in_filters([BinFilter1], #{}, BinDevices)
     ),
     ?assertEqual(
-        {#{0 => BinDevices1}, [], #{1 => BinDevices2}},
+        {
+            #{0 => BinDevices1},
+            lists:sort([]),
+            #{1 => BinDevices2}
+        },
         contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
     ),
     ?assertEqual(
-        {#{}, BinDevices2, #{0 => BinDevices1}},
+        {
+            #{},
+            lists:sort(BinDevices2),
+            #{0 => BinDevices1}
+        },
         contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
     ),
     ok.

@@ -1209,31 +1209,7 @@ craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
-    CFList =
-        case Region of
-            'EU868' ->
-                %% In this case the CFList is a list of five channel frequencies for the channels
-                %% three to seven whereby each frequency is encoded as a 24 bits unsigned integer
-                %% (three octets). All these channels are usable for DR0 to DR5 125kHz LoRa
-                %% modulation. The list of frequencies is followed by a single CFListType octet
-                %% for a total of 16 octets. The CFListType SHALL be equal to zero (0) to indicate
-                %% that the CFList contains a list of frequencies.
-                %%
-                %% The actual channel frequency in Hz is 100 x frequency whereby values representing
-                %% frequencies below 100 MHz are reserved for future use.
-                mk_cflist_for_freqs([8671000, 8673000, 8675000, 8677000, 8679000]);
-            'AS923_1' ->
-                mk_cflist_for_freqs([9236000, 9238000, 9240000, 9242000, 9244000]);
-            'AS923_2' ->
-                mk_cflist_for_freqs([9218000, 9220000, 9222000, 9224000, 9226000]);
-            'AS923_3' ->
-                mk_cflist_for_freqs([9170000, 9172000, 9174000, 9176000, 9178000]);
-            'AS923_4' ->
-                mk_cflist_for_freqs([9177000, 9179000, 9181000, 9183000, 9185000]);
-            _ ->
-                %% Not yet implemented for other regions
-                <<>>
-        end,
+    CFList = lorawan_mac_region:mk_join_accept_cf_list(Region),
     ReplyPayload =
         <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
@@ -2072,14 +2048,6 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                 AdrPacket
             )
     end.
-
--spec mk_cflist_for_freqs(list(non_neg_integer())) -> binary().
-mk_cflist_for_freqs(Frequencies) ->
-    Channels = <<
-        <<X:24/integer-unsigned-little>>
-        || X <- Frequencies
-    >>,
-    <<Channels/binary, 0:8/integer>>.
 
 -spec packet_datarate_to_dr(Packet :: blockchain_helium_packet_v1:packet(), Region :: atom()) ->
     integer().

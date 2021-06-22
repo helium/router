@@ -32,6 +32,7 @@
 -export([downlink_signal_strength/1]).
 -export([dr_to_down/3]).
 -export([window2_dr/1, top_level_region/1, f2uch/2]).
+-export([mk_join_accept_cf_list/1]).
 
 -include("lorawan_db.hrl").
 
@@ -757,6 +758,39 @@ max_downlink_snr_(Region, DataRate, Offset) ->
 max_snr(SF) ->
     %% dB
     -5 - 2.5 * (SF - 6).
+
+%% -------------------------------------------------------------------
+%% CFList functions
+%% -------------------------------------------------------------------
+mk_join_accept_cf_list('EU868') ->
+    %% In this case the CFList is a list of five channel frequencies for the channels
+    %% three to seven whereby each frequency is encoded as a 24 bits unsigned integer
+    %% (three octets). All these channels are usable for DR0 to DR5 125kHz LoRa
+    %% modulation. The list of frequencies is followed by a single CFListType octet
+    %% for a total of 16 octets. The CFListType SHALL be equal to zero (0) to indicate
+    %% that the CFList contains a list of frequencies.
+    %%
+    %% The actual channel frequency in Hz is 100 x frequency whereby values representing
+    %% frequencies below 100 MHz are reserved for future use.
+    cflist_for_frequencies([8671000, 8673000, 8675000, 8677000, 8679000]);
+mk_join_accept_cf_list('AS923_1') ->
+    cflist_for_frequencies([9236000, 9238000, 9240000, 9242000, 9244000]);
+mk_join_accept_cf_list('AS923_2') ->
+    cflist_for_frequencies([9218000, 9220000, 9222000, 9224000, 9226000]);
+mk_join_accept_cf_list('AS923_3') ->
+    cflist_for_frequencies([9170000, 9172000, 9174000, 9176000, 9178000]);
+mk_join_accept_cf_list('AS923_4') ->
+    cflist_for_frequencies([9177000, 9179000, 9181000, 9183000, 9185000]);
+mk_join_accept_cf_list(_Region) ->
+    <<>>.
+
+-spec cflist_for_frequencies(list(non_neg_integer())) -> binary().
+cflist_for_frequencies(Frequencies) ->
+    Channels = <<
+        <<X:24/integer-unsigned-little>>
+        || X <- Frequencies
+    >>,
+    <<Channels/binary, 0:8/integer>>.
 
 %% link_adr_req command
 

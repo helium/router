@@ -222,7 +222,12 @@ schedule_next_tick() ->
 
 -spec maybe_start_state_channel(state()) -> state().
 maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
-    OpenedCount = maps:size(blockchain_state_channels_server:state_channels()),
+    SCs = blockchain_state_channels_server:state_channels(),
+    OpenedSCs = maps:filter(
+        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        SCs
+    ),
+    OpenedCount = maps:size(OpenedSCs),
     ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
     InFlightCount = 0,
 
@@ -254,7 +259,12 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
             State
     end;
 maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
-    OpenedCount = maps:size(blockchain_state_channels_server:state_channels()),
+    SCs = blockchain_state_channels_server:state_channels(),
+    OpenedSCs = maps:filter(
+        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        SCs
+    ),
+    OpenedCount = maps:size(OpenedSCs),
     ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(

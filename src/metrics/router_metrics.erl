@@ -257,7 +257,11 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
-    OpenedSCs = blockchain_state_channels_server:state_channels(),
+    SCs = blockchain_state_channels_server:state_channels(),
+    OpenedSCs = maps:filter(
+        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        SCs
+    ),
     ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),
     ActiveSCs = blockchain_state_channels_server:active_scs(),
     ActiveCount = erlang:length(ActiveSCs),

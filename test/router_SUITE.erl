@@ -863,10 +863,17 @@ us915_join_cf_list_test(Config) ->
         PubKeyBin,
         AppSKey3
     ),
-    ?assertEqual(
-        true,
-        lists:keymember(link_adr_req, 1, Reply#frame.fopts),
-        "Downlink should contain link_adr_req"
+
+    <<CFListChannelMask:16/integer, _/binary>> = CFList3,
+    ?assertMatch(
+        [
+            %% LinkADRReq shape:
+            %% {link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbTrans}
+            {link_adr_req, _, _, _NoActiveChannels = 0, _All125kHzOFF = 7, _},
+            {link_adr_req, _, _, CFListChannelMask, _ApplyChannels0to15 = 0, _}
+        ],
+        proplists:lookup_all(link_adr_req, Reply#frame.fopts),
+        "Downlink turns on same channels as join cflist"
     ),
 
     libp2p_swarm:stop(Swarm),

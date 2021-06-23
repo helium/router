@@ -837,13 +837,37 @@ us915_join_cf_list_test(Config) ->
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3, -100)},
     timer:sleep(router_utils:join_timeout()),
 
-    {_NetID3, _DevAddr3, _DLSettings3, _RxDelay3, _NwkSKey3, _AppSKey3, CFList3} = test_utils:wait_for_join_resp(
+    {_NetID3, _DevAddr3, _DLSettings3, _RxDelay3, NwkSKey3, AppSKey3, CFList3} = test_utils:wait_for_join_resp(
         PubKeyBin,
         AppKey,
         DevNonce3
     ),
     %% We alternate sending and not sending the channel mask cflist.
     ?assertNotEqual(<<>>, CFList3),
+
+    %% Send a first packet not request ADR to make sure we still get a channel
+    %% correction message on the first packet.
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                NwkSKey3,
+                AppSKey3,
+                0,
+                #{wants_adr => false}
+            )},
+
+    {ok, Reply} = test_utils:wait_state_channel_message(
+        1250,
+        PubKeyBin,
+        AppSKey3
+    ),
+    ?assertEqual(
+        true,
+        lists:keymember(link_adr_req, 1, Reply#frame.fopts),
+        "Downlink should contain link_adr_req"
+    ),
 
     libp2p_swarm:stop(Swarm),
     ok.

@@ -9,7 +9,8 @@
 -export([
     refresh_channels_test/1,
     crashing_channel_test/1,
-    late_packet_test/1
+    late_packet_test/1,
+    downlink_clear_queue_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -54,7 +55,8 @@ all() ->
     [
         refresh_channels_test,
         crashing_channel_test,
-        late_packet_test
+        late_packet_test,
+        downlink_clear_queue_test
     ].
 
 %%--------------------------------------------------------------------
@@ -583,6 +585,62 @@ late_packet_test(Config) ->
     }),
 
     ok = test_utils:ignore_messages(),
+
+    ok.
+
+downlink_clear_queue_test(Config) ->
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {no_channel, true}),
+
+    %% Device has to be joined to know what region it's in
+    #{} = test_utils:join_device(Config),
+
+    %% Starting worker with no channels
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, _DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
+
+    %% Waiting for worker to init properly
+    timer:sleep(250),
+
+    NoChannel = router_channel:new(
+        <<"no_channel">>,
+        router_no_channel,
+        <<"no_channel">>,
+        #{},
+        DeviceID,
+        DeviceChannelsWorkerPid
+    ),
+
+    DownlinkPayload = jsx:encode(#{<<"payload_raw">> => base64:encode(<<"no channel downlink">>)}),
+    router_device_channels_worker:handle_downlink(
+        DeviceChannelsWorkerPid,
+        DownlinkPayload,
+        NoChannel
+    ),
+
+    %% Wait until Device has downlink
+    ok = test_utils:wait_until(fun() ->
+        1 == erlang:length(test_utils:get_device_queue(DeviceID))
+    end),
+
+    %% Done setting up queue
+    %% ------------------------------------------------------------------------------
+    %% Clearing the queue
+
+    ClearDownlinkPayload = jsx:encode(#{
+        <<"payload_raw">> => base64:encode(<<"__clear_downlink_queue__">>)
+    }),
+    router_device_channels_worker:handle_downlink(
+        DeviceChannelsWorkerPid,
+        ClearDownlinkPayload,
+        NoChannel
+    ),
+
+    %% Test: Device should have no more queue
+    ok = test_utils:wait_until(fun() ->
+        0 == erlang:length(test_utils:get_device_queue(DeviceID))
+    end),
 
     ok.
 

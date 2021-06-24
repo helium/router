@@ -10,7 +10,8 @@
     http_downlink_test/1,
     console_tool_downlink_test/1,
     console_tool_downlink_order_test/1,
-    console_tool_clear_queue_test/1
+    console_tool_clear_queue_test/1,
+    console_tool_downlink_clear_queue_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -41,7 +42,8 @@ all() ->
         http_downlink_test,
         console_tool_downlink_test,
         console_tool_downlink_order_test,
-        console_tool_clear_queue_test
+        console_tool_clear_queue_test,
+        console_tool_downlink_clear_queue_test
     ].
 
 %%--------------------------------------------------------------------
@@ -425,26 +427,65 @@ console_tool_clear_queue_test(Config) ->
         after 2500 -> ct:fail(websocket_init_timeout)
         end,
 
-    %% Helper
-    GetDeviceQueueLengthFn = fun() ->
-        Device = test_utils:get_device_worker_device(?CONSOLE_DEVICE_ID),
-        Q = router_device:queue(Device),
-        erlang:length(Q)
-    end,
-
     %% Queue Downlinks in order
     WSPid ! {downlink, #{payload_raw => base64:encode(<<"one">>)}},
     WSPid ! {downlink, #{payload_raw => base64:encode(<<"two">>)}},
     WSPid ! {downlink, #{payload_raw => base64:encode(<<"three">>)}},
 
-    %% Wait for downlinks to be queued
-    ok = test_utils:wait_until(fun() -> GetDeviceQueueLengthFn() == 3 end),
+    %% Wait until Device has downlinks
+    ok = test_utils:wait_until(fun() ->
+        3 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+    end),
 
-    %% Clear Queue
+    %% Done setting up queue
+    %% ------------------------------------------------------------------------------
+    %% Clearing the queue
+
     WSPid ! clear_queue,
 
-    %% Wait for downlinks to be cleared
-    ok = test_utils:wait_until(fun() -> GetDeviceQueueLengthFn() == 0 end),
+    %% Test: Device should have no more queue
+    ok = test_utils:wait_until(fun() ->
+        0 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+    end),
+
+    ok = test_utils:ignore_messages(),
+    ok.
+
+console_tool_downlink_clear_queue_test(Config) ->
+    #{} = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Grab the websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+
+    %% Queue a downlink for the default device
+    DownlinkMessage = #{
+        payload_raw => base64:encode(<<"basic downlink">>)
+    },
+    WSPid ! {downlink, DownlinkMessage},
+
+    %% Wait until Device has downlink
+    ok = test_utils:wait_until(fun() ->
+        1 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+    end),
+
+    %% Done setting up queue
+    %% ------------------------------------------------------------------------------
+    %% Clearing the queue
+
+    ClearDownlinkMessage = #{payload_raw => base64:encode(<<"__clear_downlink_queue__">>)},
+    WSPid ! {downlink, ClearDownlinkMessage},
+
+    %% Test: Device should have no more queue
+    ok = test_utils:wait_until(fun() ->
+        0 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+    end),
 
     ok = test_utils:ignore_messages(),
     ok.

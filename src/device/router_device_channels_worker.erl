@@ -46,6 +46,7 @@
 -define(BACKOFF_INIT,
     {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
 ).
+-define(CLEAR_QUEUE_PAYLOAD, <<"__clear_downlink_queue__">>).
 
 -record(data_cache, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
@@ -108,6 +109,9 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
             lager:info("failed to start/find device ~p: ~p", [DeviceID, _Reason]);
         {ok, Pid} ->
             case downlink_decode(MapPayload) of
+                {ok, clear_queue} ->
+                    lager:info("clearing device queue because downlink payload from console"),
+                    router_device_worker:clear_queue(Pid);
                 {ok, {Confirmed, Port, Payload}} ->
                     ok = router_metrics:downlink_inc(ChannelHandler, ok),
                     router_device_worker:queue_message(
@@ -244,6 +248,9 @@ handle_cast(
 ) ->
     {ChannelHandler, _} = router_channel:handler(Channel),
     case downlink_decode(BinaryPayload) of
+        {ok, clear_queue} ->
+            lager:info("clearing device queue because downlink payload"),
+            router_device_worker:clear_queue(DeviceWorker);
         {ok, {Confirmed, Port, Payload}} ->
             ok = router_metrics:downlink_inc(ChannelHandler, ok),
             ok = router_device_worker:queue_message(DeviceWorker, #downlink{
@@ -496,7 +503,8 @@ maybe_report_downlink_dropped(DeviceID, Desc, Channel) ->
             lager:info([{device_id, DeviceID}], "failed to get device ~p from cache", [DeviceID])
     end.
 
--spec downlink_decode(binary() | map()) -> {ok, {boolean(), integer(), binary()}} | {error, any()}.
+-spec downlink_decode(binary() | map()) ->
+    {ok, {boolean(), integer(), binary()} | clear_queue} | {error, any()}.
 downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
     try jsx:decode(BinaryPayload, [return_maps]) of
         JSON -> downlink_decode(JSON)
@@ -522,6 +530,8 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
                         false
                 end,
             try base64:decode(Payload) of
+                ?CLEAR_QUEUE_PAYLOAD ->
+                    {ok, clear_queue};
                 Decoded ->
                     {ok, {Confirmed, Port, Decoded}}
             catch

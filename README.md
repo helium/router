@@ -227,6 +227,11 @@ Data payload example sent to integrations
 }
 ```
 
+### Clearing a Device Queue from an Integration
+
+If the **payload_raw** field is the base64 encoded value `'__clear_downlink_queue__'` any downlinks queued for that device will be removed.
+
+
 ## Metrics
 
 Router includes metrics that can be retrieved via [prometheus](https://prometheus.io/docs/introduction/overview/).

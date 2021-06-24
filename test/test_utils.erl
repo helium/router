@@ -10,6 +10,7 @@
     get_last_dev_nonce/1,
     get_device_worker_device/1,
     get_device_worker_offer_cache/1,
+    get_device_queue/1,
     force_refresh_channels/1,
     ignore_messages/0,
     wait_for_console_event/2,
@@ -324,6 +325,10 @@ get_device_worker_offer_cache(DeviceID) ->
         WorkerPid
     ),
     OfferCache.
+
+get_device_queue(DeviceID) ->
+    Device = ?MODULE:get_device_worker_device(DeviceID),
+    router_device:queue(Device).
 
 force_refresh_channels(DeviceID) ->
     Pid = get_device_channels_worker(DeviceID),

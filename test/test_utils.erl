@@ -16,7 +16,10 @@
     wait_for_console_event_sub/2,
     wait_for_join_resp/3,
     wait_channel_data/1,
-    wait_state_channel_message/1, wait_state_channel_message/2, wait_state_channel_message/8,
+    wait_state_channel_message/1,
+    wait_state_channel_message/2,
+    wait_state_channel_message/3,
+    wait_state_channel_message/8,
     wait_organizations_burned/1,
     join_payload/2,
     join_packet/3, join_packet/4,
@@ -275,7 +278,7 @@ get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
-        _IsActive} = sys:get_state(
+        _IsActive, _JoinAttemptCount} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
@@ -284,7 +287,7 @@ get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive} = sys:get_state(
+        _IsActive, _JoinAttemptCount} = sys:get_state(
         WorkerPid
     ),
     LastDevNonce.
@@ -299,7 +302,7 @@ get_device_last_seen_fcnt(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive} = sys:get_state(
+        _IsActive, _JoinAttemptCount} = sys:get_state(
         WorkerPid
     ),
     FCnt.
@@ -308,7 +311,7 @@ get_device_worker_device(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive} = sys:get_state(
+        _IsActive, _JoinAttemptCount} = sys:get_state(
         WorkerPid
     ),
     Device.
@@ -317,7 +320,7 @@ get_device_worker_offer_cache(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache,
-        _IsActive} = sys:get_state(
+        _IsActive, _JoinAttemptCount} = sys:get_state(
         WorkerPid
     ),
     OfferCache.
@@ -511,6 +514,46 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
+    end.
+
+wait_state_channel_message(Timeout, PubKeyBin, AppSKey) ->
+    try
+        receive
+            {client_data, PubKeyBin, Data} ->
+                try
+                    blockchain_state_channel_v1_pb:decode_msg(
+                        Data,
+                        blockchain_state_channel_message_v1_pb
+                    )
+                of
+                    #blockchain_state_channel_message_v1_pb{msg = {response, Resp}} ->
+                        case Resp of
+                            #blockchain_state_channel_response_v1_pb{
+                                accepted = true,
+                                downlink = undefined
+                            } ->
+                                wait_state_channel_message(Timeout, PubKeyBin, AppSKey);
+                            #blockchain_state_channel_response_v1_pb{
+                                accepted = true,
+                                downlink = Packet
+                            } ->
+                                {ok, deframe_packet(Packet, AppSKey)}
+                        end;
+                    _Else ->
+                        ct:fail("wait_state_channel_message with frame wrong message ~p ", [_Else])
+                catch
+                    _E:_R ->
+                        ct:fail("wait_state_channel_message with frame failed to decode ~p ~p", [
+                            Data,
+                            {_E, _R}
+                        ])
+                end
+        after Timeout -> ct:fail("wait_state_channel_message with frame timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_message with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_state_channel_message with frame failed")
     end.
 
 wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, FCnt) ->

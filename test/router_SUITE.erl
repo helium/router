@@ -11,6 +11,7 @@
     dupes_test/1,
     dupes2_test/1,
     join_test/1,
+    us915_join_cf_list_test/1,
     adr_test/1
 ]).
 
@@ -41,6 +42,7 @@ all() ->
     [
         dupes_test,
         join_test,
+        us915_join_cf_list_test,
         adr_test
     ].
 
@@ -726,7 +728,7 @@ join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list('US915')),
+    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list('US915', _FirstJoinAttempt = 0)),
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
@@ -780,6 +782,101 @@ join_test(Config) ->
 
     libp2p_swarm:stop(Swarm0),
     libp2p_swarm:stop(Swarm1),
+    ok.
+
+us915_join_cf_list_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_test",
+    filelib:ensure_dir(HotspotDir),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self(), PubKeyBin]
+    ),
+
+    %% Send join packet
+    DevNonce1 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1, -100)},
+    timer:sleep(router_utils:join_timeout()),
+
+    %% Waiting for reply resp form router
+    {_NetID1, _DevAddr1, _DLSettings1, _RxDelay1, _NwkSKey1, _AppSKey1, CFList1} = test_utils:wait_for_join_resp(
+        PubKeyBin,
+        AppKey,
+        DevNonce1
+    ),
+    %% CFList should not be empty.
+    %% Has a channel mask setup
+    ?assertNotEqual(<<>>, CFList1),
+
+    %% Send another join to get a different cflist
+    DevNonce2 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2, -100)},
+    timer:sleep(router_utils:join_timeout()),
+
+    {_NetID2, _DevAddr2, _DLSettings2, _RxDelay2, _NwkSKey2, _AppSKey2, CFList2} = test_utils:wait_for_join_resp(
+        PubKeyBin,
+        AppKey,
+        DevNonce2
+    ),
+    %% This CFList is empty. We don't know if the device is using lora version
+    %% older than 1.0.3 and might be choking on the cflist, so we'll send an
+    %% empty one and see if they can join with that. The device will still
+    %% receive a channel mask update in the first packets downlink after join.
+    ?assertEqual(<<>>, CFList2),
+
+    %% Send one more just to make sure it wasn't a fluke
+    DevNonce3 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3, -100)},
+    timer:sleep(router_utils:join_timeout()),
+
+    {_NetID3, _DevAddr3, _DLSettings3, _RxDelay3, NwkSKey3, AppSKey3, CFList3} = test_utils:wait_for_join_resp(
+        PubKeyBin,
+        AppKey,
+        DevNonce3
+    ),
+    %% We alternate sending and not sending the channel mask cflist.
+    ?assertNotEqual(<<>>, CFList3),
+
+    %% Send a first packet not request ADR to make sure we still get a channel
+    %% correction message on the first packet.
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                NwkSKey3,
+                AppSKey3,
+                0,
+                #{wants_adr => false}
+            )},
+
+    {ok, Reply} = test_utils:wait_state_channel_message(
+        1250,
+        PubKeyBin,
+        AppSKey3
+    ),
+
+    <<CFListChannelMask:16/integer, _/binary>> = CFList3,
+    ?assertMatch(
+        [
+            %% LinkADRReq shape:
+            %% {link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbTrans}
+            {link_adr_req, _, _, _NoActiveChannels = 0, _All125kHzOFF = 7, _},
+            {link_adr_req, _, _, CFListChannelMask, _ApplyChannels0to15 = 0, _}
+        ],
+        proplists:lookup_all(link_adr_req, Reply#frame.fopts),
+        "Downlink turns on same channels as join cflist"
+    ),
+
+    libp2p_swarm:stop(Swarm),
     ok.
 
 adr_test(Config) ->

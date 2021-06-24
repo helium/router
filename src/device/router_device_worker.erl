@@ -70,7 +70,8 @@
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
-    is_active = true :: boolean()
+    is_active = true :: boolean(),
+    join_attempt_count = 0 :: integer()
 }).
 
 %% ------------------------------------------------------------------
@@ -478,7 +479,7 @@ handle_cast(
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State};
-        {ok, Device1, DevNonce, Reply} ->
+        {ok, Device1, DevNonce, JoinAcceptArgs} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(DevNonce, Cache0, undefined) of
                 undefined when LastDevNonce == DevNonce ->
@@ -489,7 +490,7 @@ handle_cast(
                     JoinCache = #join_cache{
                         uuid = router_utils:uuid_v4(),
                         rssi = NewRSSI,
-                        reply = Reply,
+                        join_accept_args = JoinAcceptArgs,
                         packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
                         device = Device1,
                         pid = Pid
@@ -854,11 +855,12 @@ handle_info(
     #state{
         chain = Blockchain,
         channels_worker = ChannelsWorker,
-        join_cache = JoinCache
+        join_cache = JoinCache,
+        join_attempt_count = JoinAttemptCount
     } = State
 ) ->
     #join_cache{
-        reply = Reply,
+        join_accept_args = JoinAcceptArgs,
         packet_selected = PacketSelected,
         packets = Packets,
         device = Device0,
@@ -881,7 +883,7 @@ handle_info(
     ),
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
-        Reply,
+        craft_join_reply(JoinAcceptArgs, JoinAttemptCount),
         lorawan_mac_region:downlink_signal_strength(Region),
         TxTime,
         TxFreq,
@@ -903,7 +905,11 @@ handle_info(
     ok = router_device_channels_worker:handle_join(ChannelsWorker),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
-    {noreply, State#state{last_dev_nonce = DevNonce, join_cache = maps:remove(DevNonce, JoinCache)}};
+    {noreply, State#state{
+        last_dev_nonce = DevNonce,
+        join_cache = maps:remove(DevNonce, JoinCache),
+        join_attempt_count = JoinAttemptCount + 1
+    }};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
     #state{
@@ -1082,7 +1088,9 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
     OfferCache :: map()
-) -> {ok, router_device:device(), binary(), binary()} | {error, any()}.
+) ->
+    {ok, router_device:device(), binary(), #join_accept_args{}}
+    | {error, any()}.
 validate_join(
     #packet_pb{
         payload =
@@ -1138,7 +1146,7 @@ validate_join(
     router_device:device(),
     binary(),
     router_device:device()
-) -> {ok, router_device:device(), binary(), binary()}.
+) -> {ok, router_device:device(), binary(), #join_accept_args{}}.
 handle_join(
     #packet_pb{
         payload =
@@ -1192,7 +1200,6 @@ handle_join(
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
-    Reply = craft_join_reply(Region, AppNonce, DevAddr, AppKey),
     lager:debug(
         "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
         [
@@ -1202,14 +1209,22 @@ handle_join(
             blockchain_utils:addr2name(PubKeyBin)
         ]
     ),
-    {ok, Device1, DevNonce, Reply}.
+    {ok, Device1, DevNonce, #join_accept_args{
+        region = Region,
+        app_nonce = AppNonce,
+        dev_addr = DevAddr,
+        app_key = AppKey
+    }}.
 
--spec craft_join_reply(atom(), binary(), binary(), binary()) -> binary().
-craft_join_reply(Region, AppNonce, DevAddr, AppKey) ->
+-spec craft_join_reply(#join_accept_args{}, integer()) -> binary().
+craft_join_reply(
+    #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey},
+    JoinAttemptCount
+) ->
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
-    CFList = lorawan_mac_region:mk_join_accept_cf_list(Region),
+    CFList = lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount),
     ReplyPayload =
         <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,

@@ -12,10 +12,17 @@
     data
 }).
 
+-record(join_accept_args, {
+    region :: atom(),
+    app_nonce :: binary(),
+    dev_addr :: binary(),
+    app_key :: binary()
+}).
+
 -record(join_cache, {
     uuid :: router_utils:uuid_v4(),
     rssi :: float(),
-    reply :: binary(),
+    join_accept_args :: #join_accept_args{},
     packet_selected ::
         {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
             non_neg_integer()},

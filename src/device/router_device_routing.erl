@@ -102,6 +102,10 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    HotspotName = blockchain_utils:addr2name(Hotspot),
+    lager:debug("got offer from ~p", [HotspotName]),
+
     Start = erlang:system_time(millisecond),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp =
@@ -119,10 +123,10 @@ handle_offer(Offer, HandlerPid) ->
             Start
         ),
         ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
-        ok = handle_offer_metrics(Routing, Resp, End - Start)
+        ok = handle_offer_metrics(Routing, Resp, End - Start),
+        %% TODO: Remove when hotspots start reporting AS923 including subregions
+        ok = lorawan_location:maybe_fetch_offer_location(Offer)
     end),
-    %% TODO: Remove when hotspots start reporting AS923 including subregions
-    ok = lorawan_location:maybe_fetch_offer_location(Offer),
     case Resp of
         {ok, _} -> ok;
         {error, _} = Error -> Error

@@ -6,7 +6,11 @@
     end_per_testcase/2
 ]).
 
--export([http_test/1, http_update_test/1]).
+-export([
+    http_test/1,
+    http_update_test/1,
+    http_decoded_payload_test/1
+]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -32,7 +36,11 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [http_test, http_update_test].
+    [
+        http_test,
+        http_update_test,
+        http_decoded_payload_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -743,6 +751,152 @@ http_update_test(Config) ->
                 <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
                 <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
                 <<"status">> => <<"error">>
+            }
+        }
+    }),
+
+    ok.
+
+http_decoded_payload_test(Config) ->
+    ChannelParams = #{
+        %% name is device name from defuault integration setup
+        <<"name">> => <<"{{name}}">>,
+        <<"decoded_param">> => <<"{{decoded.payload.value}}">>,
+        <<"{{decoded.payload.key}}">> => <<"{{decoded.payload.value}}">>
+    },
+    ExpectedParams = #{
+        <<"name">> => <<"yolo_name">>,
+        <<"decoded_param">> => <<"42">>,
+        <<"test_key">> => <<"42">>
+    },
+    DecoderFunction = <<"function Decoder(one, two) { return {'key': 'test_key', 'value': 42}; }">>,
+    DecodedPayload = #{<<"value">> => 42, <<"key">> => <<"test_key">>},
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Change HTTP channel to have a decoder function with known values
+    Tab = proplists:get_value(ets, Config),
+    HTTPChannel = #{
+        <<"type">> => <<"http">>,
+        <<"credentials">> => #{
+            <<"headers">> => #{},
+            <<"endpoint">> => <<"http://127.0.0.1:3000/channel">>,
+            <<"method">> => <<"POST">>,
+            <<"url_params">> => ChannelParams
+        },
+        <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+        <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+        <<"function">> => #{
+            <<"active">> => true,
+            <<"format">> => <<"custom">>,
+            <<"id">> => <<"michaels_function">>,
+            <<"body">> =>
+                DecoderFunction
+        }
+    },
+    ets:insert(Tab, {channels, [HTTPChannel]}),
+
+    %% Force to refresh channels list
+    test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
+
+    %% Send UNCONFIRMED_UP frame packet
+    Device = test_utils:get_device_worker_device(?CONSOLE_DEVICE_ID),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
+                %% #{body => <<1:8/integer, Body/binary>>}
+            )},
+
+    %% Waiting for data from HTTP channel
+    %% Make sure our decoded payload is present
+    test_utils:wait_channel_data(#{
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => fun erlang:is_map/1,
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => fun erlang:is_binary/1,
+        <<"payload_size">> => fun erlang:is_number/1,
+        <<"decoded">> => #{
+            <<"status">> => <<"success">>,
+            <<"payload">> => DecodedPayload
+        },
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => fun erlang:is_list/1
+    }),
+
+    %% Waiting for report channel status from HTTP channel
+    %% Grab the Uplink ID so we can inspect the correct integration messages
+    {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => []
+            }
+        }
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => UplinkUUID,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"method">> => fun erlang:is_binary/1,
+                <<"url">> => fun erlang:is_binary/1,
+                <<"body">> => fun erlang:is_binary/1,
+                <<"headers">> => fun erlang:is_map/1,
+                <<"url_params">> => ExpectedParams
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                <<"status">> => <<"success">>
             }
         }
     }),

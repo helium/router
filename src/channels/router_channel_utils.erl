@@ -20,7 +20,8 @@
 %% Functions
 %% ------------------------------------------------------------------
 
--spec make_url(Base :: binary(), DynamicParams0 :: proplists:proplist(), Data :: map()) -> binary().
+-spec make_url(Base :: binary(), DynamicParams0 :: proplists:proplist(), Data :: map()) ->
+    {binary(), proplists:proplist()}.
 make_url(Base, DynamicParams0, Data) ->
     #hackney_url{qs = StaticParams0} = HUrl = hackney_url:parse_url(Base),
 
@@ -32,7 +33,7 @@ make_url(Base, DynamicParams0, Data) ->
 
     {
         hackney_url:unparse_url(HUrl#hackney_url{qs = ParsedParams}),
-        maps:from_list(CombinedParams)
+        CombinedParams
     }.
 
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
@@ -141,49 +142,49 @@ url_test_() ->
         ?_assertEqual(
             {
                 <<"https://website.com/">>,
-                #{}
+                []
             },
             make_url("https://website.com", [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=two">>,
-                #{<<"one">> => <<"two">>}
+                [{<<"one">>, <<"two">>}]
             },
             make_url("https://website.com?one=two", [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=two">>,
-                #{<<"one">> => <<"two">>}
+                [{<<"one">>, <<"two">>}]
             },
             make_url("https://website.com", [{<<"one">>, <<"two">>}], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=two&three=four">>,
-                #{<<"one">> => <<"two">>, <<"three">> => <<"four">>}
+                [{<<"one">>, <<"two">>}, {<<"three">>, <<"four">>}]
             },
             make_url("https://website.com?one=two", [{<<"three">>, <<"four">>}], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=2">>,
-                #{<<"one">> => <<"2">>}
+                [{<<"one">>, <<"2">>}]
             },
             make_url("https://website.com", [{<<"one">>, <<"{{value}}">>}], #{<<"value">> => 2})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=%7b%7bvalue%7d%7d">>,
-                #{<<"one">> => <<"{{value}}">>}
+                [{<<"one">>, <<"{{value}}">>}]
             },
             make_url("https://website.com?one={{value}}", [], #{<<"value">> => 2})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com/?one=42">>,
-                #{<<"one">> => <<"42">>}
+                [{<<"one">>, <<"42">>}]
             },
             make_url(
                 "https://website.com",
@@ -194,12 +195,29 @@ url_test_() ->
         ?_assertEqual(
             {
                 <<"https://website.com/?one=two">>,
-                #{<<"one">> => <<"two">>}
+                [{<<"one">>, <<"two">>}]
             },
             make_url(
                 "https://website.com",
                 [{<<"{{key}}">>, <<"{{value}}">>}],
                 #{<<"key">> => <<"one">>, <<"value">> => <<"two">>}
+            )
+        ),
+        ?_assertEqual(
+            {
+                <<"https://127.0.0.1:3000/channel?decoded_param=42&one=yolo_name">>,
+                [{<<"decoded_param">>, <<"42">>}, {<<"one">>, <<"yolo_name">>}]
+            },
+            make_url(
+                <<"https://127.0.0.1:3000/channel">>,
+                [
+                    {<<"decoded_param">>, <<"{{decoded.payload.value}}">>},
+                    {<<"one">>, <<"{{name}}">>}
+                ],
+                jsx:decode(
+                    <<"{\"decoded\":{\"payload\":{\"value\":\"42\"}},\"name\":\"yolo_name\"}">>,
+                    [return_maps]
+                )
             )
         )
     ].

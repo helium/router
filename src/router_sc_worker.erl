@@ -211,9 +211,29 @@ terminate(_Reason, _State) ->
 
 -spec max_sc_open(Chain :: blockchain:blockchain()) -> pos_integer().
 max_sc_open(Chain) ->
-    case blockchain:config(?max_open_sc, blockchain:ledger(Chain)) of
-        {ok, Max} -> Max;
-        _ -> 5
+    MaxSCAllowed =
+        case blockchain:config(?max_open_sc, blockchain:ledger(Chain)) of
+            {ok, Max} -> Max;
+            _ -> 5
+        end,
+    case application:get_env(router, max_sc_open, []) of
+        [] ->
+            MaxSCAllowed;
+        Str when is_list(Str) ->
+            try erlang:list_to_integer(Str) of
+                TooHigh when TooHigh > MaxSCAllowed ->
+                    MaxSCAllowed;
+                Max1 ->
+                    Max1
+            catch
+                What:Why ->
+                    lager:info("failed to convert sc_max_actors to int ~p", [{What, Why}]),
+                    MaxSCAllowed
+            end;
+        TooHigh when TooHigh > MaxSCAllowed ->
+            MaxSCAllowed;
+        Max2 ->
+            Max2
     end.
 
 -spec schedule_next_tick() -> reference().

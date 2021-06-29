@@ -20,8 +20,7 @@
     downlink_inc/2,
     ws_state/1,
     network_id_inc/1,
-    get_reporter_props/1,
-    update_queues/1
+    get_reporter_props/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -41,8 +40,7 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     routing_packet_duration :: map(),
-    packet_duration :: map(),
-    queues = [] :: list(pid())
+    packet_duration :: map()
 }).
 
 %% ------------------------------------------------------------------
@@ -123,13 +121,6 @@ get_reporter_props(Reporter) ->
     MetricsEnv = application:get_env(router, metrics, []),
     proplists:get_value(Reporter, MetricsEnv, []).
 
--spec update_queues([pid()]) -> ok.
-update_queues(Pids) ->
-    gen_server:cast(
-        ?MODULE,
-        {update_queues, Pids}
-    ).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -194,8 +185,6 @@ handle_cast(
                 State1#state{routing_packet_duration = maps:remove({PacketHash, PubKeyBin}, RPD)}
         end,
     {noreply, State2};
-handle_cast({update_queues, Pids}, State) ->
-    {noreply, State#state{queues = Pids}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -205,8 +194,7 @@ handle_info(
     #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = RPD,
-        packet_duration = PD,
-        queues = _Pids
+        packet_duration = PD
     } = State
 ) ->
     lager:info("running metrcis"),
@@ -216,8 +204,8 @@ handle_info(
             ok = record_state_channels(),
             ok = record_chain_blocks(),
             ok = record_vm_stats(),
-            % ok = record_queues(Pids),
-            ok = record_ets()
+            ok = record_ets(),
+            ok = record_queues()
         end
     ),
     _ = schedule_next_tick(),
@@ -360,60 +348,71 @@ record_ets() ->
     ),
     ok.
 
-% This function needs to be reworked
-% -spec record_queues([pid()]) -> ok.
-% record_queues(Pids0) ->
-%     Offenders = recon:proc_count(message_queue_len, 5),
-%     Pids1 = lists:foldl(
-%         fun
-%             ({Pid, Length, _Extra}, Acc) when Length == 0 ->
-%                 case lists:member(Pid, Acc) of
-%                     false ->
-%                         ok;
-%                     true ->
-%                         Name = get_pid_name(Pid),
-%                         ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
-%                 end,
-%                 lists:delete(Pid, Acc);
-%             ({Pid, Length, _Extra}, Acc) when Length < 1000 ->
-%                 case lists:member(Pid, Acc) of
-%                     false ->
-%                         Acc;
-%                     true ->
-%                         Name = get_pid_name(Pid),
-%                         case erlang:is_process_alive(Pid) of
-%                             false ->
-%                                 ok = notify(?METRICS_VM_PROC_Q, 0, [Name]),
-%                                 lists:delete(Pid, Acc);
-%                             true ->
-%                                 ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
-%                                 Acc
-%                         end
-%                 end;
-%             ({Pid, Length, _Extra}, Acc) ->
-%                 case erlang:is_process_alive(Pid) of
-%                     false ->
-%                         Acc;
-%                     true ->
-%                         Name = get_pid_name(Pid),
-%                         ok = notify(?METRICS_VM_PROC_Q, Length, [Name]),
-%                         [Pid | Acc]
-%                 end
-%         end,
-%         Pids0,
-%         Offenders
-%     ),
-%     ?MODULE:update_queues(Pids1).
+-spec record_queues() -> ok.
+record_queues() ->
+    CurrentQs = lists:foldl(
+        fun({Pid, Length, _Extra}, Acc) ->
+            Name = get_pid_name(Pid),
+            maps:put(Name, Length, Acc)
+        end,
+        #{},
+        recon:proc_count(message_queue_len, 5)
+    ),
+    RecorderQs = lists:foldl(
+        fun({[{"name", Name} | _], Length}, Acc) ->
+            maps:put(Name, Length, Acc)
+        end,
+        #{},
+        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_VM_PROC_Q))
+    ),
+    OldQs = maps:without(maps:keys(CurrentQs), RecorderQs),
+    lists:foreach(
+        fun({Name, _Length}) ->
+            Pid = name_to_pid(Name),
+            case recon:info(Pid, message_queue_len) of
+                undefined ->
+                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                {message_queue_len, 0} ->
+                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                {message_queue_len, Length} ->
+                    ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+            end
+        end,
+        maps:to_list(OldQs)
+    ),
+    NewQs = maps:without(maps:keys(OldQs), CurrentQs),
+    lists:foreach(
+        fun({Name, Length}) ->
+            case Length > 1000 of
+                true ->
+                    ok = notify(?METRICS_VM_PROC_Q, Length, [Name]);
+                false ->
+                    ok
+            end
+        end,
+        maps:to_list(NewQs)
+    ),
+    ok.
 
-% -spec get_pid_name(pid()) -> atom().
-% get_pid_name(Pid) ->
-%     case recon:info(Pid, registered_name) of
-%         [] -> erlang:pid_to_list(Pid);
-%         {registered_name, Name} -> Name;
-%         _Else -> erlang:pid_to_list(Pid)
-%     end.
+-spec get_pid_name(pid()) -> list().
+get_pid_name(Pid) ->
+    case recon:info(Pid, registered_name) of
+        [] -> erlang:pid_to_list(Pid);
+        {registered_name, Name} -> erlang:atom_to_list(Name);
+        _Else -> erlang:pid_to_list(Pid)
+    end.
+
+-spec name_to_pid(list()) -> pid().
+name_to_pid(Name) ->
+    case erlang:length(string:split(Name, ".")) > 1 of
+        false ->
+            erlang:list_to_pid(Name);
+        true ->
+            erlang:whereis(erlang:list_to_atom(Name))
+    end.
 
 -spec notify(atom(), any()) -> ok.
+
 notify(Key, Data) ->
     ok = notify(Key, Data, []).
 

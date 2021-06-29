@@ -405,9 +405,9 @@ get_pid_name(Pid) ->
 -spec name_to_pid(list()) -> pid().
 name_to_pid(Name) ->
     case erlang:length(string:split(Name, ".")) > 1 of
-        false ->
-            erlang:list_to_pid(Name);
         true ->
+            erlang:list_to_pid(Name);
+        false ->
             erlang:whereis(erlang:list_to_atom(Name))
     end.
 

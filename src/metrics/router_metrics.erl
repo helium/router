@@ -368,14 +368,18 @@ record_queues() ->
     OldQs = maps:without(maps:keys(CurrentQs), RecorderQs),
     lists:foreach(
         fun({Name, _Length}) ->
-            Pid = name_to_pid(Name),
-            case recon:info(Pid, message_queue_len) of
+            case name_to_pid(Name) of
                 undefined ->
                     prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
-                {message_queue_len, 0} ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
-                {message_queue_len, Length} ->
-                    ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+                Pid ->
+                    case recon:info(Pid, message_queue_len) of
+                        undefined ->
+                            prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                        {message_queue_len, 0} ->
+                            prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                        {message_queue_len, Length} ->
+                            ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+                    end
             end
         end,
         maps:to_list(OldQs)
@@ -402,7 +406,7 @@ get_pid_name(Pid) ->
         _Else -> erlang:pid_to_list(Pid)
     end.
 
--spec name_to_pid(list()) -> pid().
+-spec name_to_pid(list()) -> pid() | undefined.
 name_to_pid(Name) ->
     case erlang:length(string:split(Name, ".")) > 1 of
         true ->

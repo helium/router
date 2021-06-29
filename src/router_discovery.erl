@@ -28,7 +28,8 @@ start(Map) ->
         true ->
             lager:info("starting discovery with ~p", [Map]),
             {ok, WorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{
-                frame_timeout => frame_timeout()
+                frame_timeout => frame_timeout(),
+                discovery => true
             }),
             Device = router_device_worker:fake_join(WorkerPid, PubKeyBin),
             Body = jsx:encode(#{txn_id => TxnID, error => ?NO_ERROR}),

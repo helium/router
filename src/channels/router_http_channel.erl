@@ -67,10 +67,14 @@ handle_event(
     DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
 
-    URL1 = router_channel_utils:make_url(URL0, UrlParams, Data),
+    {URL1, SentParams} = router_channel_utils:make_url(
+        URL0,
+        UrlParams,
+        jsx:decode(Body, [return_maps])
+    ),
     Res = make_http_req(Method, URL1, Headers, Body),
 
-    RequestReport = make_request_report(Res, Body, State),
+    RequestReport = make_request_report(Res, Body, SentParams, State),
     ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
 
     case Res of
@@ -209,14 +213,18 @@ is_non_local_address(Host) ->
             ok
     end.
 
--spec make_request_report(HeliumError | HackneyResponse, any(), #state{}) -> map() when
+-spec make_request_report(
+    HeliumError | HackneyResponse,
+    Body :: any(),
+    UrlParams :: proplists:proplist(),
+    State :: #state{}
+) -> map() when
     HeliumError :: {error, atom()},
     HackneyResponse :: {ok, any()}.
-make_request_report({error, Reason}, Body, #state{
+make_request_report({error, Reason}, Body, UrlParams, #state{
     method = Method,
     url = URL,
-    headers = Headers,
-    url_params = UrlParams
+    headers = Headers
 }) ->
     %% Helium Error
     #{
@@ -230,11 +238,10 @@ make_request_report({error, Reason}, Body, #state{
         status => error,
         description => erlang:list_to_binary(io_lib:format("Error: ~p", [Reason]))
     };
-make_request_report({ok, Response}, Body, #state{
+make_request_report({ok, Response}, Body, UrlParams, #state{
     method = Method,
     url = URL,
-    headers = Headers,
-    url_params = UrlParams
+    headers = Headers
 }) ->
     Request = #{
         method => Method,

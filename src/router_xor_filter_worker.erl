@@ -336,7 +336,7 @@ get_devices_deveui_app_eui(Devices) ->
     DevEUIsAppEUIs :: list(device_dev_eui_app_eui())
 ) -> list(device_dev_eui_app_eui()).
 get_devices_deveui_app_eui([], DevEUIsAppEUIs) ->
-    lists:reverse(DevEUIsAppEUIs);
+    lists:usort(DevEUIsAppEUIs);
 get_devices_deveui_app_eui([Device | Devices], DevEUIsAppEUIs) ->
     try deveui_appeui(Device) of
         DevEUiAppEUI ->
@@ -418,7 +418,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui},
             BinFiltersWithIndex
         ),
-    {CurrFilter, lists:usort(Added), Removed}.
+    {CurrFilter, Added, Removed}.
 
 -spec craft_new_filter_txn(
     PubKey :: libp2p_crypto:public_key(),
@@ -749,56 +749,77 @@ test_for_should_update_filters_test() ->
         should_update_filters(chain, OUI, #{})
     ),
 
+    %% ------------------------
+    % Testing duplicate eui pairs for a filter that already has the duplicate device
+    DeviceUpdates7 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 7>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
+    ],
+    Device7 = router_device:update(DeviceUpdates7, router_device:new("ID7")),
+    DeviceUpdates8 = [
+        {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 8>>},
+        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
+    ],
+    Device8 = router_device:update(DeviceUpdates8, router_device:new("ID8")),
+    {Filter7, _} = xor16:new([deveui_appeui(Device7)], ?HASH_FUN),
+    {BinFilter7, _} = xor16:to_bin({Filter7, ?HASH_FUN}),
+    Routing7 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter7, [], 1),
+
+    meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) -> {ok, Routing7} end),
+    meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device7, Device7, Device8]} end),
+    meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
+
+    ?assertEqual(
+        {Routing7, [{update, 0, [deveui_appeui(Device8), deveui_appeui(Device7)]}]},
+        should_update_filters(chain, OUI, #{})
+    ),
+
     meck:unload(blockchain_ledger_v1),
     meck:unload(router_console_api),
     meck:unload(blockchain),
     ok.
 
-contained_in_filters_test() ->
-    BinDevices = lists:foldl(
-        fun(_, Acc) ->
-            [crypto:strong_rand_bytes(16) | Acc]
-        end,
-        [],
-        lists:seq(1, 10)
-    ),
+contained_in_filters_test_() ->
+    BinDevices = lists:sort([crypto:strong_rand_bytes(16) || _ <- lists:seq(1, 10)]),
+
     {BinDevices1, BinDevices2} = lists:split(5, BinDevices),
     {Filter1, _} = xor16:new(BinDevices1, ?HASH_FUN),
     {BinFilter1, _} = xor16:to_bin({Filter1, ?HASH_FUN}),
     {Filter2, _} = xor16:new(BinDevices2, ?HASH_FUN),
     {BinFilter2, _} = xor16:to_bin({Filter2, ?HASH_FUN}),
-    ?assertEqual(
-        {
-            #{0 => BinDevices1, 1 => BinDevices2},
-            lists:sort([]),
-            #{}
-        },
-        contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
-    ),
-    ?assertEqual(
-        {
-            #{0 => BinDevices1},
-            lists:sort(BinDevices2),
-            #{}
-        },
-        contained_in_filters([BinFilter1], #{}, BinDevices)
-    ),
-    ?assertEqual(
-        {
-            #{0 => BinDevices1},
-            lists:sort([]),
-            #{1 => BinDevices2}
-        },
-        contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
-    ),
-    ?assertEqual(
-        {
-            #{},
-            lists:sort(BinDevices2),
-            #{0 => BinDevices1}
-        },
-        contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
-    ),
-    ok.
+    [
+        ?_assertEqual(
+            {
+                #{0 => BinDevices1, 1 => BinDevices2},
+                lists:sort([]),
+                #{}
+            },
+            contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
+        ),
+        ?_assertEqual(
+            {
+                #{0 => BinDevices1},
+                BinDevices2,
+                #{}
+            },
+            contained_in_filters([BinFilter1], #{}, BinDevices)
+        ),
+        ?_assertEqual(
+            {
+                #{0 => BinDevices1},
+                [],
+                #{1 => BinDevices2}
+            },
+            contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
+        ),
+        ?_assertEqual(
+            {
+                #{},
+                BinDevices2,
+                #{0 => BinDevices1}
+            },
+            contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
+        )
+    ].
 
 -endif.

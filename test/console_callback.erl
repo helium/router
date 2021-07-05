@@ -168,24 +168,37 @@ handle('POST', [<<"channel">>], Req, Args) ->
             [] -> <<"success">>;
             [{http_resp, R}] -> R
         end,
-    try jsx:decode(Body, [return_maps]) of
-        JSON ->
-            Pid ! {channel_data, JSON},
-            Reply = base64:encode(<<"reply">>),
-            case maps:find(<<"payload">>, JSON) of
-                {ok, Reply} ->
-                    {200, [],
-                        jsx:encode(#{
-                            payload_raw => base64:encode(<<"ack">>),
-                            port => 1,
-                            confirmed => true
-                        })};
-                _ ->
-                    {200, [], Resp}
+    IsBodyJson =
+        case ets:lookup(Tab, http_resp_is_json) of
+            [] -> true;
+            [{http_resp_is_json, R2}] -> R2
+        end,
+
+    case IsBodyJson of
+        false ->
+            %% Wrap in a map() so tests can use matching utilities
+            Pid ! {channel_data, #{body => Body}},
+            {200, [], Resp};
+        true ->
+            try jsx:decode(Body, [return_maps]) of
+                JSON ->
+                    Pid ! {channel_data, JSON},
+                    Reply = base64:encode(<<"reply">>),
+                    case maps:find(<<"payload">>, JSON) of
+                        {ok, Reply} ->
+                            {200, [],
+                                jsx:encode(#{
+                                    payload_raw => base64:encode(<<"ack">>),
+                                    port => 1,
+                                    confirmed => true
+                                })};
+                        _ ->
+                            {200, [], Resp}
+                    end
+            catch
+                _:_ ->
+                    {400, [], <<"bad_body">>}
             end
-    catch
-        _:_ ->
-            {400, [], <<"bad_body">>}
     end;
 handle('websocket', [<<"websocket">>], Req, Args) ->
     %% Upgrade to a websocket connection.

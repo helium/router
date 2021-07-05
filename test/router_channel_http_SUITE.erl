@@ -914,11 +914,11 @@ http_non_json_decoded_payload_test(Config) ->
     %% NOTE: We're not expecting any params to be filled out because they pick
     %% from the JSON body that get's sent to the integration. Here, the user has
     %% decided to replace a JSON body with a urlEncoded body. So no device
-    %% information is present.
+    %% information is present and we don't try to fill anything.
     ExpectedParams = #{
-        <<"name">> => <<>>,
-        <<"decoded_param">> => <<>>,
-        <<>> => <<>>
+        <<"name">> => <<"{{name}}">>,
+        <<"decoded_param">> => <<"{{decoded.payload.value}}">>,
+        <<"{{decoded.payload.key}}">> => <<"{{decoded.payload.value}}">>
     },
     DecoderFunction = <<"function Decoder(one, two) { return 'urlEncoded=string&not=json' }">>,
     DecodedPayload = <<"urlEncoded=string&not=json">>,

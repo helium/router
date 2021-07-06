@@ -109,7 +109,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
         <<"multi_buy">> => 1,
-        <<"adr_allowed">> => false
+        <<"adr_allowed">> => false,
+        <<"cf_list_enabled">> => true
     },
     case NotFound of
         true ->

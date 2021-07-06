@@ -83,7 +83,7 @@ get_device(DeviceID) ->
         {error, _Reason} = Error ->
             Error;
         {ok, JSONDevice} ->
-            {ok, json_device_to_record(JSONDevice, false)}
+            {ok, json_device_to_record(JSONDevice, use_meta_defaults)}
     end.
 
 -spec get_all_devices() -> {ok, [router_device:device()]} | {error, any()}.
@@ -103,7 +103,7 @@ get_all_devices() ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_all_devices, ok, End - Start),
             FilterMapFun = fun(JSONDevice) ->
-                try json_device_to_record(JSONDevice, undefined) of
+                try json_device_to_record(JSONDevice, ignore_meta_defaults) of
                     Device -> {true, Device}
                 catch
                     _E:_R ->
@@ -644,7 +644,7 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
                     AppKey = lorawan_utils:hex_to_binary(
                         kvc:path([<<"app_key">>], JSONDevice)
                     ),
-                    {AppKey, json_device_to_record(JSONDevice, undefined)}
+                    {AppKey, json_device_to_record(JSONDevice, ignore_meta_defaults)}
                 end,
                 jsx:decode(Body, [return_maps])
             );
@@ -687,15 +687,46 @@ get_org_(OrgID) ->
             {error, {get_org_failed, _Other}}
     end.
 
--spec json_device_to_record(JSONDevice :: map(), ADRDefault :: undefined | boolean()) ->
-    router_device:device().
-json_device_to_record(JSONDevice, ADRDefault) ->
+%%%-------------------------------------------------------------------
+%%% @ doc
+%% Some metadata is only sent when requesting a single device, in this case we want
+%% the correct default values present. Otherwise, to ignore those fields when
+%% updating a device we pass `undefined' in their place.
+%%
+%% This is a helper function to opt into _all_ or _none_ of the defaults.
+%%
+%% @end
+%% %-------------------------------------------------------------------
+-spec json_device_to_record(
+    JSONDevice :: map(),
+    DefaultsAction :: use_meta_defaults | ignore_meta_defaults
+) -> router_device:device().
+json_device_to_record(JSONDevice, ignore_meta_defaults) ->
+    json_device_to_record(
+        JSONDevice,
+        _IgnoreADRMeta = undefined,
+        _IgnoreUS915CFListMeta = undefined
+    );
+json_device_to_record(JSONDevice, use_meta_defaults) ->
+    json_device_to_record(
+        JSONDevice,
+        _ADRDefault = false,
+        _US915CFListDefault = true
+    ).
+
+-spec json_device_to_record(
+    JSONDevice :: map(),
+    ADRDefault :: undefined | boolean(),
+    US915CFListDefault :: undefined | boolean()
+) -> router_device:device().
+json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault) ->
     ID = kvc:path([<<"id">>], JSONDevice),
     Metadata = #{
         labels => kvc:path([<<"labels">>], JSONDevice, undefined),
         organization_id => kvc:path([<<"organization_id">>], JSONDevice, undefined),
         multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
-        adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault)
+        adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault),
+        us915_cflist_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault)
     },
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},

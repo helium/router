@@ -31,6 +31,8 @@ settings_usage() ->
         ["settings"],
         [
             "\n\n"
+            "NOTE: All <value> passed in will be kept as strings."
+            "\n\n"
             "log <level>         - lager:set_loglevel(lager_file_backend, \"router.log\", <level>)"
             "set <field> <value> - application:set_env(router, <field>, <value>)"
         ]

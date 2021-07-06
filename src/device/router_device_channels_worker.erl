@@ -449,7 +449,6 @@ handle_info(
                 Channel ->
                     Description = io_lib:format("channel_crash: ~p", [Error]),
                     ok = report_integration_error(Device, Description, Channel),
-                    ChannelID = router_channel:unique_id(Channel),
                     ChannelName = router_channel:name(Channel),
                     lager:error("channel ~p crashed: ~p", [{ChannelID, ChannelName}, Error]),
                     case start_channel(EventMgrRef, Channel, Device, Backoffs0) of

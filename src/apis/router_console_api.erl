@@ -726,7 +726,7 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault) ->
         organization_id => kvc:path([<<"organization_id">>], JSONDevice, undefined),
         multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
         adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault),
-        us915_cflist_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault)
+        cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault)
     },
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},

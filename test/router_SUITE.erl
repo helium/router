@@ -12,6 +12,7 @@
     dupes2_test/1,
     join_test/1,
     us915_join_cf_list_test/1,
+    us915_join_cf_list_force_empty_test/1,
     adr_test/1
 ]).
 
@@ -43,6 +44,7 @@ all() ->
         dupes_test,
         join_test,
         us915_join_cf_list_test,
+        us915_join_cf_list_force_empty_test,
         adr_test
     ].
 
@@ -877,6 +879,51 @@ us915_join_cf_list_test(Config) ->
     ),
 
     libp2p_swarm:stop(Swarm),
+    ok.
+
+us915_join_cf_list_force_empty_test(Config) ->
+    %% Force it empty
+    application:set_env(router, force_empty_us915_cflist, true),
+
+    AppKey = proplists:get_value(app_key, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
+    filelib:ensure_dir(HotspotDir),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self(), PubKeyBin]
+    ),
+
+    SendJoinWaitForCFListFun = fun() ->
+        %% Send join packet
+        DevNonce = crypto:strong_rand_bytes(2),
+        Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, -100)},
+        timer:sleep(router_utils:join_timeout()),
+
+        %% Waiting for reply resp from router
+        {_NetID, _DevAddr, _DLSettings, _RxDelay, _NwkSKey, _AppSKey, CFList} = test_utils:wait_for_join_resp(
+            PubKeyBin,
+            AppKey,
+            DevNonce
+        ),
+        CFList
+    end,
+    %% CFList should always be empty when toggle is turned false
+    ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
+    ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
+    ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
+    ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
+
+    libp2p_swarm:stop(Swarm),
+    %% No more forcing
+    application:set_env(router, force_empty_us915_cflist, true),
     ok.
 
 adr_test(Config) ->

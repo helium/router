@@ -71,7 +71,8 @@
     offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
     is_active = true :: boolean(),
-    join_attempt_count = 0 :: integer()
+    join_attempt_count = 0 :: integer(),
+    discovery = false :: boolean()
 }).
 
 %% ------------------------------------------------------------------
@@ -159,6 +160,13 @@ fake_join(Pid, PubkeyBin) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(#{db := DB, cf := CF, id := ID} = Args) ->
+    Discovery =
+        case maps:get(discovery, Args, false) of
+            true ->
+                true;
+            _ ->
+                false
+        end,
     Blockchain = blockchain_worker:blockchain(),
     OUI = router_utils:get_oui(),
     Device = get_device(DB, CF, ID),
@@ -182,7 +190,8 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
         fcnt = router_device:fcnt(Device),
         oui = OUI,
         channels_worker = Pid,
-        is_active = IsActive
+        is_active = IsActive,
+        discovery = Discovery
     }}.
 
 handle_call(
@@ -622,9 +631,15 @@ handle_cast(
         downlink_handled_at = DownlinkHandledAt,
         fcnt = LastSeenFCnt,
         channels_worker = ChannelsWorker,
-        last_dev_nonce = LastDevNonce
+        last_dev_nonce = LastDevNonce,
+        discovery = Disco
     } = State
 ) ->
+    MetricPacketType =
+        case Disco of
+            true -> discovery_packet;
+            false -> packet
+        end,
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
     lager:debug("got packet (~p) ~p from ~p", [
         PHash,
@@ -684,7 +699,7 @@ handle_cast(
                 PHash,
                 PubKeyBin,
                 erlang:system_time(millisecond),
-                packet,
+                MetricPacketType,
                 false
             ),
             {noreply, State#state{device = Device2}};
@@ -715,7 +730,7 @@ handle_cast(
                 PHash,
                 PubKeyBin,
                 erlang:system_time(millisecond),
-                packet,
+                MetricPacketType,
                 false
             ),
             {noreply, State};
@@ -793,7 +808,7 @@ handle_cast(
                                     PHash,
                                     PubKeyBin,
                                     erlang:system_time(millisecond),
-                                    packet,
+                                    MetricPacketType,
                                     false
                                 ),
                                 {OldUUID, State#state{
@@ -920,9 +935,15 @@ handle_info(
         device = Device0,
         channels_worker = ChannelsWorker,
         frame_cache = Cache0,
-        adr_engine = ADREngine0
+        adr_engine = ADREngine0,
+        discovery = Disco
     } = State
 ) ->
+    MetricPacketType =
+        case Disco of
+            true -> discovery_packet;
+            false -> packet
+        end,
     FrameCache = maps:get(FCnt, Cache0),
     #frame_cache{
         uuid = UUID,
@@ -966,7 +987,7 @@ handle_info(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
                 erlang:system_time(millisecond),
-                packet,
+                MetricPacketType,
                 false,
                 IgnoreMetrics
             ),
@@ -1010,7 +1031,7 @@ handle_info(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
                 erlang:system_time(millisecond),
-                packet,
+                MetricPacketType,
                 true,
                 IgnoreMetrics
             ),
@@ -1032,7 +1053,7 @@ handle_info(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
                 erlang:system_time(millisecond),
-                packet,
+                MetricPacketType,
                 false,
                 IgnoreMetrics
             ),

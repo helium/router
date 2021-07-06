@@ -1245,7 +1245,11 @@ craft_join_reply(
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
-    CFList = lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount),
+    CFList =
+        case {Region, maybe_force_empty_us915_cflist()} of
+            {'US915', true} -> <<>>;
+            _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
+        end,
     ReplyPayload =
         <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
@@ -2095,3 +2099,26 @@ packet_datarate_to_dr(Packet, Region) ->
         Region,
         Datarate
     ).
+
+-spec maybe_force_empty_us915_cflist() -> boolean().
+maybe_force_empty_us915_cflist() ->
+    Default = false,
+    case application:get_env(router, force_empty_us915_cflist, Default) of
+        [] ->
+            Default;
+        Str when is_list(Str) ->
+            try erlang:list_to_atom(Str) of
+                true -> true;
+                _ -> false
+            catch
+                What:Why ->
+                    lager:info("failed to convert force_empty_us915_cflist to atom ~p", [
+                        {What, Why}
+                    ]),
+                    Default
+            end;
+        true ->
+            true;
+        _ ->
+            false
+    end.

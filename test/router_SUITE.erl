@@ -12,7 +12,7 @@
     dupes2_test/1,
     join_test/1,
     us915_join_cf_list_test/1,
-    us915_join_cf_list_toggle_test/1,
+    us915_join_cf_list_force_empty_test/1,
     adr_test/1
 ]).
 
@@ -44,7 +44,7 @@ all() ->
         dupes_test,
         join_test,
         us915_join_cf_list_test,
-        us915_join_cf_list_toggle_test,
+        us915_join_cf_list_force_empty_test,
         adr_test
     ].
 
@@ -881,12 +881,12 @@ us915_join_cf_list_test(Config) ->
     libp2p_swarm:stop(Swarm),
     ok.
 
-us915_join_cf_list_toggle_test(Config) ->
-    %% Turning off the toggle
-    application:set_env(router, join_toggle_cflist, false),
+us915_join_cf_list_force_empty_test(Config) ->
+    %% Force it empty
+    application:set_env(router, force_empty_us915_cflist, true),
 
     AppKey = proplists:get_value(app_key, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_test",
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
     filelib:ensure_dir(HotspotDir),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
@@ -922,8 +922,8 @@ us915_join_cf_list_toggle_test(Config) ->
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
 
     libp2p_swarm:stop(Swarm),
-    %% Turn it back on
-    application:set_env(router, join_toggle_cflist, true),
+    %% No more forcing
+    application:set_env(router, force_empty_us915_cflist, true),
     ok.
 
 adr_test(Config) ->

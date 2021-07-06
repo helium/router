@@ -768,7 +768,7 @@ max_snr(SF) ->
 
 -spec mk_join_accept_cf_list(atom(), integer()) -> binary().
 mk_join_accept_cf_list('US915' = Region, Count) ->
-    case (Count rem 2) == 0 andalso router_utils:join_toggle_cflist() of
+    case (Count rem 2) == 0 of
         true -> mk_join_accept_cf_list(Region);
         false -> <<>>
     end;

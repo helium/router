@@ -30,8 +30,7 @@
     maybe_update_trace/1,
     mtype_to_ack/1,
     frame_timeout/0,
-    join_timeout/0,
-    join_toggle_cflist/0
+    join_timeout/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -607,17 +606,6 @@ join_timeout() ->
         [] -> ?JOIN_TIMEOUT;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
-    end.
-
--spec join_toggle_cflist() -> boolean().
-join_toggle_cflist() ->
-    case application:get_env(router, join_toggle_cflist, true) of
-        [] ->
-            true;
-        Str when is_list(Str) ->
-            erlang:list_to_atom(Str);
-        I ->
-            I
     end.
 
 %% ------------------------------------------------------------------

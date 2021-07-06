@@ -20,8 +20,22 @@
 %% Functions
 %% ------------------------------------------------------------------
 
--spec make_url(Base :: binary(), DynamicParams0 :: proplists:proplist(), Data :: map()) ->
-    {binary(), proplists:proplist()}.
+-spec make_url(
+    Base :: binary(),
+    Params :: proplists:proplist(),
+    Data :: map() | binary()
+) -> {binary(), proplists:proplist()}.
+make_url(Base, Params, Data) when erlang:is_binary(Data) ->
+    #hackney_url{qs = StaticParams0} = HUrl = hackney_url:parse_url(Base),
+
+    StaticParams1 = hackney_url:parse_qs(StaticParams0),
+    CombinedParams = StaticParams1 ++ Params,
+    ParsedParams = hackney_url:qs(CombinedParams),
+
+    {
+        hackney_url:unparse_url(HUrl#hackney_url{qs = ParsedParams}),
+        CombinedParams
+    };
 make_url(Base, DynamicParams0, Data) ->
     #hackney_url{qs = StaticParams0} = HUrl = hackney_url:parse_url(Base),
 

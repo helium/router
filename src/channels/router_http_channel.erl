@@ -67,11 +67,13 @@ handle_event(
     DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
 
-    {URL1, SentParams} = router_channel_utils:make_url(
-        URL0,
-        UrlParams,
-        jsx:decode(Body, [return_maps])
-    ),
+    {URL1, SentParams} =
+        case jsx:is_json(Body) of
+            true ->
+                router_channel_utils:make_url(URL0, UrlParams, jsx:decode(Body, [return_maps]));
+            false ->
+                router_channel_utils:make_url(URL0, UrlParams, Body)
+        end,
     Res = make_http_req(Method, URL1, Headers, Body),
 
     RequestReport = make_request_report(Res, Body, SentParams, State),

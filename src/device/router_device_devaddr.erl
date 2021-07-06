@@ -76,7 +76,12 @@ default_devaddr() ->
 -spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->
     {ok, binary()} | {error, any()}.
 allocate(Device, PubKeyBin) ->
-    gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
+    case maybe_force_default_devaddr() of
+        false ->
+            gen_server:call(?SERVER, {allocate, Device, PubKeyBin});
+        true ->
+            {ok, ?MODULE:default_devaddr()}
+    end.
 
 -spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin(), blockchain:blockchain()) ->
     [router_device:device()].
@@ -323,6 +328,28 @@ get_net_id(DevAddr, PrefixLength, NwkIDBits) ->
 -spec uint32(integer()) -> integer().
 uint32(Num) ->
     Num band 4294967295.
+
+-spec maybe_force_default_devaddr() -> boolean().
+maybe_force_default_devaddr() ->
+    case application:get_env(router, force_default_devaddr, false) of
+        [] ->
+            false;
+        Str when is_list(Str) ->
+            try erlang:list_to_atom(Str) of
+                true ->
+                    true;
+                _ ->
+                    false
+            catch
+                What:Why ->
+                    lager:info("failed to convert force_default_devaddr to atom ~p", [{What, Why}]),
+                    false
+            end;
+        true ->
+            true;
+        _ ->
+            false
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

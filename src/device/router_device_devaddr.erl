@@ -80,7 +80,7 @@ allocate(Device, PubKeyBin) ->
         false ->
             gen_server:call(?SERVER, {allocate, Device, PubKeyBin});
         true ->
-            ?MODULE:default_devaddr()
+            {ok, ?MODULE:default_devaddr()}
     end.
 
 -spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin(), blockchain:blockchain()) ->

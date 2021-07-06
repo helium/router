@@ -29,7 +29,7 @@
 -export([max_uplink_snr/1]).
 -export([tx_time/2, tx_time/3]).
 
--export([downlink_signal_strength/1]).
+-export([downlink_signal_strength/2]).
 -export([dr_to_down/3]).
 -export([window2_dr/1, top_level_region/1, f2uch/2]).
 -export([mk_join_accept_cf_list/2]).
@@ -686,15 +686,18 @@ uplink_power_table_('EU868') ->
 %% Bobcat team was testing and noticed downlink `rf_power' was too high for CN470.
 %%
 %% longAP team was testing and also noticed `rf_power' was too high for EU868.
-%% Max for EU868 is uplink power index 0.
+%% Followup from disk91:
+%% https://www.etsi.org/deliver/etsi_en/300200_300299/30022002/03.02.01_60/en_30022002v030201p.pdf (page 22)
+%% MwToDb = fun(Mw) -> round(10 * math:log10(Mw)) end.
 %%
 %% NOTE: We may want to reduce to default tx_power
 %% @end
 %% ------------------------------------------------------------------
--spec downlink_signal_strength(atom()) -> non_neg_integer().
-downlink_signal_strength('CN470') -> 16;
-downlink_signal_strength('EU868') -> 20;
-downlink_signal_strength(_Region) -> ?DEFAULT_DOWNLINK_TX_POWER.
+-spec downlink_signal_strength(atom(), freq_whole()) -> non_neg_integer().
+downlink_signal_strength('CN470', _Freq) -> 16;
+downlink_signal_strength('EU868', Freq) when 869.4 =< Freq andalso Freq < 869.65 -> 27;
+downlink_signal_strength('EU868', _Freq) -> 14;
+downlink_signal_strength(_Region, _Freq) -> ?DEFAULT_DOWNLINK_TX_POWER.
 
 %% static channel plan parameters
 freq('EU868') ->

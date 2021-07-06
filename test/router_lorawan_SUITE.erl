@@ -232,7 +232,7 @@ lw_join_test(Config) ->
     end,
 
     %% Waiting for data from HTTP channel
-    test_utils:wait_channel_data(#{
+    {ok, #{<<"hotspots">> := [#{<<"frequency">> := Frequency}]}} = test_utils:wait_channel_data(#{
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -287,7 +287,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region),
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -529,7 +529,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
                 <<"name">> => erlang:list_to_binary(HotspotName0),
-                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region),
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => '_',
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

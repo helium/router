@@ -2101,26 +2101,3 @@ packet_datarate_to_dr(Packet, Region) ->
         Region,
         Datarate
     ).
-
--spec maybe_force_empty_us915_cflist() -> boolean().
-maybe_force_empty_us915_cflist() ->
-    Default = false,
-    case application:get_env(router, force_empty_us915_cflist, Default) of
-        [] ->
-            Default;
-        Str when is_list(Str) ->
-            try erlang:list_to_atom(Str) of
-                true -> true;
-                _ -> false
-            catch
-                What:Why ->
-                    lager:info("failed to convert force_empty_us915_cflist to atom ~p", [
-                        {What, Why}
-                    ]),
-                    Default
-            end;
-        true ->
-            true;
-        _ ->
-            false
-    end.

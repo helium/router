@@ -156,7 +156,8 @@ disovery_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -220,7 +221,8 @@ disovery_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -304,7 +306,8 @@ disovery_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -382,7 +385,8 @@ fail_to_connect_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,

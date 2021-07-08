@@ -232,7 +232,8 @@ dupes_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -529,7 +530,8 @@ dupes2_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -882,9 +884,6 @@ us915_join_cf_list_test(Config) ->
     ok.
 
 us915_join_cf_list_force_empty_test(Config) ->
-    %% Force it empty
-    application:set_env(router, force_empty_us915_cflist, true),
-
     AppKey = proplists:get_value(app_key, Config),
     HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
     filelib:ensure_dir(HotspotDir),
@@ -900,6 +899,10 @@ us915_join_cf_list_force_empty_test(Config) ->
         router_handler_test,
         [self(), PubKeyBin]
     ),
+
+    %% Tell the device to disable join-accept cflist when it starts up
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {cf_list_enabled, false}),
 
     SendJoinWaitForCFListFun = fun() ->
         %% Send join packet
@@ -922,8 +925,7 @@ us915_join_cf_list_force_empty_test(Config) ->
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
 
     libp2p_swarm:stop(Swarm),
-    %% No more forcing
-    application:set_env(router, force_empty_us915_cflist, true),
+
     ok.
 
 adr_test(Config) ->
@@ -1040,7 +1042,8 @@ adr_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1221,7 +1224,8 @@ adr_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1402,7 +1406,8 @@ adr_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1591,7 +1596,8 @@ adr_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 3,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1734,7 +1740,8 @@ adr_test(Config) ->
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 4,
         <<"reported_at">> => fun erlang:is_integer/1,

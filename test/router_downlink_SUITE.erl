@@ -293,7 +293,8 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => true
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,

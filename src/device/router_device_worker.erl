@@ -870,6 +870,7 @@ handle_info(
     #state{
         chain = Blockchain,
         channels_worker = ChannelsWorker,
+        device = Device,
         join_cache = JoinCache,
         join_attempt_count = JoinAttemptCount
     } = State
@@ -898,7 +899,7 @@ handle_info(
     ),
     Rx2 = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
-        craft_join_reply(JoinAcceptArgs, JoinAttemptCount),
+        craft_join_reply(Device, JoinAcceptArgs, JoinAttemptCount),
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
         TxTime,
         TxFreq,
@@ -1237,8 +1238,9 @@ handle_join(
         app_key = AppKey
     }}.
 
--spec craft_join_reply(#join_accept_args{}, integer()) -> binary().
+-spec craft_join_reply(router_device:device(), #join_accept_args{}, integer()) -> binary().
 craft_join_reply(
+    Device,
     #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey},
     JoinAttemptCount
 ) ->
@@ -1246,8 +1248,8 @@ craft_join_reply(
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     CFList =
-        case {Region, maybe_force_empty_us915_cflist()} of
-            {'US915', true} -> <<>>;
+        case {Region, maps:get(cf_list_enabled, router_device:metadata(Device), true)} of
+            {'US915', false} -> <<>>;
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     ReplyPayload =
@@ -2099,26 +2101,3 @@ packet_datarate_to_dr(Packet, Region) ->
         Region,
         Datarate
     ).
-
--spec maybe_force_empty_us915_cflist() -> boolean().
-maybe_force_empty_us915_cflist() ->
-    Default = false,
-    case application:get_env(router, force_empty_us915_cflist, Default) of
-        [] ->
-            Default;
-        Str when is_list(Str) ->
-            try erlang:list_to_atom(Str) of
-                true -> true;
-                _ -> false
-            catch
-                What:Why ->
-                    lager:info("failed to convert force_empty_us915_cflist to atom ~p", [
-                        {What, Why}
-                    ]),
-                    Default
-            end;
-        true ->
-            true;
-        _ ->
-            false
-    end.

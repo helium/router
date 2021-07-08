@@ -98,6 +98,12 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> true;
             [{is_active, IS}] -> IS
         end,
+    US915JoinAcceptCFListEnabled =
+        case ets:lookup(Tab, cf_list_enabled) of
+            [] -> true;
+            [{cf_list_enabled, IS2}] -> IS2
+        end,
+    ct:print("We are in the console callback"),
     Body = #{
         <<"id">> => DeviceID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -109,7 +115,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
         <<"multi_buy">> => 1,
-        <<"adr_allowed">> => false
+        <<"adr_allowed">> => false,
+        <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled
     },
     case NotFound of
         true ->

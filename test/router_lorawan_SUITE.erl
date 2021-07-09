@@ -197,7 +197,13 @@ lw_join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list(Region, _FirstJoinAttempt = 0)),
+    case Region of
+        'US915' ->
+            %% US915 defaults cflist on joins to off
+            ?assertEqual(CFList, <<>>);
+        _ ->
+            ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list(Region, 0))
+    end,
 
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
@@ -243,7 +249,7 @@ lw_join_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 1,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -406,7 +412,7 @@ lw_join_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 2,
         <<"downlink_url">> => fun erlang:is_binary/1,

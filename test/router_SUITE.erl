@@ -11,8 +11,8 @@
     dupes_test/1,
     dupes2_test/1,
     join_test/1,
-    us915_join_cf_list_test/1,
-    us915_join_cf_list_force_empty_test/1,
+    us915_join_enabled_cf_list_test/1,
+    us915_join_disabled_cf_list_test/1,
     adr_test/1
 ]).
 
@@ -43,8 +43,8 @@ all() ->
     [
         dupes_test,
         join_test,
-        us915_join_cf_list_test,
-        us915_join_cf_list_force_empty_test,
+        us915_join_enabled_cf_list_test,
+        us915_join_disabled_cf_list_test,
         adr_test
     ].
 
@@ -233,7 +233,7 @@ dupes_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -531,7 +531,7 @@ dupes2_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -732,7 +732,7 @@ join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list('US915', _FirstJoinAttempt = 0)),
+    ?assertEqual(CFList, <<>>),
     %% Check that device is in cache now
     {ok, DB, [_, CF]} = router_db:get(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
@@ -788,7 +788,7 @@ join_test(Config) ->
     libp2p_swarm:stop(Swarm1),
     ok.
 
-us915_join_cf_list_test(Config) ->
+us915_join_enabled_cf_list_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_test",
     filelib:ensure_dir(HotspotDir),
@@ -796,6 +796,10 @@ us915_join_cf_list_test(Config) ->
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
     {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    %% Tell the device to enable join-accept cflist when it starts up
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {cf_list_enabled, true}),
 
     {ok, Stream} = libp2p_swarm:dial_framed_stream(
         Swarm,
@@ -883,7 +887,9 @@ us915_join_cf_list_test(Config) ->
     libp2p_swarm:stop(Swarm),
     ok.
 
-us915_join_cf_list_force_empty_test(Config) ->
+us915_join_disabled_cf_list_test(Config) ->
+    %% NOTE: Disabled is default for cflist per device
+
     AppKey = proplists:get_value(app_key, Config),
     HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
     filelib:ensure_dir(HotspotDir),
@@ -899,10 +905,6 @@ us915_join_cf_list_force_empty_test(Config) ->
         router_handler_test,
         [self(), PubKeyBin]
     ),
-
-    %% Tell the device to disable join-accept cflist when it starts up
-    Tab = proplists:get_value(ets, Config),
-    _ = ets:insert(Tab, {cf_list_enabled, false}),
 
     SendJoinWaitForCFListFun = fun() ->
         %% Send join packet
@@ -1043,7 +1045,7 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1225,7 +1227,7 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1407,7 +1409,7 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1597,7 +1599,7 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 3,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1741,7 +1743,7 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 4,
         <<"reported_at">> => fun erlang:is_integer/1,

@@ -104,7 +104,7 @@ http_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -238,7 +238,7 @@ http_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -435,7 +435,7 @@ http_update_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => true
+            <<"cf_list_enabled">> => false
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,

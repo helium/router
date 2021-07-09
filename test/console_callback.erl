@@ -100,7 +100,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         end,
     US915JoinAcceptCFListEnabled =
         case ets:lookup(Tab, cf_list_enabled) of
-            [] -> true;
+            [] -> false;
             [{cf_list_enabled, IS2}] -> IS2
         end,
     ct:print("We are in the console callback"),

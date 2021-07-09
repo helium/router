@@ -711,7 +711,7 @@ json_device_to_record(JSONDevice, use_meta_defaults) ->
     json_device_to_record(
         JSONDevice,
         _ADRDefault = false,
-        _US915CFListDefault = true
+        _US915CFListDefault = false
     ).
 
 -spec json_device_to_record(

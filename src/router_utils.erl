@@ -565,6 +565,12 @@ trace(DeviceID) ->
         ],
         debug
     ),
+    _ = erlang:spawn(fun() ->
+        Timeout = application:get_env(router, device_trace_timeout, 240),
+        lager:debug([{device_id, DeviceID}], "will stop trace in ~pmin", [Timeout]),
+        timer:sleep(timer:minutes(Timeout)),
+        ?MODULE:stop_trace(DeviceID)
+    end),
     ok.
 
 -spec stop_trace(DeviceID :: binary()) -> ok.

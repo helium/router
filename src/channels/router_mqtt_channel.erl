@@ -35,7 +35,8 @@
     channel_id :: binary(),
     device :: router_device:device(),
     connection :: pid() | undefined,
-    connection_backoff :: backoff:backoff(),
+    conn_backoff :: backoff:backoff(),
+    conn_backoff_ref :: reference() | undefined,
     endpoint :: binary(),
     uplink_topic :: binary(),
     downlink_topic :: binary() | undefined,
@@ -47,7 +48,7 @@
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
     ok = router_utils:lager_md(Device),
-    ChannelID = router_channel:id(Channel),
+    ChannelID = router_channel:unique_id(Channel),
     lager:info("[~s] ~p init with ~p", [ChannelID, ?MODULE, Channel]),
     #{
         endpoint := Endpoint,
@@ -60,7 +61,7 @@ init({[Channel, Device], _}) ->
         channel = Channel,
         channel_id = ChannelID,
         device = Device,
-        connection_backoff = Backoff,
+        conn_backoff = Backoff,
         endpoint = Endpoint,
         uplink_topic = render_topic(UplinkTemplate, Device),
         downlink_topic = render_topic(DownlinkTemplate, Device)
@@ -68,25 +69,18 @@ init({[Channel, Device], _}) ->
 
 handle_event({data, UUIDRef, Data}, #state{channel = Channel} = State0) ->
     Pid = router_channel:controller(Channel),
-
     Response = publish(Data, State0),
-
     RequestReport = make_request_report(Response, Data, State0),
     ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
-
     State1 =
         case Response of
             {error, failed_to_publish} ->
-                #state{channel_id = ChannelID, connection_backoff = Backoff0} = State0,
-                Backoff1 = reconnect(ChannelID, Backoff0),
-                State0#state{connection_backoff = Backoff1};
+                reconnect(State0);
             _ ->
                 State0
         end,
-
     ResponseReport = make_response_report(Response, Channel),
     ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
-
     {ok, State1};
 handle_event(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown cast msg: ~p", [ChannelID, _Msg]),
@@ -138,7 +132,7 @@ handle_info(
         channel_id = ChannelID,
         device = Device,
         connection = OldConn,
-        connection_backoff = Backoff0,
+        conn_backoff = Backoff0,
         endpoint = Endpoint,
         downlink_topic = undefined,
         ping = TimerRef
@@ -158,13 +152,12 @@ handle_info(
             {_, Backoff1} = backoff:succeed(Backoff0),
             {ok, State#state{
                 connection = Conn,
-                connection_backoff = Backoff1,
+                conn_backoff = Backoff1,
                 ping = schedule_ping(ChannelID)
             }};
         {error, _ConnReason} ->
             lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
-            Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff = Backoff1}}
+            {ok, reconnect(State)}
     end;
 handle_info(
     {?MODULE, connect, ChannelID},
@@ -173,7 +166,7 @@ handle_info(
         channel_id = ChannelID,
         device = Device,
         connection = OldConn,
-        connection_backoff = Backoff0,
+        conn_backoff = Backoff0,
         endpoint = Endpoint,
         downlink_topic = DownlinkTopic,
         ping = TimerRef
@@ -196,7 +189,7 @@ handle_info(
                     {_, Backoff1} = backoff:succeed(Backoff0),
                     {ok, State#state{
                         connection = Conn,
-                        connection_backoff = Backoff1,
+                        conn_backoff = Backoff1,
                         ping = schedule_ping(ChannelID)
                     }};
                 {error, _SubReason} ->
@@ -205,23 +198,20 @@ handle_info(
                         DownlinkTopic,
                         _SubReason
                     ]),
-                    Backoff1 = reconnect(ChannelID, Backoff0),
-                    {ok, State#state{connection_backoff = Backoff1}}
+                    {ok, reconnect(State)}
             end;
         {error, _ConnReason} ->
             lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
-            Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff = Backoff1}}
+            {ok, reconnect(State)}
     end;
 %% Ignore connect message not for us
-handle_info({?MODULE, connect, _}, State) ->
+handle_info({_, connect, _}, State) ->
     {ok, State};
 handle_info(
     {?MODULE, ping, ChannelID},
     #state{
         channel_id = ChannelID,
         connection = Conn,
-        connection_backoff = Backoff0,
         ping = TimerRef
     } = State
 ) ->
@@ -236,8 +226,7 @@ handle_info(
                 Conn,
                 _Reason
             ]),
-            Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff = Backoff1}}
+            {ok, reconnect(State)}
     catch
         _Class:_Reason ->
             lager:error("[~s] failed to ping MQTT connection ~p: ~p", [
@@ -245,8 +234,7 @@ handle_info(
                 Conn,
                 {_Class, _Reason}
             ]),
-            Backoff1 = reconnect(ChannelID, Backoff0),
-            {ok, State#state{connection_backoff = Backoff1}}
+            {ok, reconnect(State)}
     end;
 handle_info(
     {publish, #{client_pid := Conn, payload := Payload}},
@@ -260,14 +248,12 @@ handle_info(
     #state{
         channel_id = ChannelID,
         connection = Conn,
-        connection_backoff = Backoff0,
         ping = TimerRef
     } = State
 ) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
     lager:error("[~s] got an EXIT message: ~p ~p", [ChannelID, _Type, _Reason]),
-    Backoff1 = reconnect(ChannelID, Backoff0),
-    {ok, State#state{connection_backoff = Backoff1}};
+    {ok, reconnect(State)};
 handle_info({disconnected, _Type, _Reason}, #state{channel_id = ChannelID} = State) ->
     lager:error("[~s] got a disconnected message: ~p ~p", [ChannelID, _Type, _Reason]),
     {ok, State};
@@ -308,7 +294,6 @@ publish(
     }
 ) ->
     Body = router_channel:encode_data(Channel, Data),
-
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
             lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
@@ -327,11 +312,14 @@ schedule_ping(ChannelID) ->
 send_connect_after(ChannelID, Delay) ->
     erlang:send_after(Delay, self(), {?MODULE, connect, ChannelID}).
 
--spec reconnect(binary(), backoff:backoff()) -> backoff:backoff().
-reconnect(ChannelID, Backoff0) ->
+-spec reconnect(#state{}) -> #state{}.
+reconnect(
+    #state{channel_id = ChannelID, conn_backoff = Backoff0, conn_backoff_ref = TimerRef0} = State
+) ->
+    _ = (catch erlang:cancel_timer(TimerRef0)),
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    send_connect_after(ChannelID, Delay),
-    Backoff1.
+    TimerRef1 = send_connect_after(ChannelID, Delay),
+    State#state{conn_backoff = Backoff1, conn_backoff_ref = TimerRef1}.
 
 -spec cleanup_connection(pid()) -> ok.
 cleanup_connection(Conn) ->

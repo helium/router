@@ -533,7 +533,7 @@ lager_md(Device) ->
 trace(DeviceID) ->
     BinFileName = trace_file(DeviceID),
     {ok, Device} = router_device_cache:get(DeviceID),
-    FileName = erlang:binary_to_list(BinFileName) ++ ".log",
+    FileName = "traces/" ++ erlang:binary_to_list(BinFileName) ++ ".log",
     {ok, _} = lager:trace_file(FileName, [{device_id, DeviceID}], debug),
     {ok, _} = lager:trace_file(
         FileName,

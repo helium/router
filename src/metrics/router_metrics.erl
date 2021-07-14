@@ -385,9 +385,11 @@ record_queues() ->
         maps:to_list(OldQs)
     ),
     NewQs = maps:without(maps:keys(OldQs), CurrentQs),
+    Config = application:get_env(router, metrics, []),
+    MinLength = proplists:get_value(record_queue_min_length, Config, 2000),
     lists:foreach(
         fun({Name, Length}) ->
-            case Length > 1000 of
+            case Length > MinLength of
                 true ->
                     ok = notify(?METRICS_VM_PROC_Q, Length, [Name]);
                 false ->

@@ -533,7 +533,7 @@ lager_md(Device) ->
 trace(DeviceID) ->
     BinFileName = trace_file(DeviceID),
     {ok, Device} = router_device_cache:get(DeviceID),
-    FileName = erlang:binary_to_list(BinFileName) ++ ".log",
+    FileName = "traces/" ++ erlang:binary_to_list(BinFileName) ++ ".log",
     {ok, _} = lager:trace_file(FileName, [{device_id, DeviceID}], debug),
     {ok, _} = lager:trace_file(
         FileName,
@@ -565,6 +565,12 @@ trace(DeviceID) ->
         ],
         debug
     ),
+    _ = erlang:spawn(fun() ->
+        Timeout = application:get_env(router, device_trace_timeout, 240),
+        lager:debug([{device_id, DeviceID}], "will stop trace in ~pmin", [Timeout]),
+        timer:sleep(timer:minutes(Timeout)),
+        ?MODULE:stop_trace(DeviceID)
+    end),
     ok.
 
 -spec stop_trace(DeviceID :: binary()) -> ok.

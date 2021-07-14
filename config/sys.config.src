@@ -17,7 +17,8 @@
         {max_inbound_connections, 12},
         {outbound_gossip_connections, 4},
         {sc_packet_handler, router_device_routing},
-        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"}
+        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
+        {sc_overload, 5000}
     ]},
     {router, [
         {max_v8_context, 1000},

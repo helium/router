@@ -36,21 +36,46 @@ handle(Req, _Args) ->
         end,
     handle(Method, elli_request:path(Req), Req, _Args).
 
-%% Get All Devices
-handle('GET', [<<"api">>, <<"router">>, <<"devices">>], _Req, Args) ->
-    Body = #{
-        <<"id">> => ?CONSOLE_DEVICE_ID,
-        <<"name">> => ?CONSOLE_DEVICE_NAME,
-        <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
-        <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
+device_to_json(Device) ->
+    #{
+        <<"id">> => router_device:id(Device),
+        <<"name">> => router_device:name(Device),
+        <<"app_key">> => router_device:app_s_key(Device),
+        <<"app_eui">> => router_device:app_eui(Device),
+        <<"dev_eui">> => router_device:dev_eui(Device),
         <<"channels">> => [],
-        <<"labels">> => ?CONSOLE_LABELS,
-        <<"organization_id">> => ?CONSOLE_ORG_ID,
+        <<"labels">> => maps:get(labels, router_device:metadata(Device), []),
+        <<"organization_id">> => maps:get(
+            organization_id,
+            router_device:metadata(Device),
+            <<"fake org id">>
+        ),
         <<"active">> => true,
         <<"multi_buy">> => 1
-    },
-    {200, [], jsx:encode([Body])};
+    }.
+
+%% Get All Devices
+handle('GET', [<<"api">>, <<"router">>, <<"devices">>], _Req, Args) ->
+    Tab = maps:get(ets, Args),
+    Body =
+        case ets:lookup(Tab, devices) of
+            [] ->
+                [#{
+                    <<"id">> => ?CONSOLE_DEVICE_ID,
+                    <<"name">> => ?CONSOLE_DEVICE_NAME,
+                    <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
+                    <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
+                    <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
+                    <<"channels">> => [],
+                    <<"labels">> => ?CONSOLE_LABELS,
+                    <<"organization_id">> => ?CONSOLE_ORG_ID,
+                    <<"active">> => true,
+                    <<"multi_buy">> => 1
+                }];
+            [{devices, Devices}] ->
+                lists:map(fun device_to_json/1, Devices)
+        end,
+    {200, [], jsx:encode(Body)};
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
@@ -103,7 +128,6 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> false;
             [{cf_list_enabled, IS2}] -> IS2
         end,
-    ct:print("We are in the console callback"),
     Body = #{
         <<"id">> => DeviceID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,

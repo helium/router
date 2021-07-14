@@ -20,7 +20,8 @@
     get_downlink_url/2,
     get_org/1,
     organizations_burned/3,
-    get_token/0
+    get_token/0,
+    json_device_to_record/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -106,10 +107,11 @@ get_all_devices() ->
                 try json_device_to_record(JSONDevice, ignore_meta_defaults) of
                     Device -> {true, Device}
                 catch
-                    _E:_R ->
-                        lager:error("failed to create record for device ~p: ~p", [
+                    _E:_R:_S ->
+                        lager:error("failed to create record for device ~p: ~p~n~n~p~n~n", [
                             JSONDevice,
-                            {_E, _R}
+                            {_E, _R},
+                            _S
                         ]),
                         false
                 end

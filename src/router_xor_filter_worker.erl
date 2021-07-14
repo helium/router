@@ -14,7 +14,8 @@
     start_link/1,
     estimate_cost/0,
     check_filters/0,
-    deveui_appeui/1
+    deveui_appeui/1,
+    rebalance_filters/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -33,6 +34,7 @@
 -define(POST_INIT_TICK, post_init).
 -define(POST_INIT_TIMER, 500).
 -define(CHECK_FILTERS_TICK, check_filters).
+-define(REBALANCE_FILTERS, rebalance_filters).
 -define(CHECK_FILTERS_TIMER, timer:minutes(10)).
 -define(HASH_FUN, fun xxhash:hash64/1).
 -define(SUBMIT_RESULT, submit_result).
@@ -67,6 +69,11 @@ check_filters() ->
     ?SERVER ! ?CHECK_FILTERS_TICK,
     ok.
 
+-spec rebalance_filters() -> ok.
+rebalance_filters() ->
+    ?SERVER ! ?REBALANCE_FILTERS,
+    ok.
+
 -spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
 deveui_appeui(Device) ->
     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
@@ -94,20 +101,58 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
+    Pendings =
+        case router_console_api:get_all_devices() of
+            {error, _Reason} = Err ->
+                ct:print("uhoh ~p", [_Reason]),
+                lager:error("failed to get device ~p", [_Reason]),
+                throw({could_not_rebalance_filters, Err});
+            {ok, Devices} ->
+                DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
+
+                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, 5),
+
+                Ledger = blockchain:ledger(Chain),
+                {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
+                CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
+                lists:map(
+                    fun({Idx, GroupEuis}) ->
+                        Nonce = CurrNonce + Idx + 1,
+                        {Filter, _} = xor16:new(GroupEuis, ?HASH_FUN),
+                        Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
+                        Hash = submit_txn(Txn),
+                        ct:print("updating filter txn ~p submitted ~p", [
+                            Hash,
+                            lager:pr(Txn, blockchain_txn_routing_v1)
+                        ]),
+
+                        {Hash, {Idx, GroupEuis}}
+                    end,
+                    enumerate_0(Grouped)
+                )
+        end,
+
+    {noreply, State#state{pending_txns = maps:from_list(Pendings)}};
 handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
+    ct:print("one", []),
     case blockchain_worker:blockchain() of
         undefined ->
             ok = schedule_post_init(),
             {noreply, State};
         Chain ->
+            ct:print("two", []),
             case router_utils:get_oui() of
                 undefined ->
+                    ct:print("three", []),
                     lager:warning("OUI undefined"),
                     ok = schedule_post_init(),
                     {noreply, State};
                 OUI ->
+                    ct:print("four", []),
                     case enabled() of
                         true ->
+                            ct:print("five", []),
                             Ref = schedule_check_filters(1),
                             {noreply, State#state{
                                 chain = Chain,
@@ -115,6 +160,7 @@ handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
                                 check_filters_ref = Ref
                             }};
                         false ->
+                            ct:print("six", []),
                             {noreply, State#state{chain = Chain, oui = OUI}}
                     end
             end
@@ -135,12 +181,17 @@ handle_info(
         false -> ok;
         true -> erlang:cancel_timer(OldRef)
     end,
-    case should_update_filters(Chain, OUI, FilterToDevices) of
+    Resp = should_update_filters(Chain, OUI, FilterToDevices),
+    ct:print("seven ~p", [Resp]),
+    case Resp of
         noop ->
+            ct:print("eight", []),
             lager:info("filters are still up to date"),
             Ref = schedule_check_filters(default_timer()),
             {noreply, State#state{check_filters_ref = Ref}};
         {Routing, Updates} ->
+            ct:print("nine", []),
+            ct:print("~nRouting and updates:~n~p~n~n~p", [Routing, Updates]),
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             {Pendings1, _} = lists:foldl(
                 fun
@@ -270,6 +321,17 @@ estimate_cost(#state{
             )
     end.
 
+distribute_devices_across_n_groups(Devices, FilterCount) ->
+    %% Add 0.4 to more consistenly round up
+    GroupSize = erlang:round((erlang:length(Devices) / FilterCount) + 0.4),
+    do_distribute_devices_across_n_groups(Devices, GroupSize, []).
+
+do_distribute_devices_across_n_groups([], _, G) ->
+    G;
+do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->
+    {Group, Leftover} = lists:split(erlang:min(GroupSize, erlang:length(Devices)), Devices),
+    do_distribute_devices_across_n_groups(Leftover, GroupSize, [Group | Grouped]).
+
 -spec should_update_filters(
     Chain :: blockchain:blockchain(),
     OUI :: non_neg_integer(),
@@ -283,9 +345,11 @@ estimate_cost(#state{
 should_update_filters(Chain, OUI, FilterToDevices) ->
     case router_console_api:get_all_devices() of
         {error, _Reason} ->
+            ct:print("ten ~p", [_Reason]),
             lager:error("failed to get device ~p", [_Reason]),
             noop;
         {ok, Devices} ->
+            %% ct:print("~nDevices:~n~p", [Devices]),
             DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
             Ledger = blockchain:ledger(Chain),
             case blockchain_ledger_v1:find_routing(OUI, Ledger) of
@@ -295,35 +359,41 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                 {ok, Routing} ->
                     {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
                     BinFilters = blockchain_ledger_routing_v1:filters(Routing),
-                    case contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) of
-                        {_Map, [], Removed} when Removed == #{} ->
-                            noop;
-                        {Map, Added, Removed} when Removed == #{} ->
-                            case erlang:length(BinFilters) < MaxXorFilter of
-                                true ->
-                                    {Routing, [{new, Added}]};
-                                false ->
-                                    case smallest_first(maps:to_list(Map)) of
-                                        [] ->
-                                            {Routing, [
-                                                {update, 0, Added}
-                                            ]};
-                                        [{Index, SmallestDevicesDevEuiAppEui} | _] ->
-                                            {Routing, [
-                                                {update, Index,
-                                                    Added ++ SmallestDevicesDevEuiAppEui}
-                                            ]}
-                                    end
-                            end;
-                        {Map, [], Removed} ->
-                            {Routing, craft_remove_updates(Map, Removed)};
-                        {Map, Added, Removed} ->
-                            [{update, Index, R} | OtherUpdates] = smallest_first(
-                                craft_remove_updates(Map, Removed)
-                            ),
-                            {Routing, [{update, Index, R ++ Added} | OtherUpdates]}
+                    Updates = contained_in_filters(
+                        BinFilters,
+                        FilterToDevices,
+                        DevicesDevEuiAppEui
+                    ),
+                    case craft_updates(Updates, BinFilters, MaxXorFilter) of
+                        noop -> noop;
+                        Crafted -> {Routing, Crafted}
                     end
             end
+    end.
+
+craft_updates(Updates, BinFilters, MaxXorFilter) ->
+    case Updates of
+        {_Map, [], Removed} when Removed == #{} ->
+            noop;
+        {Map, Added, Removed} when Removed == #{} ->
+            case erlang:length(BinFilters) < MaxXorFilter of
+                true ->
+                    [{new, Added}];
+                false ->
+                    case smallest_first(maps:to_list(Map)) of
+                        [] ->
+                            [{update, 0, Added}];
+                        [{Index, SmallestDevicesDevEuiAppEui} | _] ->
+                            [{update, Index, Added ++ SmallestDevicesDevEuiAppEui}]
+                    end
+            end;
+        {Map, [], Removed} ->
+            craft_remove_updates(Map, Removed);
+        {Map, Added, Removed} ->
+            [{update, Index, R} | OtherUpdates] = smallest_first(
+                craft_remove_updates(Map, Removed)
+            ),
+            [{update, Index, R ++ Added} | OtherUpdates]
     end.
 
 -spec get_devices_deveui_app_eui(Devices :: [router_device:device()]) ->
@@ -440,6 +510,20 @@ craft_new_filter_txn(PubKey, SignFun, Chain, OUI, Filter, Nonce) ->
     Txn1 = blockchain_txn_routing_v1:fee(Txn0, Fees),
     blockchain_txn_routing_v1:sign(Txn1, SignFun).
 
+-spec craft_rebalance_update_filter_txn(
+    Index :: non_neg_integer(),
+    Nonce :: non_neg_integer(),
+    Filter :: reference(),
+    State :: #state{}
+) -> blockchain_txn_routing_v1:txn_routing().
+craft_rebalance_update_filter_txn(Index, Nonce, Filter, #state{
+    pubkey = PubKey,
+    sig_fun = SigFun,
+    chain = Chain,
+    oui = OUI
+}) ->
+    craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce, Index).
+
 -spec craft_update_filter_txn(
     PubKey :: libp2p_crypto:public_key(),
     SigFun :: libp2p_crypto:sig_fun(),
@@ -493,6 +577,9 @@ default_timer() ->
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.
+
+enumerate_0(L) ->
+    lists:zip(lists:seq(0, erlang:length(L) - 1), L).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

@@ -24,7 +24,7 @@
     wait_organizations_burned/1,
     join_payload/2,
     join_packet/3, join_packet/4,
-    join_device/1,
+    join_device/1, join_device/2,
     frame_payload/6,
     frame_packet/5, frame_packet/6,
     deframe_packet/2,
@@ -193,6 +193,9 @@ start_swarm(BaseDir, Name, Port) ->
     {Swarm, Keys}.
 
 join_device(Config) ->
+    join_device(Config, #{}).
+
+join_device(Config, JoinOpts) ->
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
@@ -209,7 +212,7 @@ join_device(Config) ->
 
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, ?MODULE:join_packet(PubKeyBin, AppKey, DevNonce)},
+    Stream ! {send, ?MODULE:join_packet(PubKeyBin, AppKey, DevNonce, JoinOpts)},
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
@@ -257,9 +260,9 @@ join_device(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => fun erlang:is_integer/1,
                 <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW500">>,
+                <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
@@ -641,10 +644,12 @@ wait_organizations_burned(Expected) ->
     end.
 
 join_packet(PubKeyBin, AppKey, DevNonce) ->
-    join_packet(PubKeyBin, AppKey, DevNonce, 0).
+    join_packet(PubKeyBin, AppKey, DevNonce, #{}).
 
-join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
+join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
+    %% THIS IS WRONG
     RoutingInfo = {devaddr, 1},
+    RSSI = maps:get(rssi, Options, 0),
     HeliumPacket = blockchain_helium_packet_v1:new(
         lorawan,
         join_payload(AppKey, DevNonce),
@@ -655,10 +660,11 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
         0.0,
         RoutingInfo
     ),
+    Region = maps:get(region, Options, 'US915'),
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = 'US915'
+        region = Region
     },
     Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
     blockchain_state_channel_v1_pb:encode_msg(Msg).
@@ -699,7 +705,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = 'US915'
+        region = maps:get(region, Options, 'US915')
     },
     case maps:get(dont_encode, Options, false) of
         true ->

@@ -630,7 +630,7 @@ join_test(Config) ->
                 PubKeyBin0,
                 crypto:strong_rand_bytes(16),
                 crypto:strong_rand_bytes(2),
-                -100
+                #{rssi => -100}
             )},
     receive
         {client_data, _, _Data3} ->

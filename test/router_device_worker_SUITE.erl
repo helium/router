@@ -979,8 +979,8 @@ hotspot_bad_region_test(Config) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
 
     %% Check that device is in cache now
-    {ok, Device} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    ?assertEqual(EURegion, router_device:region(Device)),
+    {ok, Device0} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    ?assertEqual(EURegion, router_device:region(Device0)),
 
     %% THis is an EU868 Datarate
     DataRate = <<"SF12BW125">>,
@@ -989,14 +989,17 @@ hotspot_bad_region_test(Config) ->
             test_utils:frame_packet(
                 ?UNCONFIRMED_UP,
                 PubKeyBin,
-                router_device:nwk_s_key(Device),
-                router_device:app_s_key(Device),
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
                 0,
                 #{datarate => DataRate, region => 'US915'}
             )},
 
     timer:sleep(router_utils:frame_timeout()),
     ?assertEqual(true, erlang:is_process_alive(WorkerPid)),
+
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    ?assertEqual(EURegion, router_device:region(Device1)),
     ok.
 
 %% ------------------------------------------------------------------

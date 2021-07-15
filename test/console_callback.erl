@@ -40,9 +40,9 @@ device_to_json(Device) ->
     #{
         <<"id">> => router_device:id(Device),
         <<"name">> => router_device:name(Device),
-        <<"app_key">> => router_device:app_s_key(Device),
-        <<"app_eui">> => router_device:app_eui(Device),
-        <<"dev_eui">> => router_device:dev_eui(Device),
+        <<"app_key">> => lorawan_utils:binary_to_hex(router_device:app_s_key(Device)),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
         <<"channels">> => [],
         <<"labels">> => maps:get(labels, router_device:metadata(Device), []),
         <<"organization_id">> => maps:get(

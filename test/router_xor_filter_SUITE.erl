@@ -14,7 +14,8 @@
     max_filters_devices_test/1,
     ignore_largest_filter_test/1,
     evenly_rebalance_filter_test/1,
-    oddly_rebalance_filter_test/1
+    oddly_rebalance_filter_test/1,
+    remove_devices_filter_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -58,7 +59,8 @@ all() ->
         max_filters_devices_test,
         ignore_largest_filter_test,
         evenly_rebalance_filter_test,
-        oddly_rebalance_filter_test
+        oddly_rebalance_filter_test,
+        remove_devices_filter_test
     ].
 
 %%--------------------------------------------------------------------
@@ -605,6 +607,82 @@ oddly_rebalance_filter_test(Config) ->
     meck:unload(blockchain_worker),
     ok.
 
+remove_devices_filter_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    Round2Devices = n_rand_devices(200) ++ Round1Devices,
+    Round3Devices = n_rand_devices(35) ++ Round2Devices,
+    Round4Devices = n_rand_devices(45) ++ Round3Devices,
+    Round5Devices = n_rand_devices(50) ++ Round4Devices,
+
+    %% Add devices
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ct:print("Filters:~n~p", [Filters1]),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            %% largest filter
+            #{devices => Round2Devices, block => 4, filter_count => 3},
+            #{devices => Round3Devices, block => 5, filter_count => 4},
+            #{devices => Round4Devices, block => 6, filter_count => 5},
+            %% We should not craft filters above 5
+            #{devices => Round5Devices, block => 7, filter_count => 5}
+        ]
+    ),
+
+    %% Choose devices to be removed
+    %% Not random devices so we can know how many filters should be updated
+    Removed = lists:sublist(Round4Devices, 10),
+    LeftoverDevices = Round5Devices -- Removed,
+
+    %% Check filters with devices that continue to exist
+    ct:print("Michael look for me"),
+    true = ets:insert(Tab, {devices, LeftoverDevices}),
+    ok = router_xor_filter_worker:check_filters(),
+
+    %% Should commit filter for removed devices
+    ok = expect_block(8, Chain),
+
+    %% Make sure removed devices are not in those filters
+    Filters = get_filters(Chain, OUI1),
+    Containment = [
+        xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
+        || Filter <- Filters, Device <- Removed
+    ],
+    ?assertEqual(
+        false,
+        lists:member(true, Containment),
+        "Removed devices are _NOT_ in filters"
+    ),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
@@ -625,8 +703,8 @@ n_rand_devices(N) ->
     lists:map(
         fun(Idx) ->
             Updates = [
-                {app_eui, lorawan_utils:binary_to_hex(crypto:strong_rand_bytes(8))},
-                {dev_eui, lorawan_utils:binary_to_hex(crypto:strong_rand_bytes(8))}
+                {app_eui, crypto:strong_rand_bytes(8)},
+                {dev_eui, crypto:strong_rand_bytes(8)}
             ],
             Name = io_lib:format("Device-~p", [Idx]),
             Device = router_device:update(Updates, router_device:new(Name)),

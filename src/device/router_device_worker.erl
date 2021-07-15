@@ -2094,8 +2094,8 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
     end.
 
 -spec packet_datarate(
-    Device :: router_device:device(),
-    Packet :: blockchain_helium_packet_v1:packet(),
+    Device :: router_device:device() | binary(),
+    Packet :: blockchain_helium_packet_v1:packet() | atom(),
     Region :: atom()
 ) -> {atom(), integer()}.
 packet_datarate(Device, Packet, Region) ->
@@ -2103,20 +2103,24 @@ packet_datarate(Device, Packet, Region) ->
         blockchain_helium_packet_v1:datarate(Packet)
     ),
     DeviceRegion = router_device:region(Device),
-    case DeviceRegion == Region of
-        true ->
-            {DeviceRegion, lorawan_mac_region:datar_to_dr(Region, Datarate)};
-        false ->
-            try lorawan_mac_region:datar_to_dr(Region, Datarate) of
-                DR ->
-                    {Region, DR}
-            catch
-                _E:_R ->
-                    lager:info("failed to get DR for ~p ~p, reverting to device's region (~p)", [
-                        Region,
-                        Datarate,
-                        DeviceRegion
-                    ]),
-                    {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
-            end
+    packet_datarate(Datarate, {Region, DeviceRegion}).
+
+-spec packet_datarate(
+    Datarate :: binary(),
+    {atom(), atom()}
+) -> {atom(), integer()}.
+packet_datarate(Datarate, {Region, Region}) ->
+    {Region, lorawan_mac_region:datar_to_dr(Region, Datarate)};
+packet_datarate(Datarate, {Region, DeviceRegion}) ->
+    try lorawan_mac_region:datar_to_dr(Region, Datarate) of
+        DR ->
+            {Region, DR}
+    catch
+        _E:_R ->
+            lager:info("failed to get DR for ~p ~p, reverting to device's region (~p)", [
+                Region,
+                Datarate,
+                DeviceRegion
+            ]),
+            {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
     end.

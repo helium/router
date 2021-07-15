@@ -1176,7 +1176,7 @@ handle_join(
                 _MIC:4/binary>>
     } = Packet,
     PubKeyBin,
-    Region,
+    HotspotRegion,
     _OUI,
     APIDevice,
     AppKey,
@@ -1207,6 +1207,7 @@ handle_join(
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
@@ -1218,7 +1219,7 @@ handle_join(
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
         {metadata, router_device:metadata(APIDevice)},
-        {last_known_datarate, packet_datarate_to_dr(Packet, Region)},
+        {last_known_datarate, DR},
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
@@ -1370,7 +1371,7 @@ validate_frame(
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
         {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
-validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain) ->
+validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchain) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1412,11 +1413,12 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain) ->
                             AName
                         ]
                     ),
+                    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {location, PubKeyBin},
                         {region, Region},
-                        {last_known_datarate, packet_datarate_to_dr(Packet, Region)}
+                        {last_known_datarate, DR}
                     ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
                     QueueDeviceUpdates =
@@ -1477,11 +1479,11 @@ validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain) ->
                             AName
                         ]
                     ),
-
+                    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {region, Region},
-                        {last_known_datarate, packet_datarate_to_dr(Packet, Region)}
+                        {last_known_datarate, DR}
                     ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
                     QueueDeviceUpdates =
@@ -2091,13 +2093,34 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
             )
     end.
 
--spec packet_datarate_to_dr(Packet :: blockchain_helium_packet_v1:packet(), Region :: atom()) ->
-    integer().
-packet_datarate_to_dr(Packet, Region) ->
+-spec packet_datarate(
+    Device :: router_device:device() | binary(),
+    Packet :: blockchain_helium_packet_v1:packet() | atom(),
+    Region :: atom()
+) -> {atom(), integer()}.
+packet_datarate(Device, Packet, Region) ->
     Datarate = erlang:list_to_binary(
         blockchain_helium_packet_v1:datarate(Packet)
     ),
-    lorawan_mac_region:datar_to_dr(
-        Region,
-        Datarate
-    ).
+    DeviceRegion = router_device:region(Device),
+    packet_datarate(Datarate, {Region, DeviceRegion}).
+
+-spec packet_datarate(
+    Datarate :: binary(),
+    {atom(), atom()}
+) -> {atom(), integer()}.
+packet_datarate(Datarate, {Region, Region}) ->
+    {Region, lorawan_mac_region:datar_to_dr(Region, Datarate)};
+packet_datarate(Datarate, {Region, DeviceRegion}) ->
+    try lorawan_mac_region:datar_to_dr(Region, Datarate) of
+        DR ->
+            {Region, DR}
+    catch
+        _E:_R ->
+            lager:info("failed to get DR for ~p ~p, reverting to device's region (~p)", [
+                Region,
+                Datarate,
+                DeviceRegion
+            ]),
+            {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
+    end.

@@ -13,7 +13,8 @@
     device_worker_stop_children_test/1,
     device_worker_late_packet_double_charge_test/1,
     offer_cache_test/1,
-    load_offer_cache_test/1
+    load_offer_cache_test/1,
+    hotspot_bad_region_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -46,7 +47,8 @@ all() ->
         replay_joins_test,
         device_worker_late_packet_double_charge_test,
         offer_cache_test,
-        load_offer_cache_test
+        load_offer_cache_test,
+        hotspot_bad_region_test
     ].
 
 %%--------------------------------------------------------------------
@@ -965,6 +967,39 @@ load_offer_cache_test(Config) ->
     OfferCache2 = test_utils:get_device_worker_offer_cache(DeviceID),
 
     ?assertEqual(1, maps:size(OfferCache2)),
+    ok.
+
+hotspot_bad_region_test(Config) ->
+    %% JOINING IN EU REGION
+    EURegion = 'EU868',
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream
+    } = test_utils:join_device(Config, #{region => EURegion}),
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(?CONSOLE_DEVICE_ID),
+
+    %% Check that device is in cache now
+    {ok, Device0} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    ?assertEqual(EURegion, router_device:region(Device0)),
+
+    %% THis is an EU868 Datarate
+    DataRate = <<"SF12BW125">>,
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{datarate => DataRate, region => 'US915'}
+            )},
+
+    timer:sleep(router_utils:frame_timeout()),
+    ?assertEqual(true, erlang:is_process_alive(WorkerPid)),
+
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    ?assertEqual(EURegion, router_device:region(Device1)),
     ok.
 
 %% ------------------------------------------------------------------

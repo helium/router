@@ -630,7 +630,7 @@ join_test(Config) ->
                 PubKeyBin0,
                 crypto:strong_rand_bytes(16),
                 crypto:strong_rand_bytes(2),
-                -100
+                #{rssi => -100}
             )},
     receive
         {client_data, _, _Data3} ->
@@ -640,9 +640,9 @@ join_test(Config) ->
 
     %% Send join packets where PubKeyBin1 has better rssi
     DevNonce = crypto:strong_rand_bytes(2),
-    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, -100)},
+    Stream0 ! {send, test_utils:join_packet(PubKeyBin0, AppKey, DevNonce, #{rssi => -100})},
     timer:sleep(500),
-    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce, -80)},
+    Stream1 ! {send, test_utils:join_packet(PubKeyBin1, AppKey, DevNonce, #{rssi => -80})},
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for console repor status sent (it should select PubKeyBin1 cause better rssi)
@@ -811,7 +811,7 @@ us915_join_enabled_cf_list_test(Config) ->
 
     %% Send join packet
     DevNonce1 = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1, -100)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce1, #{rssi => -100})},
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for reply resp form router
@@ -826,7 +826,7 @@ us915_join_enabled_cf_list_test(Config) ->
 
     %% Send another join to get a different cflist
     DevNonce2 = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2, -100)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2, #{rssi => -100})},
     timer:sleep(router_utils:join_timeout()),
 
     {_NetID2, _DevAddr2, _DLSettings2, _RxDelay2, _NwkSKey2, _AppSKey2, CFList2} = test_utils:wait_for_join_resp(
@@ -842,7 +842,7 @@ us915_join_enabled_cf_list_test(Config) ->
 
     %% Send one more just to make sure it wasn't a fluke
     DevNonce3 = crypto:strong_rand_bytes(2),
-    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3, -100)},
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3, #{rssi => -100})},
     timer:sleep(router_utils:join_timeout()),
 
     {_NetID3, _DevAddr3, _DLSettings3, _RxDelay3, NwkSKey3, AppSKey3, CFList3} = test_utils:wait_for_join_resp(
@@ -909,7 +909,7 @@ us915_join_disabled_cf_list_test(Config) ->
     SendJoinWaitForCFListFun = fun() ->
         %% Send join packet
         DevNonce = crypto:strong_rand_bytes(2),
-        Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, -100)},
+        Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{rssi => -100})},
         timer:sleep(router_utils:join_timeout()),
 
         %% Waiting for reply resp from router

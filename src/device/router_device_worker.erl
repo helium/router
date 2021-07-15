@@ -2103,12 +2103,6 @@ packet_datarate(Device, Packet, Region) ->
         blockchain_helium_packet_v1:datarate(Packet)
     ),
     DeviceRegion = router_device:region(Device),
-    lager:notice("[~p:~p:~p] MARKER ~p~n", [
-        ?MODULE,
-        ?FUNCTION_NAME,
-        ?LINE,
-        {DeviceRegion, Region, Datarate}
-    ]),
     case DeviceRegion == Region of
         true ->
             {DeviceRegion, lorawan_mac_region:datar_to_dr(Region, Datarate)};

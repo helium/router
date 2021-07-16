@@ -51,7 +51,8 @@
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
     filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()},
-    check_filters_ref :: undefined | reference()
+    check_filters_ref :: undefined | reference(),
+    txn_count = 0 :: non_neg_integer()
 }).
 
 %% ------------------------------------------------------------------
@@ -105,7 +106,6 @@ handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
     Pendings =
         case router_console_api:get_all_devices() of
             {error, _Reason} = Err ->
-                ct:print("uhoh ~p", [_Reason]),
                 lager:error("failed to get device ~p", [_Reason]),
                 throw({could_not_rebalance_filters, Err});
             {ok, Devices} ->
@@ -122,7 +122,7 @@ handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
                         {Filter, _} = xor16:new(GroupEuis, ?HASH_FUN),
                         Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
                         Hash = submit_txn(Txn),
-                        ct:print("updating filter txn ~p submitted ~p", [
+                        lager:info("updating filter txn ~p submitted ~p", [
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
@@ -135,36 +135,33 @@ handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
 
     {noreply, State#state{pending_txns = maps:from_list(Pendings)}};
 handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
-    ct:print("one", []),
-    case blockchain_worker:blockchain() of
-        undefined ->
-            ok = schedule_post_init(),
-            {noreply, State};
-        Chain ->
-            ct:print("two", []),
-            case router_utils:get_oui() of
-                undefined ->
-                    ct:print("three", []),
-                    lager:warning("OUI undefined"),
-                    ok = schedule_post_init(),
-                    {noreply, State};
-                OUI ->
-                    ct:print("four", []),
-                    case enabled() of
-                        true ->
-                            ct:print("five", []),
-                            Ref = schedule_check_filters(1),
-                            {noreply, State#state{
-                                chain = Chain,
-                                oui = OUI,
-                                check_filters_ref = Ref
-                            }};
-                        false ->
-                            ct:print("six", []),
-                            {noreply, State#state{chain = Chain, oui = OUI}}
-                    end
-            end
-    end;
+    State1 =
+        case blockchain_worker:blockchain() of
+            undefined ->
+                ok = schedule_post_init(),
+                {noreply, State};
+            Chain ->
+                case router_utils:get_oui() of
+                    undefined ->
+                        lager:warning("OUI undefined"),
+                        ok = schedule_post_init(),
+                        {noreply, State};
+                    OUI ->
+                        case enabled() of
+                            true ->
+                                Ref = schedule_check_filters(1),
+                                State#state{chain = Chain, oui = OUI, check_filters_ref = Ref};
+                            false ->
+                                State#state{chain = Chain, oui = OUI}
+                        end
+                end
+        end,
+    FilterToDevices =
+        case read_devices_from_disk() of
+            {error, not_found} -> #{};
+            Val -> Val
+        end,
+    {noreply, State1#state{filter_to_devices = FilterToDevices}};
 handle_info(
     ?CHECK_FILTERS_TICK,
     #state{
@@ -174,29 +171,26 @@ handle_info(
         oui = OUI,
         filter_to_devices = FilterToDevices,
         pending_txns = Pendings0,
-        check_filters_ref = OldRef
+        check_filters_ref = OldRef,
+        txn_count = TxnCount
     } = State
 ) ->
     case erlang:is_reference(OldRef) of
         false -> ok;
         true -> erlang:cancel_timer(OldRef)
     end,
-    Resp = should_update_filters(Chain, OUI, FilterToDevices),
-    ct:print("seven ~p", [Resp]),
-    case Resp of
+
+    case should_update_filters(Chain, OUI, FilterToDevices) of
         noop ->
-            ct:print("eight", []),
             lager:info("filters are still up to date"),
             Ref = schedule_check_filters(default_timer()),
             {noreply, State#state{check_filters_ref = Ref}};
         {Routing, Updates} ->
-            ct:print("nine", []),
-            ct:print("~nRouting and updates:~n~p~n~n~p", [Routing, Updates]),
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
-            {Pendings1, _} = lists:foldl(
+            {Pendings1, _, NewTC} = lists:foldl(
                 fun
-                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
-                        lager:info("adding new filter"),
+                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce, TC}) ->
+                        ct:print("adding new filter"),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
@@ -204,11 +198,15 @@ handle_info(
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
-                        Index =
-                            erlang:length(blockchain_ledger_routing_v1:filters(Routing)) + 1,
-                        {maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings), Nonce + 1};
-                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
-                        lager:info("updating filter @ index ~p", [Index]),
+
+                        Index = erlang:length(blockchain_ledger_routing_v1:filters(Routing)),
+                        {
+                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui, TC}, Pendings),
+                            Nonce + 1,
+                            TC + 1
+                        };
+                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce, TC}) ->
+                        ct:print("updating filter @ index ~p", [Index]),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_update_filter_txn(
                             PubKey,
@@ -224,12 +222,16 @@ handle_info(
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
-                        {maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings), Nonce + 1}
+                        {
+                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui, TC}, Pendings),
+                            Nonce + 1,
+                            TC + 1
+                        }
                 end,
-                {Pendings0, CurrNonce},
+                {Pendings0, CurrNonce, TxnCount},
                 Updates
             ),
-            {noreply, State#state{pending_txns = Pendings1}}
+            {noreply, State#state{pending_txns = Pendings1, txn_count = NewTC}}
     end;
 handle_info(
     {?SUBMIT_RESULT, Hash, ok},
@@ -238,7 +240,7 @@ handle_info(
         filter_to_devices = FilterToDevices
     } = State0
 ) ->
-    {Index, DevicesDevEuiAppEui} = maps:get(Hash, Pendings),
+    {Index, DevicesDevEuiAppEui, TxnCount} = maps:get(Hash, Pendings),
     lager:info("successfully submitted txn: ~p added ~p to filter ~p", [
         lager:pr(Hash, blockchain_txn_routing_v1),
         DevicesDevEuiAppEui,
@@ -248,12 +250,22 @@ handle_info(
         pending_txns = maps:remove(Hash, Pendings),
         filter_to_devices = maps:put(Index, DevicesDevEuiAppEui, FilterToDevices)
     },
+
     case State1#state.pending_txns == #{} of
         false ->
             lager:info("waiting for more txn to clear"),
+            ct:print("~p:~p not writing to disk, waiting for more txns to clear", [Index, TxnCount]),
             {noreply, State1};
         true ->
             lager:info("all txns cleared"),
+            Two = maps:values(State1#state.filter_to_devices),
+            ct:print("~p:~p writing to disk: ~p~n~n~p~n~n", [
+                Index,
+                TxnCount,
+                length(lists:flatten(Two)),
+                Two
+            ]),
+            ok = write_devices_to_disk(State1#state.filter_to_devices),
             Ref = schedule_check_filters(default_timer()),
             {noreply, State1#state{check_filters_ref = Ref}}
     end;
@@ -284,12 +296,32 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{}) ->
+terminate(_Reason, _State) ->
     ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec read_devices_from_disk() -> {ok, map()} | {error, any()}.
+read_devices_from_disk() ->
+    {ok, DB, CF} = router_db:get(xor_filter_devices),
+    case rocksdb:get(DB, CF, <<"xor_filter_state">>, []) of
+        {ok, BinMap} ->
+            erlang:binary_to_term(BinMap);
+        not_found ->
+            {error, not_found};
+        Err ->
+            Err
+    end.
+
+-spec write_devices_to_disk(map()) -> ok.
+write_devices_to_disk(FtD) ->
+    {ok, DB, CF} = router_db:get(xor_filter_devices),
+    case rocksdb:put(DB, CF, <<"xor_filter_state">>, erlang:term_to_binary(FtD), []) of
+        {error, _} = Err -> ct:print("failed to write!!!!!", [Err]);
+        ok -> ok
+    end.
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost(#state{
@@ -349,8 +381,21 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
             lager:error("failed to get device ~p", [_Reason]),
             noop;
         {ok, Devices} ->
-            %% ct:print("~nDevices:~n~p", [Devices]),
             DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
+            One = length(Devices),
+            Two = length(DevicesDevEuiAppEui),
+            Three = length(lists:flatten(maps:values(FilterToDevices))),
+            case {One, Two, Three} of
+                {A, A, A} ->
+                    ct:print("One two there are the same");
+                {_, _, _} ->
+                    ct:print("~nDevices:~n~p but only got ~p~nFilters length: ~p~nMap = ~p", [
+                        One,
+                        Two,
+                        Three,
+                        FilterToDevices
+                    ])
+            end,
             Ledger = blockchain:ledger(Chain),
             case blockchain_ledger_v1:find_routing(OUI, Ledger) of
                 {error, _Reason} ->
@@ -359,11 +404,20 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                 {ok, Routing} ->
                     {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
                     BinFilters = blockchain_ledger_routing_v1:filters(Routing),
+                    ct:print(
+                        "Test with these args~nBinFilters = ~p, ~nFilterToDevices = ~p, ~nDevicesDevEuiAppEui = ~p, ",
+                        [
+                            BinFilters,
+                            FilterToDevices,
+                            DevicesDevEuiAppEui
+                        ]
+                    ),
                     Updates = contained_in_filters(
                         BinFilters,
                         FilterToDevices,
                         DevicesDevEuiAppEui
                     ),
+                    ct:print("Updates:~n~p", [Updates]),
                     case craft_updates(Updates, BinFilters, MaxXorFilter) of
                         noop -> noop;
                         Crafted -> {Routing, Crafted}
@@ -380,6 +434,7 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                 true ->
                     [{new, Added}];
                 false ->
+                    ct:print("Nothing to remove"),
                     case smallest_first(maps:to_list(Map)) of
                         [] ->
                             [{update, 0, Added}];
@@ -388,8 +443,10 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                     end
             end;
         {Map, [], Removed} ->
+            ct:print("we're only removed things~nMap = ~p~nRemoved = ~p", [Map, Removed]),
             craft_remove_updates(Map, Removed);
         {Map, Added, Removed} ->
+            ct:print("We have some stuff to remove"),
             [{update, Index, R} | OtherUpdates] = smallest_first(
                 craft_remove_updates(Map, Removed)
             ),
@@ -461,6 +518,14 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
 contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
     BinFiltersWithIndex = lists:zip(lists:seq(0, erlang:length(BinFilters) - 1), BinFilters),
     ContainedBy = fun(Filter) -> fun(Bin) -> xor16:contain({Filter, ?HASH_FUN}, Bin) end end,
+    One = lists:flatten(maps:values(FilterToDevices)),
+    Stuff = One -- DevicesDevEuiAppEui,
+    ct:print("What's this stuff:~n~p - ~p == ~p~n~p", [
+        length(One),
+        length(DevicesDevEuiAppEui),
+        length(Stuff),
+        Stuff
+    ]),
     {CurrFilter, Removed, Added, _} =
         lists:foldl(
             fun({Index, Filter}, {InFilterAcc0, RemovedAcc0, AddedToCheck, RemovedToCheck}) ->
@@ -484,8 +549,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                     end,
                 {InFilterAcc1, RemovedAcc1, AddedLeftover, RemovedLeftover}
             end,
-            {#{}, #{}, DevicesDevEuiAppEui,
-                lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui},
+            {#{}, #{}, DevicesDevEuiAppEui, Stuff},
             BinFiltersWithIndex
         ),
     {CurrFilter, Added, Removed}.
@@ -908,5 +972,130 @@ contained_in_filters_test_() ->
             contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
         )
     ].
+
+craft_updates_test() ->
+    BinFilters = [
+        <<193, 92, 2, 137, 236, 45, 10, 145, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>,
+        <<193, 92, 2, 137, 236, 45, 10, 145, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 164, 124, 168, 173, 11,
+            131, 0, 0, 0, 0, 0, 0, 79, 237, 0, 0, 0, 0, 108, 225, 189, 136, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 103, 120, 111, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            109, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 227, 167, 0, 0, 0, 0, 0, 0, 0, 0>>,
+        <<193, 92, 2, 137, 236, 45, 10, 145, 18, 0, 0, 0, 0, 0, 0, 0, 4, 145, 0, 0, 186, 160, 0, 0,
+            0, 0, 0, 0, 0, 0, 1, 13, 0, 0, 139, 240, 1, 190, 0, 34, 0, 0, 126, 87, 62, 204, 51, 87,
+            0, 0, 0, 0, 0, 0, 113, 19, 0, 0, 0, 0, 0, 0, 0, 0, 179, 85, 0, 0, 46, 191, 0, 0, 170,
+            223, 137, 142, 174, 80, 0, 0, 0, 0, 0, 0, 88, 127, 0, 0, 0, 0, 0, 0, 67, 109, 0, 0, 0,
+            0, 20, 253, 0, 0, 212, 208, 0, 0, 0, 0, 0, 0, 18, 240, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0>>,
+        <<193, 92, 2, 137, 236, 45, 10, 145, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 16, 0, 0, 223,
+            56, 0, 0, 203, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>,
+        <<193, 92, 2, 137, 236, 45, 10, 145, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 84, 209, 0, 0, 0, 0, 63, 208, 217, 239, 103, 146, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0>>
+    ],
+    FilterToDevices = #{
+        2 => [
+            <<15, 52, 125, 2, 75, 173, 167, 178, 58, 99, 246, 170, 34, 98, 122, 36>>,
+            <<41, 197, 112, 109, 185, 64, 211, 126, 28, 65, 233, 116, 170, 220, 178, 247>>,
+            <<53, 78, 38, 219, 222, 233, 110, 153, 125, 208, 47, 133, 107, 31, 26, 192>>,
+            <<137, 214, 231, 107, 53, 252, 130, 196, 3, 177, 145, 57, 40, 53, 235, 92>>,
+            <<139, 18, 136, 10, 22, 42, 17, 74, 145, 167, 131, 43, 164, 181, 120, 231>>,
+            <<153, 82, 86, 211, 24, 239, 100, 110, 146, 93, 115, 14, 63, 78, 254, 19>>,
+            <<169, 133, 0, 210, 44, 195, 12, 89, 41, 71, 228, 224, 175, 162, 198, 161>>,
+            <<227, 217, 52, 38, 66, 4, 223, 76, 182, 84, 68, 127, 225, 140, 141, 228>>,
+            <<244, 48, 199, 110, 203, 81, 40, 179, 64, 117, 108, 43, 142, 199, 144, 93>>,
+            <<252, 201, 117, 214, 195, 171, 133, 52, 246, 162, 14, 145, 209, 168, 227, 61>>
+        ],
+        3 => [
+            <<2, 131, 230, 61, 144, 116, 63, 113, 82, 1, 209, 189, 133, 220, 249, 157>>,
+            <<16, 54, 11, 199, 41, 46, 183, 38, 24, 109, 113, 186, 233, 60, 30, 61>>,
+            <<88, 134, 182, 36, 255, 178, 243, 97, 95, 161, 111, 56, 213, 77, 160, 49>>,
+            <<97, 171, 209, 115, 150, 106, 131, 136, 68, 191, 147, 17, 171, 98, 120, 69>>,
+            <<118, 209, 233, 117, 141, 143, 58, 243, 144, 125, 171, 128, 29, 137, 208, 78>>,
+            <<120, 111, 133, 115, 6, 35, 122, 43, 216, 24, 19, 196, 79, 182, 82, 156>>,
+            <<124, 16, 210, 231, 211, 2, 171, 4, 124, 54, 109, 90, 123, 182, 192, 253>>,
+            <<133, 53, 118, 245, 106, 27, 146, 253, 24, 65, 13, 141, 159, 104, 107, 106>>,
+            <<138, 157, 41, 38, 235, 20, 151, 46, 184, 155, 28, 25, 94, 39, 41, 127>>,
+            <<145, 98, 216, 167, 66, 217, 19, 202, 57, 98, 58, 155, 7, 20, 219, 169>>,
+            <<177, 204, 67, 142, 206, 139, 100, 179, 21, 221, 208, 254, 244, 225, 95, 124>>,
+            <<182, 36, 142, 33, 228, 41, 0, 196, 7, 192, 104, 211, 172, 41, 186, 166>>,
+            <<182, 211, 99, 152, 21, 85, 218, 1, 187, 43, 147, 53, 174, 36, 65, 216>>,
+            <<207, 127, 101, 78, 125, 183, 147, 71, 232, 113, 84, 179, 167, 180, 159, 248>>,
+            <<207, 182, 86, 234, 61, 217, 86, 98, 92, 29, 85, 176, 186, 224, 218, 230>>,
+            <<208, 38, 70, 157, 4, 110, 220, 207, 152, 19, 73, 239, 112, 26, 131, 208>>,
+            <<211, 48, 136, 34, 95, 19, 181, 228, 102, 206, 209, 125, 187, 34, 135, 105>>,
+            <<222, 54, 95, 143, 7, 231, 251, 65, 140, 234, 240, 3, 250, 188, 120, 19>>,
+            <<248, 178, 167, 17, 25, 116, 62, 197, 119, 175, 168, 120, 40, 155, 106, 121>>,
+            <<249, 35, 177, 203, 254, 126, 56, 109, 17, 62, 221, 35, 0, 89, 105, 144>>
+        ],
+        4 => [
+            <<68, 12, 3, 230, 29, 62, 24, 213, 11, 224, 211, 138, 48, 203, 211, 97>>,
+            <<157, 91, 120, 109, 166, 224, 146, 204, 201, 105, 154, 210, 105, 74, 244, 126>>,
+            <<227, 97, 152, 174, 93, 19, 168, 80, 214, 220, 123, 59, 238, 125, 91, 86>>
+        ],
+        5 => [
+            <<23, 117, 0, 60, 92, 162, 235, 113, 31, 171, 194, 29, 6, 184, 216, 120>>,
+            <<83, 76, 57, 86, 134, 43, 61, 179, 82, 201, 153, 217, 138, 112, 156, 61>>,
+            <<90, 188, 202, 57, 27, 176, 237, 95, 173, 74, 186, 2, 171, 129, 252, 228>>,
+            <<236, 188, 148, 242, 80, 220, 239, 7, 207, 62, 123, 22, 24, 7, 161, 73>>
+        ]
+    },
+    DevicesDevEuiAppEui = [
+        <<2, 131, 230, 61, 144, 116, 63, 113, 82, 1, 209, 189, 133, 220, 249, 157>>,
+        <<15, 52, 125, 2, 75, 173, 167, 178, 58, 99, 246, 170, 34, 98, 122, 36>>,
+        <<16, 54, 11, 199, 41, 46, 183, 38, 24, 109, 113, 186, 233, 60, 30, 61>>,
+        <<23, 117, 0, 60, 92, 162, 235, 113, 31, 171, 194, 29, 6, 184, 216, 120>>,
+        <<41, 197, 112, 109, 185, 64, 211, 126, 28, 65, 233, 116, 170, 220, 178, 247>>,
+        <<53, 78, 38, 219, 222, 233, 110, 153, 125, 208, 47, 133, 107, 31, 26, 192>>,
+        <<68, 12, 3, 230, 29, 62, 24, 213, 11, 224, 211, 138, 48, 203, 211, 97>>,
+        <<73, 113, 127, 124, 231, 136, 219, 160, 29, 224, 56, 200, 178, 176, 99, 80>>,
+        <<83, 76, 57, 86, 134, 43, 61, 179, 82, 201, 153, 217, 138, 112, 156, 61>>,
+        <<88, 134, 182, 36, 255, 178, 243, 97, 95, 161, 111, 56, 213, 77, 160, 49>>,
+        <<89, 145, 250, 157, 168, 203, 232, 122, 248, 109, 142, 218, 193, 79, 230, 132>>,
+        <<90, 188, 202, 57, 27, 176, 237, 95, 173, 74, 186, 2, 171, 129, 252, 228>>,
+        <<94, 124, 32, 83, 4, 59, 167, 145, 79, 157, 200, 28, 32, 7, 12, 39>>,
+        <<97, 171, 209, 115, 150, 106, 131, 136, 68, 191, 147, 17, 171, 98, 120, 69>>,
+        <<118, 209, 233, 117, 141, 143, 58, 243, 144, 125, 171, 128, 29, 137, 208, 78>>,
+        <<120, 111, 133, 115, 6, 35, 122, 43, 216, 24, 19, 196, 79, 182, 82, 156>>,
+        <<124, 16, 210, 231, 211, 2, 171, 4, 124, 54, 109, 90, 123, 182, 192, 253>>,
+        <<133, 53, 118, 245, 106, 27, 146, 253, 24, 65, 13, 141, 159, 104, 107, 106>>,
+        <<137, 214, 231, 107, 53, 252, 130, 196, 3, 177, 145, 57, 40, 53, 235, 92>>,
+        <<138, 157, 41, 38, 235, 20, 151, 46, 184, 155, 28, 25, 94, 39, 41, 127>>,
+        <<139, 18, 136, 10, 22, 42, 17, 74, 145, 167, 131, 43, 164, 181, 120, 231>>,
+        <<145, 98, 216, 167, 66, 217, 19, 202, 57, 98, 58, 155, 7, 20, 219, 169>>,
+        <<153, 82, 86, 211, 24, 239, 100, 110, 146, 93, 115, 14, 63, 78, 254, 19>>,
+        <<157, 91, 120, 109, 166, 224, 146, 204, 201, 105, 154, 210, 105, 74, 244, 126>>,
+        <<169, 133, 0, 210, 44, 195, 12, 89, 41, 71, 228, 224, 175, 162, 198, 161>>,
+        <<177, 204, 67, 142, 206, 139, 100, 179, 21, 221, 208, 254, 244, 225, 95, 124>>,
+        <<179, 61, 92, 69, 233, 223, 238, 189, 140, 186, 192, 245, 208, 27, 243, 185>>,
+        <<182, 36, 142, 33, 228, 41, 0, 196, 7, 192, 104, 211, 172, 41, 186, 166>>,
+        <<182, 211, 99, 152, 21, 85, 218, 1, 187, 43, 147, 53, 174, 36, 65, 216>>,
+        <<207, 127, 101, 78, 125, 183, 147, 71, 232, 113, 84, 179, 167, 180, 159, 248>>,
+        <<207, 182, 86, 234, 61, 217, 86, 98, 92, 29, 85, 176, 186, 224, 218, 230>>,
+        <<208, 38, 70, 157, 4, 110, 220, 207, 152, 19, 73, 239, 112, 26, 131, 208>>,
+        <<211, 48, 136, 34, 95, 19, 181, 228, 102, 206, 209, 125, 187, 34, 135, 105>>,
+        <<222, 54, 95, 143, 7, 231, 251, 65, 140, 234, 240, 3, 250, 188, 120, 19>>,
+        <<227, 97, 152, 174, 93, 19, 168, 80, 214, 220, 123, 59, 238, 125, 91, 86>>,
+        <<227, 217, 52, 38, 66, 4, 223, 76, 182, 84, 68, 127, 225, 140, 141, 228>>,
+        <<231, 65, 255, 203, 138, 161, 127, 5, 89, 237, 211, 107, 213, 244, 243, 123>>,
+        <<236, 188, 148, 242, 80, 220, 239, 7, 207, 62, 123, 22, 24, 7, 161, 73>>,
+        <<244, 48, 199, 110, 203, 81, 40, 179, 64, 117, 108, 43, 142, 199, 144, 93>>,
+        <<248, 178, 167, 17, 25, 116, 62, 197, 119, 175, 168, 120, 40, 155, 106, 121>>,
+        <<249, 35, 177, 203, 254, 126, 56, 109, 17, 62, 221, 35, 0, 89, 105, 144>>,
+        <<252, 201, 117, 214, 195, 171, 133, 52, 246, 162, 14, 145, 209, 168, 227, 61>>
+    ],
+    ?debugFmt("~nMapping: ~n~p", [FilterToDevices]),
+    Updates = contained_in_filters(
+        BinFilters,
+        FilterToDevices,
+        DevicesDevEuiAppEui
+    ),
+    ?debugFmt("~nUpdates:~n~p", [Updates]),
+    Res = craft_updates(Updates, BinFilters, 5),
+    ?debugFmt("~nCrafted:~n~p", [Res]),
+    ok.
 
 -endif.

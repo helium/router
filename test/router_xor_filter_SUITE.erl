@@ -38,7 +38,8 @@
     oui,
     pending_txns = #{},
     filter_to_devices = #{},
-    check_filters_ref
+    check_filters_ref,
+    txn_count
 }).
 
 %%--------------------------------------------------------------------
@@ -53,7 +54,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        %% publish_xor_test,
+        publish_xor_test,
         many_devices_test,
         more_devices_test,
         overflow_devices_test,
@@ -128,15 +129,9 @@ publish_xor_test(Config) ->
     Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
 
+    %% init worker processing first filter
     application:set_env(router, router_xor_filter_worker, true),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% ct:pal("[~p:~p:~p] MARKER ~p~n", [
-    %%     ?MODULE,
-    %%     ?FUNCTION_NAME,
-    %%     ?LINE,
-    %%     application:get_env(router, router_xor_filter_worker, false)
-    %% ]),
 
     %% Wait until xor filter worker started properly
     test_utils:wait_until(fun() ->
@@ -145,7 +140,7 @@ publish_xor_test(Config) ->
             State#state.oui =/= undefined
     end),
 
-    %% should have pushed a new filter to the chain
+    %% OUI with blank filter should be pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
     DeviceUpdates = [
@@ -157,11 +152,9 @@ publish_xor_test(Config) ->
 
     State0 = sys:get_state(router_xor_filter_worker),
     ?assertEqual(#{}, State0#state.pending_txns),
-    ?assertEqual(#{2 => [DeviceDevEuiAppEui]}, State0#state.filter_to_devices),
-    %% ct:print("Filters to Devices:~n~p", [State0#state.filter_to_devices]),
+    ?assertEqual(#{1 => [DeviceDevEuiAppEui]}, State0#state.filter_to_devices),
 
     Filters = get_filters(Chain, OUI1),
-    %% ct:print("Filters:~n~p", [Filters]),
     ?assertEqual(2, erlang:length(Filters)),
 
     [Filter1, Filter2] = Filters,
@@ -182,7 +175,7 @@ many_devices_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     true = ets:insert(Tab, {devices, StartingDevices}),
 
-    %% Init worker
+    %% init worker processing first filter
     application:set_env(router, router_xor_filter_worker, true),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
@@ -193,15 +186,10 @@ many_devices_test(Config) ->
             State#state.oui =/= undefined
     end),
 
-    %% should have pushed a new filter to the chain
+    %% OUI with blank filter should be pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
-    State0 = sys:get_state(router_xor_filter_worker),
-
-    ct:print("Filters to Devices:~n~p", [State0#state.filter_to_devices]),
-
     Filters = get_filters(Chain, OUI1),
-    ct:print("Filters:~n~p", [Filters]),
     ?assertEqual(2, erlang:length(Filters)),
 
     ?assert(meck:validate(blockchain_worker)),
@@ -216,11 +204,10 @@ more_devices_test(Config) ->
     MoreDevices = n_rand_devices(10),
 
     %% Prepare devices to work with
-
     Tab = proplists:get_value(ets, Config),
     true = ets:insert(Tab, {devices, StartingDevices}),
 
-    %% Init worker
+    %% init worker processing first filter
     application:set_env(router, router_xor_filter_worker, true),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
@@ -231,14 +218,10 @@ more_devices_test(Config) ->
             State#state.oui =/= undefined
     end),
 
-    %% should have pushed a new filter to the chain
+    %% OUI with blank filter should be pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
-    State0 = sys:get_state(router_xor_filter_worker),
-    ct:print("Filters to Devices:~n~p", [State0#state.filter_to_devices]),
-
     Filters = get_filters(Chain, OUI1),
-    ct:print("Filters:~n~p", [Filters]),
     ?assertEqual(2, erlang:length(Filters)),
 
     true = ets:insert(Tab, {devices, MoreDevices}),
@@ -248,7 +231,6 @@ more_devices_test(Config) ->
     ok = expect_block(4, Chain),
 
     Filters1 = get_filters(Chain, OUI1),
-    ct:print("Filters:~n~p", [Filters1]),
     ?assertEqual(2, erlang:length(Filters1)),
 
     ?assertNotEqual(Filters, Filters1),
@@ -279,15 +261,10 @@ overflow_devices_test(Config) ->
             State#state.oui =/= undefined
     end),
 
-    %% should have pushed a new filter to the chain
+    %% OUI with blank filter should be pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
-    State0 = sys:get_state(router_xor_filter_worker),
-
-    ct:print("Filters to Devices:~n~p", [State0#state.filter_to_devices]),
-
     Filters = get_filters(Chain, OUI1),
-    ct:print("Filters:~n~p", [Filters]),
     ?assertEqual(2, erlang:length(Filters)),
 
     true = ets:insert(Tab, {devices, StartingDevices ++ MoreDevices}),
@@ -297,7 +274,6 @@ overflow_devices_test(Config) ->
     ok = expect_block(4, Chain),
 
     Filters1 = get_filters(Chain, OUI1),
-    ct:print("Filters:~n~p", [Filters1]),
     ?assertEqual(3, erlang:length(Filters1)),
 
     ?assertNotEqual(Filters, Filters1),
@@ -317,7 +293,7 @@ max_filters_devices_test(Config) ->
     Round4Devices = Round3Devices ++ n_rand_devices(10),
     Round5Devices = Round4Devices ++ n_rand_devices(10),
 
-    %% Init worker
+    %% Init worker without processing first filter automatically
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
@@ -338,7 +314,6 @@ max_filters_devices_test(Config) ->
             ok = expect_block(ExpectedBlock, Chain),
 
             Filters1 = get_filters(Chain, OUI1),
-            ct:print("Filters:~n~p", [Filters1]),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -362,7 +337,7 @@ ignore_largest_filter_test(Config) ->
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
-    %% Init worker
+    %% Init worker without processing first filter automatically
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
@@ -390,7 +365,6 @@ ignore_largest_filter_test(Config) ->
             ok = expect_block(ExpectedBlock, Chain),
 
             Filters1 = get_filters(Chain, OUI1),
-            ct:print("Filters:~n~p", [Filters1]),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -463,7 +437,6 @@ evenly_rebalance_filter_test(Config) ->
             ok = expect_block(ExpectedBlock, Chain),
 
             Filters1 = get_filters(Chain, OUI1),
-            ct:print("Filters:~n~p", [Filters1]),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -546,7 +519,6 @@ oddly_rebalance_filter_test(Config) ->
             ok = expect_block(ExpectedBlock, Chain),
 
             Filters1 = get_filters(Chain, OUI1),
-            ct:print("Filters:~n~p", [Filters1]),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -626,24 +598,37 @@ remove_devices_filter_test(Config) ->
     end),
 
     %% ------------------------------------------------------------
+    %% Filters are 0-indexed
+    % filter 1
     Round1Devices = n_rand_devices(10),
-    Round2Devices = n_rand_devices(200) ++ Round1Devices,
-    Round3Devices = n_rand_devices(35) ++ Round2Devices,
-    Round4Devices = n_rand_devices(45) ++ Round3Devices,
-    Round5Devices = n_rand_devices(50) ++ Round4Devices,
+    % filter 2
+    Round2Devices = n_rand_devices(20) ++ Round1Devices,
+    % filter 3
+    Round3Devices = n_rand_devices(3) ++ Round2Devices,
+    % filter 4
+    Round4Devices = n_rand_devices(4) ++ Round3Devices,
+    % filter 3(?)
+    Round5Devices = n_rand_devices(5) ++ Round4Devices,
+
+    Fitlers0 = get_filters(Chain, OUI1),
+    ?assertEqual(1, erlang:length(Fitlers0)),
 
     %% Add devices
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            %% Ensure we aren't starting farther ahead than we expect
+            ok = expect_block(ExpectedBlock - 1, Chain),
+
             true = ets:insert(Tab, {devices, Devices}),
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
             ok = expect_block(ExpectedBlock, Chain),
+            timer:sleep(timer:seconds(1)),
 
             Filters1 = get_filters(Chain, OUI1),
-            ct:print("Filters:~n~p", [Filters1]),
-            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1)),
+            timer:sleep(timer:seconds(1))
         end,
         [
             #{devices => Round1Devices, block => 3, filter_count => 2},
@@ -658,8 +643,13 @@ remove_devices_filter_test(Config) ->
 
     %% Choose devices to be removed
     %% Not random devices so we can know how many filters should be updated
-    Removed = lists:sublist(Round4Devices, 10),
+    Removed = lists:sublist(Round4Devices, 2),
     LeftoverDevices = Round5Devices -- Removed,
+    ct:print("Removed devices:~n~p, went from ~p to ~p", [
+        length(Removed),
+        length(Round5Devices),
+        length(LeftoverDevices)
+    ]),
 
     %% Check filters with devices that continue to exist
     ct:print("Michael look for me"),
@@ -731,18 +721,45 @@ remove_devices_filter_after_restart_test(Config) ->
         ]
     ),
 
-    %% Restart the xor filter worker
-    exit(whereis(router_xor_filter_worker), kill),
-
-    %% wait for worker to die
-    ok = test_utils:wait_until(fun() -> not erlang:is_process_alive(whereis(router_xor_filter_worker)) end),
-    %% wait for worker to raise from the dead
-    ok = test_utils:wait_until(fun() -> erlang:is_process_alive(whereis(router_xor_filter_worker)) end),
-
     %% Choose devices to be removed
     %% Not random devices so we can know how many filters should be updated
     Removed = lists:sublist(Round4Devices, 10),
     LeftoverDevices = Round5Devices -- Removed,
+
+    (fun() ->
+        %% Make sure removed devices are not in those filters
+        Filters = get_filters(Chain, OUI1),
+        Containment = [
+            xor16:contain(
+                {Filter, fun xxhash:hash64/1},
+                router_xor_filter_worker:deveui_appeui(Device)
+            )
+            || Filter <- Filters, Device <- Removed
+        ],
+        ?assertEqual(
+            true,
+            lists:member(true, Containment),
+            "Removed devices _ARE_ in filters"
+        )
+    end)(),
+
+    %% Restart the xor filter worker
+    ct:print("michael we killed it"),
+    exit(whereis(router_xor_filter_worker), kill),
+
+    %% wait for worker to die
+    ok = test_utils:wait_until(fun() ->
+        not erlang:is_process_alive(whereis(router_xor_filter_worker))
+    end),
+    %% wait for worker to raise from the dead
+    %% ok = test_utils:wait_until(fun() -> erlang:is_process_alive(whereis(router_xor_filter_worker)) end),
+    timer:sleep(timer:seconds(1)),
+    ok = test_utils:wait_until(fun() ->
+        case whereis(router_xor_filter_worker) of
+            undefined -> false;
+            P -> erlang:is_process_alive(P)
+        end
+    end),
 
     %% Check filters with devices that continue to exist
     ct:print("Michael look for me"),
@@ -752,17 +769,22 @@ remove_devices_filter_after_restart_test(Config) ->
     %% Should commit filter for removed devices
     ok = expect_block(8, Chain),
 
-    %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
-        || Filter <- Filters, Device <- Removed
-    ],
-    ?assertEqual(
-        false,
-        lists:member(true, Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    (fun() ->
+        %% Make sure removed devices are not in those filters
+        Filters = get_filters(Chain, OUI1),
+        Containment = [
+            xor16:contain(
+                {Filter, fun xxhash:hash64/1},
+                router_xor_filter_worker:deveui_appeui(Device)
+            )
+            || Filter <- Filters, Device <- Removed
+        ],
+        ?assertEqual(
+            false,
+            lists:member(true, Containment),
+            "Removed devices are _NOT_ in filters"
+        )
+    end)(),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -773,7 +795,16 @@ remove_devices_filter_after_restart_test(Config) ->
 %% ------------------------------------------------------------------
 
 expect_block(BlockNum, Chain) ->
-    case test_utils:wait_until(fun() -> {ok, BlockNum} == blockchain:height(Chain) end) of
+    case
+        test_utils:wait_until(fun() ->
+            {ok, Num} = blockchain:height(Chain),
+            if
+                Num == BlockNum -> true;
+                Num == BlockNum + 1 -> {fail, expected_block_passed};
+                true -> false
+            end
+        end)
+    of
         ok ->
             ok;
         Err ->

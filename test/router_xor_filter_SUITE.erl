@@ -379,9 +379,8 @@ ignore_largest_filter_test(Config) ->
 
     [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
     ExpectedOrder = [One, Two, Four, Five, Three],
-    GetSizes = fun(L) -> [byte_size(F) || F <- L] end,
 
-    ct:print("~nSizes: ~n~p~n", [GetSizes(Filters)]),
+    %% ct:print("~nSizes: ~n~p~n", [bin_sizes(Filters)]),
     %% Order: One   - 1 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
@@ -392,8 +391,8 @@ ignore_largest_filter_test(Config) ->
         ExpectedOrder,
         lists:flatten(
             io_lib:format("Expected ~w got ~w", [
-                GetSizes(ExpectedOrder),
-                GetSizes(sort_binaries_by_size(Filters))
+                bin_sizes(ExpectedOrder),
+                bin_sizes(sort_binaries_by_size(Filters))
             ])
         )
     ),
@@ -451,7 +450,7 @@ evenly_rebalance_filter_test(Config) ->
 
     (fun() ->
         [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
-        ct:print("~nOne Sizes: ~n~w~n", [[byte_size(F) || F <- Filters]]),
+        %% ct:print("~nBefore Sizes: ~n~w~n", [bin_sizes(Filters)),
         %% Order: One   - 1 device
         %%        Two   - 10 devices
         %%        Three - 200 devices
@@ -470,7 +469,7 @@ evenly_rebalance_filter_test(Config) ->
     (fun() ->
         Filters = get_filters(Chain, OUI1),
         Sizes = [byte_size(F) || F <- Filters],
-        ct:print("~nTwo Sizes: ~n~w~n", [Sizes]),
+        %% ct:print("~nAfter Sizes: ~n~w~n", [Sizes]),
         %% Order: One   - 59 devices
         %%        Two   - 59 devices
         %%        Three - 59 devices
@@ -534,8 +533,8 @@ oddly_rebalance_filter_test(Config) ->
     Allowance = 10,
     (fun() ->
         Filters = get_filters(Chain, OUI1),
-        Sizes = [byte_size(F) || F <- Filters],
-        ct:print("~nOne Sizes: ~n~w~n", [Sizes]),
+        Sizes = bin_sizes(Filters),
+        %% ct:print("~nBefore Sizes: ~n~w~n", [Sizes]),
         %% Order: One   - 1 device
         %%        Two   - 10 devices
         %%        Three - 200 devices
@@ -563,8 +562,8 @@ oddly_rebalance_filter_test(Config) ->
 
     (fun() ->
         Filters = get_filters(Chain, OUI1),
-        Sizes = [byte_size(F) || F <- Filters],
-        ct:print("~nTwo Sizes: ~n~w~n", [Sizes]),
+        Sizes = bin_sizes(Filters),
+        %% ct:print("~After Sizes: ~n~w~n", [Sizes]),
         %% Total: 1 + 10 + 200 + 35 + 45 + 50 == 341
         %% Distributed: 341/5 == 68.2
         %% Order: One   - ~68 devices
@@ -598,6 +597,7 @@ remove_devices_filter_test(Config) ->
 
     %% ------------------------------------------------------------
     %% Filters are 0-indexed
+    %% Filter 0 is empty and mostly ignored until rebalancing
     % filter 1
     Round1Devices = n_rand_devices(10),
     % filter 2
@@ -644,14 +644,8 @@ remove_devices_filter_test(Config) ->
     %% Not random devices so we can know how many filters should be updated
     Removed = lists:sublist(Round4Devices, 2),
     LeftoverDevices = Round5Devices -- Removed,
-    ct:print("Removed devices:~n~p, went from ~p to ~p", [
-        length(Removed),
-        length(Round5Devices),
-        length(LeftoverDevices)
-    ]),
 
     %% Check filters with devices that continue to exist
-    ct:print("Michael look for me"),
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
@@ -743,15 +737,14 @@ remove_devices_filter_after_restart_test(Config) ->
     end)(),
 
     %% Restart the xor filter worker
-    ct:print("michael we killed it"),
     exit(whereis(router_xor_filter_worker), kill),
 
-    %% wait for worker to die
+    %% make sure worker died
     ok = test_utils:wait_until(fun() ->
         not erlang:is_process_alive(whereis(router_xor_filter_worker))
     end),
+
     %% wait for worker to raise from the dead
-    %% ok = test_utils:wait_until(fun() -> erlang:is_process_alive(whereis(router_xor_filter_worker)) end),
     timer:sleep(timer:seconds(1)),
     ok = test_utils:wait_until(fun() ->
         case whereis(router_xor_filter_worker) of
@@ -761,7 +754,6 @@ remove_devices_filter_after_restart_test(Config) ->
     end),
 
     %% Check filters with devices that continue to exist
-    ct:print("Michael look for me"),
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
@@ -838,3 +830,6 @@ sort_binaries_by_size(Bins) ->
         fun(A, B) -> byte_size(A) < byte_size(B) end,
         Bins
     ).
+
+bin_sizes(Bins) ->
+    [byte_size(Bin) || Bin <- Bins].

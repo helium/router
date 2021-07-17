@@ -41,6 +41,8 @@
 
 -type device_dev_eui_app_eui() :: binary().
 -type devices_dev_eui_app_eui() :: list(device_dev_eui_app_eui()).
+-type update() ::
+    {new, devices_dev_eui_app_eui()} | {update, FilterIndex :: 0..4, devices_dev_eui_app_eui()}.
 
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
@@ -356,34 +358,14 @@ do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->
     Chain :: blockchain:blockchain(),
     OUI :: non_neg_integer(),
     FilterToDevices :: map()
-) ->
-    noop
-    | {blockchain_ledger_routing_v1:routing(), [
-        {new, devices_dev_eui_app_eui()}
-        | {update, non_neg_integer(), devices_dev_eui_app_eui()}
-    ]}.
+) -> noop | {blockchain_ledger_routing_v1:routing(), [update()]}.
 should_update_filters(Chain, OUI, FilterToDevices) ->
     case router_console_api:get_all_devices() of
         {error, _Reason} ->
-            ct:print("ten ~p", [_Reason]),
             lager:error("failed to get device ~p", [_Reason]),
             noop;
         {ok, Devices} ->
             DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
-            One = length(Devices),
-            Two = length(DevicesDevEuiAppEui),
-            Three = length(lists:flatten(maps:values(FilterToDevices))),
-            case {One, Two, Three} of
-                {A, A, A} ->
-                    ct:print("One two there are the same");
-                {_, _, _} ->
-                    ct:print("~nDevices:~n~p but only got ~p~nFilters length: ~p~nMap = ~p", [
-                        One,
-                        Two,
-                        Three,
-                        FilterToDevices
-                    ])
-            end,
             Ledger = blockchain:ledger(Chain),
             case blockchain_ledger_v1:find_routing(OUI, Ledger) of
                 {error, _Reason} ->
@@ -392,20 +374,11 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                 {ok, Routing} ->
                     {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
                     BinFilters = blockchain_ledger_routing_v1:filters(Routing),
-                    ct:print(
-                        "Test with these args~nBinFilters = ~p, ~nFilterToDevices = ~p, ~nDevicesDevEuiAppEui = ~p, ",
-                        [
-                            BinFilters,
-                            FilterToDevices,
-                            DevicesDevEuiAppEui
-                        ]
-                    ),
                     Updates = contained_in_filters(
                         BinFilters,
                         FilterToDevices,
                         DevicesDevEuiAppEui
                     ),
-                    ct:print("Updates:~n~p", [Updates]),
                     case craft_updates(Updates, BinFilters, MaxXorFilter) of
                         noop -> noop;
                         Crafted -> {Routing, Crafted}
@@ -413,6 +386,11 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
             end
     end.
 
+-spec craft_updates(
+    {Current :: map(), Added :: [binary()], Remove :: map()},
+    Filters :: [binary()],
+    MaxFilters :: non_neg_integer()
+) -> noop | [update()].
 craft_updates(Updates, BinFilters, MaxXorFilter) ->
     case Updates of
         {_Map, [], Removed} when Removed == #{} ->
@@ -422,7 +400,6 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                 true ->
                     [{new, Added}];
                 false ->
-                    ct:print("Nothing to remove"),
                     case smallest_first(maps:to_list(Map)) of
                         [] ->
                             [{update, 0, Added}];
@@ -431,10 +408,8 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                     end
             end;
         {Map, [], Removed} ->
-            ct:print("we're only removed things~nMap = ~p~nRemoved = ~p", [Map, Removed]),
             craft_remove_updates(Map, Removed);
         {Map, Added, Removed} ->
-            ct:print("We have some stuff to remove"),
             [{update, Index, R} | OtherUpdates] = smallest_first(
                 craft_remove_updates(Map, Removed)
             ),

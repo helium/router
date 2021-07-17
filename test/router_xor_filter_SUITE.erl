@@ -388,12 +388,12 @@ ignore_largest_filter_test(Config) ->
     %%        Four  - 10 devices
     %%        Five  - 20 devices
     ?assertEqual(
-        lists:sort(Filters),
+        sort_binaries_by_size(Filters),
         ExpectedOrder,
         lists:flatten(
             io_lib:format("Expected ~w got ~w", [
                 GetSizes(ExpectedOrder),
-                GetSizes(lists:sort(Filters))
+                GetSizes(sort_binaries_by_size(Filters))
             ])
         )
     ),
@@ -457,7 +457,7 @@ evenly_rebalance_filter_test(Config) ->
         %%        Three - 200 devices
         %%        Four  - 30 devices
         %%        Five  - 54 devices
-        ?assertEqual(lists:sort(Filters), [One, Two, Four, Five, Three])
+        ?assertEqual(sort_binaries_by_size(Filters), [One, Two, Four, Five, Three])
     end)(),
     ok = router_xor_filter_worker:rebalance_filters(),
 
@@ -832,3 +832,9 @@ get_filters(Chain, OUI) ->
     Ledger = blockchain:ledger(Chain),
     {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
     blockchain_ledger_routing_v1:filters(Routing).
+
+sort_binaries_by_size(Bins) ->
+    lists:sort(
+        fun(A, B) -> byte_size(A) < byte_size(B) end,
+        Bins
+    ).

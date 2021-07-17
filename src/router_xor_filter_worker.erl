@@ -190,7 +190,7 @@ handle_info(
             {Pendings1, _} = lists:foldl(
                 fun
                     ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
-                        ct:print("adding new filter"),
+                        lager:info("adding new filter"),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
@@ -205,7 +205,7 @@ handle_info(
                             Nonce + 1
                         };
                     ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
-                        ct:print("updating filter @ index ~p", [Index]),
+                        lager:info("updating filter @ index ~p", [Index]),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_update_filter_txn(
                             PubKey,
@@ -309,8 +309,11 @@ read_devices_from_disk() ->
 write_devices_to_disk(FtD) ->
     {ok, DB, CF} = router_db:get(xor_filter_devices),
     case rocksdb:put(DB, CF, <<"xor_filter_state">>, erlang:term_to_binary(FtD), []) of
-        {error, _} = Err -> ct:print("failed to write!!!!!", [Err]);
-        ok -> ok
+        {error, _} = Err ->
+            lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
+            throw(Err);
+        ok ->
+            ok
     end.
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
@@ -452,9 +455,7 @@ smallest_first(List) ->
         List
     ).
 
--spec craft_remove_updates(map(), map()) ->
-    list({update, non_neg_integer(), devices_dev_eui_app_eui()}).
-
+-spec craft_remove_updates(map(), map()) -> [update()].
 craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
     maps:fold(
         fun(Index, RemovedDevicesDevEuiAppEui, Acc) ->
@@ -479,16 +480,7 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         non_neg_integer() => devices_dev_eui_app_eui()
     }}.
 contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
-    BinFiltersWithIndex = lists:zip(lists:seq(0, erlang:length(BinFilters) - 1), BinFilters),
     ContainedBy = fun(Filter) -> fun(Bin) -> xor16:contain({Filter, ?HASH_FUN}, Bin) end end,
-    One = lists:flatten(maps:values(FilterToDevices)),
-    Stuff = One -- DevicesDevEuiAppEui,
-    ct:print("What's this stuff:~n~p - ~p == ~p~n~p", [
-        length(One),
-        length(DevicesDevEuiAppEui),
-        length(Stuff),
-        Stuff
-    ]),
     {CurrFilter, Removed, Added, _} =
         lists:foldl(
             fun({Index, Filter}, {InFilterAcc0, RemovedAcc0, AddedToCheck, RemovedToCheck}) ->
@@ -512,8 +504,13 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                     end,
                 {InFilterAcc1, RemovedAcc1, AddedLeftover, RemovedLeftover}
             end,
-            {#{}, #{}, DevicesDevEuiAppEui, Stuff},
-            BinFiltersWithIndex
+            {
+                #{},
+                #{},
+                DevicesDevEuiAppEui,
+                lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui
+            },
+            enumerate_0(BinFilters)
         ),
     {CurrFilter, Added, Removed}.
 

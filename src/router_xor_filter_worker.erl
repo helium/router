@@ -198,7 +198,7 @@ handle_info(
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
-
+                        %% Filters are zero-indexed
                         Index = erlang:length(blockchain_ledger_routing_v1:filters(Routing)),
                         {
                             maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings),

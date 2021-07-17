@@ -38,8 +38,7 @@
     oui,
     pending_txns = #{},
     filter_to_devices = #{},
-    check_filters_ref,
-    txn_count
+    check_filters_ref
 }).
 
 %%--------------------------------------------------------------------

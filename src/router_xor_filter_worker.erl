@@ -51,8 +51,7 @@
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
     filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()},
-    check_filters_ref :: undefined | reference(),
-    txn_count = 0 :: non_neg_integer()
+    check_filters_ref :: undefined | reference()
 }).
 
 %% ------------------------------------------------------------------
@@ -171,8 +170,7 @@ handle_info(
         oui = OUI,
         filter_to_devices = FilterToDevices,
         pending_txns = Pendings0,
-        check_filters_ref = OldRef,
-        txn_count = TxnCount
+        check_filters_ref = OldRef
     } = State
 ) ->
     case erlang:is_reference(OldRef) of
@@ -187,9 +185,9 @@ handle_info(
             {noreply, State#state{check_filters_ref = Ref}};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
-            {Pendings1, _, NewTC} = lists:foldl(
+            {Pendings1, _} = lists:foldl(
                 fun
-                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce, TC}) ->
+                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         ct:print("adding new filter"),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
@@ -201,11 +199,10 @@ handle_info(
 
                         Index = erlang:length(blockchain_ledger_routing_v1:filters(Routing)),
                         {
-                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui, TC}, Pendings),
-                            Nonce + 1,
-                            TC + 1
+                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings),
+                            Nonce + 1
                         };
-                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce, TC}) ->
+                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         ct:print("updating filter @ index ~p", [Index]),
                         {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
                         Txn = craft_update_filter_txn(
@@ -223,15 +220,14 @@ handle_info(
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
                         {
-                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui, TC}, Pendings),
-                            Nonce + 1,
-                            TC + 1
+                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings),
+                            Nonce + 1
                         }
                 end,
-                {Pendings0, CurrNonce, TxnCount},
+                {Pendings0, CurrNonce},
                 Updates
             ),
-            {noreply, State#state{pending_txns = Pendings1, txn_count = NewTC}}
+            {noreply, State#state{pending_txns = Pendings1}}
     end;
 handle_info(
     {?SUBMIT_RESULT, Hash, ok},
@@ -240,7 +236,7 @@ handle_info(
         filter_to_devices = FilterToDevices
     } = State0
 ) ->
-    {Index, DevicesDevEuiAppEui, TxnCount} = maps:get(Hash, Pendings),
+    {Index, DevicesDevEuiAppEui} = maps:get(Hash, Pendings),
     lager:info("successfully submitted txn: ~p added ~p to filter ~p", [
         lager:pr(Hash, blockchain_txn_routing_v1),
         DevicesDevEuiAppEui,
@@ -254,17 +250,9 @@ handle_info(
     case State1#state.pending_txns == #{} of
         false ->
             lager:info("waiting for more txn to clear"),
-            ct:print("~p:~p not writing to disk, waiting for more txns to clear", [Index, TxnCount]),
             {noreply, State1};
         true ->
             lager:info("all txns cleared"),
-            Two = maps:values(State1#state.filter_to_devices),
-            ct:print("~p:~p writing to disk: ~p~n~n~p~n~n", [
-                Index,
-                TxnCount,
-                length(lists:flatten(Two)),
-                Two
-            ]),
             ok = write_devices_to_disk(State1#state.filter_to_devices),
             Ref = schedule_check_filters(default_timer()),
             {noreply, State1#state{check_filters_ref = Ref}}

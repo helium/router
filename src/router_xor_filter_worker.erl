@@ -15,7 +15,9 @@
     estimate_cost/0,
     check_filters/0,
     deveui_appeui/1,
-    rebalance_filters/0
+    rebalance_filters/0,
+    report_device_status/1,
+    report_filter_sizes/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -82,6 +84,14 @@ deveui_appeui(Device) ->
     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
     <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>.
 
+-spec report_device_status(router_device:device()) -> proplists:proplist().
+report_device_status(Device) ->
+    gen_server:call(?SERVER, {report_device_status, Device}).
+
+-spec report_filter_sizes() -> proplists:proplist().
+report_filter_sizes() ->
+    gen_server:call(?SERVER, report_filter_sizes).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -94,6 +104,35 @@ init(Args) ->
 handle_call(estimate_cost, _From, State) ->
     Reply = estimate_cost(State),
     lager:info("estimating cost ~p", [Reply]),
+    {reply, Reply, State};
+handle_call(report_filter_sizes, _From, #state{filter_to_devices = FilterToDevices} = State) ->
+    Filters = get_filters(State),
+
+    Reply = [
+        {routing, enumerate_0([byte_size(F) || F <- Filters])},
+        {in_memory, [{Idx, erlang:length(Devs)} || {Idx, Devs} <- maps:to_list(FilterToDevices)]}
+    ],
+
+    {reply, Reply, State};
+handle_call(
+    {report_device_status, Device},
+    _From,
+    #state{filter_to_devices = FilterToDevices} = State
+) ->
+    BinFilters = get_filters(State),
+    DeviceEUI = deveui_appeui(Device),
+
+    Reply = [
+        {routing, [
+            {Idx, xor16:contain({Filter, ?HASH_FUN}, DeviceEUI)}
+            || {Idx, Filter} <- enumerate_0(BinFilters)
+        ]},
+        {in_memory, [
+            {Idx, lists:member(DeviceEUI, DeviceList)}
+            || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
+        ]}
+    ],
+
     {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -292,6 +331,19 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+get_filters(#state{chain = Chain, oui = OUI}) ->
+    get_filters(Chain, OUI).
+
+get_filters(Chain, OUI) ->
+    Ledger = blockchain:ledger(Chain),
+    case blockchain_ledger_v1:find_routing(OUI, Ledger) of
+        {error, _Reason} = Err ->
+            lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
+            throw({could_not_get_filters, Err});
+        {ok, Routing} ->
+            blockchain_ledger_routing_v1:filters(Routing)
+    end.
 
 -spec read_devices_from_disk() -> {ok, map()} | {error, any()}.
 read_devices_from_disk() ->

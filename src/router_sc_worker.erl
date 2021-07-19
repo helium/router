@@ -312,6 +312,7 @@ open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, cha
                     false ->
                         Expiration;
                     true ->
+                        lager:info("expiration ~p went over max ~p", [Expiration, Max]),
                         Expiration - (Expiration - Max)
                 end
         end,

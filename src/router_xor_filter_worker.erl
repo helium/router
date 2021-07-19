@@ -54,7 +54,12 @@
     pending_txns = #{} :: #{
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
-    filter_to_devices = #{} :: #{non_neg_integer() => devices_dev_eui_app_eui()},
+    filter_to_devices = #{} :: #{
+        non_neg_integer() => #{
+            id := devices_dev_eui_app_eui(),
+            filter_index := 0..4
+        }
+    },
     check_filters_ref :: undefined | reference()
 }).
 
@@ -196,11 +201,7 @@ handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
                         end
                 end
         end,
-    FilterToDevices =
-        case read_devices_from_disk() of
-            {error, not_found} -> #{};
-            Val -> Val
-        end,
+    {ok, FilterToDevices} = read_devices_from_disk(),
     {noreply, State1#state{filter_to_devices = FilterToDevices}};
 handle_info(
     ?CHECK_FILTERS_TICK,
@@ -345,28 +346,80 @@ get_filters(Chain, OUI) ->
             blockchain_ledger_routing_v1:filters(Routing)
     end.
 
--spec read_devices_from_disk() -> {ok, map()} | {error, any()}.
+-spec read_devices_from_disk() -> {ok, map()}.
 read_devices_from_disk() ->
     {ok, DB, CF} = router_db:get(xor_filter_devices),
-    case rocksdb:get(DB, CF, <<"xor_filter_state">>, []) of
-        {ok, BinMap} ->
-            erlang:binary_to_term(BinMap);
-        not_found ->
-            {error, not_found};
-        Err ->
-            Err
-    end.
+
+    List = get_fold(
+        DB,
+        CF,
+        fun
+            (#{id := ID, filter_index := FilterIndex}) ->
+                {true, {FilterIndex, ID}};
+            (_) ->
+                false
+        end
+    ),
+
+    Collected = [{Key, proplists:get_all_values(Key, List)} || Key <- lists:seq(0, 4)],
+    {ok, maps:from_list(Collected)}.
+
+-spec get_fold(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    FilterTransformFun :: fun((map()) -> {true, ReturnType} | false)
+) -> [ReturnType].
+get_fold(DB, CF, FilterTransformFun) ->
+    {ok, Itr} = rocksdb:iterator(DB, CF, []),
+    First = rocksdb:iterator_move(Itr, first),
+    Acc = get_fold(DB, CF, Itr, First, FilterTransformFun, []),
+    rocksdb:iterator_close(Itr),
+    Acc.
+
+-spec get_fold(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    Iterator :: rocksdb:itr_handle(),
+    RocksDBEntry :: any(),
+    FilterTransformFun :: fun((...) -> ReturnType),
+    Accumulator :: list()
+) -> [ReturnType].
+get_fold(DB, CF, Itr, {ok, _K, Bin}, FilterTransformFun, Acc) ->
+    Next = rocksdb:iterator_move(Itr, next),
+    Device = erlang:binary_to_term(Bin),
+    case FilterTransformFun(Device) of
+        {true, Val} -> get_fold(DB, CF, Itr, Next, FilterTransformFun, [Val | Acc]);
+        false -> get_fold(DB, CF, Itr, Next, FilterTransformFun, Acc)
+    end;
+get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
+    Next = rocksdb:iterator_move(Itr, next),
+    get_fold(DB, CF, Itr, Next, FilterTransformFun, Acc);
+get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
+    Acc.
 
 -spec write_devices_to_disk(map()) -> ok.
 write_devices_to_disk(FtD) ->
     {ok, DB, CF} = router_db:get(xor_filter_devices),
-    case rocksdb:put(DB, CF, <<"xor_filter_state">>, erlang:term_to_binary(FtD), []) of
-        {error, _} = Err ->
-            lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
-            throw(Err);
-        ok ->
-            ok
-    end.
+
+    lists:foreach(
+        fun({FilterIndex, Devices}) ->
+            lists:foreach(
+                fun(Device) ->
+                    Entry = #{id => Device, filter_index => FilterIndex},
+                    case rocksdb:put(DB, CF, Device, erlang:term_to_binary(Entry), []) of
+                        {error, _} = Err ->
+                            lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
+                            throw(Err);
+                        ok ->
+                            ok
+                    end
+                end,
+                Devices
+            )
+        end,
+        maps:to_list(FtD)
+    ),
+    ok.
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost(#state{

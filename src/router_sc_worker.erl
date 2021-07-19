@@ -300,12 +300,20 @@ open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, cha
     NextExpiration =
         case sc_expiration() of
             {error, _Reason} ->
+                lager:info("failed to get a good expiration ~p", [_Reason]),
                 %% Just set it to expiration_interval
                 get_sc_expiration_interval();
             {ok, ActiveSCExpiration} ->
                 %% We set the next SC expiration to the difference between
                 %% current chain height and active plus the expiration_interval
-                abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
+                Max = blockchain_utils:approx_blocks_in_week(Ledger),
+                Expiration = abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval(),
+                case Expiration > Max of
+                    false ->
+                        Expiration;
+                    true ->
+                        Expiration - (Expiration - Max)
+                end
         end,
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     Nonce = get_nonce(PubkeyBin, Ledger),
@@ -360,12 +368,13 @@ get_nonce(PubkeyBin, Ledger) ->
             blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
     end.
 
--spec sc_expiration() -> {error, no_opened_sc} | {ok, pos_integer()}.
+-spec sc_expiration() -> {ok, pos_integer()} | {error, any()}.
 sc_expiration() ->
-    case blockchain_state_channels_server:state_channels() of
-        #{} ->
+    SCs = blockchain_state_channels_server:state_channels(),
+    case SCs == #{} of
+        true ->
             {error, no_opened_sc};
-        SCs ->
+        false ->
             [{_, {LatestSCToExpire, _}} | _] =
                 lists:sort(
                     fun({_, {SCA, _}}, {_, {SCB, _}}) ->

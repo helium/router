@@ -8,9 +8,6 @@
 
 -export([
     publish_xor_test/1,
-    many_devices_test/1,
-    more_devices_test/1,
-    overflow_devices_test/1,
     max_filters_devices_test/1,
     ignore_largest_filter_test/1,
     evenly_rebalance_filter_test/1,
@@ -54,9 +51,6 @@
 all() ->
     [
         publish_xor_test,
-        many_devices_test,
-        more_devices_test,
-        overflow_devices_test,
         max_filters_devices_test,
         ignore_largest_filter_test,
         evenly_rebalance_filter_test,
@@ -159,123 +153,6 @@ publish_xor_test(Config) ->
     [Filter1, Filter2] = Filters,
     ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiAppEui)),
     ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiAppEui)),
-
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ok.
-
-many_devices_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
-    OUI1 = proplists:get_value(oui, Config),
-
-    StartingDevices = n_rand_devices(10),
-
-    %% Prepare devices to work with
-    Tab = proplists:get_value(ets, Config),
-    true = ets:insert(Tab, {devices, StartingDevices}),
-
-    %% init worker processing first filter
-    application:set_env(router, router_xor_filter_worker, true),
-    erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
-    %% OUI with blank filter should be pushed a new filter to the chain
-    ok = expect_block(3, Chain),
-
-    Filters = get_filters(Chain, OUI1),
-    ?assertEqual(2, erlang:length(Filters)),
-
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ok.
-
-more_devices_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
-    OUI1 = proplists:get_value(oui, Config),
-
-    StartingDevices = n_rand_devices(10),
-    MoreDevices = n_rand_devices(10),
-
-    %% Prepare devices to work with
-    Tab = proplists:get_value(ets, Config),
-    true = ets:insert(Tab, {devices, StartingDevices}),
-
-    %% init worker processing first filter
-    application:set_env(router, router_xor_filter_worker, true),
-    erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
-    %% OUI with blank filter should be pushed a new filter to the chain
-    ok = expect_block(3, Chain),
-
-    Filters = get_filters(Chain, OUI1),
-    ?assertEqual(2, erlang:length(Filters)),
-
-    true = ets:insert(Tab, {devices, MoreDevices}),
-    ok = router_xor_filter_worker:check_filters(),
-
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
-
-    Filters1 = get_filters(Chain, OUI1),
-    ?assertEqual(2, erlang:length(Filters1)),
-
-    ?assertNotEqual(Filters, Filters1),
-
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ok.
-
-overflow_devices_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
-    OUI1 = proplists:get_value(oui, Config),
-
-    StartingDevices = n_rand_devices(10),
-    MoreDevices = n_rand_devices(10),
-
-    %% Prepare devices to work with
-    Tab = proplists:get_value(ets, Config),
-    true = ets:insert(Tab, {devices, StartingDevices}),
-
-    %% Init worker
-    application:set_env(router, router_xor_filter_worker, true),
-    erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
-    %% OUI with blank filter should be pushed a new filter to the chain
-    ok = expect_block(3, Chain),
-
-    Filters = get_filters(Chain, OUI1),
-    ?assertEqual(2, erlang:length(Filters)),
-
-    true = ets:insert(Tab, {devices, StartingDevices ++ MoreDevices}),
-    ok = router_xor_filter_worker:check_filters(),
-
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
-
-    Filters1 = get_filters(Chain, OUI1),
-    ?assertEqual(3, erlang:length(Filters1)),
-
-    ?assertNotEqual(Filters, Filters1),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

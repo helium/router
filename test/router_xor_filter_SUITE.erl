@@ -143,9 +143,14 @@ publish_xor_test(Config) ->
     Device = router_device:update(DeviceUpdates, router_device:new(<<"ID2">>)),
     DeviceDevEuiAppEui = router_xor_filter_worker:deveui_appeui(Device),
 
+    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
+
     State0 = sys:get_state(router_xor_filter_worker),
     ?assertEqual(#{}, State0#state.pending_txns),
-    ?assertEqual(#{1 => [DeviceDevEuiAppEui]}, State0#state.filter_to_devices),
+    ?assertEqual(
+        maps:merge(BaseEmpty, #{1 => [DeviceDevEuiAppEui]}),
+        State0#state.filter_to_devices
+    ),
 
     Filters = get_filters(Chain, OUI1),
     ?assertEqual(2, erlang:length(Filters)),

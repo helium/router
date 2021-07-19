@@ -13,7 +13,8 @@
     evenly_rebalance_filter_test/1,
     oddly_rebalance_filter_test/1,
     remove_devices_filter_test/1,
-    remove_devices_filter_after_restart_test/1
+    remove_devices_filter_after_restart_test/1,
+    report_device_status_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -56,7 +57,8 @@ all() ->
         evenly_rebalance_filter_test,
         oddly_rebalance_filter_test,
         remove_devices_filter_test,
-        remove_devices_filter_after_restart_test
+        remove_devices_filter_after_restart_test,
+        report_device_status_test
     ].
 
 %%--------------------------------------------------------------------
@@ -169,10 +171,10 @@ max_filters_devices_test(Config) ->
     Tab = proplists:get_value(ets, Config),
 
     Round1Devices = n_rand_devices(10),
-    Round2Devices = Round1Devices ++ n_rand_devices(10),
-    Round3Devices = Round2Devices ++ n_rand_devices(10),
-    Round4Devices = Round3Devices ++ n_rand_devices(10),
-    Round5Devices = Round4Devices ++ n_rand_devices(10),
+    Round2Devices = n_rand_devices(10) ++ Round1Devices,
+    Round3Devices = n_rand_devices(10) ++ Round2Devices,
+    Round4Devices = n_rand_devices(10) ++ Round3Devices,
+    Round5Devices = n_rand_devices(10) ++ Round4Devices,
 
     %% Init worker without processing first filter automatically
     application:set_env(router, router_xor_filter_worker, false),
@@ -232,10 +234,10 @@ ignore_largest_filter_test(Config) ->
     %% ------------------------------------------------------------
 
     Round1Devices = n_rand_devices(10),
-    Round2Devices = Round1Devices ++ n_rand_devices(200),
-    Round3Devices = Round2Devices ++ n_rand_devices(12),
-    Round4Devices = Round3Devices ++ n_rand_devices(10),
-    Round5Devices = Round4Devices ++ n_rand_devices(10),
+    Round2Devices = n_rand_devices(200) ++ Round1Devices,
+    Round3Devices = n_rand_devices(12) ++ Round2Devices,
+    Round4Devices = n_rand_devices(10) ++ Round3Devices,
+    Round5Devices = n_rand_devices(10) ++ Round4Devices,
 
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
@@ -262,11 +264,11 @@ ignore_largest_filter_test(Config) ->
     [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
     ExpectedOrder = [One, Two, Four, Five, Three],
 
-    %% ct:print("~nSizes: ~n~p~n", [bin_sizes(Filters)]),
-    %% Order: One   - 1 device
+    %% ct:print("Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
+    %% Order: One   - 0 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
-    %%        Four  - 10 devices
+    %%        Four  - 12 devices
     %%        Five  - 20 devices
     ?assertEqual(
         sort_binaries_by_size(Filters),
@@ -305,7 +307,7 @@ evenly_rebalance_filter_test(Config) ->
     Round1Devices = n_rand_devices(10),
     Round2Devices = Round1Devices ++ n_rand_devices(200),
     Round3Devices = Round2Devices ++ n_rand_devices(30),
-    Round4Devices = Round3Devices ++ n_rand_devices(4),
+    Round4Devices = Round3Devices ++ n_rand_devices(5),
     Round5Devices = Round4Devices ++ n_rand_devices(50),
 
     lists:foreach(
@@ -330,16 +332,15 @@ evenly_rebalance_filter_test(Config) ->
         ]
     ),
 
-    (fun() ->
-        [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
-        %% ct:print("~nBefore Sizes: ~n~w~n", [bin_sizes(Filters)),
-        %% Order: One   - 1 device
-        %%        Two   - 10 devices
-        %%        Three - 200 devices
-        %%        Four  - 30 devices
-        %%        Five  - 54 devices
-        ?assertEqual(sort_binaries_by_size(Filters), [One, Two, Four, Five, Three])
-    end)(),
+    %% ct:print("~nBefore Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
+    %% Order: One   - 1 device
+    %%        Two   - 10 devices
+    %%        Three - 200 devices
+    %%        Four  - 30 devices
+    %%        Five  - 54 devices
+    [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
+    ?assertEqual(sort_binaries_by_size(Filters1), [One, Two, Four, Five, Three]),
+
     ok = router_xor_filter_worker:rebalance_filters(),
 
     %% Wait until filters are committed
@@ -348,18 +349,16 @@ evenly_rebalance_filter_test(Config) ->
     %% Expecting 8 + 4 == 12
     ok = expect_block(12, Chain),
 
-    (fun() ->
-        Filters = get_filters(Chain, OUI1),
-        Sizes = [byte_size(F) || F <- Filters],
-        %% ct:print("~nAfter Sizes: ~n~w~n", [Sizes]),
-        %% Order: One   - 59 devices
-        %%        Two   - 59 devices
-        %%        Three - 59 devices
-        %%        Four  - 59 devices
-        %%        Five  - 59 devices
-        Diff = lists:max(Sizes) - lists:min(Sizes),
-        ?assertEqual(0, Diff, "Devices should be disbtributed evenly")
-    end)(),
+    %% ct:print("~nAfter Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
+    %% Order: One   - 59 devices
+    %%        Two   - 59 devices
+    %%        Three - 59 devices
+    %%        Four  - 59 devices
+    %%        Five  - 59 devices
+    Filters2 = get_filters(Chain, OUI1),
+    Sizes = bin_sizes(Filters2),
+    Diff = lists:max(Sizes) - lists:min(Sizes),
+    ?assertEqual(0, Diff, "Devices should be disbtributed evenly"),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -384,11 +383,11 @@ oddly_rebalance_filter_test(Config) ->
     end),
 
     %% ------------------------------------------------------------
-    Round1Devices = n_rand_devices(10),
-    Round2Devices = Round1Devices ++ n_rand_devices(200),
-    Round3Devices = Round2Devices ++ n_rand_devices(35),
-    Round4Devices = Round3Devices ++ n_rand_devices(45),
-    Round5Devices = Round4Devices ++ n_rand_devices(50),
+    Round1Devices = n_rand_devices(15),
+    Round2Devices = Round1Devices ++ n_rand_devices(211),
+    Round3Devices = Round2Devices ++ n_rand_devices(37),
+    Round4Devices = Round3Devices ++ n_rand_devices(47),
+    Round5Devices = Round4Devices ++ n_rand_devices(59),
 
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
@@ -413,27 +412,27 @@ oddly_rebalance_filter_test(Config) ->
     ),
 
     Allowance = 10,
-    (fun() ->
-        Filters = get_filters(Chain, OUI1),
-        Sizes = bin_sizes(Filters),
-        %% ct:print("~nBefore Sizes: ~n~w~n", [Sizes]),
-        %% Order: One   - 1 device
-        %%        Two   - 10 devices
-        %%        Three - 200 devices
-        %%        Four  - 35 devices
-        %%        Five  - 45+50 devices
-        %% Total: 1 + 10 + 200 + 35 + 45 + 50 == 341
-        Diff = lists:max(Sizes) - lists:min(Sizes),
-        ?assert(
-            Diff > Allowance,
-            lists:flatten(
-                io_lib:format("vastly uneven filters [diff: ~p] > [allowance: ~p]", [
-                    Diff,
-                    Allowance
-                ])
-            )
+
+    %% Order: One   - 0 device
+    %%        Two   - 15 devices
+    %%        Three - 211 devices
+    %%        Four  - 37 devices
+    %%        Five  - 47+59 devices
+    %% Total: 0 + 15 + 211 + 37 + 47 + 59 == 369
+    Filters1 = get_filters(Chain, OUI1),
+    Sizes1 = bin_sizes(Filters1),
+    %% ct:print("~nBefore Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
+    Diff1 = lists:max(Sizes1) - lists:min(Sizes1),
+    ?assert(
+        Diff1 > Allowance,
+        lists:flatten(
+            io_lib:format("vastly uneven filters [diff: ~p] > [allowance: ~p]", [
+                Diff1,
+                Allowance
+            ])
         )
-    end)(),
+    ),
+
     ok = router_xor_filter_worker:rebalance_filters(),
 
     %% Wait until filters are committed
@@ -442,20 +441,18 @@ oddly_rebalance_filter_test(Config) ->
     %% Expecting 8 + 4 == 12
     ok = expect_block(12, Chain),
 
-    (fun() ->
-        Filters = get_filters(Chain, OUI1),
-        Sizes = bin_sizes(Filters),
-        %% ct:print("~After Sizes: ~n~w~n", [Sizes]),
-        %% Total: 1 + 10 + 200 + 35 + 45 + 50 == 341
-        %% Distributed: 341/5 == 68.2
-        %% Order: One   - ~68 devices
-        %%        Two   - ~68 devices
-        %%        Three - ~68 devices
-        %%        Four  - ~68 devices
-        %%        Five  - ~68 devices
-        Diff = lists:max(Sizes) - lists:min(Sizes),
-        ?assert(Diff =< Allowance, "Devices should be disbtributed closely")
-    end)(),
+    %% Total: 0 + 15 + 211 + 37 + 47 + 59 == 369
+    %% Distributed: 369/5 == 73.8
+    %% Order: One   - 73 devices
+    %%        Two   - 74 devices
+    %%        Three - 74 devices
+    %%        Four  - 74 devices
+    %%        Five  - 74 devices
+    Filters2 = get_filters(Chain, OUI1),
+    Sizes2 = bin_sizes(Filters2),
+    %% ct:print("~nAfter Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
+    Diff2 = lists:max(Sizes2) - lists:min(Sizes2),
+    ?assert(Diff2 =< Allowance, "Devices should be disbtributed closely"),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -601,22 +598,20 @@ remove_devices_filter_after_restart_test(Config) ->
     Removed = lists:sublist(Round4Devices, 10),
     LeftoverDevices = Round5Devices -- Removed,
 
-    (fun() ->
-        %% Make sure removed devices are not in those filters
-        Filters = get_filters(Chain, OUI1),
-        Containment = [
-            xor16:contain(
-                {Filter, fun xxhash:hash64/1},
-                router_xor_filter_worker:deveui_appeui(Device)
-            )
-            || Filter <- Filters, Device <- Removed
-        ],
-        ?assertEqual(
-            true,
-            lists:member(true, Containment),
-            "Removed devices _ARE_ in filters"
+    %% Make sure removed devices are not in those filters
+    Filters1 = get_filters(Chain, OUI1),
+    Containment1 = [
+        xor16:contain(
+            {Filter, fun xxhash:hash64/1},
+            router_xor_filter_worker:deveui_appeui(Device)
         )
-    end)(),
+        || Filter <- Filters1, Device <- Removed
+    ],
+    ?assertEqual(
+        true,
+        lists:member(true, Containment1),
+        "Removed devices _ARE_ in filters"
+    ),
 
     %% Restart the xor filter worker
     exit(whereis(router_xor_filter_worker), kill),
@@ -642,22 +637,115 @@ remove_devices_filter_after_restart_test(Config) ->
     %% Should commit filter for removed devices
     ok = expect_block(8, Chain),
 
-    (fun() ->
-        %% Make sure removed devices are not in those filters
-        Filters = get_filters(Chain, OUI1),
-        Containment = [
-            xor16:contain(
-                {Filter, fun xxhash:hash64/1},
-                router_xor_filter_worker:deveui_appeui(Device)
-            )
-            || Filter <- Filters, Device <- Removed
-        ],
-        ?assertEqual(
-            false,
-            lists:member(true, Containment),
-            "Removed devices are _NOT_ in filters"
+    %% Make sure removed devices are not in those filters
+    Filters2 = get_filters(Chain, OUI1),
+    Containment2 = [
+        xor16:contain(
+            {Filter, fun xxhash:hash64/1},
+            router_xor_filter_worker:deveui_appeui(Device)
         )
-    end)(),
+        || Filter <- Filters2, Device <- Removed
+    ],
+    ?assertEqual(
+        false,
+        lists:member(true, Containment2),
+        "Removed devices are _NOT_ in filters"
+    ),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+report_device_status_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    Round2Devices = n_rand_devices(20) ++ Round1Devices,
+    Round3Devices = n_rand_devices(30) ++ Round2Devices,
+    Round4Devices = n_rand_devices(40) ++ Round3Devices,
+    Round5Devices = n_rand_devices(50) ++ Round4Devices,
+
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            #{devices => Round2Devices, block => 4, filter_count => 3},
+            #{devices => Round3Devices, block => 5, filter_count => 4},
+            #{devices => Round4Devices, block => 6, filter_count => 5},
+            #{devices => Round5Devices, block => 7, filter_count => 5}
+        ]
+    ),
+
+    One = erlang:hd(Round1Devices),
+    Two = erlang:hd(Round2Devices),
+    Three = erlang:hd(Round3Devices),
+    Four = erlang:hd(Round4Devices),
+    Five = erlang:hd(Round5Devices),
+
+    %% NOTE: You would think the first device would be in the 0th filter, but
+    %% because of the way we want to have as many filters as possible, we ignore
+    %% the first filter until we come around with more devices after creating
+    %% all we can create.
+    %% Because of that, all devices are pushed 1 more filter than we expect.
+    OneExpectedReport = [{0, false}, {1, true}, {2, false}, {3, false}, {4, false}],
+    TwoExpectedReport = [{0, false}, {1, false}, {2, true}, {3, false}, {4, false}],
+    ThreeExpectedReport = [{0, false}, {1, false}, {2, false}, {3, true}, {4, false}],
+    FourExpectedReport = [{0, false}, {1, false}, {2, false}, {3, false}, {4, true}],
+    %% Expecing this one because that's the smallest that has been written to.
+    FiveExpectedReport = [{0, false}, {1, true}, {2, false}, {3, false}, {4, false}],
+
+    %% NOTE: Remember filters are 0-indexed
+    ?assertEqual(
+        [{routing, OneExpectedReport}, {in_memory, OneExpectedReport}],
+        router_xor_filter_worker:report_device_status(One),
+        "First device should be written to filter 1"
+    ),
+    ?assertEqual(
+        [{routing, TwoExpectedReport}, {in_memory, TwoExpectedReport}],
+        router_xor_filter_worker:report_device_status(Two),
+        "Second device should be written to filter 2"
+    ),
+    ?assertEqual(
+        [{routing, ThreeExpectedReport}, {in_memory, ThreeExpectedReport}],
+        router_xor_filter_worker:report_device_status(Three),
+        "Third device should be written to filter 3"
+    ),
+    ?assertEqual(
+        [{routing, FourExpectedReport}, {in_memory, FourExpectedReport}],
+        router_xor_filter_worker:report_device_status(Four),
+        "Fourth device should be written to filter 4"
+    ),
+    ?assertEqual(
+        [{routing, FiveExpectedReport}, {in_memory, FiveExpectedReport}],
+        router_xor_filter_worker:report_device_status(Five),
+        "Fifth device should be written to filter 1 (smallest in-use filter)"
+    ),
+
+    %% NOTE: If filter selection is rewritten to consider filter size rather
+    %% than known occupation, this test will need update
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

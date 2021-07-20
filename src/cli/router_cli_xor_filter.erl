@@ -42,25 +42,15 @@ device_usage() ->
 device_cmd() ->
     [
         [["filter"], [], [], ?USAGE],
+        [["filter", "timer"], [], [], fun filter_timer/3],
         [
             ["filter", "update"],
             [],
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun filter_update/3
         ],
-        [
-            ["filter", "report"],
-            [],
-            [],
-            fun filter_report/3
-        ],
-        [["filter", "timer"], [], [], fun filter_timer/3],
-        [
-            ["filter", "report", "device", '*'],
-            [],
-            [],
-            fun filter_report_device/3
-        ]
+        [["filter", "report"], [], [], fun filter_report/3],
+        [["filter", "report", "device", '*'], [], [], fun filter_report_device/3]
     ].
 
 filter_report(["filter", "report"], [], []) ->
@@ -70,7 +60,11 @@ filter_report(["filter", "report"], [], []) ->
     ] = router_xor_filter_worker:report_filter_sizes(),
 
     c_table([
-        [{filter, Idx}, {num_devices, length(Devices)}, {size_in_bytes, Size}]
+        [
+            {filter, Idx},
+            {num_devices_in_cache, erlang:length(Devices)},
+            {size_in_bytes, Size}
+        ]
         || {{Idx, Devices}, {Idx, Size}} <- lists:zip(Memory, Routing)
     ]).
 
@@ -159,4 +153,3 @@ is_device_running(D) ->
         {error, not_found} -> false;
         {ok, _} -> true
     end.
-

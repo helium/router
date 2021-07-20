@@ -15,7 +15,8 @@
     estimate_cost/0,
     check_filters/0,
     deveui_appeui/1,
-    rebalance_filters/0
+    rebalance_filters/0,
+    refresh_cache/0
 ]).
 
 -export([
@@ -104,6 +105,10 @@ report_filter_sizes() ->
 report_timer() ->
     gen_server:call(?SERVER, report_timer).
 
+-spec refresh_cache() -> ok.
+refresh_cache() ->
+    gen_server:call(?SERVER, refresh_cache).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -148,6 +153,9 @@ handle_call(
     ],
 
     {reply, Reply, State};
+handle_call(refresh_cache, _From, State) ->
+    {ok, FilterToDevices} = read_devices_from_disk(),
+    {reply, ok, State#state{filter_to_devices = FilterToDevices}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

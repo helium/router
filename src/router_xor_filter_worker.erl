@@ -343,7 +343,7 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{}) ->
     ok.
 
 %% ------------------------------------------------------------------

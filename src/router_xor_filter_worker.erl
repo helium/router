@@ -60,12 +60,7 @@
     pending_txns = #{} :: #{
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
-    filter_to_devices = #{} :: #{
-        non_neg_integer() => #{
-            id := devices_dev_eui_app_eui(),
-            filter_index := 0..4
-        }
-    },
+    filter_to_devices = #{} :: #{FilterIndex :: 0..4 => devices_dev_eui_app_eui()},
     check_filters_ref :: undefined | reference()
 }).
 

@@ -12,7 +12,8 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    get/0, get/1
+    get/0,
+    get_xor_filter_devices/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -46,9 +47,9 @@ start_link(Args) ->
 get() ->
     gen_server:call(?SERVER, get).
 
--spec get(default | devices | xor_filter_devices) -> {ok, rocksdb:db_handle(), rocksdb:cf_handle()}.
-get(ColumnFamily) ->
-    gen_server:call(?SERVER, {get, ColumnFamily}).
+-spec get_xor_filter_devices() -> {ok, rocksdb:db_handle(), rocksdb:cf_handle()}.
+get_xor_filter_devices() ->
+    gen_server:call(?SERVER, get_xor_filter_devices).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -61,8 +62,8 @@ init([Dir] = Args) ->
 handle_call(get, _From, #state{db = DB, cfs = CFs} = State) ->
     #{default := DefaultCF, devices := DevicesCF} = CFs,
     {reply, {ok, DB, [DefaultCF, DevicesCF]}, State};
-handle_call({get, ColumnFamily}, _From, #state{db = DB, cfs = CFs} = State) ->
-    CF = maps:get(ColumnFamily, CFs),
+handle_call(get_xor_filter_devices, _From, #state{db = DB, cfs = CFs} = State) ->
+    CF = maps:get(xor_filter_devices, CFs),
     {reply, {ok, DB, CF}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -93,8 +94,6 @@ open_db(Dir) ->
     DBDir = filename:join(Dir, ?DB_FILE),
     ok = filelib:ensure_dir(DBDir),
 
-    ct:print(99, "Rocksdb Basedir: ~p", [DBDir]),
-
     GlobalOpts = application:get_env(rocksdb, global_opts, []),
 
     DBOptions = [{create_if_missing, true}, {atomic_flush, true}] ++ GlobalOpts,
@@ -122,12 +121,10 @@ open_db(Dir) ->
         DefaultCFs -- ExistingCFs
     ),
     L3 = L1 ++ L2,
-    #{xor_filter_devices := MCF} =
-        CFs = maps:from_list([
-            {erlang:list_to_atom(X), proplists:get_value(X, L3)}
-            || X <- DefaultCFs
-        ]),
 
-    ct:print(99, "Rocksdb CFs: ~p", [L3]),
-    ct:print(99, "Rocksdb Content:~n~p", [rocksdb:get(DB, MCF, <<"xor_filter_state">>, [])]),
+    CFs = maps:from_list([
+        {erlang:list_to_atom(X), proplists:get_value(X, L3)}
+        || X <- DefaultCFs
+    ]),
+
     {ok, DB, CFs}.

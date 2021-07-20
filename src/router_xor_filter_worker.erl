@@ -46,7 +46,12 @@
 -define(HASH_FUN, fun xxhash:hash64/1).
 -define(SUBMIT_RESULT, submit_result).
 
--type device_dev_eui_app_eui() :: binary().
+-type device_eui() :: binary().
+-type device_dev_eui_app_eui() :: #{
+    device_id => binary(),
+    eui => device_eui(),
+    filter_index => unset | 0..4
+}.
 -type devices_dev_eui_app_eui() :: list(device_dev_eui_app_eui()).
 -type filter_eui_mapping() :: [{FilterIdex :: 0..4, devices_dev_eui_app_eui()}].
 -type update() ::
@@ -60,7 +65,14 @@
     pending_txns = #{} :: #{
         blockchain_txn:hash() => {non_neg_integer(), devices_dev_eui_app_eui()}
     },
-    filter_to_devices = #{} :: #{FilterIndex :: 0..4 => devices_dev_eui_app_eui()},
+    filter_to_devices = #{} :: #{
+        FilterIndex ::
+            0..4 => #{
+                device_id => binary(),
+                eui => device_dev_eui_app_eui(),
+                filter_index => 0..4
+            }
+    },
     check_filters_ref :: undefined | reference()
 }).
 
@@ -83,7 +95,7 @@ check_filters() ->
 rebalance_filters() ->
     gen_server:cast(?SERVER, ?REBALANCE_FILTERS).
 
--spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
+-spec deveui_appeui(router_device:device()) -> device_eui().
 deveui_appeui(Device) ->
     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
@@ -135,7 +147,7 @@ handle_call(
     #state{filter_to_devices = FilterToDevices} = State
 ) ->
     BinFilters = get_filters(State),
-    DeviceEUI = deveui_appeui(Device),
+    [#{eui := DeviceEUI} = DeviceEUIEntry] = get_devices_deveui_app_eui([Device]),
 
     Reply = [
         {routing, [
@@ -143,7 +155,7 @@ handle_call(
             || {Idx, Filter} <- enumerate_0(BinFilters)
         ]},
         {in_memory, [
-            {Idx, lists:member(DeviceEUI, DeviceList)}
+            {Idx, unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
             || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
         ]}
     ],
@@ -173,7 +185,7 @@ handle_cast(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
                 lists:map(
                     fun({Idx, GroupEuis}) ->
                         Nonce = CurrNonce + Idx + 1,
-                        {Filter, _} = xor16:new(GroupEuis, ?HASH_FUN),
+                        Filter = new_xor_filter(GroupEuis),
                         Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
                         Hash = submit_txn(Txn),
                         lager:info("updating filter txn ~p submitted ~p", [
@@ -244,7 +256,7 @@ handle_info(
                 fun
                     ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
-                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
                         lager:info("new filter txn ~p submitted ~p", [
@@ -254,12 +266,16 @@ handle_info(
                         %% Filters are zero-indexed
                         Index = erlang:length(blockchain_ledger_routing_v1:filters(Routing)),
                         {
-                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings),
+                            maps:put(
+                                Hash,
+                                {Index, assign_filter_index(Index, NewDevicesDevEuiAppEui)},
+                                Pendings
+                            ),
                             Nonce + 1
                         };
                     ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("updating filter @ index ~p", [Index]),
-                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_update_filter_txn(
                             PubKey,
                             SigFun,
@@ -275,7 +291,11 @@ handle_info(
                             lager:pr(Txn, blockchain_txn_routing_v1)
                         ]),
                         {
-                            maps:put(Hash, {Index, NewDevicesDevEuiAppEui}, Pendings),
+                            maps:put(
+                                Hash,
+                                {Index, assign_filter_index(Index, NewDevicesDevEuiAppEui)},
+                                Pendings
+                            ),
                             Nonce + 1
                         }
                 end,
@@ -371,8 +391,8 @@ read_devices_from_disk() ->
         DB,
         CF,
         fun
-            (#{id := ID, filter_index := FilterIndex}) ->
-                {true, {FilterIndex, ID}};
+            (#{eui := _EUI, filter_index := FilterIndex, device_id := _DeviceID} = Entry) ->
+                {true, {FilterIndex, Entry}};
             (_) ->
                 false
         end
@@ -431,8 +451,8 @@ remove_devices_from_disk(FilterToDevicesToRemove) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
     foreach_filter_to_devices_value(
         FilterToDevicesToRemove,
-        fun(_FilterIndex, Device) ->
-            rocksdb:delete(DB, CF, Device, [])
+        fun(_FilterIndex, #{eui := DeviceEUI} = _Device) ->
+            rocksdb:delete(DB, CF, DeviceEUI, [])
         end
     ).
 
@@ -441,9 +461,8 @@ write_devices_to_disk(FilterToDevicesToAdd) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
     foreach_filter_to_devices_value(
         FilterToDevicesToAdd,
-        fun(FilterIndex, Device) ->
-            Entry = #{id => Device, filter_index => FilterIndex},
-            case rocksdb:put(DB, CF, Device, erlang:term_to_binary(Entry), []) of
+        fun(_FilterIndex, #{eui := DeviceEUI} = Entry) ->
+            case rocksdb:put(DB, CF, DeviceEUI, erlang:term_to_binary(Entry), []) of
                 {error, _} = Err ->
                     lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
                     throw(Err);
@@ -484,12 +503,12 @@ estimate_cost(#state{
             lists:foldl(
                 fun
                     ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
-                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1),
                         {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
                             N + erlang:length(NewDevicesDevEuiAppEui)};
                     ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
-                        {Filter, _} = xor16:new(NewDevicesDevEuiAppEui, ?HASH_FUN),
+                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1, Index),
                         {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
                             N + erlang:length(NewDevicesDevEuiAppEui)}
@@ -542,6 +561,7 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                         FilterToDevices,
                         DevicesDevEuiAppEui
                     ),
+                    ct:print("Updates:~n~p~n", [Updates]),
                     case craft_updates(Updates, BinFilters, MaxXorFilter) of
                         noop -> noop;
                         Crafted -> {Routing, Crafted}
@@ -593,7 +613,12 @@ get_devices_deveui_app_eui([], DevEUIsAppEUIs) ->
 get_devices_deveui_app_eui([Device | Devices], DevEUIsAppEUIs) ->
     try deveui_appeui(Device) of
         DevEUiAppEUI ->
-            get_devices_deveui_app_eui(Devices, [DevEUiAppEUI | DevEUIsAppEUIs])
+            Entry = #{
+                eui => DevEUiAppEUI,
+                filter_index => unset,
+                device_id => router_device:id(Device)
+            },
+            get_devices_deveui_app_eui(Devices, [Entry | DevEUIsAppEUIs])
     catch
         _C:_R ->
             lager:warning("failed to get deveui_appeui for device ~p: ~p", [
@@ -628,6 +653,8 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         RemovedDevicesDevEuiAppEuiMap
     ).
 
+assign_filter_index(Index, DeviceEuis) -> [N#{filter_index => Index} || N <- DeviceEuis].
+
 %% Return {map of IN FILTER device_dev_eui_app_eui indexed by their filter,
 %%         list of added device
 %%         map of REMOVED device_dev_eui_app_eui indexed by their filter}
@@ -640,7 +667,24 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         non_neg_integer() => devices_dev_eui_app_eui()
     }}.
 contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
-    ContainedBy = fun(Filter) -> fun(Bin) -> xor16:contain({Filter, ?HASH_FUN}, Bin) end end,
+    ContainedBy = fun(Filter) ->
+        fun(#{eui := Bin}) ->
+            xor16:contain({Filter, ?HASH_FUN}, Bin)
+        end
+    end,
+
+    %% Key known devices by device id
+    Keyed = lists:foldl(
+        fun(#{device_id := DevID, eui := EUI} = Elem, Acc) ->
+            Acc#{{DevID, EUI} => Elem}
+        end,
+        #{},
+        lists:flatten(maps:values(FilterToDevices))
+    ),
+    %% subtract new devices from list
+    IncomingDevIds = [{DID, EUI} || #{device_id := DID, eui := EUI} <- DevicesDevEuiAppEui],
+    MaybeRemovedDevices = lists:flatten(maps:values(maps:without(IncomingDevIds, Keyed))),
+
     {CurrFilter, Removed, Added, _} =
         lists:foldl(
             fun({Index, Filter}, {InFilterAcc0, RemovedAcc0, AddedToCheck, RemovedToCheck}) ->
@@ -650,8 +694,14 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 ),
                 InFilterAcc1 =
                     case AddedInFilter == [] of
-                        false -> maps:put(Index, AddedInFilter, InFilterAcc0);
-                        true -> InFilterAcc0
+                        false ->
+                            maps:put(
+                                Index,
+                                assign_filter_index(Index, AddedInFilter),
+                                InFilterAcc0
+                            );
+                        true ->
+                            InFilterAcc0
                     end,
                 {RemovedInFilter, RemovedLeftover} = lists:partition(
                     ContainedBy(Filter),
@@ -659,17 +709,18 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 ),
                 RemovedAcc1 =
                     case RemovedInFilter == [] of
-                        false -> maps:put(Index, RemovedInFilter, RemovedAcc0);
-                        true -> RemovedAcc0
+                        false ->
+                            maps:put(
+                                Index,
+                                assign_filter_index(Index, RemovedInFilter),
+                                RemovedAcc0
+                            );
+                        true ->
+                            RemovedAcc0
                     end,
                 {InFilterAcc1, RemovedAcc1, AddedLeftover, RemovedLeftover}
             end,
-            {
-                #{},
-                #{},
-                DevicesDevEuiAppEui,
-                lists:flatten(maps:values(FilterToDevices)) -- DevicesDevEuiAppEui
-            },
+            {#{}, #{}, DevicesDevEuiAppEui, MaybeRemovedDevices},
             enumerate_0(BinFilters)
         ),
     {CurrFilter, Added, Removed}.
@@ -762,8 +813,27 @@ default_timer() ->
         I -> I
     end.
 
+-spec enumerate_0(list(T)) -> list({non_neg_integer(), T}).
 enumerate_0(L) ->
     lists:zip(lists:seq(0, erlang:length(L) - 1), L).
+
+-spec new_xor_filter(devices_dev_eui_app_eui()) -> Filter :: reference().
+new_xor_filter(DeviceEntries) ->
+    IDS = [ID || #{eui := ID} <- DeviceEntries],
+    {Filter, _} = xor16:new(IDS, ?HASH_FUN),
+    Filter.
+
+-spec unset_filter_index_in_list(
+    device_dev_eui_app_eui(),
+    devices_dev_eui_app_eui()
+) -> boolean().
+unset_filter_index_in_list(#{eui := EUI1, device_id := ID1}, L) ->
+    lists:any(
+        fun(#{eui := EUI2, device_id := ID2}) ->
+            EUI1 == EUI2 andalso ID1 == ID2
+        end,
+        L
+    ).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

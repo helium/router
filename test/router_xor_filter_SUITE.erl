@@ -154,7 +154,15 @@ publish_xor_test(Config) ->
     State0 = sys:get_state(router_xor_filter_worker),
     ?assertEqual(#{}, State0#state.pending_txns),
     ?assertEqual(
-        maps:merge(BaseEmpty, #{1 => [DeviceDevEuiAppEui]}),
+        maps:merge(BaseEmpty, #{
+            1 => [
+                #{
+                    eui => DeviceDevEuiAppEui,
+                    filter_index => 1,
+                    device_id => ?CONSOLE_DEVICE_ID
+                }
+            ]
+        }),
         State0#state.filter_to_devices
     ),
 

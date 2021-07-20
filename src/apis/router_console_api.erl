@@ -107,11 +107,10 @@ get_all_devices() ->
                 try json_device_to_record(JSONDevice, ignore_meta_defaults) of
                     Device -> {true, Device}
                 catch
-                    _E:_R:_S ->
-                        lager:error("failed to create record for device ~p: ~p~n~n~p~n~n", [
+                    _E:_R ->
+                        lager:error("failed to create record for device ~p: ~p", [
                             JSONDevice,
-                            {_E, _R},
-                            _S
+                            {_E, _R}
                         ]),
                         false
                 end

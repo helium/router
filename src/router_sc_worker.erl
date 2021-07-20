@@ -298,18 +298,26 @@ open_next_state_channel(#state{pubkey = PubKey, sig_fun = SigFun, oui = OUI, cha
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
     NextExpiration =
-        case active_sc_expiration() of
-            {error, no_active_sc} ->
+        case sc_expiration() of
+            {error, _Reason} ->
+                lager:info("failed to get a good expiration ~p", [_Reason]),
                 %% Just set it to expiration_interval
                 get_sc_expiration_interval();
             {ok, ActiveSCExpiration} ->
                 %% We set the next SC expiration to the difference between
                 %% current chain height and active plus the expiration_interval
-                abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval()
+                Max = blockchain_utils:approx_blocks_in_week(Ledger),
+                Expiration = abs(ActiveSCExpiration - ChainHeight) + get_sc_expiration_interval(),
+                case Expiration > Max of
+                    false ->
+                        Expiration;
+                    true ->
+                        lager:info("expiration ~p went over max ~p", [Expiration, Max]),
+                        Expiration - (Expiration - Max)
+                end
         end,
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     Nonce = get_nonce(PubkeyBin, Ledger),
-    %% XXX FIXME: there needs to be some kind of mechanism to estimate SC_AMOUNT and pass it in
     Id = create_and_send_sc_open_txn(
         PubkeyBin,
         SigFun,
@@ -361,25 +369,22 @@ get_nonce(PubkeyBin, Ledger) ->
             blockchain_ledger_data_credits_entry_v1:nonce(DCEntry)
     end.
 
--spec active_sc_expiration() -> {error, no_active_sc} | {ok, pos_integer()}.
-active_sc_expiration() ->
-    case blockchain_state_channels_server:active_sc_ids() of
-        [] ->
-            {error, no_active_sc};
-        ActiveSCIDs ->
-            SCs = blockchain_state_channels_server:state_channels(),
-            [SoonestSCIDToExpire | _] =
+-spec sc_expiration() -> {ok, pos_integer()} | {error, any()}.
+sc_expiration() ->
+    SCs = blockchain_state_channels_server:state_channels(),
+    case SCs == #{} of
+        true ->
+            {error, no_opened_sc};
+        false ->
+            [{_, {LatestSCToExpire, _}} | _] =
                 lists:sort(
-                    fun(SCIDA, SCIDB) ->
-                        {ActiveSCA, _} = maps:get(SCIDA, SCs),
-                        {ActiveSCB, _} = maps:get(SCIDB, SCs),
-                        blockchain_state_channel_v1:expire_at_block(ActiveSCA) <
-                            blockchain_state_channel_v1:expire_at_block(ActiveSCB)
+                    fun({_, {SCA, _}}, {_, {SCB, _}}) ->
+                        blockchain_state_channel_v1:expire_at_block(SCA) >
+                            blockchain_state_channel_v1:expire_at_block(SCB)
                     end,
-                    ActiveSCIDs
+                    maps:to_list(SCs)
                 ),
-            {SoonestSCToExpire, _} = maps:get(SoonestSCIDToExpire, SCs),
-            {ok, blockchain_state_channel_v1:expire_at_block(SoonestSCToExpire)}
+            {ok, blockchain_state_channel_v1:expire_at_block(LatestSCToExpire)}
     end.
 
 -spec get_sc_amount() -> pos_integer().

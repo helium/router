@@ -155,9 +155,9 @@ handle_call(_Msg, _From, State) ->
 handle_cast(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
     Pendings =
         case router_console_api:get_all_devices() of
-            {error, _Reason} = Err ->
-                lager:error("failed to get device ~p", [_Reason]),
-                throw({could_not_rebalance_filters, Err});
+            {error, _Reason} ->
+                lager:error("failed to get devices ~p", [_Reason]),
+                {error, {could_not_rebalance_filters, _Reason}};
             {ok, Devices} ->
                 DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
 

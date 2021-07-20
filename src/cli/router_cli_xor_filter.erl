@@ -82,9 +82,7 @@ filter_timer(["filter", "timer"], [], []) ->
             TimeLeft = erlang:read_timer(Timer),
             TotalSeconds = erlang:convert_time_unit(TimeLeft, millisecond, second),
             {_Hour, Minute, Seconds} = calendar:seconds_to_time(TotalSeconds),
-            c_text("Running again in T- ~pm ~ps", [Minute, Seconds]);
-        T ->
-            c_text("Timer is not a reference: ~p", [T])
+            c_text("Running again in T- ~pm ~ps", [Minute, Seconds])
     end.
 
 filter_report_device(["filter", "report", "device", ID], [], []) ->
@@ -146,7 +144,7 @@ lookup(DeviceID) ->
 %% Private Utilities
 %%--------------------------------------------------------------------
 
--spec c_table(proplists:proplist()) -> clique_status:status().
+-spec c_table([proplists:proplist()]) -> clique_status:status().
 c_table(PropLists) -> [clique_status:table(PropLists)].
 
 -spec c_text(string(), list(term())) -> clique_status:status().

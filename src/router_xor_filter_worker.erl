@@ -100,7 +100,7 @@ report_device_status(Device) ->
 report_filter_sizes() ->
     gen_server:call(?SERVER, report_filter_sizes).
 
--spec report_timer() -> undefind | reference().
+-spec report_timer() -> undefined | reference().
 report_timer() ->
     gen_server:call(?SERVER, report_timer).
 
@@ -357,7 +357,7 @@ get_filters(Chain, OUI) ->
 
 -spec read_devices_from_disk() -> {ok, map()}.
 read_devices_from_disk() ->
-    {ok, DB, CF} = router_db:get(xor_filter_devices),
+    {ok, DB, CF} = router_db:get_xor_filter_devices(),
 
     List = get_fold(
         DB,
@@ -408,7 +408,7 @@ get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
 
 -spec write_devices_to_disk(map()) -> ok.
 write_devices_to_disk(FtD) ->
-    {ok, DB, CF} = router_db:get(xor_filter_devices),
+    {ok, DB, CF} = router_db:get_xor_filter_devices(),
 
     lists:foreach(
         fun({FilterIndex, Devices}) ->
@@ -467,8 +467,11 @@ distribute_devices_across_n_groups(Devices, FilterCount) ->
     GroupSize = erlang:round((erlang:length(Devices) / FilterCount) + 0.4),
     do_distribute_devices_across_n_groups(Devices, GroupSize, []).
 
--spec do_distribute_devices_across_n_groups(devices_dev_eui_app_eui(), non_neg_integer(), non_neg_integer()) ->
-    list(list(devices_dev_eui_app_eui())).
+-spec do_distribute_devices_across_n_groups(
+    Devices :: devices_dev_eui_app_eui(),
+    GroupSize :: non_neg_integer(),
+    Groups :: list(list(devices_dev_eui_app_eui()))
+) -> list(list(devices_dev_eui_app_eui())).
 do_distribute_devices_across_n_groups([], _, G) ->
     G;
 do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->

@@ -15,9 +15,13 @@
     estimate_cost/0,
     check_filters/0,
     deveui_appeui/1,
-    rebalance_filters/0,
+    rebalance_filters/0
+]).
+
+-export([
     report_device_status/1,
-    report_filter_sizes/0
+    report_filter_sizes/0,
+    report_timer/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -97,6 +101,10 @@ report_device_status(Device) ->
 report_filter_sizes() ->
     gen_server:call(?SERVER, report_filter_sizes).
 
+-spec report_timer() -> undefind | reference().
+report_timer() ->
+    gen_server:call(?SERVER, report_timer).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -110,6 +118,8 @@ handle_call(estimate_cost, _From, State) ->
     Reply = estimate_cost(State),
     lager:info("estimating cost ~p", [Reply]),
     {reply, Reply, State};
+handle_call(report_timer, _From, #state{check_filters_ref = Timer} = State) ->
+    {reply, Timer, State};
 handle_call(report_filter_sizes, _From, #state{filter_to_devices = FilterToDevices} = State) ->
     Filters = get_filters(State),
 

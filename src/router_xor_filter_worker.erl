@@ -48,6 +48,7 @@
 
 -type device_dev_eui_app_eui() :: binary().
 -type devices_dev_eui_app_eui() :: list(device_dev_eui_app_eui()).
+-type filter_eui_mapping() :: [{FilterIdex :: 0..4, devices_dev_eui_app_eui()}].
 -type update() ::
     {new, devices_dev_eui_app_eui()} | {update, FilterIndex :: 0..4, devices_dev_eui_app_eui()}.
 
@@ -306,13 +307,17 @@ handle_info(
         filter_to_devices = maps:put(Index, DevicesDevEuiAppEui, FilterToDevices)
     },
 
+    ok = sync_cache_to_disk(
+        State0#state.filter_to_devices,
+        State1#state.filter_to_devices
+    ),
+
     case State1#state.pending_txns == #{} of
         false ->
             lager:info("waiting for more txn to clear"),
             {noreply, State1};
         true ->
             lager:info("all txns cleared"),
-            ok = write_devices_to_disk(State1#state.filter_to_devices),
             Ref = schedule_check_filters(default_timer()),
             {noreply, State1#state{check_filters_ref = Ref}}
     end;
@@ -414,29 +419,60 @@ get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
 get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     Acc.
 
--spec write_devices_to_disk(map()) -> ok.
-write_devices_to_disk(FtD) ->
-    {ok, DB, CF} = router_db:get_xor_filter_devices(),
+-spec sync_cache_to_disk(Old :: map(), New :: map()) -> ok.
+sync_cache_to_disk(Old, New) ->
+    OldFlat = lists:sort(maps:to_list(Old)),
+    NewFlat = lists:sort(maps:to_list(New)),
+    ToBeRemoved = [
+        {Key, OldVal -- NewVal}
+        || {{Key, OldVal}, {Key, NewVal}} <- lists:zip(OldFlat, NewFlat)
+    ],
 
+    ok = remove_devices_from_disk(ToBeRemoved),
+    ok = write_devices_to_disk(NewFlat).
+
+-spec remove_devices_from_disk(filter_eui_mapping()) -> ok.
+remove_devices_from_disk(FilterToDevicesToRemove) ->
+    {ok, DB, CF} = router_db:get_xor_filter_devices(),
+    foreach_filter_to_devices_value(
+        FilterToDevicesToRemove,
+        fun(_FilterIndex, Device) ->
+            rocksdb:delete(DB, CF, Device, [])
+        end
+    ).
+
+-spec write_devices_to_disk(filter_eui_mapping()) -> ok.
+write_devices_to_disk(FilterToDevicesToAdd) ->
+    {ok, DB, CF} = router_db:get_xor_filter_devices(),
+    foreach_filter_to_devices_value(
+        FilterToDevicesToAdd,
+        fun(FilterIndex, Device) ->
+            Entry = #{id => Device, filter_index => FilterIndex},
+            case rocksdb:put(DB, CF, Device, erlang:term_to_binary(Entry), []) of
+                {error, _} = Err ->
+                    lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
+                    throw(Err);
+                ok ->
+                    ok
+            end
+        end
+    ),
+    ok.
+
+-spec foreach_filter_to_devices_value(
+    FilterToDevices :: filter_eui_mapping(),
+    Fun :: fun((non_neg_integer(), device_dev_eui_app_eui()) -> ok)
+) -> ok.
+foreach_filter_to_devices_value(FilterToDevices, Fun) ->
     lists:foreach(
         fun({FilterIndex, Devices}) ->
             lists:foreach(
-                fun(Device) ->
-                    Entry = #{id => Device, filter_index => FilterIndex},
-                    case rocksdb:put(DB, CF, Device, erlang:term_to_binary(Entry), []) of
-                        {error, _} = Err ->
-                            lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
-                            throw(Err);
-                        ok ->
-                            ok
-                    end
-                end,
+                fun(Device) -> Fun(FilterIndex, Device) end,
                 Devices
             )
         end,
-        maps:to_list(FtD)
-    ),
-    ok.
+        FilterToDevices
+    ).
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
 estimate_cost(#state{

@@ -14,7 +14,9 @@
     oddly_rebalance_filter_test/1,
     remove_devices_filter_test/1,
     remove_devices_filter_after_restart_test/1,
-    report_device_status_test/1
+    report_device_status_test/1,
+    remove_devices_single_txn_db_test/1,
+    remove_devices_multiple_txn_db_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -58,7 +60,9 @@ all() ->
         oddly_rebalance_filter_test,
         remove_devices_filter_test,
         remove_devices_filter_after_restart_test,
-        report_device_status_test
+        report_device_status_test,
+        remove_devices_single_txn_db_test,
+        remove_devices_multiple_txn_db_test
     ].
 
 %%--------------------------------------------------------------------
@@ -542,6 +546,13 @@ remove_devices_filter_test(Config) ->
         lists:member(true, Containment),
         "Removed devices are _NOT_ in filters"
     ),
+    State = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices = lists:flatten(maps:values(State#state.filter_to_devices)),
+    ?assertEqual(
+        [false, false],
+        [lists:member(RemovedDevice, Devices) || RemovedDevice <- Removed],
+        "Removed devices are _NOT_ in worker cache"
+    ),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -651,6 +662,25 @@ remove_devices_filter_after_restart_test(Config) ->
         lists:member(true, Containment2),
         "Removed devices are _NOT_ in filters"
     ),
+    State1 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+    ?assertEqual(
+        [false],
+        lists:usort([lists:member(RemovedDevice, Devices1) || RemovedDevice <- Removed]),
+        "Removed devices are _NOT_ in worker cache"
+    ),
+
+    %% Refresh the cache to make sure we don't have anything lying around
+    ok = router_xor_filter_worker:refresh_cache(),
+
+    State2 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices2 = lists:flatten(maps:values(State2#state.filter_to_devices)),
+    ?assertNotEqual(Devices1, Devices2),
+    ?assertEqual(
+        [false],
+        lists:usort([lists:member(RemovedDevice, Devices2) || RemovedDevice <- Removed]),
+        "Removed devices are _NOT_ in worker cache after another restart"
+    ),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -746,6 +776,173 @@ report_device_status_test(Config) ->
 
     %% NOTE: If filter selection is rewritten to consider filter size rather
     %% than known occupation, this test will need update
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+remove_devices_single_txn_db_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
+
+    Fitlers0 = get_filters(Chain, OUI1),
+    ?assertEqual(1, erlang:length(Fitlers0)),
+
+    %% Add devices
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            %% Ensure we aren't starting farther ahead than we expect
+            ok = expect_block(ExpectedBlock - 1, Chain),
+
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+            timer:sleep(timer:seconds(1)),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1)),
+            timer:sleep(timer:seconds(1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            %% Removing all devices
+            #{devices => [], block => 4, filter_count => 2}
+        ]
+    ),
+
+    %% Make sure removed devices are not in those filters
+    Filters = get_filters(Chain, OUI1),
+    Containment = [
+        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+        || Filter <- Filters, Device <- Round1DevicesEUI
+    ],
+    ?assertEqual(
+        [false],
+        lists:usort(Containment),
+        "Removed devices are _NOT_ in filters"
+    ),
+    State0 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
+    ?assertEqual(
+        [false],
+        lists:usort([lists:member(RemovedDevice, Devices0) || RemovedDevice <- Round1DevicesEUI]),
+        "Removed devices are _NOT_ in worker cache"
+    ),
+    %% Refresh to make sure they don't load from the db
+    router_xor_filter_worker:refresh_cache(),
+    State1 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+    Membership = [lists:member(RemovedDevice, Devices1) || RemovedDevice <- Round1DevicesEUI],
+    ?assertEqual(
+        [false],
+        lists:usort(Membership),
+        "Removed devices are _NOT_ in worker cache after refresh"
+    ),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+remove_devices_multiple_txn_db_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    Round2Devices = n_rand_devices(20) ++ Round1Devices,
+    Round3Devices = n_rand_devices(30) ++ Round2Devices,
+    Round4Devices = n_rand_devices(40) ++ Round3Devices,
+    Round5Devices = n_rand_devices(50) ++ Round4Devices,
+    DeviceEUIs = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round5Devices],
+
+    Fitlers0 = get_filters(Chain, OUI1),
+    ?assertEqual(1, erlang:length(Fitlers0)),
+
+    %% Add devices
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+            timer:sleep(timer:seconds(1)),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            #{devices => Round2Devices, block => 4, filter_count => 3},
+            #{devices => Round3Devices, block => 5, filter_count => 4},
+            #{devices => Round4Devices, block => 6, filter_count => 5},
+            #{devices => Round5Devices, block => 7, filter_count => 5},
+            %% Removing all devices
+            %% Next filter would be 8
+            %% Plus updating other filters (+4)
+            %% Expecting 8 + 4 == 12
+            #{devices => [], block => 12, filter_count => 5}
+        ]
+    ),
+
+    %% Make sure removed devices are not in those filters
+    Filters = get_filters(Chain, OUI1),
+    Containment = [
+        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+        || Filter <- Filters, Device <- DeviceEUIs
+    ],
+    ?assertEqual(
+        [false],
+        lists:usort(Containment),
+        "Removed devices are _NOT_ in filters"
+    ),
+    State0 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
+    ?assertEqual(
+        [false],
+        lists:usort([lists:member(RemovedDevice, Devices0) || RemovedDevice <- DeviceEUIs]),
+        "Removed devices are _NOT_ in worker cache"
+    ),
+    %% Refresh to make sure they don't load from the db
+    router_xor_filter_worker:refresh_cache(),
+    State1 = sys:get_state(whereis(router_xor_filter_worker)),
+    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+    Membership = [lists:member(RemovedDevice, Devices1) || RemovedDevice <- DeviceEUIs],
+    ?assertEqual(
+        [false],
+        lists:usort(Membership),
+        "Removed devices are _NOT_ in worker cache after refresh"
+    ),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

@@ -460,11 +460,15 @@ estimate_cost(#state{
             )
     end.
 
+-spec distribute_devices_across_n_groups(devices_dev_eui_app_eui(), non_neg_integer()) ->
+    list(list(devices_dev_eui_app_eui())).
 distribute_devices_across_n_groups(Devices, FilterCount) ->
     %% Add 0.4 to more consistenly round up
     GroupSize = erlang:round((erlang:length(Devices) / FilterCount) + 0.4),
     do_distribute_devices_across_n_groups(Devices, GroupSize, []).
 
+-spec do_distribute_devices_across_n_groups(devices_dev_eui_app_eui(), non_neg_integer(), non_neg_integer()) ->
+    list(list(devices_dev_eui_app_eui())).
 do_distribute_devices_across_n_groups([], _, G) ->
     G;
 do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->

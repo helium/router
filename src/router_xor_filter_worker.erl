@@ -323,8 +323,8 @@ handle_info(
     },
 
     ok = sync_cache_to_disk(
-        State0#state.filter_to_devices,
-        State1#state.filter_to_devices
+        maps:to_list(State0#state.filter_to_devices),
+        maps:to_list(State1#state.filter_to_devices)
     ),
 
     case State1#state.pending_txns == #{} of
@@ -434,17 +434,18 @@ get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
 get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     Acc.
 
--spec sync_cache_to_disk(Old :: map(), New :: map()) -> ok.
-sync_cache_to_disk(Old, New) ->
-    OldFlat = lists:sort(maps:to_list(Old)),
-    NewFlat = lists:sort(maps:to_list(New)),
-    ToBeRemoved = [
-        {Key, OldVal -- NewVal}
-        || {{Key, OldVal}, {Key, NewVal}} <- lists:zip(OldFlat, NewFlat)
-    ],
+-spec sync_cache_to_disk(OldMapping :: filter_eui_mapping(), NewMapping :: filter_eui_mapping()) -> ok.
+sync_cache_to_disk(OldMapping, NewMapping) ->
+    OldFlat = lists:sort(OldMapping),
+    NewFlat = lists:sort(NewMapping),
+
+    {ToBeAdded, ToBeRemoved} = lists:unzip([
+        {{Key, NewFilter -- OldFilter}, {Key, OldFilter -- NewFilter}}
+        || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldFlat, NewFlat)
+    ]),
 
     ok = remove_devices_from_disk(ToBeRemoved),
-    ok = write_devices_to_disk(NewFlat).
+    ok = write_devices_to_disk(ToBeAdded).
 
 -spec remove_devices_from_disk(filter_eui_mapping()) -> ok.
 remove_devices_from_disk(FilterToDevicesToRemove) ->

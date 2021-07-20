@@ -84,8 +84,7 @@ check_filters() ->
 
 -spec rebalance_filters() -> ok.
 rebalance_filters() ->
-    ?SERVER ! ?REBALANCE_FILTERS,
-    ok.
+    gen_server:cast(?SERVER, ?REBALANCE_FILTERS).
 
 -spec deveui_appeui(router_device:device()) -> device_dev_eui_app_eui().
 deveui_appeui(Device) ->
@@ -153,11 +152,7 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(_Msg, State) ->
-    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
-    {noreply, State}.
-
-handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
+handle_cast(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
     Pendings =
         case router_console_api:get_all_devices() of
             {error, _Reason} = Err ->
@@ -189,6 +184,10 @@ handle_info(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
         end,
 
     {noreply, State#state{pending_txns = maps:from_list(Pendings)}};
+handle_cast(_Msg, State) ->
+    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
+    {noreply, State}.
+
 handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
     State1 =
         case blockchain_worker:blockchain() of

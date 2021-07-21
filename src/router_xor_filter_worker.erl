@@ -155,7 +155,7 @@ handle_call(
             || {Idx, Filter} <- enumerate_0(BinFilters)
         ]},
         {in_memory, [
-            {Idx, unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
+            {Idx, is_unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
             || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
         ]}
     ],
@@ -833,11 +833,11 @@ new_xor_filter(DeviceEntries) ->
     {Filter, _} = xor16:new(IDS, ?HASH_FUN),
     Filter.
 
--spec unset_filter_index_in_list(
+-spec is_unset_filter_index_in_list(
     device_dev_eui_app_eui(),
     devices_dev_eui_app_eui()
 ) -> boolean().
-unset_filter_index_in_list(#{eui := EUI1, device_id := ID1}, L) ->
+is_unset_filter_index_in_list(#{eui := EUI1, device_id := ID1}, L) ->
     lists:any(
         fun(#{eui := EUI2, device_id := ID2}) ->
             EUI1 == EUI2 andalso ID1 == ID2

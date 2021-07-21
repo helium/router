@@ -53,7 +53,7 @@
     filter_index => unset | 0..4
 }.
 -type devices_dev_eui_app_eui() :: list(device_dev_eui_app_eui()).
--type filter_eui_mapping() :: [{FilterIdex :: 0..4, devices_dev_eui_app_eui()}].
+-type filter_eui_mapping() :: #{0..4 := devices_dev_eui_app_eui()}.
 -type update() ::
     {new, devices_dev_eui_app_eui()} | {update, FilterIndex :: 0..4, devices_dev_eui_app_eui()}.
 
@@ -322,10 +322,12 @@ handle_info(
         filter_to_devices = maps:put(Index, DevicesDevEuiAppEui, FilterToDevices)
     },
 
-    ok = sync_cache_to_disk(
-        maps:to_list(State0#state.filter_to_devices),
-        maps:to_list(State1#state.filter_to_devices)
+    {AddedDevices, RemovedDevices} = diff_filter_to_devices(
+        State0#state.filter_to_devices,
+        State1#state.filter_to_devices
     ),
+    ok = update_console_api(AddedDevices, RemovedDevices),
+    ok = sync_cache_to_disk(AddedDevices, RemovedDevices),
 
     case State1#state.pending_txns == #{} of
         false ->
@@ -434,13 +436,13 @@ get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
 get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     Acc.
 
--spec sync_cache_to_disk(
+-spec diff_filter_to_devices(
     OldMapping :: filter_eui_mapping(),
     NewMapping :: filter_eui_mapping()
-) -> ok.
-sync_cache_to_disk(OldMapping, NewMapping) ->
-    OldSorted = lists:sort(OldMapping),
-    NewSorted = lists:sort(NewMapping),
+) -> {Added :: filter_eui_mapping(), Removed :: filter_eui_mapping()}.
+diff_filter_to_devices(OldMapping, NewMapping) ->
+    OldSorted = lists:sort(maps:to_list(OldMapping)),
+    NewSorted = lists:sort(maps:to_list(NewMapping)),
 
     {ToBeAdded, ToBeRemoved} = lists:unzip([
         {
@@ -449,30 +451,45 @@ sync_cache_to_disk(OldMapping, NewMapping) ->
         }
         || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldSorted, NewSorted)
     ]),
+    {
+        maps:from_list(ToBeAdded),
+        maps:from_list(ToBeRemoved)
+    }.
 
-    AddedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten([L || {_, L} <- ToBeAdded])],
-    RemovedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten([L || {_, L} <- ToBeRemoved])],
-    ok = router_console_api:xor_filter_updates(AddedIDs, RemovedIDs),
+-spec update_console_api(
+    Added :: filter_eui_mapping(),
+    Removed :: filter_eui_mapping()
+) -> ok.
+update_console_api(Added, Removed) ->
+    AddedDevs = maps:values(Added),
+    RemovedDevs = maps:values(Removed),
+    AddedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(AddedDevs)],
+    RemovedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(RemovedDevs)],
+    ok = router_console_api:xor_filter_updates(AddedIDs, RemovedIDs).
 
-    ok = remove_devices_from_disk(ToBeRemoved),
-    ok = write_devices_to_disk(ToBeAdded).
+-spec sync_cache_to_disk(
+    Added :: filter_eui_mapping(),
+    Removed :: filter_eui_mapping()
+) -> ok.
+sync_cache_to_disk(Added, Removed) ->
+    ok = remove_devices_from_disk(lists:flatten(maps:values(Removed))),
+    ok = write_devices_to_disk(lists:flatten(maps:values(Added))).
 
--spec remove_devices_from_disk(filter_eui_mapping()) -> ok.
-remove_devices_from_disk(FilterToDevicesToRemove) ->
+-spec remove_devices_from_disk(devices_dev_eui_app_eui()) -> ok.
+remove_devices_from_disk(DevicesToRemove) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
-    foreach_filter_to_devices_value(
-        FilterToDevicesToRemove,
-        fun(_FilterIndex, #{eui := DeviceEUI} = _Device) ->
+    lists:foreach(
+        fun(#{eui := DeviceEUI} = _Device) ->
             rocksdb:delete(DB, CF, DeviceEUI, [])
-        end
+        end,
+        DevicesToRemove
     ).
 
--spec write_devices_to_disk(filter_eui_mapping()) -> ok.
-write_devices_to_disk(FilterToDevicesToAdd) ->
+-spec write_devices_to_disk(devices_dev_eui_app_eui()) -> ok.
+write_devices_to_disk(DevicesToAdd) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
-    foreach_filter_to_devices_value(
-        FilterToDevicesToAdd,
-        fun(_FilterIndex, #{eui := DeviceEUI} = Entry) ->
+    lists:foreach(
+        fun(#{eui := DeviceEUI} = Entry) ->
             case rocksdb:put(DB, CF, DeviceEUI, erlang:term_to_binary(Entry), []) of
                 {error, _} = Err ->
                     lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
@@ -480,23 +497,8 @@ write_devices_to_disk(FilterToDevicesToAdd) ->
                 ok ->
                     ok
             end
-        end
-    ),
-    ok.
-
--spec foreach_filter_to_devices_value(
-    FilterToDevices :: filter_eui_mapping(),
-    Fun :: fun((non_neg_integer(), device_dev_eui_app_eui()) -> ok)
-) -> ok.
-foreach_filter_to_devices_value(FilterToDevices, Fun) ->
-    lists:foreach(
-        fun({FilterIndex, Devices}) ->
-            lists:foreach(
-                fun(Device) -> Fun(FilterIndex, Device) end,
-                Devices
-            )
         end,
-        FilterToDevices
+        DevicesToAdd
     ).
 
 -spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
@@ -507,6 +509,12 @@ estimate_cost(#state{
     oui = OUI,
     filter_to_devices = FilterToDevices
 }) ->
+    %% TODO: Add some logic here to get a better picture of what is going to
+    %% happen next run. Probably need to unroll the should_update ->
+    %% contained_in_filters -> craft_updates function stuff.
+
+    %% TODO: Also maybe break out the getting the diff logic when sending stuff to
+    %% the API for use here. That could make some things easier.
     case should_update_filters(Chain, OUI, FilterToDevices) of
         noop ->
             noop;

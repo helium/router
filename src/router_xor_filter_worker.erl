@@ -132,35 +132,48 @@ handle_call(estimate_cost, _From, State) ->
     {reply, Reply, State};
 handle_call(report_timer, _From, #state{check_filters_ref = Timer} = State) ->
     {reply, Timer, State};
-handle_call(report_filter_sizes, _From, #state{filter_to_devices = FilterToDevices} = State) ->
-    Filters = get_filters(State),
-
-    Reply = [
-        {routing, enumerate_0([byte_size(F) || F <- Filters])},
-        {in_memory, [{Idx, erlang:length(Devs)} || {Idx, Devs} <- maps:to_list(FilterToDevices)]}
-    ],
-
-    {reply, Reply, State};
+handle_call(
+    report_filter_sizes,
+    _From,
+    #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
+) ->
+    case get_filters(Chain, OUI) of
+        {error, _Reason} = Err ->
+            {reply, Err, State};
+        {ok, Filters, _Routing} ->
+            Reply = [
+                {routing, enumerate_0([byte_size(F) || F <- Filters])},
+                {in_memory, [
+                    {Idx, erlang:length(Devs)}
+                    || {Idx, Devs} <- maps:to_list(FilterToDevices)
+                ]}
+            ],
+            {reply, Reply, State}
+    end;
 handle_call(
     {report_device_status, Device},
     _From,
-    #state{filter_to_devices = FilterToDevices} = State
+    #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
 ) ->
-    BinFilters = get_filters(State),
-    [#{eui := DeviceEUI} = DeviceEUIEntry] = get_devices_deveui_app_eui([Device]),
+    case get_filters(Chain, OUI) of
+        {error, _Reason} = Err ->
+            {reply, Err, State};
+        {ok, BinFilters, _Routing} ->
+            [#{eui := DeviceEUI} = DeviceEUIEntry] = get_devices_deveui_app_eui([Device]),
 
-    Reply = [
-        {routing, [
-            {Idx, xor16:contain({Filter, ?HASH_FUN}, DeviceEUI)}
-            || {Idx, Filter} <- enumerate_0(BinFilters)
-        ]},
-        {in_memory, [
-            {Idx, is_unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
-            || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
-        ]}
-    ],
+            Reply = [
+                {routing, [
+                    {Idx, xor16:contain({Filter, ?HASH_FUN}, DeviceEUI)}
+                    || {Idx, Filter} <- enumerate_0(BinFilters)
+                ]},
+                {in_memory, [
+                    {Idx, is_unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
+                    || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
+                ]}
+            ],
 
-    {reply, Reply, State};
+            {reply, Reply, State}
+    end;
 handle_call(refresh_cache, _From, State) ->
     {ok, FilterToDevices} = read_devices_from_disk(),
     {reply, ok, State#state{filter_to_devices = FilterToDevices}};
@@ -372,17 +385,17 @@ terminate(_Reason, #state{}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-get_filters(#state{chain = Chain, oui = OUI}) ->
-    get_filters(Chain, OUI).
-
+-spec get_filters(blockchain:blockchain(), non_neg_integer()) ->
+    {error, any()}
+    | {ok, list(binary()), blockchain_ledger_routing_v1:routing()}.
 get_filters(Chain, OUI) ->
     Ledger = blockchain:ledger(Chain),
     case blockchain_ledger_v1:find_routing(OUI, Ledger) of
         {error, _Reason} = Err ->
             lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
-            throw({could_not_get_filters, Err});
+            Err;
         {ok, Routing} ->
-            blockchain_ledger_routing_v1:filters(Routing)
+            {ok, blockchain_ledger_routing_v1:filters(Routing), Routing}
     end.
 
 -spec read_devices_from_disk() -> {ok, map()}.
@@ -501,40 +514,73 @@ write_devices_to_disk(DevicesToAdd) ->
         DevicesToAdd
     ).
 
--spec estimate_cost(#state{}) -> noop | {non_neg_integer(), non_neg_integer()}.
-estimate_cost(#state{
-    pubkey = PubKey,
-    sig_fun = SigFun,
-    chain = Chain,
-    oui = OUI,
-    filter_to_devices = FilterToDevices
-}) ->
-    %% TODO: Add some logic here to get a better picture of what is going to
-    %% happen next run. Probably need to unroll the should_update ->
-    %% contained_in_filters -> craft_updates function stuff.
-
-    %% TODO: Also maybe break out the getting the diff logic when sending stuff to
-    %% the API for use here. That could make some things easier.
-    case should_update_filters(Chain, OUI, FilterToDevices) of
-        noop ->
+-spec estimate_cost(#state{}) ->
+    noop
+    | {ok, Cost :: non_neg_integer(), AddedDevices :: devices_dev_eui_app_eui(),
+        RemovedDevices :: filter_eui_mapping()}.
+estimate_cost(
+    #state{
+        pubkey = PubKey,
+        sig_fun = SigFun,
+        chain = Chain,
+        filter_to_devices = FilterToDevices,
+        oui = OUI
+    }
+) ->
+    case get_device_updates(Chain, OUI, FilterToDevices) of
+        {error, _Reason, _Err} ->
             noop;
-        {_Routing, Updates} ->
-            lists:foldl(
+        {ok, Updates, BinFilters, _Routing} ->
+            Ledger = blockchain:ledger(Chain),
+            {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
+
+            EstimatedCosts = lists:map(
                 fun
-                    ({new, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                    ({new, NewDevicesDevEuiAppEui}) ->
                         Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1),
-                        {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
-                            N + erlang:length(NewDevicesDevEuiAppEui)};
-                    ({update, Index, NewDevicesDevEuiAppEui}, {Cost, N}) ->
+                        blockchain_txn_routing_v1:calculate_fee(Txn, Chain);
+                    ({update, Index, NewDevicesDevEuiAppEui}) ->
                         Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1, Index),
-                        {Cost + blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
-                            N + erlang:length(NewDevicesDevEuiAppEui)}
+                        blockchain_txn_routing_v1:calculate_fee(Txn, Chain)
                 end,
-                {0, 0},
-                Updates
-            )
+                craft_updates(Updates, BinFilters, MaxXorFilter)
+            ),
+
+            {_Curr, Added, Removed} = Updates,
+            {ok, lists:sum(EstimatedCosts), Added, Removed}
+    end.
+
+-spec get_device_updates(
+    Chain :: blockchain:blockchain(),
+    OUI :: non_neg_integer(),
+    FilterToDevices :: filter_eui_mapping()
+) ->
+    {error, atom(), any()}
+    | {
+        ok,
+        Updates :: tuple(),
+        BinFilters :: [binary()],
+        Routing :: blockchain_ledger_routin_v1:routing()
+    }.
+get_device_updates(Chain, OUI, FilterToDevices) ->
+    case router_console_api:get_all_devices() of
+        {error, _Reason} ->
+            {error, could_not_get_devices, _Reason};
+        {ok, Devices} ->
+            DeviceEUIs = get_devices_deveui_app_eui(Devices),
+            case get_filters(Chain, OUI) of
+                {error, _Reason} ->
+                    {error, could_not_get_filters, _Reason};
+                {ok, BinFilters, Routing} ->
+                    Updates = contained_in_filters(
+                        BinFilters,
+                        FilterToDevices,
+                        DeviceEUIs
+                    ),
+                    {ok, Updates, BinFilters, Routing}
+            end
     end.
 
 -spec distribute_devices_across_n_groups(devices_dev_eui_app_eui(), non_neg_integer()) ->
@@ -561,29 +607,19 @@ do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->
     FilterToDevices :: map()
 ) -> noop | {blockchain_ledger_routing_v1:routing(), [update()]}.
 should_update_filters(Chain, OUI, FilterToDevices) ->
-    case router_console_api:get_all_devices() of
-        {error, _Reason} ->
+    case get_device_updates(Chain, OUI, FilterToDevices) of
+        {error, could_not_get_devices, _Reason} ->
             lager:error("failed to get device ~p", [_Reason]),
             noop;
-        {ok, Devices} ->
-            DevicesDevEuiAppEui = get_devices_deveui_app_eui(Devices),
+        {error, could_not_get_filters, _Reason} ->
+            lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
+            noop;
+        {ok, Updates, BinFilters, Routing} ->
             Ledger = blockchain:ledger(Chain),
-            case blockchain_ledger_v1:find_routing(OUI, Ledger) of
-                {error, _Reason} ->
-                    lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
-                    noop;
-                {ok, Routing} ->
-                    {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
-                    BinFilters = blockchain_ledger_routing_v1:filters(Routing),
-                    Updates = contained_in_filters(
-                        BinFilters,
-                        FilterToDevices,
-                        DevicesDevEuiAppEui
-                    ),
-                    case craft_updates(Updates, BinFilters, MaxXorFilter) of
-                        noop -> noop;
-                        Crafted -> {Routing, Crafted}
-                    end
+            {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
+            case craft_updates(Updates, BinFilters, MaxXorFilter) of
+                noop -> noop;
+                Crafted -> {Routing, Crafted}
             end
     end.
 
@@ -681,9 +717,11 @@ assign_filter_index(Index, DeviceEuis) -> [N#{filter_index => Index} || N <- Dev
     FilterToDevices :: map(),
     DevicesDevEuiAppEui :: devices_dev_eui_app_eui()
 ) ->
-    {#{non_neg_integer() => devices_dev_eui_app_eui()}, devices_dev_eui_app_eui(), #{
-        non_neg_integer() => devices_dev_eui_app_eui()
-    }}.
+    {
+        Curent :: filter_eui_mapping(),
+        Added :: devices_dev_eui_app_eui(),
+        Removed :: filter_eui_mapping()
+    }.
 contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
     ContainedBy = fun(Filter) ->
         fun(#{eui := Bin}) ->

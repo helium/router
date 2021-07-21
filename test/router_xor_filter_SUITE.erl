@@ -16,7 +16,8 @@
     remove_devices_filter_after_restart_test/1,
     report_device_status_test/1,
     remove_devices_single_txn_db_test/1,
-    remove_devices_multiple_txn_db_test/1
+    remove_devices_multiple_txn_db_test/1,
+    send_updates_to_console_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -62,7 +63,8 @@ all() ->
         remove_devices_filter_after_restart_test,
         report_device_status_test,
         remove_devices_single_txn_db_test,
-        remove_devices_multiple_txn_db_test
+        remove_devices_multiple_txn_db_test,
+        send_updates_to_console_test
     ].
 
 %%--------------------------------------------------------------------
@@ -956,6 +958,60 @@ remove_devices_multiple_txn_db_test(Config) ->
     meck:unload(blockchain_worker),
     ok.
 
+send_updates_to_console_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    _Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
+
+    true = ets:insert(Tab, {devices, Round1Devices}),
+    ok = router_xor_filter_worker:check_filters(),
+
+    %% should have pushed a new filter to the chain
+    ok = expect_block(3, Chain),
+    timer:sleep(timer:seconds(1)),
+
+    ShouldBeRemovedNext =
+        receive
+            {console_filter_update, Added, []} ->
+                %% ct:print("Console knows we Added:~n~p~n", [Added]),
+                Added
+        after 2150 -> ct:fail("No console message about adding devices to filters")
+        end,
+
+    ok = test_utils:ignore_messages(),
+
+    %% Remove all Devices
+    true = ets:insert(Tab, {devices, []}),
+    ok = router_xor_filter_worker:check_filters(),
+
+    %% should have pushed a new filter to the chain
+    ok = expect_block(4, Chain),
+
+    receive
+        {console_filter_update, [], ShouldBeRemovedNext} ->
+            ct:print("Console knows we removed : ~n~p", [ShouldBeRemovedNext]),
+            ok
+    after 2150 -> ct:fail("No console message about removing devices from filters")
+    end,
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
@@ -988,7 +1044,7 @@ n_rand_devices(N) ->
                 {app_eui, crypto:strong_rand_bytes(8)},
                 {dev_eui, crypto:strong_rand_bytes(8)}
             ],
-            Name = io_lib:format("Device-~p", [Idx]),
+            Name = erlang:list_to_binary(io_lib:format("Device-~p", [Idx])),
             Device = router_device:update(Updates, router_device:new(Name)),
             Device
         end,

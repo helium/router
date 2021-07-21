@@ -21,7 +21,8 @@
     get_org/1,
     organizations_burned/3,
     get_token/0,
-    json_device_to_record/2
+    json_device_to_record/2,
+    xor_filter_updates/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -353,6 +354,27 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
 -spec get_token() -> binary().
 get_token() ->
     gen_server:call(?SERVER, get_token).
+
+-spec xor_filter_updates(AddedDeviceIDs :: [binary()], RemovedDeviceIDs :: [binary()]) -> ok.
+xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/filter_update">>,
+    Body = #{added => AddedDeviceIDs, removed => RemovedDeviceIDs},
+    case
+        hackney:post(
+            Url,
+            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+            jsx:encode(Body),
+            [with_body, {pool, ?POOL}]
+        )
+    of
+        {ok, 200, _Headers, _Body} ->
+            lager:info("Send filter updates to console ~p", [Body]),
+            ok;
+        _Other ->
+            lager:warning("got non 200 resp for filter update ~p", [_Other]),
+            ok
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

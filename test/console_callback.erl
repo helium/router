@@ -153,6 +153,19 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     {200, [], jsx:encode(Body)}
             end
     end;
+handle('POST', [<<"api">>, <<"router">>, <<"filter_update">>], Req, Args) ->
+    Pid = maps:get(forward, Args),
+    Body = elli_request:body(Req),
+    try jsx:decode(Body, [return_maps]) of
+        JSON ->
+            Added = maps:get(<<"added">>, JSON, <<"added not present">>),
+            Removed = maps:get(<<"removed">>, JSON, <<"removed not present">>),
+            Pid ! {console_filter_update, Added, Removed},
+            {200, [], <<>>}
+    catch
+        _:_ ->
+            {400, [], <<"bad_body">>}
+    end;
 %% Get token
 handle('POST', [<<"api">>, <<"router">>, <<"sessions">>], _Req, _Args) ->
     Body = #{<<"jwt">> => <<"console_callback_token">>},

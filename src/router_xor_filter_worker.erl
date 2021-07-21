@@ -434,15 +434,25 @@ get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
 get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     Acc.
 
--spec sync_cache_to_disk(OldMapping :: filter_eui_mapping(), NewMapping :: filter_eui_mapping()) -> ok.
+-spec sync_cache_to_disk(
+    OldMapping :: filter_eui_mapping(),
+    NewMapping :: filter_eui_mapping()
+) -> ok.
 sync_cache_to_disk(OldMapping, NewMapping) ->
-    OldFlat = lists:sort(OldMapping),
-    NewFlat = lists:sort(NewMapping),
+    OldSorted = lists:sort(OldMapping),
+    NewSorted = lists:sort(NewMapping),
 
     {ToBeAdded, ToBeRemoved} = lists:unzip([
-        {{Key, NewFilter -- OldFilter}, {Key, OldFilter -- NewFilter}}
-        || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldFlat, NewFlat)
+        {
+            {Key, NewFilter -- OldFilter},
+            {Key, OldFilter -- NewFilter}
+        }
+        || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldSorted, NewSorted)
     ]),
+
+    AddedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten([L || {_, L} <- ToBeAdded])],
+    RemovedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten([L || {_, L} <- ToBeRemoved])],
+    ok = router_console_api:xor_filter_updates(AddedIDs, RemovedIDs),
 
     ok = remove_devices_from_disk(ToBeRemoved),
     ok = write_devices_to_disk(ToBeAdded).
@@ -562,7 +572,6 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
                         FilterToDevices,
                         DevicesDevEuiAppEui
                     ),
-                    ct:print("Updates:~n~p~n", [Updates]),
                     case craft_updates(Updates, BinFilters, MaxXorFilter) of
                         noop -> noop;
                         Crafted -> {Routing, Crafted}

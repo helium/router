@@ -112,16 +112,33 @@ filter_update(["filter", "update"], [], Flags) ->
     case {maps:is_key(commit, Options), router_xor_filter_worker:estimate_cost()} of
         {_, noop} ->
             c_text("No Updates");
-        {false, {Cost, N}} ->
-            c_text(
-                "DRY RUN: Adding ~p devices for ~p DC",
-                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
+        {false, {ok, Cost, Added, Removed}} ->
+            Adding = io_list:format("- Adding ~p devices", [length(Added)]),
+            Removing = [
+                io_lib:format("  - ~p - ~p", [FI, length(Devices)])
+                || {FI, Devices} <- maps:to_list(Removed)
+            ],
+            c_list(
+                [
+                    " -- DRY RUN -- ",
+                    io_lib:format("- Estimated Cost: ~p", [Cost]),
+                    Adding,
+                    "- Removing : (filter, num_devices)"
+                ] ++ Removing
             );
-        {true, {Cost, N}} ->
+        {true, {ok, Cost, Added, Removed}} ->
             ok = router_xor_filter_worker:check_filters(),
-            c_text(
-                "Adding ~p devices for ~p DC",
-                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
+            Adding = io_list:format("- Adding ~p devices", [length(Added)]),
+            Removing = [
+                io_lib:format("  - ~p - ~p", [FI, length(Devices)])
+                || {FI, Devices} <- maps:to_list(Removed)
+            ],
+            c_list(
+                [
+                    io_lib:format("- Estimated Cost: ~p", [Cost]),
+                    Adding,
+                    "- Removing : (filter, num_devices)"
+                ] ++ Removing
             )
     end.
 
@@ -137,6 +154,9 @@ lookup(DeviceID) ->
 %%--------------------------------------------------------------------
 %% Private Utilities
 %%--------------------------------------------------------------------
+
+-spec c_list(list(string())) -> clique_status:status().
+c_list(L) -> [clique_status:list(L)].
 
 -spec c_table([proplists:proplist()]) -> clique_status:status().
 c_table(PropLists) -> [clique_status:table(PropLists)].

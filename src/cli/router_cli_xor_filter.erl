@@ -152,8 +152,6 @@ filter_update(["filter", "update"], [], Flags) ->
 filter_init(["filter", "init"], [], Flags) ->
     Options = maps:from_list(Flags),
     case {maps:is_key(commit, Options), router_xor_filter_worker:get_device_updates()} of
-        {_, noop} ->
-            c_text("Already things in database, maybe don't initialize");
         {false, Reply} ->
             c_text("DRY-RUN:~n~p~n", [Reply]);
         {true, Reply} ->

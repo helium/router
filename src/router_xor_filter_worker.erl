@@ -84,7 +84,10 @@
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
--spec estimate_cost() -> noop | {non_neg_integer(), non_neg_integer()}.
+-spec estimate_cost() ->
+    noop
+    | {ok, Cost :: non_neg_integer(), AddedDevices :: devices_dev_eui_app_eui(),
+        RemovedDevices :: filter_eui_mapping()}.
 estimate_cost() ->
     gen_server:call(?SERVER, estimate_cost, infinity).
 
@@ -147,10 +150,15 @@ handle_call(
     _From,
     #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
 ) ->
-    {ok, Curr, _, _} = Reply = get_device_updates(Chain, OUI, FilterToDevices),
-    lager:info("committing device updates ~p", [Reply]),
-    ok = sync_cache_to_disk(Curr, #{}),
-    {reply, Reply, State};
+    case get_device_updates(Chain, OUI, FilterToDevices) of
+        {ok, {Curr, _Added, _Removed}, _Filter, _Routing} = Reply ->
+            lager:info("committing device updates ~p", [Reply]),
+            ok = sync_cache_to_disk(Curr, #{}),
+            {reply, Reply, State};
+        Reply ->
+            lager:info("no updates to commit"),
+            {reply, Reply, State}
+    end;
 handle_call(
     get_device_updates,
     _From,

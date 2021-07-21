@@ -31,12 +31,14 @@ filter_usage() ->
         ["filter"],
         [
             "\n\n",
-            "  filter                     - this message\n",
+            "  filter                     - this message\n"
             "  filter timer               - How much time until next xor filter run\n"
-            "  filter update --commit     - Update XOR filter\n",
+            "  filter update --commit     - Update XOR filter\n"
+            "  filter rebalance --commit  - Evenly distribute known devices among existing filters\n"
             "  filter report              - Size report\n"
             "  filter report device <id>  - Filter info for a device\n"
-            "  filter init  --commit      - Initialize worker from current Routing Filters\n"
+            "  filter reset_db  --commit  - Reset rocksdb from Console api\n"
+            "\n"
         ]
     ].
 
@@ -50,13 +52,19 @@ filter_cmd() ->
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun filter_update/3
         ],
+        [
+            ["filter", "rebalance"],
+            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
+            fun filter_rebalance/3
+        ],
         [["filter", "report"], [], [], fun filter_report/3],
         [["filter", "report", "device", '*'], [], [], fun filter_report_device/3],
         [
-            ["filter", "init"],
+            ["filter", "reset_db"],
             [],
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
-            fun filter_init/3
+            fun filter_reset_db/3
         ]
     ].
 
@@ -157,14 +165,39 @@ filter_update(["filter", "update"], [], Flags) ->
             )
     end.
 
-filter_init(["filter", "init"], [], Flags) ->
+filter_rebalance(["filter", "rebalance"], [], Flags) ->
     Options = maps:from_list(Flags),
-    case {maps:is_key(commit, Options), router_xor_filter_worker:get_device_updates()} of
-        {false, Reply} ->
-            c_text("DRY-RUN:~n~p~n", [Reply]);
-        {true, Reply} ->
-            route_xor_filter_worker:commit_device_updates(),
-            c_text("Committing:~n~p~n", [Reply])
+    Commit = maps:is_key(commit, Options),
+    case {Commit, router_xor_filter_worker:get_balanced_filters()} of
+        {false, {ok, OldGroups, NewGroups}} ->
+            c_table([
+                [{filter, "DRY"}, {old_size, "RUN"}, {new_size, "!!!"}] ++
+                    [
+                        {filter, Key},
+                        {old_size, erlang:length(maps:get(Key, OldGroups))},
+                        {new_size, erlang:length(maps:get(Key, NewGroups))}
+                    ]
+                || Key <- lists:seq(0, 4)
+            ]);
+        {true, {ok, OldGroups, NewGroups}} ->
+            {ok, _NewPending} = router_xor_filter_worker:commit_groups_to_filters(NewGroups),
+            c_table([
+                [
+                    {filter, Key},
+                    {old_size, erlang:length(maps:get(Key, OldGroups))},
+                    {new_size, erlang:length(maps:get(Key, NewGroups))}
+                ]
+                || Key <- lists:seq(0, 4)
+            ])
+    end.
+
+filter_reset_db(["filter", "reset_db"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
+    Reply = router_xor_filter_worker:reset_db(Commit),
+    case Commit of
+        false -> c_text("DRY-RUN:~n~p~n", [Reply]);
+        true -> c_text("Committing:~n~p~n", [Reply])
     end.
 
 %%--------------------------------------------------------------------

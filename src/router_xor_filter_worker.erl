@@ -16,9 +16,11 @@
     check_filters/0,
     deveui_appeui/1,
     rebalance_filters/0,
+    get_balanced_filters/0,
+    commit_groups_to_filters/1,
     refresh_cache/0,
     get_device_updates/0,
-    commit_device_updates/0
+    reset_db/1
 ]).
 
 -export([
@@ -91,15 +93,14 @@ start_link(Args) ->
 estimate_cost() ->
     gen_server:call(?SERVER, estimate_cost, infinity).
 
+-spec reset_db(boolean()) -> ok.
+reset_db(Commit) ->
+    gen_server:call(?SERVER, {reset_db, Commit}).
+
 -spec get_device_updates() ->
     {ok, filter_eui_mapping(), devices_dev_eui_app_eui(), filter_eui_mapping()}.
 get_device_updates() ->
     gen_server:call(?SERVER, get_device_updates).
-
--spec commit_device_updates() ->
-    {ok, filter_eui_mapping(), devices_dev_eui_app_eui(), filter_eui_mapping()}.
-commit_device_updates() ->
-    gen_server:call(?SERVER, commit_device_updates).
 
 -spec check_filters() -> ok.
 check_filters() ->
@@ -109,6 +110,15 @@ check_filters() ->
 -spec rebalance_filters() -> ok.
 rebalance_filters() ->
     gen_server:cast(?SERVER, ?REBALANCE_FILTERS).
+
+-spec get_balanced_filters() -> {ok, Old :: filter_eui_mapping(), New :: filter_eui_mapping()}.
+get_balanced_filters() ->
+    gen_server:call(?SERVER, get_balanced_filters, infinity).
+
+-spec commit_groups_to_filters(filter_eui_mapping()) ->
+    {ok, NewPending :: #{binary() => {0..4, devices_dev_eui_app_eui()}}}.
+commit_groups_to_filters(NewGroups) ->
+    gen_server:call(?SERVER, {commit_groups_to_filters, NewGroups}).
 
 -spec deveui_appeui(router_device:device()) -> device_eui().
 deveui_appeui(Device) ->
@@ -146,19 +156,27 @@ handle_call(estimate_cost, _From, State) ->
     lager:info("estimating cost ~p", [Reply]),
     {reply, Reply, State};
 handle_call(
-    commit_device_updates,
+    {reset_db, Commit},
     _From,
     #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
 ) ->
-    case get_device_updates(Chain, OUI, FilterToDevices) of
-        {ok, {Curr, _Added, _Removed}, _Filter, _Routing} = Reply ->
-            lager:info("committing device updates ~p", [Reply]),
-            ok = sync_cache_to_disk(Curr, #{}),
-            {reply, Reply, State};
-        Reply ->
-            lager:info("no updates to commit"),
-            {reply, Reply, State}
-    end;
+    Reply =
+        case {Commit, get_device_updates(Chain, OUI, FilterToDevices)} of
+            {false, {ok, {_, _, _}, _, _} = Updates} ->
+                Updates;
+            {true, {ok, {Curr, _, _}, _, _} = Updates} ->
+                lager:info("committing device updates ~p", [Updates]),
+                ok = empty_rocksdb(),
+                ok = sync_cache_to_disk(Curr, #{}),
+                Updates;
+            {_, Response} ->
+                lager:warning("unexpected trying to reset xor db [commit: ~p] ~p", [
+                    Commit,
+                    Response
+                ]),
+                Response
+        end,
+    {reply, Reply, State};
 handle_call(
     get_device_updates,
     _From,
@@ -214,42 +232,29 @@ handle_call(
 handle_call(refresh_cache, _From, State) ->
     {ok, FilterToDevices} = read_devices_from_disk(),
     {reply, ok, State#state{filter_to_devices = FilterToDevices}};
+handle_call(get_balanced_filters, _From, #state{filter_to_devices = FilterToDevices} = State) ->
+    Reply = get_balanced_filters(FilterToDevices),
+    {reply, Reply, State};
+handle_call(
+    {commit_groups_to_filters, NewGroups},
+    _From,
+    #state{pending_txns = CurrentPending} = State
+) ->
+    {ok, NewPending} = commit_groups_to_filters(NewGroups, State),
+    NewPendingTxns = maps:merge(CurrentPending, NewPending),
+    {reply, {ok, NewPendingTxns}, State#state{pending_txns = NewPendingTxns}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(?REBALANCE_FILTERS, #state{chain = Chain, oui = OUI} = State) ->
-    Pendings =
-        case router_console_api:get_all_devices() of
-            {error, _Reason} ->
-                lager:error("failed to get devices ~p", [_Reason]),
-                {error, {could_not_rebalance_filters, _Reason}};
-            {ok, Devices} ->
-                DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
+handle_cast(
+    ?REBALANCE_FILTERS,
+    #state{pending_txns = CurrentPending, filter_to_devices = FilterToDevices} = State
+) ->
+    {ok, _OldGroup, NewGroups} = get_balanced_filters(FilterToDevices),
+    {ok, NewPending} = commit_groups_to_filters(NewGroups, State),
 
-                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, 5),
-
-                Ledger = blockchain:ledger(Chain),
-                {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
-                CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
-                lists:map(
-                    fun({Idx, GroupEuis}) ->
-                        Nonce = CurrNonce + Idx + 1,
-                        Filter = new_xor_filter(GroupEuis),
-                        Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
-                        Hash = submit_txn(Txn),
-                        lager:info("updating filter txn ~p submitted ~p", [
-                            Hash,
-                            lager:pr(Txn, blockchain_txn_routing_v1)
-                        ]),
-
-                        {Hash, {Idx, GroupEuis}}
-                    end,
-                    enumerate_0(Grouped)
-                )
-        end,
-
-    {noreply, State#state{pending_txns = maps:from_list(Pendings)}};
+    {noreply, State#state{pending_txns = maps:merge(CurrentPending, NewPending)}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -422,6 +427,41 @@ terminate(_Reason, #state{}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+get_balanced_filters(FilterToDevices) ->
+    BalancedFilterToDevices =
+        case router_console_api:get_all_devices() of
+            {error, _Reason} ->
+                lager:error("failed to get devices ~p", [_Reason]),
+                {error, {could_not_rebalance_filters, _Reason}};
+            {ok, Devices} ->
+                DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
+                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, 5),
+                maps:from_list(enumerate_0(Grouped))
+        end,
+    {ok, FilterToDevices, BalancedFilterToDevices}.
+
+commit_groups_to_filters(NewGroups, #state{chain = Chain, oui = OUI} = State) ->
+    Ledger = blockchain:ledger(Chain),
+    {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
+    CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
+    NewPending0 =
+        lists:map(
+            fun({Idx, GroupEuis}) ->
+                Nonce = CurrNonce + Idx + 1,
+                Filter = new_xor_filter(GroupEuis),
+                Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
+                Hash = submit_txn(Txn),
+                lager:info("updating filter txn ~p submitted ~p", [
+                    Hash,
+                    lager:pr(Txn, blockchain_txn_routing_v1)
+                ]),
+
+                {Hash, {Idx, GroupEuis}}
+            end,
+            maps:to_list(NewGroups)
+        ),
+    {ok, maps:from_list(NewPending0)}.
+
 -spec get_filters(blockchain:blockchain(), non_neg_integer()) ->
     {error, any()}
     | {ok, list(binary()), blockchain_ledger_routing_v1:routing()}.
@@ -550,6 +590,11 @@ write_devices_to_disk(DevicesToAdd) ->
         end,
         DevicesToAdd
     ).
+
+-spec empty_rocksdb() -> ok | {error, any()}.
+empty_rocksdb() ->
+    {ok, DB, CF} = router_db:get_xor_filter_devices(),
+    rocksdb:flush(DB, CF, [{wait, true}]).
 
 -spec estimate_cost(#state{}) ->
     noop

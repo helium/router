@@ -16,7 +16,9 @@
     check_filters/0,
     deveui_appeui/1,
     rebalance_filters/0,
-    refresh_cache/0
+    refresh_cache/0,
+    get_device_updates/0,
+    commit_device_updates/0
 ]).
 
 -export([
@@ -86,6 +88,16 @@ start_link(Args) ->
 estimate_cost() ->
     gen_server:call(?SERVER, estimate_cost, infinity).
 
+-spec get_device_updates() ->
+    {ok, filter_eui_mapping(), devices_dev_eui_app_eui(), filter_eui_mapping()}.
+get_device_updates() ->
+    gen_server:call(?SERVER, get_device_updates).
+
+-spec commit_device_updates() ->
+    {ok, filter_eui_mapping(), devices_dev_eui_app_eui(), filter_eui_mapping()}.
+commit_device_updates() ->
+    gen_server:call(?SERVER, commit_device_updates).
+
 -spec check_filters() -> ok.
 check_filters() ->
     ?SERVER ! ?CHECK_FILTERS_TICK,
@@ -129,6 +141,23 @@ init(Args) ->
 handle_call(estimate_cost, _From, State) ->
     Reply = estimate_cost(State),
     lager:info("estimating cost ~p", [Reply]),
+    {reply, Reply, State};
+handle_call(
+    commit_device_updates,
+    _From,
+    #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
+) ->
+    {ok, Curr, _, _} = Reply = get_device_updates(Chain, OUI, FilterToDevices),
+    lager:info("committing device updates ~p", [Reply]),
+    ok = sync_cache_to_disk(Curr, #{}),
+    {reply, Reply, State};
+handle_call(
+    get_device_updates,
+    _From,
+    #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
+) ->
+    Reply = get_device_updates(Chain, OUI, FilterToDevices),
+    lager:info("getting device updates ~p", [Reply]),
     {reply, Reply, State};
 handle_call(report_timer, _From, #state{check_filters_ref = Timer} = State) ->
     {reply, Timer, State};

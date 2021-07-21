@@ -13,20 +13,20 @@ register_cli() ->
 register_all_usage() ->
     lists:foreach(
         fun(Args) -> apply(clique, register_usage, Args) end,
-        [device_usage()]
+        [filter_usage()]
     ).
 
 register_all_cmds() ->
     lists:foreach(
         fun(Cmds) -> [apply(clique, register_command, Cmd) || Cmd <- Cmds] end,
-        [device_cmd()]
+        [filter_cmd()]
     ).
 
 %%--------------------------------------------------------------------
-%% device
+%% filter
 %%--------------------------------------------------------------------
 
-device_usage() ->
+filter_usage() ->
     [
         ["filter"],
         [
@@ -36,10 +36,11 @@ device_usage() ->
             "  filter update --commit     - Update XOR filter\n",
             "  filter report              - Size report\n"
             "  filter report device <id>  - Filter info for a device\n"
+            "  filter init  --commit      - Initialize worker from current Routing Filters\n"
         ]
     ].
 
-device_cmd() ->
+filter_cmd() ->
     [
         [["filter"], [], [], ?USAGE],
         [["filter", "timer"], [], [], fun filter_timer/3],
@@ -50,7 +51,13 @@ device_cmd() ->
             fun filter_update/3
         ],
         [["filter", "report"], [], [], fun filter_report/3],
-        [["filter", "report", "device", '*'], [], [], fun filter_report_device/3]
+        [["filter", "report", "device", '*'], [], [], fun filter_report_device/3],
+        [
+            ["filter", "init"],
+            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
+            fun filter_init/3
+        ]
     ].
 
 filter_report(["filter", "report"], [], []) ->
@@ -140,6 +147,18 @@ filter_update(["filter", "update"], [], Flags) ->
                     "- Removing : (filter, num_devices)"
                 ] ++ Removing
             )
+    end.
+
+filter_init(["filter", "init"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    case {maps:is_key(commit, Options), router_xor_filter_worker:get_device_updates()} of
+        {_, noop} ->
+            c_text("Already things in database, maybe don't initialize");
+        {false, Reply} ->
+            c_text("DRY-RUN:~n~p~n", [Reply]);
+        {true, Reply} ->
+            route_xor_filter_worker:commit_device_updates(),
+            c_text("Committing:~n~p~n", [Reply])
     end.
 
 %%--------------------------------------------------------------------

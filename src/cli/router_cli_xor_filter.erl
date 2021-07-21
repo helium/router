@@ -69,7 +69,7 @@ filter_report(["filter", "report"], [], []) ->
     c_table([
         [
             {filter, Idx},
-            {num_devices_in_cache, erlang:length(Devices)},
+            {num_devices_in_cache, Devices},
             {size_in_bytes, Size}
         ]
         || {{Idx, Devices}, {Idx, Size}} <- lists:zip(Memory, Routing)
@@ -102,8 +102,16 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
         {routing, ChainFilters},
         {in_memory, WorkerFilters}
     ] = router_xor_filter_worker:report_device_status(Device),
-    Worker = [I || {I, Present} <- WorkerFilters, Present == true],
-    Chain = [I || {I, Present} <- ChainFilters, Present == true],
+    Worker =
+        case [I || {I, Present} <- WorkerFilters, Present == true] of
+            [] -> false;
+            V1 -> V1
+        end,
+    Chain =
+        case [I || {I, Present} <- ChainFilters, Present == true] of
+            [] -> false;
+            V2 -> V2
+        end,
 
     c_table([
         [{place, console}, {value, Console}],
@@ -120,7 +128,7 @@ filter_update(["filter", "update"], [], Flags) ->
         {_, noop} ->
             c_text("No Updates");
         {false, {ok, Cost, Added, Removed}} ->
-            Adding = io_list:format("- Adding ~p devices", [length(Added)]),
+            Adding = io_lib:format("- Adding ~p devices", [length(Added)]),
             Removing = [
                 io_lib:format("  - ~p - ~p", [FI, length(Devices)])
                 || {FI, Devices} <- maps:to_list(Removed)
@@ -135,7 +143,7 @@ filter_update(["filter", "update"], [], Flags) ->
             );
         {true, {ok, Cost, Added, Removed}} ->
             ok = router_xor_filter_worker:check_filters(),
-            Adding = io_list:format("- Adding ~p devices", [length(Added)]),
+            Adding = io_lib:format("- Adding ~p devices", [length(Added)]),
             Removing = [
                 io_lib:format("  - ~p - ~p", [FI, length(Devices)])
                 || {FI, Devices} <- maps:to_list(Removed)

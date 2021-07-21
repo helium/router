@@ -115,8 +115,8 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
 
     c_table([
         [{place, console}, {value, Console}],
-        [{place, worker_cache}, {value, Worker}],
-        [{place, chain_filter}, {value, Chain}],
+        [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [Worker]))}],
+        [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [Chain]))}],
         %% Needs to be in rocks for us to fetch enough to ask other questions about device
         [{place, rocksdb}, {value, true}],
         [{place, running}, {value, DeviceAlive}]

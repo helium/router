@@ -14,13 +14,17 @@
     start_link/1,
     estimate_cost/0,
     check_filters/0,
-    deveui_appeui/1,
     rebalance_filters/0,
     get_balanced_filters/0,
     commit_groups_to_filters/1,
     refresh_cache/0,
     get_device_updates/0,
     reset_db/1
+]).
+
+-export([
+    deveui_appeui/1,
+    get_devices_deveui_app_eui/1
 ]).
 
 -export([
@@ -793,7 +797,10 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         RemovedDevicesDevEuiAppEuiMap
     ).
 
-assign_filter_index(Index, DeviceEuis) -> [N#{filter_index => Index} || N <- DeviceEuis].
+assign_filter_index(Index, DeviceEuis) when is_list(DeviceEuis) ->
+    [N#{filter_index => Index} || N <- DeviceEuis];
+assign_filter_index(Index, DeviceEui) ->
+    DeviceEui#{filter_index => Index}.
 
 %% Return {map of IN FILTER device_dev_eui_app_eui indexed by their filter,
 %%         list of added device
@@ -962,7 +969,7 @@ enumerate_0(L) ->
 -spec new_xor_filter(devices_dev_eui_app_eui()) -> Filter :: reference().
 new_xor_filter(DeviceEntries) ->
     IDS = [ID || #{eui := ID} <- DeviceEntries],
-    {Filter, _} = xor16:new(IDS, ?HASH_FUN),
+    {Filter, _} = xor16:new(lists:usort(IDS), ?HASH_FUN),
     Filter.
 
 -spec is_unset_filter_index_in_list(
@@ -982,6 +989,15 @@ is_unset_filter_index_in_list(#{eui := EUI1, device_id := ID1}, L) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+device_deveui_appeui(Device) ->
+    [D] = get_devices_deveui_app_eui([Device]),
+    D.
+
+new_xor_filter_bin(Devices) ->
+    Filter = new_xor_filter(Devices),
+    {Bin, _} = xor16:to_bin({Filter, ?HASH_FUN}),
+    {ok, Bin}.
 
 deveui_appeui_test() ->
     DevEUI = 6386327472473908003,
@@ -1010,7 +1026,9 @@ test_for_should_update_filters_test() ->
     meck:expect(blockchain, ledger, fun(_) -> ledger end),
     %% This set the max xor filter chain var
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-    meck:expect(router_console_api, get_all_devices, fun() -> {error, any} end),
+    meck:expect(router_console_api, get_all_devices, fun() ->
+        {error, no_devices_on_purpose}
+    end),
 
     ?assertEqual(noop, should_update_filters(chain, OUI, #{})),
 
@@ -1025,8 +1043,7 @@ test_for_should_update_filters_test() ->
         {ok, [Device0]}
     end),
 
-    {Filter, _} = xor16:new([deveui_appeui(Device0)], ?HASH_FUN),
-    {BinFilter, _} = xor16:to_bin({Filter, ?HASH_FUN}),
+    {ok, BinFilter} = new_xor_filter_bin([device_deveui_appeui(Device0)]),
     Routing0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, Routing0}
@@ -1036,15 +1053,14 @@ test_for_should_update_filters_test() ->
 
     %% ------------------------
     %% Testing if a device was added
-    {EmptyFilter, _} = xor16:new([], ?HASH_FUN),
-    {BinEmptyFilter, _} = xor16:to_bin({EmptyFilter, ?HASH_FUN}),
+    {ok, BinEmptyFilter} = new_xor_filter_bin([]),
     EmptyRouting = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinEmptyFilter, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, EmptyRouting}
     end),
 
     ?assertEqual(
-        {EmptyRouting, [{new, [deveui_appeui(Device0)]}]},
+        {EmptyRouting, [{new, get_devices_deveui_app_eui([Device0])}]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1064,7 +1080,13 @@ test_for_should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 0, [deveui_appeui(Device1), deveui_appeui(Device0)]}]},
+        {Routing0, [
+            {update, 0, [
+                device_deveui_appeui(Device1),
+                %% Already in the filter
+                assign_filter_index(0, device_deveui_appeui(Device0))
+            ]}
+        ]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1076,12 +1098,11 @@ test_for_should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 0, [deveui_appeui(Device1)]}]},
+        {Routing0, [{update, 0, get_devices_deveui_app_eui([Device1])}]},
         should_update_filters(chain, OUI, #{
-            0 => [deveui_appeui(Device0)]
+            0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0]))
         })
     ),
-
     %% ------------------------
     % Testing that we removed Device0 and added Device2
     DeviceUpdates2 = [
@@ -1094,19 +1115,17 @@ test_for_should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {Routing0, [{update, 0, [deveui_appeui(Device1), deveui_appeui(Device2)]}]},
+        {Routing0, [{update, 0, get_devices_deveui_app_eui([Device1, Device2])}]},
         should_update_filters(chain, OUI, #{
-            0 => [deveui_appeui(Device0)]
+            0 => get_devices_deveui_app_eui([Device0])
         })
     ),
 
     %% ------------------------
     % Testing that we removed Device0 and Device1 but from diff filters
-    {Filter0, _} = xor16:new([deveui_appeui(Device0)], ?HASH_FUN),
-    {BinFilter0, _} = xor16:to_bin({Filter0, ?HASH_FUN}),
+    {ok, BinFilter0} = new_xor_filter_bin([device_deveui_appeui(Device0)]),
     RoutingRemoved0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter0, [], 1),
-    {Filter1, _} = xor16:new([deveui_appeui(Device1)], ?HASH_FUN),
-    {BinFilter1, _} = xor16:to_bin({Filter1, ?HASH_FUN}),
+    {ok, BinFilter1} = new_xor_filter_bin([device_deveui_appeui(Device1)]),
     RoutingRemoved1 = blockchain_ledger_routing_v1:update(
         RoutingRemoved0,
         {new_xor, BinFilter1},
@@ -1120,11 +1139,14 @@ test_for_should_update_filters_test() ->
         {ok, []}
     end),
 
+    % Make are the devices are in the filters
+    ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_appeui(Device0))),
+    ?assert(xor16:contain({BinFilter1, ?HASH_FUN}, deveui_appeui(Device1))),
     ?assertEqual(
         {RoutingRemoved1, [{update, 1, []}, {update, 0, []}]},
         should_update_filters(chain, OUI, #{
-            0 => [deveui_appeui(Device0)],
-            1 => [deveui_appeui(Device1)]
+            0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0])),
+            1 => assign_filter_index(1, get_devices_deveui_app_eui([Device1]))
         })
     ),
 
@@ -1165,7 +1187,7 @@ test_for_should_update_filters_test() ->
     end),
 
     ?assertEqual(
-        {RoutingEmptyMap1, [{update, 0, [deveui_appeui(Device4)]}]},
+        {RoutingEmptyMap1, [{update, 0, get_devices_deveui_app_eui([Device4])}]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1181,8 +1203,7 @@ test_for_should_update_filters_test() ->
         {ok, [Device5, Device5Copy]}
     end),
 
-    {EmptyFilter2, _} = xor16:new([], ?HASH_FUN),
-    {BinEmptyFilter2, _} = xor16:to_bin({EmptyFilter2, ?HASH_FUN}),
+    {ok, BinEmptyFilter2} = new_xor_filter_bin([]),
     EmptyRouting2 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinEmptyFilter2, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, EmptyRouting}
@@ -1190,14 +1211,15 @@ test_for_should_update_filters_test() ->
 
     %% Devices with matching app/dev eui should be deduplicated
     ?assertEqual(
-        {EmptyRouting2, [{new, [deveui_appeui(Device5)]}]},
+        %% NOTE: Expecting both, because we store by EUI and DeviceID for
+        %% fetching later, EUIs are deduped before going into a filter though
+        {EmptyRouting2, [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}]},
         should_update_filters(chain, OUI, #{})
     ),
 
     %% ------------------------
     % Devices already in Filter should not cause updates
-    {FilterLast, _} = xor16:new([deveui_appeui(Device5)], ?HASH_FUN),
-    {BinFilterLast, _} = xor16:to_bin({FilterLast, ?HASH_FUN}),
+    {ok, BinFilterLast} = new_xor_filter_bin([device_deveui_appeui(Device5)]),
     RoutingLast = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilterLast, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, RoutingLast}
@@ -1228,7 +1250,9 @@ test_for_should_update_filters_test() ->
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
 
     ?assertEqual(
-        {RoutingLast, [{update, 0, [deveui_appeui(Device6)]}]},
+        %% NOTE: Expecting both, because we store by EUI and DeviceID for
+        %% fetching later, EUIs are deduped before going into a filter though
+        {RoutingLast, [{update, 0, get_devices_deveui_app_eui([Device6, Device6Copy])}]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1244,8 +1268,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
     ],
     Device8 = router_device:update(DeviceUpdates8, router_device:new("ID8")),
-    {Filter7, _} = xor16:new([deveui_appeui(Device7)], ?HASH_FUN),
-    {BinFilter7, _} = xor16:to_bin({Filter7, ?HASH_FUN}),
+    {ok, BinFilter7} = new_xor_filter_bin([device_deveui_appeui(Device7)]),
     Routing7 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter7, [], 1),
 
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) -> {ok, Routing7} end),
@@ -1253,7 +1276,12 @@ test_for_should_update_filters_test() ->
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
 
     ?assertEqual(
-        {Routing7, [{update, 0, [deveui_appeui(Device8), deveui_appeui(Device7)]}]},
+        {Routing7, [
+            {update, 0, [
+                device_deveui_appeui(Device8),
+                assign_filter_index(0, device_deveui_appeui(Device7))
+            ]}
+        ]},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1263,46 +1291,62 @@ test_for_should_update_filters_test() ->
     ok.
 
 contained_in_filters_test_() ->
-    BinDevices = lists:sort([crypto:strong_rand_bytes(16) || _ <- lists:seq(1, 10)]),
+    DeviceEntries = get_devices_deveui_app_eui(n_rand_devices(10)),
 
-    {BinDevices1, BinDevices2} = lists:split(5, BinDevices),
-    {Filter1, _} = xor16:new(BinDevices1, ?HASH_FUN),
-    {BinFilter1, _} = xor16:to_bin({Filter1, ?HASH_FUN}),
-    {Filter2, _} = xor16:new(BinDevices2, ?HASH_FUN),
-    {BinFilter2, _} = xor16:to_bin({Filter2, ?HASH_FUN}),
+    {DeviceEntries1, DeviceEntries2} = lists:split(5, DeviceEntries),
+    {ok, BinFilter1} = new_xor_filter_bin(DeviceEntries1),
+    {ok, BinFilter2} = new_xor_filter_bin(DeviceEntries2),
+
     [
         ?_assertEqual(
             {
-                #{0 => BinDevices1, 1 => BinDevices2},
+                #{
+                    0 => assign_filter_index(0, DeviceEntries1),
+                    1 => assign_filter_index(1, DeviceEntries2)
+                },
                 lists:sort([]),
                 #{}
             },
-            contained_in_filters([BinFilter1, BinFilter2], #{}, BinDevices)
+            contained_in_filters([BinFilter1, BinFilter2], #{}, DeviceEntries)
         ),
         ?_assertEqual(
             {
-                #{0 => BinDevices1},
-                BinDevices2,
+                #{0 => assign_filter_index(0, DeviceEntries1)},
+                DeviceEntries2,
                 #{}
             },
-            contained_in_filters([BinFilter1], #{}, BinDevices)
+            contained_in_filters([BinFilter1], #{}, DeviceEntries)
         ),
         ?_assertEqual(
             {
-                #{0 => BinDevices1},
+                #{0 => assign_filter_index(0, DeviceEntries1)},
                 [],
-                #{1 => BinDevices2}
+                #{1 => assign_filter_index(1, DeviceEntries2)}
             },
-            contained_in_filters([BinFilter1, BinFilter2], #{0 => BinDevices2}, BinDevices1)
+            contained_in_filters([BinFilter1, BinFilter2], #{0 => DeviceEntries2}, DeviceEntries1)
         ),
         ?_assertEqual(
             {
                 #{},
-                BinDevices2,
-                #{0 => BinDevices1}
+                DeviceEntries2,
+                #{0 => assign_filter_index(0, DeviceEntries1)}
             },
-            contained_in_filters([BinFilter1], #{0 => BinDevices1}, BinDevices2)
+            contained_in_filters([BinFilter1], #{0 => DeviceEntries1}, DeviceEntries2)
         )
     ].
+
+n_rand_devices(N) ->
+    lists:map(
+        fun(Idx) ->
+            Updates = [
+                {app_eui, crypto:strong_rand_bytes(8)},
+                {dev_eui, crypto:strong_rand_bytes(8)}
+            ],
+            Name = erlang:list_to_binary(io_lib:format("Device-~p", [Idx])),
+            Device = router_device:update(Updates, router_device:new(Name)),
+            Device
+        end,
+        lists:seq(1, N)
+    ).
 
 -endif.

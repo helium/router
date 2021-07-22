@@ -797,10 +797,9 @@ craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
         RemovedDevicesDevEuiAppEuiMap
     ).
 
+-spec assign_filter_index(Index :: non_neg_integer(), list()) -> list().
 assign_filter_index(Index, DeviceEuis) when is_list(DeviceEuis) ->
-    [N#{filter_index => Index} || N <- DeviceEuis];
-assign_filter_index(Index, DeviceEui) ->
-    DeviceEui#{filter_index => Index}.
+    [N#{filter_index => Index} || N <- DeviceEuis].
 
 %% Return {map of IN FILTER device_dev_eui_app_eui indexed by their filter,
 %%         list of added device
@@ -994,6 +993,9 @@ device_deveui_appeui(Device) ->
     [D] = get_devices_deveui_app_eui([Device]),
     D.
 
+assign_filter_index_map(Index, DeviceEui) ->
+    DeviceEui#{filter_index => Index}.
+
 new_xor_filter_bin(Devices) ->
     Filter = new_xor_filter(Devices),
     {Bin, _} = xor16:to_bin({Filter, ?HASH_FUN}),
@@ -1084,7 +1086,7 @@ test_for_should_update_filters_test() ->
             {update, 0, [
                 device_deveui_appeui(Device1),
                 %% Already in the filter
-                assign_filter_index(0, device_deveui_appeui(Device0))
+                assign_filter_index_map(0, device_deveui_appeui(Device0))
             ]}
         ]},
         should_update_filters(chain, OUI, #{})
@@ -1279,7 +1281,7 @@ test_for_should_update_filters_test() ->
         {Routing7, [
             {update, 0, [
                 device_deveui_appeui(Device8),
-                assign_filter_index(0, device_deveui_appeui(Device7))
+                assign_filter_index_map(0, device_deveui_appeui(Device7))
             ]}
         ]},
         should_update_filters(chain, OUI, #{})

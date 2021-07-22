@@ -142,12 +142,15 @@ filter_update(["filter", "update"], [], Flags) ->
                 || {FI, Devices} <- maps:to_list(Removed)
             ],
             c_list(
-                [
-                    " -- DRY RUN -- ",
-                    io_lib:format("- Estimated Cost: ~p", [Cost]),
-                    Adding,
-                    "- Removing : (filter, num_devices)"
-                ] ++ Removing
+                lists:join(
+                    "\n",
+                    [
+                        " -- DRY RUN -- ",
+                        io_lib:format("- Estimated Cost: ~p", [Cost]),
+                        Adding,
+                        "- Removing : (filter, num_devices)"
+                    ] ++ Removing
+                )
             );
         {true, {ok, Cost, Added, Removed}} ->
             ok = router_xor_filter_worker:check_filters(),
@@ -157,11 +160,14 @@ filter_update(["filter", "update"], [], Flags) ->
                 || {FI, Devices} <- maps:to_list(Removed)
             ],
             c_list(
-                [
-                    io_lib:format("- Estimated Cost: ~p", [Cost]),
-                    Adding,
-                    "- Removing : (filter, num_devices)"
-                ] ++ Removing
+                lists:join(
+                    "\n",
+                    [
+                        io_lib:format("- Estimated Cost: ~p", [Cost]),
+                        Adding,
+                        "- Removing : (filter, num_devices)"
+                    ] ++ Removing
+                )
             )
     end.
 

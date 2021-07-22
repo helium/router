@@ -533,8 +533,9 @@ get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     NewMapping :: filter_eui_mapping()
 ) -> {Added :: filter_eui_mapping(), Removed :: filter_eui_mapping()}.
 diff_filter_to_devices(OldMapping, NewMapping) ->
-    OldSorted = lists:sort(maps:to_list(OldMapping)),
-    NewSorted = lists:sort(maps:to_list(NewMapping)),
+    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
+    OldSorted = lists:sort(maps:to_list(maps:merge(BaseEmpty, OldMapping))),
+    NewSorted = lists:sort(maps:to_list(maps:merge(BaseEmpty, NewMapping))),
 
     {ToBeAdded, ToBeRemoved} = lists:unzip([
         {

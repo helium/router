@@ -247,7 +247,10 @@ record_dc_balance(PubkeyBin) ->
 record_state_channels() ->
     SCs = blockchain_state_channels_server:state_channels(),
     OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        fun(_ID, {SC, _}) ->
+            blockchain_state_channel_v1:state(SC) == open andalso
+                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
+        end,
         SCs
     ),
     ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),

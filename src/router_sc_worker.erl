@@ -244,7 +244,10 @@ schedule_next_tick() ->
 maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
     SCs = blockchain_state_channels_server:state_channels(),
     OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        fun(_ID, {SC, _}) ->
+            blockchain_state_channel_v1:state(SC) == open andalso
+                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
+        end,
         SCs
     ),
     OpenedCount = maps:size(OpenedSCs),
@@ -281,7 +284,10 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
 maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
     SCs = blockchain_state_channels_server:state_channels(),
     OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) -> blockchain_state_channel_v1:state(SC) == open end,
+        fun(_ID, {SC, _}) ->
+            blockchain_state_channel_v1:state(SC) == open andalso
+                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
+        end,
         SCs
     ),
     OpenedCount = maps:size(OpenedSCs),

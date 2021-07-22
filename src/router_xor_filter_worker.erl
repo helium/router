@@ -160,23 +160,22 @@ handle_call(
     _From,
     #state{chain = Chain, oui = OUI, filter_to_devices = FilterToDevices} = State
 ) ->
-    Reply =
-        case {Commit, get_device_updates(Chain, OUI, FilterToDevices)} of
-            {false, {ok, {_, _, _}, _, _} = Updates} ->
-                Updates;
-            {true, {ok, {Curr, _, _}, _, _} = Updates} ->
-                lager:info("committing device updates ~p", [Updates]),
-                ok = empty_rocksdb(),
-                ok = sync_cache_to_disk(Curr, #{}),
-                Updates;
-            {_, Response} ->
-                lager:warning("unexpected trying to reset xor db [commit: ~p] ~p", [
-                    Commit,
-                    Response
-                ]),
+    case {Commit, get_device_updates(Chain, OUI, FilterToDevices)} of
+        {false, {ok, {_, _, _}, _, _} = Updates} ->
+            Updates;
+        {true, {ok, {Curr, _, _}, _, _} = Updates} ->
+            lager:info("committing device updates ~p", [Updates]),
+            ok = empty_rocksdb(),
+            ok = sync_cache_to_disk(Curr, #{}),
+            {ok, NewFilterToDevices} = read_devices_from_disk(),
+            {reply, Updates, State#state{filter_to_devices = NewFilterToDevices}};
+        {_, Response} ->
+            lager:warning("unexpected trying to reset xor db [commit: ~p] ~p", [
+                Commit,
                 Response
-        end,
-    {reply, Reply, State};
+            ]),
+            {reply, Response, State}
+    end;
 handle_call(
     get_device_updates,
     _From,

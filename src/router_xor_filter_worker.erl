@@ -593,7 +593,8 @@ write_devices_to_disk(DevicesToAdd) ->
 -spec empty_rocksdb() -> ok | {error, any()}.
 empty_rocksdb() ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
-    rocksdb:flush(DB, CF, [{wait, true}]).
+    List = get_fold(DB, CF, fun(_) -> true end),
+    remove_devices_from_disk(List).
 
 -spec estimate_cost(#state{}) ->
     noop

@@ -435,7 +435,10 @@ get_balanced_filters(FilterToDevices) ->
             {ok, Devices} ->
                 DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
                 Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, 5),
-                maps:from_list(enumerate_0(Grouped))
+                maps:from_list([
+                    {Idx, assign_filter_index(Idx, Group)}
+                    || {Idx, Group} <- enumerate_0(Grouped)
+                ])
         end,
     {ok, FilterToDevices, BalancedFilterToDevices}.
 

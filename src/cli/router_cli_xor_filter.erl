@@ -119,7 +119,6 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
             {_, true} -> ConsoleDevice;
             {false, false} -> false
         end,
-
     {InWorkerFilter, InChainFilter} =
         case Device =/= false of
             false ->
@@ -141,12 +140,27 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
                     end,
                 {InWorkerFilter0, InChainFilter0}
         end,
+    RocksDBCache =
+        case Device =/= false of
+            false ->
+                false;
+            true ->
+                {ok, DB, CF} = router_db:get_xor_filter_devices(),
+                EUI = router_xor_filter_worker:deveui_appeui(Device),
+                case rocksdb:get(DB, CF, EUI, []) of
+                    {ok, Bin} ->
+                        maps:get(filter_index, binary_to_term(Bin), false);
+                    _ ->
+                        false
+                end
+        end,
     c_table([
-        [{place, device_id}, {value, io_lib:format("~p", [ID])}],
-        [{place, console}, {value, ConsoleDevice =/= false}],
-        [{place, rocksdb}, {value, DBDevice =/= false}],
+        [{place, device_id}, {value, io_lib:format("~s", [ID])}],
+        [{place, in_console}, {value, ConsoleDevice =/= false}],
+        [{place, in_rocksdb}, {value, DBDevice =/= false}],
         [{place, running}, {value, DeviceAlive}],
         [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [InWorkerFilter]))}],
+        [{place, rocks_db_cache}, {value, RocksDBCache}],
         [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [InChainFilter]))}]
     ]).
 

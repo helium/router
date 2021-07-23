@@ -524,6 +524,7 @@ get_fold(DB, CF, Itr, {ok, _K, Bin}, FilterTransformFun, Acc) ->
     Next = rocksdb:iterator_move(Itr, next),
     Device = erlang:binary_to_term(Bin),
     case FilterTransformFun(Device) of
+        true -> get_fold(DB, CF, Itr, Next, FilterTransformFun, [Device | Acc]);
         {true, Val} -> get_fold(DB, CF, Itr, Next, FilterTransformFun, [Val | Acc]);
         false -> get_fold(DB, CF, Itr, Next, FilterTransformFun, Acc)
     end;

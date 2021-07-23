@@ -97,6 +97,7 @@ start_link(Args) ->
 estimate_cost() ->
     gen_server:call(?SERVER, estimate_cost, infinity).
 
+%% TODO: This spec is wrong
 -spec reset_db(boolean()) -> ok.
 reset_db(Commit) ->
     gen_server:call(?SERVER, {reset_db, Commit}).
@@ -166,7 +167,7 @@ handle_call(
 ) ->
     case {Commit, get_device_updates(Chain, OUI, FilterToDevices)} of
         {false, {ok, {_, _, _}, _, _} = Updates} ->
-            Updates;
+            {reply, Updates, State};
         {true, {ok, {Curr, _, _}, _, _} = Updates} ->
             lager:info("committing device updates ~p", [Updates]),
             ok = empty_rocksdb(),

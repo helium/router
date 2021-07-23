@@ -96,38 +96,58 @@ filter_timer(["filter", "timer"], [], []) ->
 
 filter_report_device(["filter", "report", "device", ID], [], []) ->
     DeviceID = erlang:list_to_binary(ID),
-
-    {ok, Device} = lookup(DeviceID),
-    DeviceAlive = is_device_running(Device),
-
-    Console =
+    DeviceAlive =
+        case router_devices_sup:lookup_device_worker(DeviceID) of
+            {error, not_found} -> false;
+            {ok, _} -> true
+        end,
+    ConsoleDevice =
         case router_console_api:get_device(DeviceID) of
             {error, _} -> false;
-            {ok, D} -> D
+            {ok, D0} -> D0
         end,
 
-    [
-        {routing, ChainFilters},
-        {in_memory, WorkerFilters}
-    ] = router_xor_filter_worker:report_device_status(Device),
-    Worker =
-        case [I || {I, Present} <- WorkerFilters, Present == true] of
-            [] -> false;
-            V1 -> V1
+    {ok, DB, [_, CF]} = router_db:get(),
+    DBDevice =
+        case router_device:get_by_id(DB, CF, DeviceID) of
+            {error, _} -> false;
+            {ok, D1} -> D1
         end,
-    Chain =
-        case [I || {I, Present} <- ChainFilters, Present == true] of
-            [] -> false;
-            V2 -> V2
+    Device =
+        case {DBDevice =/= false, ConsoleDevice =/= false} of
+            {true, _} -> DBDevice;
+            {_, true} -> ConsoleDevice;
+            {false, false} -> false
         end,
 
+    {InWorkerFilter, InChainFilter} =
+        case Device =/= false of
+            false ->
+                {not_found, not_found};
+            true ->
+                [
+                    {routing, ChainFilters},
+                    {in_memory, WorkerFilters}
+                ] = router_xor_filter_worker:report_device_status(Device),
+                InWorkerFilter0 =
+                    case [I || {I, Present} <- WorkerFilters, Present == true] of
+                        [] -> false;
+                        V1 -> V1
+                    end,
+                InChainFilter0 =
+                    case [I || {I, Present} <- ChainFilters, Present == true] of
+                        [] -> false;
+                        V2 -> V2
+                    end,
+                {InWorkerFilter0, InChainFilter0}
+        end,
     c_table([
-        [{place, console}, {value, Console}],
-        [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [Worker]))}],
-        [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [Chain]))}],
-        %% Needs to be in rocks for us to fetch enough to ask other questions about device
-        [{place, rocksdb}, {value, true}],
-        [{place, running}, {value, DeviceAlive}]
+        [{place, device_id}, {value, io_lib:format("~p", [ID])}],
+        [{place, console}, {value, ConsoleDevice =/= false}],
+        [{place, rocksdb}, {value, DBDevice =/= false}],
+        [{place, running}, {value, DeviceAlive}],
+        [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [InWorkerFilter]))}],
+        [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [InChainFilter]))}]
     ]).
 
 filter_update(["filter", "update"], [], Flags) ->
@@ -207,13 +227,8 @@ filter_reset_db(["filter", "reset_db"], [], Flags) ->
     end.
 
 %%--------------------------------------------------------------------
-%% router_cnonsole_dc_tracker interface
+%% router_console_dc_tracker interface
 %%--------------------------------------------------------------------
-
--spec lookup(binary()) -> {ok, router_device:device()}.
-lookup(DeviceID) ->
-    {ok, DB, [_, CF]} = router_db:get(),
-    router_device:get_by_id(DB, CF, DeviceID).
 
 %%--------------------------------------------------------------------
 %% Private Utilities
@@ -230,10 +245,3 @@ c_text(F, Args) -> c_text(io_lib:format(F, Args)).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].
-
--spec is_device_running(router_device:device()) -> boolean().
-is_device_running(D) ->
-    case router_devices_sup:lookup_device_worker(router_device:id(D)) of
-        {error, not_found} -> false;
-        {ok, _} -> true
-    end.

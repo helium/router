@@ -107,9 +107,9 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
             {ok, D0} -> D0
         end,
 
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB0, [_, CF0]} = router_db:get(),
     DBDevice =
-        case router_device:get_by_id(DB, CF, DeviceID) of
+        case router_device:get_by_id(DB0, CF0, DeviceID) of
             {error, _} -> false;
             {ok, D1} -> D1
         end,
@@ -145,9 +145,9 @@ filter_report_device(["filter", "report", "device", ID], [], []) ->
             false ->
                 false;
             true ->
-                {ok, DB, CF} = router_db:get_xor_filter_devices(),
+                {ok, DB1, CF1} = router_db:get_xor_filter_devices(),
                 EUI = router_xor_filter_worker:deveui_appeui(Device),
-                case rocksdb:get(DB, CF, EUI, []) of
+                case rocksdb:get(DB1, CF1, EUI, []) of
                     {ok, Bin} ->
                         maps:get(filter_index, binary_to_term(Bin), false);
                     _ ->

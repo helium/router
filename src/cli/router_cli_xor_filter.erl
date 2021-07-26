@@ -87,11 +87,15 @@ filter_timer(["filter", "timer"], [], []) ->
     case router_xor_filter_worker:report_timer() of
         undefined ->
             c_text("Timer not active");
-        Timer when erlang:is_reference(Timer) ->
-            TimeLeft = erlang:read_timer(Timer),
-            TotalSeconds = erlang:convert_time_unit(TimeLeft, millisecond, second),
-            {_Hour, Minute, Seconds} = calendar:seconds_to_time(TotalSeconds),
-            c_text("Running again in T- ~pm ~ps", [Minute, Seconds])
+        Timer ->
+            case erlang:read_timer(Timer) of
+                false ->
+                    c_text("Currently running");
+                TimeLeft ->
+                    TotalSeconds = erlang:convert_time_unit(TimeLeft, millisecond, second),
+                    {_Hour, Minute, Seconds} = calendar:seconds_to_time(TotalSeconds),
+                    c_text("Running again in T- ~pm ~ps", [Minute, Seconds])
+            end
     end.
 
 filter_report_device(["filter", "report", "device", ID], [], []) ->

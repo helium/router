@@ -36,7 +36,7 @@ filter_usage() ->
             "  filter update --commit     - Update XOR filter\n"
             "  filter rebalance --commit  - Evenly distribute known devices among existing filters\n"
             "  filter report              - Size report\n"
-            "  filter report device <id>  - Filter info for a device\n"
+            "  filter report --id=<id>    - Filter info for a device\n"
             "  filter reset_db  --commit  - Reset rocksdb from Console api\n"
             "\n"
         ]
@@ -59,7 +59,6 @@ filter_cmd() ->
             fun filter_rebalance/3
         ],
         [["filter", "report"], [], [], fun filter_report/3],
-        [["filter", "report", "device", '*'], [], [], fun filter_report_device/3],
         [
             ["filter", "reset_db"],
             [],
@@ -68,6 +67,9 @@ filter_cmd() ->
         ]
     ].
 
+filter_report(["filter", "report"], [], [{id, ID}]) ->
+    DeviceID = erlang:iolist_to_binary(ID),
+    report_device(DeviceID);
 filter_report(["filter", "report"], [], []) ->
     [
         {routing, Routing},
@@ -97,76 +99,6 @@ filter_timer(["filter", "timer"], [], []) ->
                     c_text("Running again in T- ~pm ~ps", [Minute, Seconds])
             end
     end.
-
-filter_report_device(["filter", "report", "device", ID], [], []) ->
-    DeviceID = erlang:list_to_binary(ID),
-    DeviceAlive =
-        case router_devices_sup:lookup_device_worker(DeviceID) of
-            {error, not_found} -> false;
-            {ok, _} -> true
-        end,
-    ConsoleDevice =
-        case router_console_api:get_device(DeviceID) of
-            {error, _} -> false;
-            {ok, D0} -> D0
-        end,
-
-    {ok, DB0, [_, CF0]} = router_db:get(),
-    DBDevice =
-        case router_device:get_by_id(DB0, CF0, DeviceID) of
-            {error, _} -> false;
-            {ok, D1} -> D1
-        end,
-    Device =
-        case {DBDevice =/= false, ConsoleDevice =/= false} of
-            {true, _} -> DBDevice;
-            {_, true} -> ConsoleDevice;
-            {false, false} -> false
-        end,
-    {InWorkerFilter, InChainFilter} =
-        case Device =/= false of
-            false ->
-                {not_found, not_found};
-            true ->
-                [
-                    {routing, ChainFilters},
-                    {in_memory, WorkerFilters}
-                ] = router_xor_filter_worker:report_device_status(Device),
-                InWorkerFilter0 =
-                    case [I || {I, Present} <- WorkerFilters, Present == true] of
-                        [] -> false;
-                        V1 -> V1
-                    end,
-                InChainFilter0 =
-                    case [I || {I, Present} <- ChainFilters, Present == true] of
-                        [] -> false;
-                        V2 -> V2
-                    end,
-                {InWorkerFilter0, InChainFilter0}
-        end,
-    RocksDBCache =
-        case Device =/= false of
-            false ->
-                false;
-            true ->
-                {ok, DB1, CF1} = router_db:get_xor_filter_devices(),
-                EUI = router_xor_filter_worker:deveui_appeui(Device),
-                case rocksdb:get(DB1, CF1, EUI, []) of
-                    {ok, Bin} ->
-                        maps:get(filter_index, binary_to_term(Bin), false);
-                    _ ->
-                        false
-                end
-        end,
-    c_table([
-        [{place, device_id}, {value, io_lib:format("~s", [ID])}],
-        [{place, in_console}, {value, ConsoleDevice =/= false}],
-        [{place, in_rocksdb}, {value, DBDevice =/= false}],
-        [{place, running}, {value, DeviceAlive}],
-        [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [InWorkerFilter]))}],
-        [{place, rocks_db_cache}, {value, RocksDBCache}],
-        [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [InChainFilter]))}]
-    ]).
 
 filter_update(["filter", "update"], [], Flags) ->
     Options = maps:from_list(Flags),
@@ -245,8 +177,77 @@ filter_reset_db(["filter", "reset_db"], [], Flags) ->
     end.
 
 %%--------------------------------------------------------------------
-%% router_console_dc_tracker interface
+%% Internal Functions
 %%--------------------------------------------------------------------
+
+report_device(DeviceID) ->
+    DeviceAlive =
+        case router_devices_sup:lookup_device_worker(DeviceID) of
+            {error, not_found} -> false;
+            {ok, _} -> true
+        end,
+    ConsoleDevice =
+        case router_console_api:get_device(DeviceID) of
+            {error, _} -> false;
+            {ok, D0} -> D0
+        end,
+
+    {ok, DB0, [_, CF0]} = router_db:get(),
+    DBDevice =
+        case router_device:get_by_id(DB0, CF0, DeviceID) of
+            {error, _} -> false;
+            {ok, D1} -> D1
+        end,
+    Device =
+        case {DBDevice =/= false, ConsoleDevice =/= false} of
+            {true, _} -> DBDevice;
+            {_, true} -> ConsoleDevice;
+            {false, false} -> false
+        end,
+    {InWorkerFilter, InChainFilter} =
+        case Device =/= false of
+            false ->
+                {not_found, not_found};
+            true ->
+                [
+                    {routing, ChainFilters},
+                    {in_memory, WorkerFilters}
+                ] = router_xor_filter_worker:report_device_status(Device),
+                InWorkerFilter0 =
+                    case [I || {I, Present} <- WorkerFilters, Present == true] of
+                        [] -> false;
+                        V1 -> V1
+                    end,
+                InChainFilter0 =
+                    case [I || {I, Present} <- ChainFilters, Present == true] of
+                        [] -> false;
+                        V2 -> V2
+                    end,
+                {InWorkerFilter0, InChainFilter0}
+        end,
+    RocksDBCache =
+        case Device =/= false of
+            false ->
+                false;
+            true ->
+                {ok, DB1, CF1} = router_db:get_xor_filter_devices(),
+                EUI = router_xor_filter_worker:deveui_appeui(Device),
+                case rocksdb:get(DB1, CF1, EUI, []) of
+                    {ok, Bin} ->
+                        maps:get(filter_index, binary_to_term(Bin), false);
+                    _ ->
+                        false
+                end
+        end,
+    c_table([
+        [{place, device_id}, {value, io_lib:format("~s", [DeviceID])}],
+        [{place, in_console}, {value, ConsoleDevice =/= false}],
+        [{place, in_rocksdb}, {value, DBDevice =/= false}],
+        [{place, running}, {value, DeviceAlive}],
+        [{place, worker_cache}, {value, lists:flatten(io_lib:format("~p", [InWorkerFilter]))}],
+        [{place, rocks_db_cache}, {value, RocksDBCache}],
+        [{place, chain_filter}, {value, lists:flatten(io_lib:format("~p", [InChainFilter]))}]
+    ]).
 
 %%--------------------------------------------------------------------
 %% Private Utilities

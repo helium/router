@@ -171,7 +171,8 @@ handle_call(
         {true, {ok, {Curr, _, _}, _, _} = Updates} ->
             lager:info("committing device updates ~p", [Updates]),
             ok = empty_rocksdb(),
-            ok = sync_cache_to_disk(Curr, #{}),
+            Added = lists:flatten(maps:values(Curr)),
+            ok = sync_cache_to_disk(Added, _Removed = []),
             {ok, NewFilterToDevices} = read_devices_from_disk(),
             {reply, Updates, State#state{filter_to_devices = NewFilterToDevices}};
         {_, Response} ->
@@ -381,12 +382,10 @@ handle_info(
         filter_to_devices = maps:put(Index, DevicesDevEuiAppEui, FilterToDevices)
     },
 
-    {AddedDevices, RemovedDevices} = diff_filter_to_devices(
+    ok = do_updates_from_filter_to_devices_diff(
         State0#state.filter_to_devices,
         State1#state.filter_to_devices
     ),
-    ok = update_console_api(AddedDevices, RemovedDevices),
-    ok = sync_cache_to_disk(AddedDevices, RemovedDevices),
 
     case State1#state.pending_txns == #{} of
         false ->
@@ -534,45 +533,55 @@ get_fold(DB, CF, Itr, {ok, _}, FilterTransformFun, Acc) ->
 get_fold(_DB, _CF, _Itr, {error, _}, _FilterTransformFun, Acc) ->
     Acc.
 
--spec diff_filter_to_devices(
+-spec do_updates_from_filter_to_devices_diff(
+    OldFilterToDevices :: filter_eui_mapping(),
+    NewFilterToDevices :: filter_eui_mapping()
+) -> ok.
+do_updates_from_filter_to_devices_diff(OldFilterToDevices, NewFilterToDevices) ->
+    {AddedDevices, RemovedDevices} = filter_to_devices_diff(
+        OldFilterToDevices,
+        NewFilterToDevices
+    ),
+    ok = update_console_api(AddedDevices, RemovedDevices),
+    ok = sync_cache_to_disk(AddedDevices, RemovedDevices).
+
+-spec filter_to_devices_diff(
     OldMapping :: filter_eui_mapping(),
     NewMapping :: filter_eui_mapping()
-) -> {Added :: filter_eui_mapping(), Removed :: filter_eui_mapping()}.
-diff_filter_to_devices(OldMapping, NewMapping) ->
+) -> {Added :: devices_dev_eui_app_eui(), Removed :: devices_dev_eui_app_eui()}.
+filter_to_devices_diff(OldMapping, NewMapping) ->
     BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
     OldSorted = lists:sort(maps:to_list(maps:merge(BaseEmpty, OldMapping))),
     NewSorted = lists:sort(maps:to_list(maps:merge(BaseEmpty, NewMapping))),
 
     {ToBeAdded, ToBeRemoved} = lists:unzip([
         {
-            {Key, NewFilter -- OldFilter},
-            {Key, OldFilter -- NewFilter}
+            NewFilter -- OldFilter,
+            OldFilter -- NewFilter
         }
         || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldSorted, NewSorted)
     ]),
     {
-        maps:from_list(ToBeAdded),
-        maps:from_list(ToBeRemoved)
+        lists:flatten(ToBeAdded),
+        lists:flatten(ToBeRemoved)
     }.
 
 -spec update_console_api(
-    Added :: filter_eui_mapping(),
-    Removed :: filter_eui_mapping()
+    Added :: devices_dev_eui_app_eui(),
+    Removed :: devices_dev_eui_app_eui()
 ) -> ok.
 update_console_api(Added, Removed) ->
-    AddedDevs = maps:values(Added),
-    RemovedDevs = maps:values(Removed),
-    AddedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(AddedDevs)],
-    RemovedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(RemovedDevs)],
+    AddedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(Added)],
+    RemovedIDs = [maps:get(device_id, Dev) || Dev <- lists:flatten(Removed)],
     ok = router_console_api:xor_filter_updates(AddedIDs, RemovedIDs).
 
 -spec sync_cache_to_disk(
-    Added :: filter_eui_mapping(),
-    Removed :: filter_eui_mapping()
+    Added :: devices_dev_eui_app_eui(),
+    Removed :: devices_dev_eui_app_eui()
 ) -> ok.
 sync_cache_to_disk(Added, Removed) ->
-    ok = remove_devices_from_disk(lists:flatten(maps:values(Removed))),
-    ok = write_devices_to_disk(lists:flatten(maps:values(Added))).
+    ok = remove_devices_from_disk(Removed),
+    ok = write_devices_to_disk(Added).
 
 -spec remove_devices_from_disk(devices_dev_eui_app_eui()) -> ok.
 remove_devices_from_disk(DevicesToRemove) ->

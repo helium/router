@@ -358,7 +358,7 @@ get_token() ->
 -spec xor_filter_updates(AddedDeviceIDs :: [binary()], RemovedDeviceIDs :: [binary()]) -> ok.
 xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
     {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/filter_update">>,
+    Url = <<Endpoint/binary, "/api/router/devices/update_in_xor_filter">>,
     Body = #{added => AddedDeviceIDs, removed => RemovedDeviceIDs},
     case
         hackney:post(

@@ -155,7 +155,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                     {200, [], jsx:encode(Body)}
             end
     end;
-handle('POST', [<<"api">>, <<"router">>, <<"filter_update">>], Req, Args) ->
+handle('POST', [<<"api">>, <<"router">>, <<"devices">>, <<"update_in_xor_filter">>], Req, Args) ->
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),
     try jsx:decode(Body, [return_maps]) of

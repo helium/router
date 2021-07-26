@@ -626,6 +626,12 @@ estimate_cost(
             Ledger = blockchain:ledger(Chain),
             {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
 
+            CraftedFilters =
+                case craft_updates(Updates, BinFilters, MaxXorFilter) of
+                    noop -> [];
+                    V -> V
+                end,
+
             EstimatedCosts = lists:map(
                 fun
                     ({new, NewDevicesDevEuiAppEui}) ->
@@ -637,7 +643,7 @@ estimate_cost(
                         Txn = craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1, Index),
                         blockchain_txn_routing_v1:calculate_fee(Txn, Chain)
                 end,
-                craft_updates(Updates, BinFilters, MaxXorFilter)
+                CraftedFilters
             ),
 
             {_Curr, Added, Removed} = Updates,

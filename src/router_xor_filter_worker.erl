@@ -312,11 +312,48 @@ handle_info(
             {noreply, State#state{check_filters_ref = Ref}};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
+            BinFilters = blockchain_ledger_routing_v1:filters(Routing),
+
+            %% Remove potential updates that will create a filter that already
+            %% exists. This might happen because we track devices by more
+            %% information that just the EUIs, and only want to update/create
+            %% filters when encountering new EUIs.
+            UpdatesToSubmit =
+                lists:filtermap(
+                    fun
+                        ({new, NewDevicesDevEuiAppEui}) ->
+                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiAppEui),
+                            case lists:member(Bin, BinFilters) of
+                                true ->
+                                    lager:error(
+                                        "trying to create a new filter that already exists, dropping"
+                                    ),
+                                    false;
+                                false ->
+                                    {true, {new, Filter, NewDevicesDevEuiAppEui}}
+                            end;
+                        ({update, Index, NewDevicesDevEuiAppEui}) ->
+                            Existing = lists:nth(Index + 1, BinFilters),
+                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiAppEui),
+                            case Existing == Bin of
+                                true ->
+                                    lager:info("updating devices in filter @ index ~p", [Index]),
+                                    ok = do_updates_from_filter_to_devices_diff(
+                                        FilterToDevices,
+                                        maps:put(Index, NewDevicesDevEuiAppEui, FilterToDevices)
+                                    ),
+                                    false;
+                                false ->
+                                    {true, {update, Index, Filter, NewDevicesDevEuiAppEui}}
+                            end
+                    end,
+                    Updates
+                ),
+
             {Pendings1, _} = lists:foldl(
                 fun
-                    ({new, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({new, Filter, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
-                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
                         lager:info("new filter txn ~p submitted ~p", [
@@ -333,9 +370,8 @@ handle_info(
                             ),
                             Nonce + 1
                         };
-                    ({update, Index, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({update, Index, Filter, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("updating filter @ index ~p", [Index]),
-                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
                         Txn = craft_update_filter_txn(
                             PubKey,
                             SigFun,
@@ -360,7 +396,7 @@ handle_info(
                         }
                 end,
                 {Pendings0, CurrNonce},
-                Updates
+                UpdatesToSubmit
             ),
             {noreply, State#state{pending_txns = Pendings1}}
     end;
@@ -987,6 +1023,13 @@ new_xor_filter(DeviceEntries) ->
     IDS = [ID || #{eui := ID} <- DeviceEntries],
     {Filter, _} = xor16:new(lists:usort(IDS), ?HASH_FUN),
     Filter.
+
+-spec new_xor_filter_and_bin(devices_dev_eui_app_eui()) ->
+    {ok, Filter :: reference(), Bin :: binary()}.
+new_xor_filter_and_bin(Devices) ->
+    Filter = new_xor_filter(Devices),
+    {Bin, _} = xor16:to_bin({Filter, ?HASH_FUN}),
+    {ok, Filter, Bin}.
 
 -spec is_unset_filter_index_in_list(
     device_dev_eui_app_eui(),

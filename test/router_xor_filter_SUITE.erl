@@ -520,11 +520,9 @@ remove_devices_filter_test(Config) ->
 
             %% should have pushed a new filter to the chain
             ok = expect_block(ExpectedBlock, Chain),
-            timer:sleep(timer:seconds(1)),
 
             Filters1 = get_filters(Chain, OUI1),
-            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1)),
-            timer:sleep(timer:seconds(1))
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
             #{devices => Round1Devices, block => 3, filter_count => 2},
@@ -548,7 +546,6 @@ remove_devices_filter_test(Config) ->
 
     %% Should commit filter for removed devices
     ok = expect_block(8, Chain),
-    timer:sleep(timer:seconds(1)),
 
     %% Make sure removed devices are not in those filters
     Filters = get_filters(Chain, OUI1),
@@ -830,11 +827,9 @@ remove_devices_single_txn_db_test(Config) ->
 
             %% should have pushed a new filter to the chain
             ok = expect_block(ExpectedBlock, Chain),
-            timer:sleep(timer:seconds(1)),
 
             Filters1 = get_filters(Chain, OUI1),
-            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1)),
-            timer:sleep(timer:seconds(1))
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
             #{devices => Round1Devices, block => 3, filter_count => 2},
@@ -911,7 +906,6 @@ remove_devices_multiple_txn_db_test(Config) ->
 
             %% should have pushed a new filter to the chain
             ok = expect_block(ExpectedBlock, Chain),
-            timer:sleep(timer:seconds(1)),
 
             Filters1 = get_filters(Chain, OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
@@ -987,7 +981,6 @@ send_updates_to_console_test(Config) ->
 
     %% should have pushed a new filter to the chain
     ok = expect_block(3, Chain),
-    timer:sleep(timer:seconds(1)),
 
     ShouldBeRemovedNext =
         receive
@@ -1106,7 +1099,6 @@ estimate_cost_test(Config) ->
 
     %% should have pushed a new filter to the chain
     ok = expect_block(3, Chain),
-    timer:sleep(timer:seconds(1)),
 
     %% Remove all Devices
     true = ets:insert(Tab, {devices, []}),
@@ -1139,6 +1131,7 @@ expect_block(BlockNum, Chain) ->
         end)
     of
         ok ->
+            timer:sleep(500),
             ok;
         Err ->
             ct:fail("Expected Block ~p, got block ~p (~p)", [

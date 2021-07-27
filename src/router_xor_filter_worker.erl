@@ -92,13 +92,27 @@ start_link(Args) ->
 
 -spec estimate_cost() ->
     noop
-    | {ok, Cost :: non_neg_integer(), AddedDevices :: devices_dev_eui_app_eui(),
-        RemovedDevices :: filter_eui_mapping()}.
+    | {
+        ok,
+        Cost :: non_neg_integer(),
+        AddedDevices :: devices_dev_eui_app_eui(),
+        RemovedDevices :: filter_eui_mapping()
+    }.
 estimate_cost() ->
     gen_server:call(?SERVER, estimate_cost, infinity).
 
-%% TODO: This spec is wrong
--spec reset_db(boolean()) -> ok.
+-spec reset_db(boolean()) ->
+    {error, atom(), any()}
+    | {
+        ok,
+        Updates :: {
+            Curent :: filter_eui_mapping(),
+            Added :: devices_dev_eui_app_eui(),
+            Removed :: filter_eui_mapping()
+        },
+        BinFilters :: [binary()],
+        Routing :: blockchain_ledger_routin_v1:routing()
+    }.
 reset_db(Commit) ->
     gen_server:call(?SERVER, {reset_db, Commit}).
 

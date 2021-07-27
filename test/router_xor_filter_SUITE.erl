@@ -917,10 +917,9 @@ remove_devices_multiple_txn_db_test(Config) ->
             #{devices => Round4Devices, block => 6, filter_count => 5},
             #{devices => Round5Devices, block => 7, filter_count => 5},
             %% Removing all devices
-            %% Next filter would be 8
-            %% Plus updating other filters (+4)
-            %% Expecting 8 + 4 == 12
-            #{devices => [], block => 12, filter_count => 5}
+            %% (Current block 7) + (Updating 4 filters) == 11
+            %% Filter 0 has no devices, no changes
+            #{devices => [], block => 11, filter_count => 5}
         ]
     ),
 

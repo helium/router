@@ -38,7 +38,6 @@ device_usage() ->
             "  device --id=<id>                              - Info for a device\n",
             "  device trace --id=<id> [--stop]               - Tracing device's log\n",
             "  device trace stop --id=<id>                   - Stop tracing device's log\n",
-            "  device xor --commit                           - Update XOR filter\n",
             "  device queue --id=<id>                        - Queue of messages for device\n",
             "  device queue clear --id=<id>                  - Empties the devices queue\n",
             "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",
@@ -67,12 +66,6 @@ device_cmd() ->
             prepend_device_id(fun trace/4)
         ],
         [["device", "trace", "stop"], [], [id_flag()], prepend_device_id(fun stop_trace/4)],
-        [
-            ["device", "xor"],
-            [],
-            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
-            fun xor_filter/3
-        ],
         [["device", "queue"], [], [id_flag()], prepend_device_id(fun device_queue/4)],
         [
             ["device", "queue", "clear"],
@@ -100,24 +93,6 @@ trace(ID, ["device", "trace"], [], [{id, ID}]) ->
     c_text("Tracing device " ++ ID);
 trace(ID, ["device", "trace"], [], [{id, ID}, {stop, _}]) ->
     stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]).
-
-xor_filter(["device", "xor"], [], Flags) ->
-    Options = maps:from_list(Flags),
-    case {maps:is_key(commit, Options), router_xor_filter_worker:estimate_cost()} of
-        {_, noop} ->
-            c_text("No Updates");
-        {false, {Cost, N}} ->
-            c_text(
-                "DRY RUN: Adding ~p devices for ~p DC",
-                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
-            );
-        {true, {Cost, N}} ->
-            ok = router_xor_filter_worker:check_filters(),
-            c_text(
-                "Adding ~p devices for ~p DC",
-                [erlang:integer_to_list(N), erlang:integer_to_list(Cost)]
-            )
-    end.
 
 stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),

@@ -765,6 +765,8 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
     case Res of
         true ->
             ok;
+        {fail, _Reason} = Fail ->
+            Fail;
         _ when Retry == 1 ->
             {fail, Res};
         _ ->

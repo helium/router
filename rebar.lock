@@ -80,7 +80,7 @@
   1},
  {<<"grpcbox">>,
   {git,"https://github.com/andymck/grpcbox.git",
-       {ref,"550c2b6d6327f8fdfe2c6f1f91c00c428ba6a16c"}},
+       {ref,"5698251e2ea80b876fabf85dcee23056b4d02a52"}},
   0},
  {<<"gun">>,
   {git,"https://github.com/ninenines/gun",

@@ -548,6 +548,7 @@ remove_devices_filter_test(Config) ->
 
     %% Should commit filter for removed devices
     ok = expect_block(8, Chain),
+    timer:sleep(timer:seconds(1)),
 
     %% Make sure removed devices are not in those filters
     Filters = get_filters(Chain, OUI1),

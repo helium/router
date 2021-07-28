@@ -58,7 +58,7 @@ filter_cmd() ->
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun filter_rebalance/3
         ],
-        [["filter", "report"], [], [], fun filter_report/3],
+        [["filter", "report"], [], [{id, [{longname, "id"}]}], fun filter_report/3],
         [
             ["filter", "reset_db"],
             [],

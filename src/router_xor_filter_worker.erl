@@ -323,7 +323,8 @@ handle_info(
         noop ->
             lager:info("filters are still up to date"),
             Ref = schedule_check_filters(default_timer()),
-            {noreply, State#state{check_filters_ref = Ref}};
+            {ok, FilterToDevices1} = read_devices_from_disk(),
+            {noreply, State#state{check_filters_ref = Ref, filter_to_devices = FilterToDevices1}};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             BinFilters = blockchain_ledger_routing_v1:filters(Routing),
@@ -412,7 +413,8 @@ handle_info(
                 {Pendings0, CurrNonce},
                 UpdatesToSubmit
             ),
-            {noreply, State#state{pending_txns = Pendings1}}
+            {ok, FilterToDevices1} = read_devices_from_disk(),
+            {noreply, State#state{pending_txns = Pendings1, filter_to_devices = FilterToDevices1}}
     end;
 handle_info(
     {?SUBMIT_RESULT, Hash, ok},
@@ -637,8 +639,8 @@ sync_cache_to_disk(Added, Removed) ->
 remove_devices_from_disk(DevicesToRemove) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
     lists:foreach(
-        fun(#{eui := DeviceEUI} = _Device) ->
-            rocksdb:delete(DB, CF, DeviceEUI, [])
+        fun(#{device_id := DeviceID, eui := DeviceEUI} = _Device) ->
+            rocksdb:delete(DB, CF, <<DeviceID/binary, DeviceEUI/binary>>, [])
         end,
         DevicesToRemove
     ).
@@ -647,8 +649,16 @@ remove_devices_from_disk(DevicesToRemove) ->
 write_devices_to_disk(DevicesToAdd) ->
     {ok, DB, CF} = router_db:get_xor_filter_devices(),
     lists:foreach(
-        fun(#{eui := DeviceEUI} = Entry) ->
-            case rocksdb:put(DB, CF, DeviceEUI, erlang:term_to_binary(Entry), []) of
+        fun(#{device_id := DeviceID, eui := DeviceEUI} = Entry) ->
+            case
+                rocksdb:put(
+                    DB,
+                    CF,
+                    <<DeviceID/binary, DeviceEUI/binary>>,
+                    erlang:term_to_binary(Entry),
+                    []
+                )
+            of
                 {error, _} = Err ->
                     lager:error("xor filter failed to write to rocksdb: ~p", [Err]),
                     throw(Err);
@@ -775,8 +785,12 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
             Ledger = blockchain:ledger(Chain),
             {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
             case craft_updates(Updates, BinFilters, MaxXorFilter) of
-                noop -> noop;
-                Crafted -> {Routing, Crafted}
+                noop ->
+                    {Curr, _, _} = Updates,
+                    ok = do_updates_from_filter_to_devices_diff(FilterToDevices, Curr),
+                    noop;
+                Crafted ->
+                    {Routing, Crafted}
             end
     end.
 

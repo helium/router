@@ -19,6 +19,8 @@
     remove_devices_multiple_txn_db_test/1,
     send_updates_to_console_test/1,
     between_worker_device_add_remove_send_updates_to_console_test/1,
+    device_add_multiple_send_updates_to_console_test/1,
+    device_removed_send_updates_to_console_test/1,
     estimate_cost_test/1
 ]).
 
@@ -68,6 +70,8 @@ all() ->
         remove_devices_multiple_txn_db_test,
         send_updates_to_console_test,
         between_worker_device_add_remove_send_updates_to_console_test,
+        device_add_multiple_send_updates_to_console_test,
+        device_removed_send_updates_to_console_test,
         estimate_cost_test
     ].
 
@@ -999,8 +1003,9 @@ send_updates_to_console_test(Config) ->
     ok = expect_block(4, Chain),
 
     receive
-        {console_filter_update, [], ShouldBeRemovedNext} ->
-            ct:print("Console knows we removed : ~n~p", [ShouldBeRemovedNext]),
+        {console_filter_update, [], Removed} ->
+            %% ct:print("Console knows we removed : ~n~p", [Removed]),
+            ?assertEqual(lists:sort(Removed), lists:sort(ShouldBeRemovedNext)),
             ok
     after 2150 -> ct:fail("No console message about removing devices from filters")
     end,
@@ -1061,6 +1066,137 @@ between_worker_device_add_remove_send_updates_to_console_test(Config) ->
             ok
     after 2150 -> ct:fail("No console message about device-2")
     end,
+
+    %% ------------------------------------------------------------
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+device_add_multiple_send_updates_to_console_test(Config) ->
+    %% A device is added, then more devices with the same EUI pair but different
+    %% device IDs. Console should be notified about the devices, but we should
+    %% not change any of the filters.
+    Chain = proplists:get_value(chain, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    %% Two devices with the same eui pair, but different ids
+    Updates = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Device1ID = <<"device-1">>,
+    Device1 = router_device:update(Updates, router_device:new(Device1ID)),
+    Device2ID = <<"device-2">>,
+    Device2 = router_device:update(Updates, router_device:new(Device2ID)),
+    Device3ID = <<"device-3">>,
+    Device3 = router_device:update(Updates, router_device:new(Device3ID)),
+
+    %% Queue up device-1
+    true = ets:insert(Tab, {devices, [Device1]}),
+    ok = router_xor_filter_worker:check_filters(),
+    ok = expect_block(3, Chain),
+
+    %% Console knows about device 1
+    receive
+        {console_filter_update, [Device1ID], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-1")
+    end,
+
+    ok = test_utils:ignore_messages(),
+
+    %% Queue up all devices
+    true = ets:insert(Tab, {devices, [Device1, Device2, Device3]}),
+    ok = router_xor_filter_worker:check_filters(),
+    timer:sleep(timer:seconds(1)),
+    ok = expect_block(3, Chain),
+
+    %% Console knows they are different devices
+    receive
+        {console_filter_update, [Device2ID, Device3ID], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-2")
+    end,
+
+    %% ------------------------------------------------------------
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+device_removed_send_updates_to_console_test(Config) ->
+    %% A device is removed, but other devices with the same EUI pair still
+    %% exist. Console should be notified about the devices, but we should not
+    %% change any of the filters.
+    Chain = proplists:get_value(chain, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    %% Two devices with the same eui pair, but different ids
+    Updates = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Device1ID = <<"device-1">>,
+    Device1 = router_device:update(Updates, router_device:new(Device1ID)),
+    Device2ID = <<"device-2">>,
+    Device2 = router_device:update(Updates, router_device:new(Device2ID)),
+    Device3ID = <<"device-3">>,
+    Device3 = router_device:update(Updates, router_device:new(Device3ID)),
+
+    %% Queue up all devices
+    true = ets:insert(Tab, {devices, [Device1, Device2, Device3]}),
+    ok = router_xor_filter_worker:check_filters(),
+    ok = expect_block(3, Chain),
+
+    %% Console knows about all devices
+    receive
+        {console_filter_update, [Device1ID, Device2ID, Device3ID], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-1")
+    end,
+
+    ok = test_utils:ignore_messages(),
+
+    %% Remove device-2
+    true = ets:insert(Tab, {devices, [Device1, Device3]}),
+    ok = router_xor_filter_worker:check_filters(),
+    timer:sleep(timer:seconds(1)),
+    ok = expect_block(3, Chain),
+
+    %% Console knows only device-2 was removed
+    receive
+        {console_filter_update, [], [Device2ID]} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-2")
+    end,
+
+
+    %% Device cache should no longer know about device-2
+    State = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, erlang:length(maps:get(0, State#state.filter_to_devices))),
+    ?assertEqual(2, erlang:length(maps:get(1, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(2, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(3, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(4, State#state.filter_to_devices))),
 
     %% ------------------------------------------------------------
 

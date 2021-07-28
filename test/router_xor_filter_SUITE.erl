@@ -1189,7 +1189,6 @@ device_removed_send_updates_to_console_test(Config) ->
     after 2150 -> ct:fail("No console message about device-2")
     end,
 
-
     %% Device cache should no longer know about device-2
     State = sys:get_state(router_xor_filter_worker),
     ?assertEqual(0, erlang:length(maps:get(0, State#state.filter_to_devices))),

@@ -323,8 +323,17 @@ handle_info(
         noop ->
             lager:info("filters are still up to date"),
             Ref = schedule_check_filters(default_timer()),
-            {ok, FilterToDevices1} = read_devices_from_disk(),
-            {noreply, State#state{check_filters_ref = Ref, filter_to_devices = FilterToDevices1}};
+            {noreply, State#state{check_filters_ref = Ref}};
+        {update_cache, CurrentFilterToDevices} ->
+            lager:info(
+                "filters are still up to date, devices have maybe have changed, updating cache"
+            ),
+            Ref = schedule_check_filters(default_timer()),
+            ok = do_updates_from_filter_to_devices_diff(FilterToDevices, CurrentFilterToDevices),
+            {noreply, State#state{
+                check_filters_ref = Ref,
+                filter_to_devices = CurrentFilterToDevices
+            }};
         {Routing, Updates} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             BinFilters = blockchain_ledger_routing_v1:filters(Routing),
@@ -772,7 +781,10 @@ do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->
     Chain :: blockchain:blockchain(),
     OUI :: non_neg_integer(),
     FilterToDevices :: map()
-) -> noop | {blockchain_ledger_routing_v1:routing(), [update()]}.
+) ->
+    noop
+    | {update_cache, filter_eui_mapping()}
+    | {blockchain_ledger_routing_v1:routing(), [update()]}.
 should_update_filters(Chain, OUI, FilterToDevices) ->
     case get_device_updates(Chain, OUI, FilterToDevices) of
         {error, could_not_get_devices, _Reason} ->
@@ -781,14 +793,13 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
         {error, could_not_get_filters, _Reason} ->
             lager:error("failed to find routing for OUI: ~p ~p", [OUI, _Reason]),
             noop;
-        {ok, Updates, BinFilters, Routing} ->
+        {ok, {Curr, _, _} = Updates, BinFilters, Routing} ->
             Ledger = blockchain:ledger(Chain),
             {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
             case craft_updates(Updates, BinFilters, MaxXorFilter) of
                 noop ->
-                    {Curr, _, _} = Updates,
-                    ok = do_updates_from_filter_to_devices_diff(FilterToDevices, Curr),
-                    noop;
+                    %% ok = do_updates_from_filter_to_devices_diff(FilterToDevices, Curr),
+                    {update_cache, Curr};
                 Crafted ->
                     {Routing, Crafted}
             end
@@ -1139,7 +1150,7 @@ test_for_should_update_filters_test() ->
         {ok, Routing0}
     end),
 
-    ?assertEqual(noop, should_update_filters(chain, OUI, #{})),
+    ?assertMatch({update_cache, _}, should_update_filters(chain, OUI, #{})),
 
     %% ------------------------
     %% Testing if a device was added
@@ -1251,8 +1262,8 @@ test_for_should_update_filters_test() ->
         {ok, [Device3]}
     end),
 
-    ?assertEqual(
-        noop,
+    ?assertMatch(
+        {update_cache, _},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1319,8 +1330,8 @@ test_for_should_update_filters_test() ->
         {ok, [Device5Copy]}
     end),
 
-    ?assertEqual(
-        noop,
+    ?assertMatch(
+        {update_cache, _},
         should_update_filters(chain, OUI, #{})
     ),
 

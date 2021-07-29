@@ -334,7 +334,7 @@ handle_info(
                 check_filters_ref = Ref,
                 filter_to_devices = CurrentFilterToDevices
             }};
-        {Routing, Updates} ->
+        {Routing, Updates, CurrentMapping} ->
             CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
             BinFilters = blockchain_ledger_routing_v1:filters(Routing),
 
@@ -361,11 +361,6 @@ handle_info(
                             {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiAppEui),
                             case Existing == Bin of
                                 true ->
-                                    lager:info("updating devices in filter @ index ~p", [Index]),
-                                    ok = do_updates_from_filter_to_devices_diff(
-                                        FilterToDevices,
-                                        maps:put(Index, NewDevicesDevEuiAppEui, FilterToDevices)
-                                    ),
                                     false;
                                 false ->
                                     {true, {update, Index, Filter, NewDevicesDevEuiAppEui}}
@@ -422,7 +417,15 @@ handle_info(
                 {Pendings0, CurrNonce},
                 UpdatesToSubmit
             ),
-            {ok, FilterToDevices1} = read_devices_from_disk(),
+
+            %% Update for devices that may have not caused a txn
+            PendingIndexes = [Idx || {Idx, _} <- maps:values(Pendings1)],
+            FilterToDevices1 = maps:merge(
+                FilterToDevices,
+                maps:without(PendingIndexes, CurrentMapping)
+            ),
+            ok = do_updates_from_filter_to_devices_diff(FilterToDevices, FilterToDevices1),
+
             {noreply, State#state{pending_txns = Pendings1, filter_to_devices = FilterToDevices1}}
     end;
 handle_info(
@@ -784,7 +787,7 @@ do_distribute_devices_across_n_groups(Devices, GroupSize, Grouped) ->
 ) ->
     noop
     | {update_cache, filter_eui_mapping()}
-    | {blockchain_ledger_routing_v1:routing(), [update()]}.
+    | {blockchain_ledger_routing_v1:routing(), [update()], filter_eui_mapping()}.
 should_update_filters(Chain, OUI, FilterToDevices) ->
     case get_device_updates(Chain, OUI, FilterToDevices) of
         {error, could_not_get_devices, _Reason} ->
@@ -798,10 +801,9 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
             {ok, MaxXorFilter} = blockchain:config(max_xor_filter_num, Ledger),
             case craft_updates(Updates, BinFilters, MaxXorFilter) of
                 noop ->
-                    %% ok = do_updates_from_filter_to_devices_diff(FilterToDevices, Curr),
                     {update_cache, Curr};
                 Crafted ->
-                    {Routing, Crafted}
+                    {Routing, Crafted, Curr}
             end
     end.
 
@@ -1160,8 +1162,9 @@ test_for_should_update_filters_test() ->
         {ok, EmptyRouting}
     end),
 
-    ?assertEqual(
-        {EmptyRouting, [{new, get_devices_deveui_app_eui([Device0])}]},
+    ExpectedNewFilter1 = [{new, get_devices_deveui_app_eui([Device0])}],
+    ?assertMatch(
+        {EmptyRouting, ExpectedNewFilter1, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1180,14 +1183,15 @@ test_for_should_update_filters_test() ->
         {ok, [Device0, Device1]}
     end),
 
-    ?assertEqual(
-        {Routing0, [
-            {update, 0, [
-                device_deveui_appeui(Device1),
-                %% Already in the filter
-                assign_filter_index_map(0, device_deveui_appeui(Device0))
-            ]}
-        ]},
+    ExpectedUpdateFilter0 = [
+        {update, 0, [
+            device_deveui_appeui(Device1),
+            %% Already in the filter
+            assign_filter_index_map(0, device_deveui_appeui(Device0))
+        ]}
+    ],
+    ?assertMatch(
+        {Routing0, ExpectedUpdateFilter0, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1198,8 +1202,9 @@ test_for_should_update_filters_test() ->
         {ok, [Device1]}
     end),
 
-    ?assertEqual(
-        {Routing0, [{update, 0, get_devices_deveui_app_eui([Device1])}]},
+    ExpectedUpdateFilter1 = [{update, 0, get_devices_deveui_app_eui([Device1])}],
+    ?assertMatch(
+        {Routing0, ExpectedUpdateFilter1, _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0]))
         })
@@ -1215,8 +1220,9 @@ test_for_should_update_filters_test() ->
         {ok, [Device1, Device2]}
     end),
 
-    ?assertEqual(
-        {Routing0, [{update, 0, get_devices_deveui_app_eui([Device1, Device2])}]},
+    ExpectedUpdateFilter2 = [{update, 0, get_devices_deveui_app_eui([Device1, Device2])}],
+    ?assertMatch(
+        {Routing0, ExpectedUpdateFilter2, _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => get_devices_deveui_app_eui([Device0])
         })
@@ -1243,8 +1249,8 @@ test_for_should_update_filters_test() ->
     % Make are the devices are in the filters
     ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_appeui(Device0))),
     ?assert(xor16:contain({BinFilter1, ?HASH_FUN}, deveui_appeui(Device1))),
-    ?assertEqual(
-        {RoutingRemoved1, [{update, 1, []}, {update, 0, []}]},
+    ?assertMatch(
+        {RoutingRemoved1, [{update, 1, []}, {update, 0, []}], _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0])),
             1 => assign_filter_index(1, get_devices_deveui_app_eui([Device1]))
@@ -1287,8 +1293,9 @@ test_for_should_update_filters_test() ->
         {ok, [Device4]}
     end),
 
-    ?assertEqual(
-        {RoutingEmptyMap1, [{update, 0, get_devices_deveui_app_eui([Device4])}]},
+    ExpectedUpdateFilter3 = [{update, 0, get_devices_deveui_app_eui([Device4])}],
+    ?assertMatch(
+        {RoutingEmptyMap1, ExpectedUpdateFilter3, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1311,10 +1318,11 @@ test_for_should_update_filters_test() ->
     end),
 
     %% Devices with matching app/dev eui should be deduplicated
-    ?assertEqual(
+    ExpectedNewFilter2 = [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}],
+    ?assertMatch(
         %% NOTE: Expecting both, because we store by EUI and DeviceID for
         %% fetching later, EUIs are deduped before going into a filter though
-        {EmptyRouting2, [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}]},
+        {EmptyRouting2, ExpectedNewFilter2, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1350,10 +1358,11 @@ test_for_should_update_filters_test() ->
     %% Force 1 filter so we update the existing
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
 
-    ?assertEqual(
+    ExpectedUpdateFilter4 = [{update, 0, get_devices_deveui_app_eui([Device6, Device6Copy])}],
+    ?assertMatch(
         %% NOTE: Expecting both, because we store by EUI and DeviceID for
         %% fetching later, EUIs are deduped before going into a filter though
-        {RoutingLast, [{update, 0, get_devices_deveui_app_eui([Device6, Device6Copy])}]},
+        {RoutingLast, ExpectedUpdateFilter4, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1376,13 +1385,14 @@ test_for_should_update_filters_test() ->
     meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device7, Device7, Device8]} end),
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
 
-    ?assertEqual(
-        {Routing7, [
-            {update, 0, [
-                device_deveui_appeui(Device8),
-                assign_filter_index_map(0, device_deveui_appeui(Device7))
-            ]}
-        ]},
+    ExpectedUpdateFilter5 = [
+        {update, 0, [
+            device_deveui_appeui(Device8),
+            assign_filter_index_map(0, device_deveui_appeui(Device7))
+        ]}
+    ],
+    ?assertMatch(
+        {Routing7, ExpectedUpdateFilter5, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 

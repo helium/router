@@ -20,6 +20,7 @@
     send_updates_to_console_test/1,
     between_worker_device_add_remove_send_updates_to_console_test/1,
     device_add_multiple_send_updates_to_console_test/1,
+    device_add_unique_and_matching_send_updates_to_console_test/1,
     device_removed_send_updates_to_console_test/1,
     estimate_cost_test/1
 ]).
@@ -71,6 +72,7 @@ all() ->
         send_updates_to_console_test,
         between_worker_device_add_remove_send_updates_to_console_test,
         device_add_multiple_send_updates_to_console_test,
+        device_add_unique_and_matching_send_updates_to_console_test,
         device_removed_send_updates_to_console_test,
         estimate_cost_test
     ].
@@ -691,6 +693,11 @@ remove_devices_filter_after_restart_test(Config) ->
 
     State2 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices2 = lists:flatten(maps:values(State2#state.filter_to_devices)),
+    ?assertEqual(
+        length(LeftoverDevices),
+        length(Devices2),
+        "Known devices are same amount as cache devices"
+    ),
     ?assertNotEqual(Devices1, Devices2),
     ?assertEqual(
         [false],
@@ -1124,6 +1131,76 @@ device_add_multiple_send_updates_to_console_test(Config) ->
     %% Console knows they are different devices
     receive
         {console_filter_update, [Device2ID, Device3ID], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-2")
+    end,
+
+    %% ------------------------------------------------------------
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+device_add_unique_and_matching_send_updates_to_console_test(Config) ->
+    %% A device is added, then more devices with the same EUI pair but different
+    %% device IDs. Console should be notified about the devices, but we should
+    %% not change any of the filters.
+    Chain = proplists:get_value(chain, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    %% Two devices with the same eui pair, but different ids
+    Updates1 = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Device1ID = <<"device-1">>,
+    Device1 = router_device:update(Updates1, router_device:new(Device1ID)),
+    Device1IDCopy = <<"device-1-copy">>,
+    Device1Copy = router_device:update(Updates1, router_device:new(Device1IDCopy)),
+
+    Updates2 = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Device2ID = <<"device-3">>,
+    Device2 = router_device:update(Updates2, router_device:new(Device2ID)),
+
+    %% Queue up device-1
+    true = ets:insert(Tab, {devices, [Device1]}),
+    ok = router_xor_filter_worker:check_filters(),
+    ok = expect_block(3, Chain),
+
+    %% Console knows about device 1
+    receive
+        {console_filter_update, [Device1ID], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-1")
+    end,
+
+    ok = test_utils:ignore_messages(),
+
+    %% Queue up all devices
+    true = ets:insert(Tab, {devices, [Device1, Device1Copy, Device2]}),
+    ok = router_xor_filter_worker:check_filters(),
+    timer:sleep(timer:seconds(1)),
+    ok = expect_block(4, Chain),
+
+    %% Console knows they are different devices without needing a txn.
+    receive
+        {console_filter_update, [Device1IDCopy], []} ->
+            ok
+    after 2150 -> ct:fail("No console message about device-1-copy")
+    end,
+
+    %% Txn for new device goes through
+    receive
+        {console_filter_update, [Device2ID], []} ->
             ok
     after 2150 -> ct:fail("No console message about device-2")
     end,

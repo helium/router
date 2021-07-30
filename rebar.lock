@@ -18,7 +18,7 @@
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.5.1">>},1},
  {<<"chatterbox">>,
   {git,"https://github.com/andymck/chatterbox",
-       {ref,"62515d582e590edba211b0e9adda78febbb75092"}},
+       {ref,"b56a2a08b8a31b7ab0d536e5e8a55d5abe70390f"}},
   1},
  {<<"clique">>,
   {git,"https://github.com/helium/clique.git",

@@ -100,7 +100,7 @@ filter_migrate(["filter", "migrate"], [], Flags) ->
 
     case Commit of
         false ->
-            DryRun = [{filter, "DRY"}, {old_size, "RUN"}, {new_size, "!!!"}, {cost, "!!!"}],
+            DryRun = [[{filter, "DRY"}, {old_size, "RUN"}, {new_size, "!!!"}, {cost, "!!!"}]],
             c_table(DryRun ++ Output);
         true ->
             c_table(Output)

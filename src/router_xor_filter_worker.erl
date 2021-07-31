@@ -899,7 +899,7 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                 true ->
                     [{new, Added}];
                 false ->
-                    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
+                    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, MaxXorFilter - 1)]),
                     case smallest_first(maps:to_list(maps:merge(BaseEmpty, Map))) of
                         [] ->
                             [{update, 0, Added}];
@@ -1329,7 +1329,7 @@ test_for_should_update_filters_test() ->
     %% Adding a device to a filter should cause the remove to go through.
     %% Only the filter that is chosen for adds removes it device.
     meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device2]} end),
-    ExpectedUpdateRemoveFitler = [{update, 0, get_devices_deveui_app_eui([Device2])}],
+    ExpectedUpdateRemoveFitler = [{update, 1, get_devices_deveui_app_eui([Device2])}],
     ?assertMatch(
         {RoutingRemoved1, ExpectedUpdateRemoveFitler, _CurrentMapping},
         should_update_filters(chain, OUI, #{
@@ -1374,7 +1374,7 @@ test_for_should_update_filters_test() ->
         {ok, [Device4]}
     end),
 
-    ExpectedUpdateFilter3 = [{update, 0, get_devices_deveui_app_eui([Device4])}],
+    ExpectedUpdateFilter3 = [{update, 1, get_devices_deveui_app_eui([Device4])}],
     ?assertMatch(
         {RoutingEmptyMap1, ExpectedUpdateFilter3, _CurrentMapping},
         should_update_filters(chain, OUI, #{})

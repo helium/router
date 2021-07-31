@@ -31,13 +31,14 @@ filter_usage() ->
         ["filter"],
         [
             "\n\n",
-            "  filter                     - this message\n"
-            "  filter timer               - How much time until next xor filter run\n"
-            "  filter update --commit     - Update XOR filter\n"
-            "  filter rebalance --commit  - Evenly distribute known devices among existing filters\n"
-            "  filter report              - Size report\n"
-            "  filter report --id=<id>    - Filter info for a device\n"
-            "  filter reset_db  --commit  - Reset rocksdb from Console api\n"
+            "  filter                                           - this message\n"
+            "  filter timer                                     - How much time until next xor filter run\n"
+            "  filter update --commit                           - Update XOR filter\n"
+            "  filter rebalance --commit                        - Evenly distribute known devices among existing filters\n"
+            "  filter report                                    - Size report\n"
+            "  filter report --id=<id>                          - Filter info for a device\n"
+            "  filter reset_db  --commit                        - Reset rocksdb from Console api\n"
+            "  filter migrate --from=<from> --to=<to> --commit  - Migrate devices, emptying filter <from> (Remember: filters are 0-indexed)\n"
             "\n"
         ]
     ].
@@ -64,8 +65,46 @@ filter_cmd() ->
             [],
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun filter_reset_db/3
+        ],
+        [
+            ["filter", "migrate"],
+            [],
+            [
+                {from, [{longname, "from"}, {typecast, fun erlang:list_to_integer/1}]},
+                {to, [{longname, "to"}, {typecast, fun erlang:list_to_integer/1}]},
+                {commit, [{longname, "commit"}, {datatype, boolean}]}
+            ],
+            fun filter_migrate/3
         ]
     ].
+
+filter_migrate(["filter", "migrate"], [], Flags) ->
+    Options = #{from := FromIndex, to := ToIndex} = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
+
+    {ok, Curr, NewGroups, Costs} = router_xor_filter_worker:migrate_filter(
+        FromIndex,
+        ToIndex,
+        Commit
+    ),
+
+    Output = [
+        [
+            {filter, Index},
+            {old_size, length(maps:get(Index, Curr))},
+            {new_size, length(maps:get(Index, NewGroups))},
+            {cost, maps:get(Index, Costs)}
+        ]
+        || Index <- [FromIndex, ToIndex]
+    ],
+
+    case Commit of
+        false ->
+            DryRun = [[{filter, "DRY"}, {old_size, "RUN"}, {new_size, "!!!"}, {cost, "!!!"}]],
+            c_table(DryRun ++ Output);
+        true ->
+            c_table(Output)
+    end.
 
 filter_report(["filter", "report"], [], [{id, ID}]) ->
     DeviceID = erlang:iolist_to_binary(ID),

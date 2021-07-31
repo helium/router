@@ -10,6 +10,7 @@
     publish_xor_test/1,
     max_filters_devices_test/1,
     ignore_largest_filter_test/1,
+    migrate_filter_test/1,
     evenly_rebalance_filter_test/1,
     oddly_rebalance_filter_test/1,
     remove_devices_filter_test/1,
@@ -62,6 +63,7 @@ all() ->
         publish_xor_test,
         max_filters_devices_test,
         ignore_largest_filter_test,
+        migrate_filter_test,
         evenly_rebalance_filter_test,
         oddly_rebalance_filter_test,
         remove_devices_filter_test,
@@ -259,9 +261,9 @@ ignore_largest_filter_test(Config) ->
 
     Round1Devices = n_rand_devices(10),
     Round2Devices = n_rand_devices(200) ++ Round1Devices,
-    Round3Devices = n_rand_devices(12) ++ Round2Devices,
-    Round4Devices = n_rand_devices(10) ++ Round3Devices,
-    Round5Devices = n_rand_devices(10) ++ Round4Devices,
+    Round3Devices = n_rand_devices(14) ++ Round2Devices,
+    Round4Devices = n_rand_devices(16) ++ Round3Devices,
+    Round5Devices = n_rand_devices(18) ++ Round4Devices,
 
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
@@ -280,20 +282,19 @@ ignore_largest_filter_test(Config) ->
             #{devices => Round2Devices, block => 4, filter_count => 3},
             #{devices => Round3Devices, block => 5, filter_count => 4},
             #{devices => Round4Devices, block => 6, filter_count => 5},
-            %% We should not craft filters above 5
             #{devices => Round5Devices, block => 7, filter_count => 5}
         ]
     ),
 
     [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
-    ExpectedOrder = [One, Two, Four, Five, Three],
+    ExpectedOrder = [Two, Four, Five, One, Three],
 
     %% ct:print("Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
-    %% Order: One   - 0 device
+    %% Order: One   - 18 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
-    %%        Four  - 12 devices
-    %%        Five  - 20 devices
+    %%        Four  - 14 devices
+    %%        Five  - 16 devices
     ?assertEqual(
         sort_binaries_by_size(Filters),
         ExpectedOrder,
@@ -304,6 +305,136 @@ ignore_largest_filter_test(Config) ->
             ])
         )
     ),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+migrate_filter_test(Config) ->
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(5),
+    Round2Devices = Round1Devices ++ n_rand_devices(5),
+    Round3Devices = Round2Devices ++ n_rand_devices(5),
+    Round4Devices = Round3Devices ++ n_rand_devices(5),
+    Round5Devices = Round4Devices ++ n_rand_devices(5),
+
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            #{devices => Round2Devices, block => 4, filter_count => 3},
+            #{devices => Round3Devices, block => 5, filter_count => 4},
+            #{devices => Round4Devices, block => 6, filter_count => 5},
+            #{devices => Round5Devices, block => 7, filter_count => 5}
+        ]
+    ),
+
+    %% Order: Zero  - 0 device
+    %%        One   - 5 devices
+    %%        Two   - 5 devices
+    %%        Three - 5 devices
+    %%        Four  - 10 devices
+    State0 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(5, erlang:length(maps:get(0, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(1, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(2, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(3, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(4, State0#state.filter_to_devices))),
+
+    %% Migrate Four to Zero
+    %% Order: Zero  - 10 devices
+    %%        One   - 5 devices
+    %%        Two   - 5 devices
+    %%        Three - 5 devices
+    %%        Four  - 0 devices
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit = true),
+    %% migration should be two blocks, 1 (block 8) for new big filter, 1 (block 9) for empty filter
+    ok = expect_block(9, Chain),
+    State1 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(10, erlang:length(maps:get(0, State1#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(1, State1#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(2, State1#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(3, State1#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(4, State1#state.filter_to_devices))),
+
+    %% Migrate Three to Zero
+    %% Order: Zero  - 15 devices
+    %%        One   - 5 devices
+    %%        Two   - 5 devices
+    %%        Three - 0 devices
+    %%        Four  - 0 devices
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit = true),
+    %% migration should be two blocks, 1 (block 10) for new big filter, 1 (block 11) for empty filter
+    ok = expect_block(11, Chain),
+
+    State2 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(15, erlang:length(maps:get(0, State2#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(1, State2#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(2, State2#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(3, State2#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(4, State2#state.filter_to_devices))),
+
+    %% Make sure migrated filters are empty
+    AllDevices = Round5Devices,
+    [_Zero, _One, _Two, Three, Four] = get_filters(Chain, OUI1),
+    ?assertEqual(
+        [false],
+        lists:usort([
+            xor16:contain(
+                {Three, fun xxhash:hash64/1},
+                router_xor_filter_worker:deveui_appeui(Device)
+            )
+            || Device <- AllDevices
+        ]),
+        "No devices in filter Three"
+    ),
+    ?assertEqual(
+        [false],
+        lists:usort([
+            xor16:contain(
+                {Four, fun xxhash:hash64/1},
+                router_xor_filter_worker:deveui_appeui(Device)
+            )
+            || Device <- AllDevices
+        ]),
+        "No devices in filter Four"
+    ),
+
+    %% Next round of devices should go into the empty filters
+    Round6Devices = Round5Devices ++ n_rand_devices(3),
+    true = ets:insert(Tab, {devices, Round6Devices}),
+    ok = router_xor_filter_worker:check_filters(),
+    ok = expect_block(12, Chain),
+    State3 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(15, erlang:length(maps:get(0, State3#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(1, State3#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(2, State3#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(3, State3#state.filter_to_devices))),
+    ?assertEqual(3, erlang:length(maps:get(4, State3#state.filter_to_devices))),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -357,13 +488,13 @@ evenly_rebalance_filter_test(Config) ->
     ),
 
     %% ct:print("~nBefore Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
-    %% Order: One   - 1 device
+    %% Order: One   - 50 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
     %%        Four  - 30 devices
-    %%        Five  - 54 devices
+    %%        Five  - 5 devices
     [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
-    ?assertEqual(sort_binaries_by_size(Filters1), [One, Two, Four, Five, Three]),
+    ?assertEqual(sort_binaries_by_size(Filters1), [Five, Two, Four, One, Three]),
 
     ok = router_xor_filter_worker:rebalance_filters(),
 
@@ -437,12 +568,12 @@ oddly_rebalance_filter_test(Config) ->
 
     Allowance = 10,
 
-    %% Order: One   - 0 device
+    %% Order: One   - 59 device
     %%        Two   - 15 devices
     %%        Three - 211 devices
     %%        Four  - 37 devices
-    %%        Five  - 47+59 devices
-    %% Total: 0 + 15 + 211 + 37 + 47 + 59 == 369
+    %%        Five  - 47 devices
+    %% Total: 15 + 211 + 37 + 47 + 59 == 369
     Filters1 = get_filters(Chain, OUI1),
     Sizes1 = bin_sizes(Filters1),
     %% ct:print("~nBefore Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
@@ -550,20 +681,24 @@ remove_devices_filter_test(Config) ->
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% Should commit filter for removed devices
-    ok = expect_block(8, Chain),
+    %% make sure no txns are about to go through.
+    State0 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State0#state.pending_txns)),
 
-    %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
-        || Filter <- Filters, Device <- Removed
-    ],
-    ?assertEqual(
-        false,
-        lists:member(true, Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% NOTE: not submitting txns for filters when only removing
+    %% %% Should commit filter for removed devices
+    %% ok = expect_block(8, Chain),
+    %% %% Make sure removed devices are not in those filters
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
+    %%     || Filter <- Filters, Device <- Removed
+    %% ],
+    %% ?assertEqual(
+    %%     false,
+    %%     lists:member(true, Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State = sys:get_state(whereis(router_xor_filter_worker)),
     Devices = lists:flatten(maps:values(State#state.filter_to_devices)),
     ?assertEqual(
@@ -663,23 +798,25 @@ remove_devices_filter_after_restart_test(Config) ->
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% Should commit filter for removed devices
-    ok = expect_block(8, Chain),
+    State0 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State0#state.pending_txns)),
+    %% %% Should commit filter for removed devices
+    %% ok = expect_block(8, Chain),
 
-    %% Make sure removed devices are not in those filters
-    Filters2 = get_filters(Chain, OUI1),
-    Containment2 = [
-        xor16:contain(
-            {Filter, fun xxhash:hash64/1},
-            router_xor_filter_worker:deveui_appeui(Device)
-        )
-        || Filter <- Filters2, Device <- Removed
-    ],
-    ?assertEqual(
-        false,
-        lists:member(true, Containment2),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% %% Make sure removed devices are not in those filters
+    %% Filters2 = get_filters(Chain, OUI1),
+    %% Containment2 = [
+    %%     xor16:contain(
+    %%         {Filter, fun xxhash:hash64/1},
+    %%         router_xor_filter_worker:deveui_appeui(Device)
+    %%     )
+    %%     || Filter <- Filters2, Device <- Removed
+    %% ],
+    %% ?assertEqual(
+    %%     false,
+    %%     lists:member(true, Containment2),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State1 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
     ?assertEqual(
@@ -767,8 +904,8 @@ report_device_status_test(Config) ->
     TwoExpectedReport = [{0, false}, {1, false}, {2, true}, {3, false}, {4, false}],
     ThreeExpectedReport = [{0, false}, {1, false}, {2, false}, {3, true}, {4, false}],
     FourExpectedReport = [{0, false}, {1, false}, {2, false}, {3, false}, {4, true}],
-    %% Expecing this one because that's the smallest that has been written to.
-    FiveExpectedReport = [{0, false}, {1, true}, {2, false}, {3, false}, {4, false}],
+    %% All filters are considered after room is taken
+    FiveExpectedReport = [{0, true}, {1, false}, {2, false}, {3, false}, {4, false}],
 
     %% NOTE: Remember filters are 0-indexed
     ?assertEqual(
@@ -794,7 +931,7 @@ report_device_status_test(Config) ->
     ?assertEqual(
         [{routing, FiveExpectedReport}, {in_memory, FiveExpectedReport}],
         router_xor_filter_worker:report_device_status(Five),
-        "Fifth device should be written to filter 1 (smallest in-use filter)"
+        "Fifth device should be written to filter 0 (smallest filter)"
     ),
 
     %% NOTE: If filter selection is rewritten to consider filter size rather
@@ -830,9 +967,6 @@ remove_devices_single_txn_db_test(Config) ->
     %% Add devices
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
-            %% Ensure we aren't starting farther ahead than we expect
-            ok = expect_block(ExpectedBlock - 1, Chain),
-
             true = ets:insert(Tab, {devices, Devices}),
             ok = router_xor_filter_worker:check_filters(),
 
@@ -845,21 +979,22 @@ remove_devices_single_txn_db_test(Config) ->
         [
             #{devices => Round1Devices, block => 3, filter_count => 2},
             %% Removing all devices
-            #{devices => [], block => 4, filter_count => 2}
+            %% Don't inc expected block, not writing to chain for removals.
+            #{devices => [], block => 3, filter_count => 2}
         ]
     ),
 
     %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
-        || Filter <- Filters, Device <- Round1DevicesEUI
-    ],
-    ?assertEqual(
-        [false],
-        lists:usort(Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+    %%     || Filter <- Filters, Device <- Round1DevicesEUI
+    %% ],
+    %% ?assertEqual(
+    %%     [false],
+    %%     lists:usort(Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State0 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
     ?assertEqual(
@@ -930,21 +1065,22 @@ remove_devices_multiple_txn_db_test(Config) ->
             %% Removing all devices
             %% (Current block 7) + (Updating 4 filters) == 11
             %% Filter 0 has no devices, no changes
-            #{devices => [], block => 11, filter_count => 5}
+            %% No block change, not updating the chain for removals.
+            #{devices => [], block => 7, filter_count => 5}
         ]
     ),
 
     %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
-        || Filter <- Filters, Device <- DeviceEUIs
-    ],
-    ?assertEqual(
-        [false],
-        lists:usort(Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+    %%     || Filter <- Filters, Device <- DeviceEUIs
+    %% ],
+    %% ?assertEqual(
+    %%     [false],
+    %%     lists:usort(Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State0 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
     ?assertEqual(
@@ -992,7 +1128,7 @@ send_updates_to_console_test(Config) ->
     %% should have pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
-    ShouldBeRemovedNext =
+    _ShouldBeRemovedNext =
         receive
             {console_filter_update, Added, []} ->
                 %% ct:print("Console knows we Added:~n~p~n", [Added]),
@@ -1006,16 +1142,17 @@ send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, []}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
+    %% should _NOT_ have pushed a new filter to the chain
+    ok = expect_block(3, Chain),
 
-    receive
-        {console_filter_update, [], Removed} ->
-            %% ct:print("Console knows we removed : ~n~p", [Removed]),
-            ?assertEqual(lists:sort(Removed), lists:sort(ShouldBeRemovedNext)),
-            ok
-    after 2150 -> ct:fail("No console message about removing devices from filters")
-    end,
+    %% NOTE: Nothing is being removed from filters because there are no adds
+    %% receive
+    %%     {console_filter_update, [], []} ->
+    %%         %% ct:print("Console knows we removed : ~n~p", [Removed]),
+    %%        %% ?assertEqual(lists:sort(Removed), lists:sort(ShouldBeRemovedNext)),
+    %%         ok
+    %% after 2150 -> ct:fail("No console message about removing devices from filters")
+    %% end,
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -1318,9 +1455,10 @@ estimate_cost_test(Config) ->
         router_xor_filter_worker:estimate_cost()
     ),
     ok = router_xor_filter_worker:check_filters(),
-
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
+    State = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State#state.pending_txns)),
+    %% should _NOT_ have pushed a new filter to the chain for only removed devices
+    ok = expect_block(3, Chain),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -1373,9 +1511,14 @@ get_filters(Chain, OUI) ->
 
 sort_binaries_by_size(Bins) ->
     lists:sort(
-        fun(A, B) -> byte_size(A) < byte_size(B) end,
+        fun
+            ({_, A}, {_, B}) -> byte_size(A) < byte_size(B);
+            (A, B) -> byte_size(A) < byte_size(B)
+        end,
         Bins
     ).
 
+bin_sizes([{_, _} | _] = Bins) ->
+    [{I, byte_size(Bin)} || {I, Bin} <- Bins];
 bin_sizes(Bins) ->
     [byte_size(Bin) || Bin <- Bins].

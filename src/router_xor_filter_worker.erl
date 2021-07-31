@@ -605,7 +605,7 @@ get_migrated_filter_group(FromIndex, ToIndex, FilterToDevices) ->
         [FromIndex, length(FromDevices), ToIndex, length(ToDevices), length(CombinedDevices)]
     ),
     #{
-        ToIndex => CombinedDevices,
+        ToIndex => assign_filter_index(ToIndex, CombinedDevices),
         FromIndex => []
     }.
 

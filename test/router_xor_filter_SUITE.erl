@@ -261,9 +261,9 @@ ignore_largest_filter_test(Config) ->
 
     Round1Devices = n_rand_devices(10),
     Round2Devices = n_rand_devices(200) ++ Round1Devices,
-    Round3Devices = n_rand_devices(12) ++ Round2Devices,
-    Round4Devices = n_rand_devices(10) ++ Round3Devices,
-    Round5Devices = n_rand_devices(10) ++ Round4Devices,
+    Round3Devices = n_rand_devices(14) ++ Round2Devices,
+    Round4Devices = n_rand_devices(16) ++ Round3Devices,
+    Round5Devices = n_rand_devices(18) ++ Round4Devices,
 
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
@@ -282,20 +282,19 @@ ignore_largest_filter_test(Config) ->
             #{devices => Round2Devices, block => 4, filter_count => 3},
             #{devices => Round3Devices, block => 5, filter_count => 4},
             #{devices => Round4Devices, block => 6, filter_count => 5},
-            %% We should not craft filters above 5
             #{devices => Round5Devices, block => 7, filter_count => 5}
         ]
     ),
 
     [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
-    ExpectedOrder = [One, Two, Four, Five, Three],
+    ExpectedOrder = [Two, Four, Five, One, Three],
 
     %% ct:print("Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
-    %% Order: One   - 0 device
+    %% Order: One   - 18 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
-    %%        Four  - 12 devices
-    %%        Five  - 20 devices
+    %%        Four  - 14 devices
+    %%        Five  - 16 devices
     ?assertEqual(
         sort_binaries_by_size(Filters),
         ExpectedOrder,
@@ -360,11 +359,11 @@ migrate_filter_test(Config) ->
     %%        Three - 5 devices
     %%        Four  - 10 devices
     State0 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(0, erlang:length(maps:get(0, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(0, State0#state.filter_to_devices))),
     ?assertEqual(5, erlang:length(maps:get(1, State0#state.filter_to_devices))),
     ?assertEqual(5, erlang:length(maps:get(2, State0#state.filter_to_devices))),
     ?assertEqual(5, erlang:length(maps:get(3, State0#state.filter_to_devices))),
-    ?assertEqual(10, erlang:length(maps:get(4, State0#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(4, State0#state.filter_to_devices))),
 
     %% Migrate Four to Zero
     %% Order: Zero  - 10 devices
@@ -425,6 +424,18 @@ migrate_filter_test(Config) ->
         "No devices in filter Four"
     ),
 
+    %% Next round of devices should go into the empty filters
+    Round6Devices = Round5Devices ++ n_rand_devices(3),
+    true = ets:insert(Tab, {devices, Round6Devices}),
+    ok = router_xor_filter_worker:check_filters(),
+    ok = expect_block(12, Chain),
+    State3 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(15, erlang:length(maps:get(0, State3#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(1, State3#state.filter_to_devices))),
+    ?assertEqual(5, erlang:length(maps:get(2, State3#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(3, State3#state.filter_to_devices))),
+    ?assertEqual(3, erlang:length(maps:get(4, State3#state.filter_to_devices))),
+
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ok.
@@ -477,13 +488,13 @@ evenly_rebalance_filter_test(Config) ->
     ),
 
     %% ct:print("~nBefore Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
-    %% Order: One   - 1 device
+    %% Order: One   - 50 device
     %%        Two   - 10 devices
     %%        Three - 200 devices
     %%        Four  - 30 devices
-    %%        Five  - 54 devices
+    %%        Five  - 5 devices
     [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
-    ?assertEqual(sort_binaries_by_size(Filters1), [One, Two, Four, Five, Three]),
+    ?assertEqual(sort_binaries_by_size(Filters1), [Five, Two, Four, One, Three]),
 
     ok = router_xor_filter_worker:rebalance_filters(),
 
@@ -557,12 +568,12 @@ oddly_rebalance_filter_test(Config) ->
 
     Allowance = 10,
 
-    %% Order: One   - 0 device
+    %% Order: One   - 59 device
     %%        Two   - 15 devices
     %%        Three - 211 devices
     %%        Four  - 37 devices
-    %%        Five  - 47+59 devices
-    %% Total: 0 + 15 + 211 + 37 + 47 + 59 == 369
+    %%        Five  - 47 devices
+    %% Total: 15 + 211 + 37 + 47 + 59 == 369
     Filters1 = get_filters(Chain, OUI1),
     Sizes1 = bin_sizes(Filters1),
     %% ct:print("~nBefore Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
@@ -893,8 +904,8 @@ report_device_status_test(Config) ->
     TwoExpectedReport = [{0, false}, {1, false}, {2, true}, {3, false}, {4, false}],
     ThreeExpectedReport = [{0, false}, {1, false}, {2, false}, {3, true}, {4, false}],
     FourExpectedReport = [{0, false}, {1, false}, {2, false}, {3, false}, {4, true}],
-    %% Expecing this one because that's the smallest that has been written to.
-    FiveExpectedReport = [{0, false}, {1, true}, {2, false}, {3, false}, {4, false}],
+    %% All filters are considered after room is taken
+    FiveExpectedReport = [{0, true}, {1, false}, {2, false}, {3, false}, {4, false}],
 
     %% NOTE: Remember filters are 0-indexed
     ?assertEqual(
@@ -920,7 +931,7 @@ report_device_status_test(Config) ->
     ?assertEqual(
         [{routing, FiveExpectedReport}, {in_memory, FiveExpectedReport}],
         router_xor_filter_worker:report_device_status(Five),
-        "Fifth device should be written to filter 1 (smallest in-use filter)"
+        "Fifth device should be written to filter 0 (smallest filter)"
     ),
 
     %% NOTE: If filter selection is rewritten to consider filter size rather
@@ -1500,9 +1511,14 @@ get_filters(Chain, OUI) ->
 
 sort_binaries_by_size(Bins) ->
     lists:sort(
-        fun(A, B) -> byte_size(A) < byte_size(B) end,
+        fun
+            ({_, A}, {_, B}) -> byte_size(A) < byte_size(B);
+            (A, B) -> byte_size(A) < byte_size(B)
+        end,
         Bins
     ).
 
+bin_sizes([{_, _} | _] = Bins) ->
+    [{I, byte_size(Bin)} || {I, Bin} <- Bins];
 bin_sizes(Bins) ->
     [byte_size(Bin) || Bin <- Bins].

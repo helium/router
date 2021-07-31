@@ -899,7 +899,8 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                 true ->
                     [{new, Added}];
                 false ->
-                    case smallest_first(maps:to_list(Map)) of
+                    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
+                    case smallest_first(maps:to_list(maps:merge(BaseEmpty, Map))) of
                         [] ->
                             [{update, 0, Added}];
                         [{Index, SmallestDevicesDevEuiAppEui} | _] ->

@@ -556,8 +556,8 @@ commit_groups_to_filters(NewGroups, #state{chain = Chain, oui = OUI} = State) ->
     CurrNonce = blockchain_ledger_routing_v1:nonce(Routing),
     NewPending0 =
         lists:map(
-            fun({Idx, GroupEuis}) ->
-                Nonce = CurrNonce + Idx + 1,
+            fun({Count, {Idx, GroupEuis}}) ->
+                Nonce = CurrNonce + Count + 1,
                 Filter = new_xor_filter(GroupEuis),
                 Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
                 Hash = submit_txn(Txn),
@@ -568,7 +568,7 @@ commit_groups_to_filters(NewGroups, #state{chain = Chain, oui = OUI} = State) ->
 
                 {Hash, {Idx, GroupEuis}}
             end,
-            maps:to_list(NewGroups)
+            enumerate_0(maps:to_list(NewGroups))
         ),
     {ok, maps:from_list(NewPending0)}.
 

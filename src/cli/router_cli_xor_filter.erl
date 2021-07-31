@@ -70,8 +70,8 @@ filter_cmd() ->
             ["filter", "migrate"],
             [],
             [
-                {from, [{longname, "from"}, {datatype, number}]},
-                {to, [{longname, "to"}, {datatype, number}]},
+                {from, [{longname, "from"}, {typecast, fun erlang:list_to_integer/1}]},
+                {to, [{longname, "to"}, {typecast, fun erlang:list_to_integer/1}]},
                 {commit, [{longname, "commit"}, {datatype, boolean}]}
             ],
             fun filter_migrate/3

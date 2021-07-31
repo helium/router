@@ -550,20 +550,24 @@ remove_devices_filter_test(Config) ->
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% Should commit filter for removed devices
-    ok = expect_block(8, Chain),
+    %% make sure no txns are about to go through.
+    State0 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State0#state.pending_txns)),
 
-    %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
-        || Filter <- Filters, Device <- Removed
-    ],
-    ?assertEqual(
-        false,
-        lists:member(true, Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% NOTE: not submitting txns for filters when only removing
+    %% %% Should commit filter for removed devices
+    %% ok = expect_block(8, Chain),
+    %% %% Make sure removed devices are not in those filters
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
+    %%     || Filter <- Filters, Device <- Removed
+    %% ],
+    %% ?assertEqual(
+    %%     false,
+    %%     lists:member(true, Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State = sys:get_state(whereis(router_xor_filter_worker)),
     Devices = lists:flatten(maps:values(State#state.filter_to_devices)),
     ?assertEqual(
@@ -663,23 +667,25 @@ remove_devices_filter_after_restart_test(Config) ->
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% Should commit filter for removed devices
-    ok = expect_block(8, Chain),
+    State0 = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State0#state.pending_txns)),
+    %% %% Should commit filter for removed devices
+    %% ok = expect_block(8, Chain),
 
-    %% Make sure removed devices are not in those filters
-    Filters2 = get_filters(Chain, OUI1),
-    Containment2 = [
-        xor16:contain(
-            {Filter, fun xxhash:hash64/1},
-            router_xor_filter_worker:deveui_appeui(Device)
-        )
-        || Filter <- Filters2, Device <- Removed
-    ],
-    ?assertEqual(
-        false,
-        lists:member(true, Containment2),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% %% Make sure removed devices are not in those filters
+    %% Filters2 = get_filters(Chain, OUI1),
+    %% Containment2 = [
+    %%     xor16:contain(
+    %%         {Filter, fun xxhash:hash64/1},
+    %%         router_xor_filter_worker:deveui_appeui(Device)
+    %%     )
+    %%     || Filter <- Filters2, Device <- Removed
+    %% ],
+    %% ?assertEqual(
+    %%     false,
+    %%     lists:member(true, Containment2),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State1 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
     ?assertEqual(
@@ -830,9 +836,6 @@ remove_devices_single_txn_db_test(Config) ->
     %% Add devices
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
-            %% Ensure we aren't starting farther ahead than we expect
-            ok = expect_block(ExpectedBlock - 1, Chain),
-
             true = ets:insert(Tab, {devices, Devices}),
             ok = router_xor_filter_worker:check_filters(),
 
@@ -845,21 +848,22 @@ remove_devices_single_txn_db_test(Config) ->
         [
             #{devices => Round1Devices, block => 3, filter_count => 2},
             %% Removing all devices
-            #{devices => [], block => 4, filter_count => 2}
+            %% Don't inc expected block, not writing to chain for removals.
+            #{devices => [], block => 3, filter_count => 2}
         ]
     ),
 
     %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
-        || Filter <- Filters, Device <- Round1DevicesEUI
-    ],
-    ?assertEqual(
-        [false],
-        lists:usort(Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+    %%     || Filter <- Filters, Device <- Round1DevicesEUI
+    %% ],
+    %% ?assertEqual(
+    %%     [false],
+    %%     lists:usort(Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State0 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
     ?assertEqual(
@@ -930,21 +934,22 @@ remove_devices_multiple_txn_db_test(Config) ->
             %% Removing all devices
             %% (Current block 7) + (Updating 4 filters) == 11
             %% Filter 0 has no devices, no changes
-            #{devices => [], block => 11, filter_count => 5}
+            %% No block change, not updating the chain for removals.
+            #{devices => [], block => 7, filter_count => 5}
         ]
     ),
 
     %% Make sure removed devices are not in those filters
-    Filters = get_filters(Chain, OUI1),
-    Containment = [
-        xor16:contain({Filter, fun xxhash:hash64/1}, Device)
-        || Filter <- Filters, Device <- DeviceEUIs
-    ],
-    ?assertEqual(
-        [false],
-        lists:usort(Containment),
-        "Removed devices are _NOT_ in filters"
-    ),
+    %% Filters = get_filters(Chain, OUI1),
+    %% Containment = [
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, Device)
+    %%     || Filter <- Filters, Device <- DeviceEUIs
+    %% ],
+    %% ?assertEqual(
+    %%     [false],
+    %%     lists:usort(Containment),
+    %%     "Removed devices are _NOT_ in filters"
+    %% ),
     State0 = sys:get_state(whereis(router_xor_filter_worker)),
     Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
     ?assertEqual(
@@ -992,7 +997,7 @@ send_updates_to_console_test(Config) ->
     %% should have pushed a new filter to the chain
     ok = expect_block(3, Chain),
 
-    ShouldBeRemovedNext =
+    _ShouldBeRemovedNext =
         receive
             {console_filter_update, Added, []} ->
                 %% ct:print("Console knows we Added:~n~p~n", [Added]),
@@ -1006,16 +1011,17 @@ send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, []}),
     ok = router_xor_filter_worker:check_filters(),
 
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
+    %% should _NOT_ have pushed a new filter to the chain
+    ok = expect_block(3, Chain),
 
-    receive
-        {console_filter_update, [], Removed} ->
-            %% ct:print("Console knows we removed : ~n~p", [Removed]),
-            ?assertEqual(lists:sort(Removed), lists:sort(ShouldBeRemovedNext)),
-            ok
-    after 2150 -> ct:fail("No console message about removing devices from filters")
-    end,
+    %% NOTE: Nothing is being removed from filters because there are no adds
+    %% receive
+    %%     {console_filter_update, [], []} ->
+    %%         %% ct:print("Console knows we removed : ~n~p", [Removed]),
+    %%        %% ?assertEqual(lists:sort(Removed), lists:sort(ShouldBeRemovedNext)),
+    %%         ok
+    %% after 2150 -> ct:fail("No console message about removing devices from filters")
+    %% end,
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -1318,9 +1324,10 @@ estimate_cost_test(Config) ->
         router_xor_filter_worker:estimate_cost()
     ),
     ok = router_xor_filter_worker:check_filters(),
-
-    %% should have pushed a new filter to the chain
-    ok = expect_block(4, Chain),
+    State = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(0, maps:size(State#state.pending_txns)),
+    %% should _NOT_ have pushed a new filter to the chain for only removed devices
+    ok = expect_block(3, Chain),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

@@ -814,9 +814,9 @@ should_update_filters(Chain, OUI, FilterToDevices) ->
 ) -> noop | [update()].
 craft_updates(Updates, BinFilters, MaxXorFilter) ->
     case Updates of
-        {_Map, [], Removed} when Removed == #{} ->
+        {_Map, [], _Removed} ->
             noop;
-        {Map, Added, Removed} when Removed == #{} ->
+        {Map, Added, Removed} ->
             case erlang:length(BinFilters) < MaxXorFilter of
                 true ->
                     [{new, Added}];
@@ -825,16 +825,13 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                         [] ->
                             [{update, 0, Added}];
                         [{Index, SmallestDevicesDevEuiAppEui} | _] ->
-                            [{update, Index, Added ++ SmallestDevicesDevEuiAppEui}]
+                            %% NOTE: we only remove from filters we're updating
+                            %% with devices to add. Removes aren't as important
+                            %% as adds, and can incur unnecessary costs.
+                            AddedDevices = Added ++ SmallestDevicesDevEuiAppEui,
+                            [{update, Index, AddedDevices -- maps:get(Index, Removed, [])}]
                     end
-            end;
-        {Map, [], Removed} ->
-            craft_remove_updates(Map, Removed);
-        {Map, Added, Removed} ->
-            [{update, Index, R} | OtherUpdates] = smallest_first(
-                craft_remove_updates(Map, Removed)
-            ),
-            [{update, Index, R ++ Added} | OtherUpdates]
+            end
     end.
 
 -spec get_devices_deveui_app_eui(Devices :: [router_device:device()]) ->
@@ -876,19 +873,6 @@ smallest_first(List) ->
                 erlang:length(L1) < erlang:length(L2)
         end,
         List
-    ).
-
--spec craft_remove_updates(map(), map()) -> [update()].
-craft_remove_updates(Map, RemovedDevicesDevEuiAppEuiMap) ->
-    maps:fold(
-        fun(Index, RemovedDevicesDevEuiAppEui, Acc) ->
-            [
-                {update, Index, maps:get(Index, Map, []) -- RemovedDevicesDevEuiAppEui}
-                | Acc
-            ]
-        end,
-        [],
-        RemovedDevicesDevEuiAppEuiMap
     ).
 
 -spec assign_filter_index(Index :: non_neg_integer(), list()) -> list().
@@ -1162,9 +1146,9 @@ test_for_should_update_filters_test() ->
         {ok, EmptyRouting}
     end),
 
-    ExpectedNewFilter1 = [{new, get_devices_deveui_app_eui([Device0])}],
+    ExpectedNewFilter0 = [{new, get_devices_deveui_app_eui([Device0])}],
     ?assertMatch(
-        {EmptyRouting, ExpectedNewFilter1, _CurrentMapping},
+        {EmptyRouting, ExpectedNewFilter0, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 
@@ -1202,9 +1186,11 @@ test_for_should_update_filters_test() ->
         {ok, [Device1]}
     end),
 
-    ExpectedUpdateFilter1 = [{update, 0, get_devices_deveui_app_eui([Device1])}],
+    %% We're not removing device0 from filter0. Need to add device1, that goes
+    %% into a new filter because we have room.
+    ExpectedNewFilter1 = [{new, get_devices_deveui_app_eui([Device1])}],
     ?assertMatch(
-        {Routing0, ExpectedUpdateFilter1, _CurrentMapping},
+        {Routing0, ExpectedNewFilter1, _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0]))
         })
@@ -1220,9 +1206,11 @@ test_for_should_update_filters_test() ->
         {ok, [Device1, Device2]}
     end),
 
-    ExpectedUpdateFilter2 = [{update, 0, get_devices_deveui_app_eui([Device1, Device2])}],
+    %% We're not removing device0 from filter0. Need ot add device1 and device2,
+    %% that goes into a new filter because we have room.
+    ExpectedNewFilter2 = [{new, get_devices_deveui_app_eui([Device1, Device2])}],
     ?assertMatch(
-        {Routing0, ExpectedUpdateFilter2, _CurrentMapping},
+        {Routing0, ExpectedNewFilter2, _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => get_devices_deveui_app_eui([Device0])
         })
@@ -1250,7 +1238,21 @@ test_for_should_update_filters_test() ->
     ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_appeui(Device0))),
     ?assert(xor16:contain({BinFilter1, ?HASH_FUN}, deveui_appeui(Device1))),
     ?assertMatch(
-        {RoutingRemoved1, [{update, 1, []}, {update, 0, []}], _CurrentMapping},
+        %% NOTE: No txns for only removed devices
+        %% {RoutingRemoved1, [{update, 1, []}, {update, 0, []}], _CurrentMapping},
+        {update_cache, _},
+        should_update_filters(chain, OUI, #{
+            0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0])),
+            1 => assign_filter_index(1, get_devices_deveui_app_eui([Device1]))
+        })
+    ),
+
+    %% Adding a device to a filter should cause the remove to go through.
+    %% Only the filter that is chosen for adds removes it device.
+    meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device2]} end),
+    ExpectedUpdateRemoveFitler = [{update, 0, get_devices_deveui_app_eui([Device2])}],
+    ?assertMatch(
+        {RoutingRemoved1, ExpectedUpdateRemoveFitler, _CurrentMapping},
         should_update_filters(chain, OUI, #{
             0 => assign_filter_index(0, get_devices_deveui_app_eui([Device0])),
             1 => assign_filter_index(1, get_devices_deveui_app_eui([Device1]))
@@ -1318,11 +1320,11 @@ test_for_should_update_filters_test() ->
     end),
 
     %% Devices with matching app/dev eui should be deduplicated
-    ExpectedNewFilter2 = [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}],
+    ExpectedNewFilter3 = [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}],
     ?assertMatch(
         %% NOTE: Expecting both, because we store by EUI and DeviceID for
         %% fetching later, EUIs are deduped before going into a filter though
-        {EmptyRouting2, ExpectedNewFilter2, _CurrentMapping},
+        {EmptyRouting2, ExpectedNewFilter3, _CurrentMapping},
         should_update_filters(chain, OUI, #{})
     ),
 

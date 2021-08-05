@@ -17,8 +17,7 @@
         {max_inbound_connections, 12},
         {outbound_gossip_connections, 4},
         {sc_packet_handler, router_device_routing},
-        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
-        {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"}
+        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"}
     ]},
     {router, [
         {max_v8_context, 1000},
@@ -26,6 +25,7 @@
         {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
         {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
         {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
+        {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},
         {max_sc_open, "${ROUTER_MAX_SC_OPEN}"},
         {router_console_api, [
             {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},

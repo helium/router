@@ -31,7 +31,7 @@
 
 -export([downlink_signal_strength/2]).
 -export([dr_to_down/3]).
--export([window2_dr/1, top_level_region/1, f2uch/2]).
+-export([window2_dr/1, top_level_region/1, freq_to_chan/2]).
 -export([mk_join_accept_cf_list/2]).
 
 -include("lorawan_db.hrl").
@@ -290,6 +290,26 @@ window2_dr('EU868') -> 0;
 window2_dr(_Region) -> 0.
 
 %% ------------------------------------------------------------------
+%% @doc Frequency to (Up/Down) Channel
+%% Map Frequency to Channel for region.
+%%
+%% Some regions down channels overlap with their up channels, that's
+%% not always the case *cough* AU915. If we can't get a channel from
+%% assuming it's an uplink frequency, try to parse as a downlink
+%% frequency.
+%%
+%% @end
+%% ------------------------------------------------------------------
+-spec freq_to_chan(Region :: atom(), Freq :: freq_float()) -> channel().
+freq_to_chan(Region, Freq) ->
+    try
+        f2uch(Region, Freq)
+    catch
+        error:_ ->
+            f2dch(Region, Freq)
+    end.
+
+%% ------------------------------------------------------------------
 %% @doc Frequency to Up Channel
 %% Map Frequency to Channel for region.
 %% @end
@@ -350,6 +370,15 @@ f2uch(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
     64 + round(10 * Freq - Start2) div Inc2.
 
 %% ------------------------------------------------------------------
+%% @doc Frequency to Down Channel
+%% Map Frequency to Channel for region.
+%% @end
+%% ------------------------------------------------------------------
+-spec f2dch(Region :: atom(), Freq :: freq_float()) -> channel().
+f2dch('AU915', Freq) -> 64 + fi2ch(Freq, {9233, 6});
+f2dch(Region, Freq) -> f2uch(Region, Freq).
+
+%% ------------------------------------------------------------------
 %% @doc Up Channel to Frequency
 %% Map Channel to Frequency for region.
 %% @end
@@ -394,6 +423,19 @@ dch2f('CN470', Ch) ->
     Inc :: non_neg_integer(),
     Freq :: freq_float().
 ch2fi(Ch, {Start, Inc}) -> (Ch * Inc + Start) / 10.
+
+%% ------------------------------------------------------------------
+%% @doc Frequency Index to Channel
+%% Given a Channel = (Frequency Index - Start) / Inc
+%% x = (y-b) / m
+%% @end
+%% ------------------------------------------------------------------
+-spec fi2ch(Freq, {Start, Inc}) -> Channel when
+    Channel :: channel(),
+    Start :: non_neg_integer(),
+    Inc :: non_neg_integer(),
+    Freq :: freq_float().
+fi2ch(Freq, {Start, Inc}) -> round(10 * Freq - Start) div Inc.
 
 tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
@@ -1159,15 +1201,15 @@ region_test_() ->
         ?_assertEqual(datar_to_dr('US915', <<"SF7BW500">>), 13),
         ?_assertEqual(<<"SF10BW500">>, datar_to_down('US915', <<"SF10BW125">>, 0)),
         ?_assertEqual([0, 1, 2, 3, 4, 5, 6, 7], [
-            lorawan_mac_region:f2uch('EU868', F)
+            lorawan_mac_region:freq_to_chan('EU868', F)
             || F <- [868.1, 868.3, 868.5, 867.1, 867.3, 867.5, 867.7, 867.9]
         ]),
         ?_assertEqual([0, 1, 2, 3, 4, 5, 6, 7], [
-            lorawan_mac_region:f2uch('US915', F)
+            lorawan_mac_region:freq_to_chan('US915', F)
             || F <- [902.3, 902.5, 902.7, 902.9, 903.1, 903.3, 903.5, 903.7]
         ]),
         ?_assertEqual([8, 9, 10, 11, 12, 13, 14, 15], [
-            lorawan_mac_region:f2uch('US915', F)
+            lorawan_mac_region:freq_to_chan('US915', F)
             || F <- [903.9, 904.1, 904.3, 904.5, 904.7, 904.9, 905.1, 905.3]
         ])
     ].

@@ -60,6 +60,7 @@
 -type inflight() :: {router_utils:uuid_v4(), pid()}.
 
 -record(state, {
+    downlink_endpoint :: binary(),
     endpoint :: binary(),
     secret :: binary(),
     token :: binary(),
@@ -332,10 +333,10 @@ get_downlink_url(Channel, DeviceID) ->
         undefined ->
             <<>>;
         DownlinkToken ->
-            {Endpoint, _Token} = token_lookup(),
+            {DownlinkEndpoint, _Token} = downlink_token_lookup(),
             ChannelID = router_channel:id(Channel),
-            <<Endpoint/binary, "/api/v1/down/", ChannelID/binary, "/", DownlinkToken/binary, "/",
-                DeviceID/binary>>
+            <<DownlinkEndpoint/binary, "/api/v1/down/", ChannelID/binary, "/", DownlinkToken/binary,
+                "/", DeviceID/binary>>
     end.
 
 -spec organizations_burned(
@@ -384,10 +385,11 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     ets:new(?ETS, [public, named_table, set]),
     ok = hackney_pool:start_pool(?POOL, [{timeout, timer:seconds(60)}, {max_connections, 100}]),
+    DownlinkEndpoint = maps:get(downlink_endpoint, Args),
     Endpoint = maps:get(endpoint, Args),
     Secret = maps:get(secret, Args),
     Token = get_token(Endpoint, Secret),
-    ok = token_insert(Endpoint, Token),
+    ok = token_insert(Endpoint, DownlinkEndpoint, Token),
     {ok, DB, [_, CF]} = router_db:get(),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, P} = load_pending_burns(DB),
@@ -395,6 +397,7 @@ init(Args) ->
     Tref = schedule_next_tick(),
     {ok, #state{
         endpoint = Endpoint,
+        downlink_endpoint = DownlinkEndpoint,
         secret = Secret,
         token = Token,
         db = DB,
@@ -458,10 +461,13 @@ handle_info({hnt_burn, drop, Uuid}, #state{pending_burns = P, inflight = I} = St
     }};
 handle_info({hnt_burn, fail, Uuid}, #state{inflight = I} = State) ->
     {noreply, State#state{inflight = lists:keydelete(Uuid, 1, I)}};
-handle_info(refresh_token, #state{endpoint = Endpoint, secret = Secret} = State) ->
+handle_info(
+    refresh_token,
+    #state{endpoint = Endpoint, downlink_endpoint = DownlinkEndpoint, secret = Secret} = State
+) ->
     Token = get_token(Endpoint, Secret),
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    ok = token_insert(Endpoint, Token),
+    ok = token_insert(Endpoint, DownlinkEndpoint, Token),
     {noreply, State#state{token = Token}};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
@@ -760,16 +766,23 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault) ->
     ],
     router_device:update(DeviceUpdates, router_device:new(ID)).
 
--spec token_lookup() -> {binary(), binary()}.
+-spec downlink_token_lookup() -> {DownlinkEndpoint :: binary(), Token :: binary()}.
+downlink_token_lookup() ->
+    case ets:lookup(?ETS, token) of
+        [] -> {<<>>, <<>>};
+        [{token, {_Endpoing, DownlinkEndpoint, Token}}] -> {DownlinkEndpoint, Token}
+    end.
+
+-spec token_lookup() -> {Endpoint :: binary(), Token :: binary()}.
 token_lookup() ->
     case ets:lookup(?ETS, token) of
         [] -> {<<>>, <<>>};
-        [{token, EndpointToken}] -> EndpointToken
+        [{token, {Endpoint, _Downlink, Token}}] -> {Endpoint, Token}
     end.
 
--spec token_insert(Endpoint :: binary(), Token :: binary()) -> ok.
-token_insert(Endpoint, Token) ->
-    true = ets:insert(?ETS, {token, {Endpoint, Token}}),
+-spec token_insert(Endpoint :: binary(), DownlinkEndpoint :: binary(), Token :: binary()) -> ok.
+token_insert(Endpoint, DownlinkEndpoint, Token) ->
+    true = ets:insert(?ETS, {token, {Endpoint, DownlinkEndpoint, Token}}),
     ok.
 
 -spec schedule_next_tick() -> reference().

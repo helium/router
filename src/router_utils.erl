@@ -769,7 +769,7 @@ format_hotspot(Chain, PubKeyBin, Packet, Region) ->
         snr => blockchain_helium_packet_v1:snr(Packet),
         spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
         frequency => Freq,
-        channel => lorawan_mac_region:f2uch(Region, Freq),
+        channel => lorawan_mac_region:freq_to_chan(Region, Freq),
         lat => Lat,
         long => Long
     }.

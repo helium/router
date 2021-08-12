@@ -641,6 +641,7 @@ handle_cast(
             false -> packet
         end,
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
+    router_device_routing:cache_device_for_hash(PHash, Device0),
     lager:debug("got packet (~p) ~p from ~p", [
         PHash,
         lager:pr(Packet0, blockchain_helium_packet_v1),

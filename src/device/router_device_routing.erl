@@ -981,7 +981,7 @@ cache_device_for_hash(PHash, Device) ->
     ok = e2qc_nif:put(
         ?PHASH_TO_DEVICE_CACHE,
         PHash,
-        erlang:term_to_binary(Device),
+        router_device:serialize(Device),
         ?PHASH_TO_DEVICE_CACHE_MAXSIZE,
         ?PHASH_TO_DEVICE_CACHE_MINSIZE,
         ?PHASH_TO_DEVICE_CACHE_LIFETIME
@@ -1015,7 +1015,7 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
                     {ok, Device}
             end;
         D ->
-            Device = erlang:binary_to_term(D),
+            Device = router_device:deserialize(D),
             lager:debug(
                 "cached device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
                 [PHash, router_device:id(Device), PubKeyBin]

@@ -5,6 +5,10 @@
 -export([register_cli/0]).
 
 -define(USAGE, fun(_, _, _) -> usage end).
+-define(NO_MATCHES_MESSAGE,
+    "Router tracks DC for organizations with actively transmitting devices in memory only.\n"
+    "Refer to https://docs.helium.com/use-the-network/console/users#organizations to view current DC balances."
+).
 
 -type balance_nonce() :: {non_neg_integer(), non_neg_integer()}.
 
@@ -151,7 +155,7 @@ list_orgs_maybe_refetch(Orgs, Flags) ->
     Refetch = proplists:is_defined(refetch, Flags),
     case {Orgs, Refetch} of
         {[], _} ->
-            c_text("no matches");
+            c_text("- no matches~n~n~p~n", [?NO_MATCHES_MESSAGE]);
         {Matches, false} ->
             Matches1 = [format_org_balance(Org) || Org <- Matches],
             c_list(Matches1);

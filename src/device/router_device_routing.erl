@@ -1001,6 +1001,7 @@ force_evict(PHash) ->
 ) -> {ok, router_device:device()} | {error, any()}.
 get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    %% interrogate the cache without inserting value
     case e2qc_nif:get(?PHASH_TO_DEVICE_CACHE, PHash) of
         notfound ->
             case get_and_sort_devices(DevAddr, PubKeyBin, Chain) of

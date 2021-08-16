@@ -8,7 +8,8 @@
 
 -export([
     bad_fcnt_test/1,
-    multi_buy_test/1
+    multi_buy_test/1,
+    packet_hash_cache_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -37,7 +38,8 @@
 all() ->
     [
         bad_fcnt_test,
-        multi_buy_test
+        multi_buy_test,
+        packet_hash_cache_test
     ].
 
 %%--------------------------------------------------------------------
@@ -55,6 +57,104 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+packet_hash_cache_test(Config) ->
+    %% -------------------------------------------------------------------
+    %% Hotspots
+    #{public := PubKey0} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin0 = libp2p_crypto:pubkey_to_bin(PubKey0),
+    {ok, _HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+
+    #{public := PubKey1} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin1 = libp2p_crypto:pubkey_to_bin(PubKey1),
+    {ok, _HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+
+    %% -------------------------------------------------------------------
+    %% Device
+    #{} = test_utils:join_device(Config),
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Change name of devices
+    Device1 = router_device:update([{name, <<"new-name-1">>}], Device0),
+    Device2 = router_device:update([{name, <<"new-name-2">>}], Device1),
+    {ok, _} = router_device_cache:save(Device1),
+    %% NOTE: purposefully not putting device-2 in the cache
+    %% {ok, Device2} = router_device_cache:save(Device2),
+
+    ?assertEqual(
+        router_device:devaddr(Device0),
+        router_device:devaddr(Device1),
+        "all devices have same devaddr"
+    ),
+    ?assertEqual(
+        router_device:devaddr(Device1),
+        router_device:devaddr(Device2),
+        "all devices have same devaddr"
+    ),
+
+    %% -------------------------------------------------------------------
+    %% "make me an offer I cannot refuse" - Sufjan Stevens (right?)
+    NwkSessionKey = router_device:nwk_s_key(Device2),
+    AppSessionKey = router_device:app_s_key(Device2),
+    SCPacket = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin0,
+        NwkSessionKey,
+        AppSessionKey,
+        0,
+        #{dont_encode => true, routing => true}
+    ),
+    Offer = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket),
+        blockchain_state_channel_packet_v1:region(SCPacket)
+    ),
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+
+    %% -------------------------------------------------------------------
+    %% Query for devices
+    Chain = blockchain_worker:blockchain(),
+    DevAddr = router_device:devaddr(Device1),
+
+    %% make sure things go wrong first
+    ?assertNotEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+    ),
+    ?assertNotEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+    ),
+
+    %% make it better
+    router_device_routing:cache_device_for_hash(PHash, Device2),
+
+    %% now we should go right
+    ?assertEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+    ),
+    ?assertEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+    ),
+
+    %% go back to nothing
+    router_device_routing:force_evict_packet_hash(PHash),
+
+    %% back to being wrong, and it feels so right
+    ?assertNotEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+    ),
+    ?assertNotEqual(
+        {ok, Device2},
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+    ),
+
+    ok.
 
 multi_buy_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),

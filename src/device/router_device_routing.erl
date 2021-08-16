@@ -21,17 +21,33 @@
 -include_lib("eunit/include/eunit.hrl").
 -endif.
 
+%% sc_handler API
 -export([
     init/0,
     handle_offer/2,
     handle_packet/3,
-    handle_packet/4,
+    handle_packet/4
+]).
+
+%% multi-buy API
+-export([
     deny_more/1,
     accept_more/1,
     accept_more/2,
-    clear_multi_buy/1,
+    clear_multi_buy/1
+]).
+
+%% replay API
+-export([
     allow_replay/3,
     clear_replay/1
+]).
+
+%% Cache API
+-export([
+    get_device_for_offer/4,
+    cache_device_for_hash/2,
+    force_evict_packet_hash/1
 ]).
 
 %% biggest unsigned number in 23 bits
@@ -79,6 +95,14 @@
 -define(DEVADDR_NOT_IN_SUBNET, devaddr_not_in_subnet).
 -define(OUI_UNKNOWN, oui_unknown).
 -define(DEVADDR_NO_DEVICE, devaddr_no_device).
+
+%% Packet hash cache
+-define(PHASH_TO_DEVICE_CACHE, phash_to_device_cache).
+-define(PHASH_TO_DEVICE_CACHE_MAXSIZE, 4 * 1024 * 1024).
+-define(PHASH_TO_DEVICE_CACHE_MINSIZE, round(0.3 * ?PHASH_TO_DEVICE_CACHE_MAXSIZE)).
+%% e2qc lifetime is in seconds
+%% (?RX2WINDOW + 1) to give a better chance for late packets
+-define(PHASH_TO_DEVICE_CACHE_LIFETIME, 3).
 
 %% Join offer rejected reasons
 -define(CONSOLE_UNKNOWN_DEVICE, console_unknown_device).
@@ -497,10 +521,10 @@ validate_packet_offer(Offer, _Pid, Chain) ->
         ok ->
             PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
-            case get_and_sort_devices(DevAddr1, PubKeyBin, Chain) of
-                [] ->
-                    {error, ?DEVADDR_NO_DEVICE};
-                [Device | _] ->
+            case get_device_for_offer(Offer, DevAddr1, PubKeyBin, Chain) of
+                {error, _} = Err ->
+                    Err;
+                {ok, Device} ->
                     case check_device_is_active(Device, PubKeyBin) of
                         {error, _Reason} = Error ->
                             Error;
@@ -942,6 +966,62 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
             {error, {unknown_device, DevAddr}};
         {Device, NwkSKey} ->
             {Device, NwkSKey}
+    end.
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% If there are devaddr collisions, we don't know the correct device until we
+%% get the whole packet with the payload. Once we have that, the device can tell
+%% routing the a packet hash belongs to it. That reservation will only last a
+%% short while. But it might be enough to have subsequent offers lookup the
+%% correct device by the time they come through.
+%% @end
+%%%-------------------------------------------------------------------
+-spec cache_device_for_hash(PHash :: binary(), Device :: router_device:device()) -> ok.
+cache_device_for_hash(PHash, Device) ->
+    ok = e2qc_nif:put(
+        ?PHASH_TO_DEVICE_CACHE,
+        PHash,
+        router_device:serialize(Device),
+        ?PHASH_TO_DEVICE_CACHE_MAXSIZE,
+        ?PHASH_TO_DEVICE_CACHE_MINSIZE,
+        ?PHASH_TO_DEVICE_CACHE_LIFETIME
+    ),
+    ok.
+
+-spec force_evict_packet_hash(PHash :: binary()) -> ok.
+force_evict_packet_hash(PHash) ->
+    _ = e2qc_nif:destroy(?PHASH_TO_DEVICE_CACHE, PHash),
+    ok.
+
+-spec get_device_for_offer(
+    Offer :: blockchain_state_channel_offer_v1:offer(),
+    DevAddr :: binary(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Chain :: blockchain:blockchain()
+) -> {ok, router_device:device()} | {error, any()}.
+get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    %% interrogate the cache without inserting value
+    case e2qc_nif:get(?PHASH_TO_DEVICE_CACHE, PHash) of
+        notfound ->
+            case get_and_sort_devices(DevAddr, PubKeyBin, Chain) of
+                [] ->
+                    {error, ?DEVADDR_NO_DEVICE};
+                [Device | _] ->
+                    lager:debug(
+                        "best guess device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
+                        [PHash, router_device:id(Device), PubKeyBin]
+                    ),
+                    {ok, Device}
+            end;
+        D ->
+            Device = router_device:deserialize(D),
+            lager:debug(
+                "cached device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
+                [PHash, router_device:id(Device), PubKeyBin]
+            ),
+            {ok, Device}
     end.
 
 -spec get_and_sort_devices(

@@ -101,7 +101,8 @@
 -define(PHASH_TO_DEVICE_CACHE_MAXSIZE, 4 * 1024 * 1024).
 -define(PHASH_TO_DEVICE_CACHE_MINSIZE, round(0.3 * ?PHASH_TO_DEVICE_CACHE_MAXSIZE)).
 %% e2qc lifetime is in seconds
--define(PHASH_TO_DEVICE_CACHE_LIFETIME, 1).
+%% (?RX2WINDOW + 1) to give a better chance for late packets
+-define(PHASH_TO_DEVICE_CACHE_LIFETIME, 3).
 
 %% Join offer rejected reasons
 -define(CONSOLE_UNKNOWN_DEVICE, console_unknown_device).

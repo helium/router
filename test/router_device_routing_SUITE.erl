@@ -142,7 +142,7 @@ packet_hash_cache_test(Config) ->
     ),
 
     %% go back to nothing
-    router_device_routing:force_evict(PHash),
+    router_device_routing:force_evict_packet_hash(PHash),
 
     %% back to being wrong, and it feels so right
     ?assertNotEqual(

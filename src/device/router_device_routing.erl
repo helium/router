@@ -47,7 +47,7 @@
 -export([
     get_device_for_offer/4,
     cache_device_for_hash/2,
-    force_evict/1
+    force_evict_packet_hash/1
 ]).
 
 %% biggest unsigned number in 23 bits
@@ -988,8 +988,8 @@ cache_device_for_hash(PHash, Device) ->
     ),
     ok.
 
--spec force_evict(PHash :: binary()) -> ok.
-force_evict(PHash) ->
+-spec force_evict_packet_hash(PHash :: binary()) -> ok.
+force_evict_packet_hash(PHash) ->
     _ = e2qc_nif:destroy(?PHASH_TO_DEVICE_CACHE, PHash),
     ok.
 

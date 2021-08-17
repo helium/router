@@ -4,7 +4,7 @@
 -include("router_device_worker.hrl").
 
 -export([
-    event_join_request/7,
+    event_join_request/8,
     event_join_accept/5,
     event_uplink/9,
     event_uplink_dropped_device_inactive/4,
@@ -44,11 +44,25 @@
     Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
-    Region :: atom()
+    Region :: atom(),
+    BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
+event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
+
+    Payload0 = blockchain_helium_packet_v1:payload(Packet),
+    Payload1 =
+        case Payload0 of
+            undefined ->
+                <<>>;
+            _ ->
+                Payload0
+        end,
+    PayloadSize = erlang:byte_size(Payload1),
+    Ledger = blockchain:ledger(Chain),
+    Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
+
     Map = #{
         id => ID,
         category => join_request,
@@ -62,7 +76,12 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region) ->
         payload => <<>>,
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        dc => #{
+            balance => Balance,
+            nonce => Nonce,
+            used => Used
+        }
     },
     ok = router_console_api:event(Device, Map).
 

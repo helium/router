@@ -462,7 +462,6 @@ handle_cast(
         device = Device0,
         join_cache = Cache0,
         offer_cache = OfferCache,
-        oui = OUI,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
@@ -477,7 +476,6 @@ handle_cast(
             Packet0,
             PubKeyBin,
             Region,
-            OUI,
             APIDevice,
             AppKey,
             Device0,
@@ -1107,7 +1105,6 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     Packet :: blockchain_helium_packet_v1:packet(),
     PubKeyBin :: libp2p_crypto:pubkey_to_bin(),
     Region :: atom(),
-    OUI :: non_neg_integer(),
     APIDevice :: router_device:device(),
     AppKey :: binary(),
     Device :: router_device:device(),
@@ -1125,7 +1122,6 @@ validate_join(
     } = Packet,
     PubKeyBin,
     Region,
-    OUI,
     APIDevice,
     AppKey,
     Device,
@@ -1146,7 +1142,6 @@ validate_join(
                         Packet,
                         PubKeyBin,
                         Region,
-                        OUI,
                         APIDevice,
                         AppKey,
                         Device
@@ -1158,7 +1153,6 @@ validate_join(
     _Packet,
     _PubKeyBin,
     _Region,
-    _OUI,
     _APIDevice,
     _AppKey,
     _Device,
@@ -1177,7 +1171,6 @@ validate_join(
     blockchain_helium_packet_v1:packet(),
     libp2p_crypto:pubkey_to_bin(),
     atom(),
-    non_neg_integer(),
     router_device:device(),
     binary(),
     router_device:device()
@@ -1190,7 +1183,6 @@ handle_join(
     } = Packet,
     PubKeyBin,
     HotspotRegion,
-    _OUI,
     APIDevice,
     AppKey,
     Device0

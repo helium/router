@@ -211,6 +211,7 @@ multi_buy_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,

@@ -281,6 +281,16 @@ event(Device, Map) ->
                             dc => maps:get(dc, Map),
                             mac => maps:get(mac, Map)
                         };
+                    {join_request, _SC} ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            payload_size => maps:get(payload_size, Map),
+                            payload => maps:get(payload, Map),
+                            port => maps:get(port, Map),
+                            devaddr => maps:get(devaddr, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            dc => maps:get(dc, Map)
+                        };
                     {C, _SC} when
                         C == uplink orelse
                             C == downlink orelse

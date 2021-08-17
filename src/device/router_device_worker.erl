@@ -462,7 +462,6 @@ handle_cast(
         device = Device0,
         join_cache = Cache0,
         offer_cache = OfferCache,
-        oui = OUI,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
@@ -477,7 +476,6 @@ handle_cast(
             Packet0,
             PubKeyBin,
             Region,
-            OUI,
             APIDevice,
             AppKey,
             Device0,
@@ -488,7 +486,7 @@ handle_cast(
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State};
-        {ok, Device1, DevNonce, JoinAcceptArgs} ->
+        {ok, Device1, DevNonce, JoinAcceptArgs, BalanceNonce} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(DevNonce, Cache0, undefined) of
                 undefined when LastDevNonce == DevNonce ->
@@ -523,7 +521,8 @@ handle_cast(
                         Chain,
                         PubKeyBin,
                         Packet0,
-                        Region
+                        Region,
+                        BalanceNonce
                     ),
                     {noreply, State#state{
                         device = Device1,
@@ -546,7 +545,8 @@ handle_cast(
                         Chain,
                         PubKeyBin,
                         Packet0,
-                        Region
+                        Region,
+                        BalanceNonce
                     ),
                     case NewRSSI > OldRSSI of
                         false ->
@@ -1105,14 +1105,14 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     Packet :: blockchain_helium_packet_v1:packet(),
     PubKeyBin :: libp2p_crypto:pubkey_to_bin(),
     Region :: atom(),
-    OUI :: non_neg_integer(),
     APIDevice :: router_device:device(),
     AppKey :: binary(),
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
     OfferCache :: map()
 ) ->
-    {ok, router_device:device(), binary(), #join_accept_args{}}
+    {ok, router_device:device(), binary(), #join_accept_args{},
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
 validate_join(
     #packet_pb{
@@ -1122,7 +1122,6 @@ validate_join(
     } = Packet,
     PubKeyBin,
     Region,
-    OUI,
     APIDevice,
     AppKey,
     Device,
@@ -1138,15 +1137,22 @@ validate_join(
             case maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
                 {error, _} = Error ->
                     Error;
-                {ok, _, _} ->
-                    handle_join(Packet, PubKeyBin, Region, OUI, APIDevice, AppKey, Device)
+                {ok, Balance, Nonce} ->
+                    {ok, UpdatedDevice, JoinAcceptArgs} = handle_join(
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        APIDevice,
+                        AppKey,
+                        Device
+                    ),
+                    {ok, UpdatedDevice, DevNonce, JoinAcceptArgs, {Balance, Nonce}}
             end
     end;
 validate_join(
     _Packet,
     _PubKeyBin,
     _Region,
-    _OUI,
     _APIDevice,
     _AppKey,
     _Device,
@@ -1165,11 +1171,10 @@ validate_join(
     blockchain_helium_packet_v1:packet(),
     libp2p_crypto:pubkey_to_bin(),
     atom(),
-    non_neg_integer(),
     router_device:device(),
     binary(),
     router_device:device()
-) -> {ok, router_device:device(), binary(), #join_accept_args{}}.
+) -> {ok, router_device:device(), #join_accept_args{}}.
 handle_join(
     #packet_pb{
         payload =
@@ -1178,7 +1183,6 @@ handle_join(
     } = Packet,
     PubKeyBin,
     HotspotRegion,
-    _OUI,
     APIDevice,
     AppKey,
     Device0
@@ -1233,7 +1237,7 @@ handle_join(
             blockchain_utils:addr2name(PubKeyBin)
         ]
     ),
-    {ok, Device1, DevNonce, #join_accept_args{
+    {ok, Device1, #join_accept_args{
         region = Region,
         app_nonce = AppNonce,
         dev_addr = DevAddr,

@@ -52,6 +52,10 @@
 
 -define(NET_ID, <<"He2">>).
 
+%% This is only used when NO downlink must be sent to the device.
+%% 2 seconds was picked as it is the RX_MAX_WINDOW
+-define(DEFAULT_FRAME_TIMEOUT, timer:seconds(2)).
+
 -define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
@@ -762,10 +766,11 @@ handle_cast(
                             Region,
                             BalanceNonce
                         ),
-                        Timeout = max(
-                            0,
-                            DefaultFrameTimeout -
-                                (erlang:system_time(millisecond) - PacketTime)
+                        Timeout = calculate_packet_timeout(
+                            Device2,
+                            Frame,
+                            PacketTime,
+                            DefaultFrameTimeout
                         ),
                         lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [
                             FCnt,
@@ -2129,3 +2134,30 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
             ]),
             {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
     end.
+
+-spec calculate_packet_timeout(
+    rourter_device:device(),
+    #frame{},
+    non_neg_integer(),
+    non_neg_integer()
+) -> non_neg_integer().
+calculate_packet_timeout(Device, Frame, PacketTime, DefaultFrameTimeout) ->
+    case maybe_will_downlink(Device, Frame) orelse application:get_env(router, testing, false) of
+        false ->
+            ?DEFAULT_FRAME_TIMEOUT;
+        true ->
+            max(
+                0,
+                DefaultFrameTimeout -
+                    (erlang:system_time(millisecond) - PacketTime)
+            )
+    end.
+
+-spec maybe_will_downlink(rourter_device:device(), #frame{}) -> boolean().
+maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
+    DeviceQueue = router_device:queue(Device),
+    ACK = router_utils:mtype_to_ack(MType),
+    Metadata = router_device:metadata(Device),
+    ADRAllowed = maps:get(adr_allowed, Metadata, false),
+    ADR = ADRAllowed andalso ADRAckReqBit == 1,
+    DeviceQueue =/= [] orelse ACK == 1 orelse ADR.

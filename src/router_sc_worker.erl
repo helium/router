@@ -378,6 +378,7 @@ get_nonce(PubkeyBin, Ledger) ->
 -spec get_sc_amount() -> pos_integer().
 get_sc_amount() ->
     case application:get_env(router, sc_open_dc_amount, ?SC_AMOUNT) of
+        [] -> ?SC_AMOUNT;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         Amount -> Amount
     end.
@@ -385,6 +386,7 @@ get_sc_amount() ->
 -spec get_sc_expiration_interval() -> pos_integer().
 get_sc_expiration_interval() ->
     case application:get_env(router, sc_expiration_interval, ?SC_EXPIRATION) of
+        [] -> ?SC_EXPIRATION;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.
@@ -392,6 +394,7 @@ get_sc_expiration_interval() ->
 -spec get_sc_buffer() -> pos_integer().
 get_sc_buffer() ->
     case application:get_env(router, sc_expiration_buffer, ?SC_BUFFER) of
+        [] -> ?SC_BUFFER;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.

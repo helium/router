@@ -761,6 +761,8 @@ handle_cast(
                             Region,
                             BalanceNonce
                         ),
+                        % TODO: Instead of taking the max all the time, if we do not downlink,
+                        % lets ignore the packet time and increase time to like an extra second
                         Timeout = max(
                             0,
                             DefaultFrameTimeout -
@@ -2124,3 +2126,11 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
             ]),
             {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
     end.
+
+maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit} = Frame) ->
+    DeviceQueue = router_device:queue(Device),
+    ACK = router_utils:mtype_to_ack(MType),
+    Metadata = router_device:metadata(Device),
+    ADRAllowed = maps:get(adr_allowed, Metadata, false),
+    ADR = ADRAllowed andalso ADRAckReqBit == 1,
+    DeviceQueue =/= [] orelse ACK == 1 orelse ADR.

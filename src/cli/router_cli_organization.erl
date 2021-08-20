@@ -76,35 +76,47 @@ org_info_cmd() ->
         ]
     ].
 
-org_info_all(["organization", "info", "all"], [], _Flags) ->
-    DCTracketOrgs = dc_tracker_orgs(),
+org_info_all(["organization", "info", "all"], [], Flags) ->
     APIOrgs = api_orgs(),
     case APIOrgs of
         [] ->
             c_text("No organization found.");
         _ ->
-            PropsList = lists:map(
+            DCTracketOrgs = dc_tracker_orgs(),
+            LessThan = proplists:get_value(less_than, Flags),
+            OrgList = lists:filtermap(
                 fun(Map) ->
-                    ID = maps:get(id, Map),
-                    {CacheBalance, CacheNonce} =
-                        case proplists:get_value(ID, DCTracketOrgs) of
-                            undefined ->
-                                {undefined, undefined};
-                            {Balance, Nonce} ->
-                                {Balance, Nonce}
-                        end,
-                    [
-                        {id, ID},
-                        {name, maps:get(name, Map)},
-                        {balance, maps:get(balance, Map)},
-                        {nonce, maps:get(nonce, Map)},
-                        {cached_balance, CacheBalance},
-                        {cached_nonce, CacheNonce}
-                    ]
+                    Balance = maps:get(balance, Map),
+                    case Balance < LessThan of
+                        false ->
+                            false;
+                        _ ->
+                            ID = maps:get(id, Map),
+                            {CacheBalance, CacheNonce} =
+                                case proplists:get_value(ID, DCTracketOrgs) of
+                                    undefined ->
+                                        {undefined, undefined};
+                                    {B, N} ->
+                                        {B, N}
+                                end,
+                            {true, [
+                                {id, ID},
+                                {name, maps:get(name, Map)},
+                                {balance, Balance},
+                                {nonce, maps:get(nonce, Map)},
+                                {cached_balance, CacheBalance},
+                                {cached_nonce, CacheNonce}
+                            ]}
+                    end
                 end,
                 APIOrgs
             ),
-            c_table(PropsList)
+            case OrgList of
+                [] ->
+                    c_text("No organization found.");
+                _ ->
+                    c_table(OrgList)
+            end
     end.
 
 %%--------------------------------------------------------------------

@@ -142,43 +142,34 @@ device xor
 ##### Options
 XOR will only happen if `--commit` is used, otherwise it will be a dry run.
 
-### DC Tracker `dc_tracker`
+### Oraganization `oraganization`
 
 #### All Orgs
 ```
-dc_tracker info all [--less 42] [--refetch]
+oraganization info all [--less 42] [--more 42]
 ```
 ##### Options
 `--less <amount>`
 Filter to Organizations that have a balance less than `<amount>`.
 
-`--refetch`
-Update Router information about organizations in list.
+`--more <amount>`
+Filter to Organizations that have a balance more than `<amount>`.
 
 #### Info for 1 Org
 ```
-dc_tracker info <org_id> [--refetch]
+oraganization info <org_id>
 ```
+
+#### Update Org Balance
+```
+oraganization update <org_id> -b <balance> [--commit]
+```
+
 ##### Options
-`--refetch`
-Update Router information about this organization.
+`-b`
+Balance to update to
 
-#### Refill Org Balance
-```
-dc_tracker refill <org_id> balance=<balance> nonce=<nonce>
-```
-
-#### Helpers
-```
-dc_tracker info no-nonce
-dc_tracker info no-balance
-```
-are aliases for
-
-```
-dc_tracker info nonce <amount=0>
-dc_tracker info balance <balance=0>
-```
+Balance update will only happen if `--commit` is used, otherwise it will be a dry run.
 
 ## Integrations Data
 

@@ -19,6 +19,7 @@
     event/2,
     get_downlink_url/2,
     get_org/1,
+    get_orgs/0,
     organizations_burned/3,
     get_token/0,
     json_device_to_record/2,
@@ -156,6 +157,30 @@ get_org(OrgID) ->
             end
         end
     ).
+
+-spec get_orgs() -> {ok, list()} | {error, any()}.
+get_orgs() ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations">>,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, ok, End - Start),
+            lager:debug("Body for ~p ~p", [Url, Body]),
+            {ok, jsx:decode(Body, [return_maps])};
+        _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
+            {error, {get_orgs_failed, _Other}}
+    end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) ->
     [router_channel:channel()].

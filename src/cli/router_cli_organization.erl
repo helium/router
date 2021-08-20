@@ -17,7 +17,8 @@ register_all_usage() ->
         fun(Args) -> apply(clique, register_usage, Args) end,
         [
             org_usage(),
-            org_info_usage()
+            org_info_usage(),
+            org_update_usage()
         ]
     ).
 
@@ -26,7 +27,8 @@ register_all_cmds() ->
         fun(Cmds) -> [apply(clique, register_command, Cmd) || Cmd <- Cmds] end,
         [
             org_cmd(),
-            org_info_cmd()
+            org_info_cmd(),
+            org_update_cmd()
         ]
     ).
 
@@ -39,8 +41,9 @@ org_usage() ->
         ["organization"],
         [
             "Organization commands\n\n",
-            "  info all [--less 42] [--more 42]  - Display DC for all Orgs\n",
-            "  info <org_id>                     - Display info for single Org\n"
+            "  info all [--less 42] [--more 42]    - Display DC for all Orgs\n",
+            "  info <org_id>                       - Display info for single Org\n",
+            "  update <org_id> -b <balance>        - Refill Org\n\n"
         ]
     ].
 
@@ -144,6 +147,7 @@ org_info_all(["organization", "info", "all"], [], Flags) ->
 
 org_info_single(["organization", "info", OrgStr], [], _Flags) ->
     OrgID = erlang:list_to_binary(OrgStr),
+    ok = router_console_api:evict_org_from_cache(OrgID),
     case router_console_api:get_org(OrgID) of
         {error, _} ->
             c_text("Organization not found.");
@@ -165,10 +169,97 @@ org_info_single(["organization", "info", OrgStr], [], _Flags) ->
     end.
 
 %%--------------------------------------------------------------------
+%% org update
+%%--------------------------------------------------------------------
+
+org_update_usage() ->
+    [
+        ["organization", "update"],
+        [
+            "Refill commmands\n\n",
+            "  update <org_id> -b <balance> [--commit]    - Refill Org\n\n",
+            "Options:\n\n",
+            "  --commit\n",
+            "      Commit update (otherwise dry run).\n\n"
+        ]
+    ].
+
+org_update_cmd() ->
+    [
+        [["organization", "update"], [], [], ?USAGE],
+        [
+            ["organization", "update", '*'],
+            [],
+            [
+                {balance, [
+                    {shortname, "b"},
+                    {longmame, "balance"},
+                    {datatype, integer}
+                ]},
+                {commit, [
+                    {longname, "commit"},
+                    {datatype, boolean}
+                ]}
+            ],
+            fun update_cmd/3
+        ]
+    ].
+
+update_cmd(["organization", "update", OrgStr], [], Flags) ->
+    OrgID = erlang:list_to_binary(OrgStr),
+    ok = router_console_api:evict_org_from_cache(OrgID),
+    case router_console_api:get_org(OrgID) of
+        {error, _} ->
+            c_text("Organization not found.");
+        {ok, Org} ->
+            update_org(
+                OrgID,
+                Org,
+                maps:from_list(Flags)
+            )
+    end;
+update_cmd(_, _, _) ->
+    usage.
+
+update_org(OrgID, OldOrg, #{commit := _, balance := Balance}) when Balance > 0 ->
+    case router_console_api:org_manual_update_router_dc(OrgID, Balance) of
+        {error, _} ->
+            c_text("Failed to update balance");
+        ok ->
+            ok = router_console_api:evict_org_from_cache(OrgID),
+            case router_console_api:get_org(OrgID) of
+                {error, _} ->
+                    c_text("Failed to get updated organization (use `organization info <org>`).");
+                {ok, NewOrg} ->
+                    c_table([
+                        [{status, old} | format_api_org(OldOrg)],
+                        [{status, updated} | format_api_org(NewOrg)]
+                    ])
+            end
+    end;
+update_org(_OrgID, OldOrg, #{balance := Balance}) when Balance > 0 ->
+    NewNonce = maps:get(<<"dc_balance_nonce">>, OldOrg, 0) + 1,
+    c_table([
+        [{status, old} | format_api_org(OldOrg)],
+        [
+            {status, dry_run}
+            | format_api_org(
+                maps:merge(OldOrg, #{
+                    <<"dc_balance_nonce">> => NewNonce,
+                    <<"dc_balance">> => Balance
+                })
+            )
+        ]
+    ]);
+update_org(_, _, _) ->
+    usage.
+
+%%--------------------------------------------------------------------
 %% Private Utilities
 %%--------------------------------------------------------------------
 
 -spec get_dc_tracker_orgs() -> list({binary(), balance_nonce()}).
+
 get_dc_tracker_orgs() ->
     router_console_dc_tracker:lookup_all().
 

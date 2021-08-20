@@ -20,7 +20,9 @@
     get_downlink_url/2,
     get_org/1,
     get_orgs/0,
+    org_manual_update_router_dc/2,
     organizations_burned/3,
+    evict_org_from_cache/1,
     get_token/0,
     json_device_to_record/2,
     xor_filter_updates/2
@@ -180,6 +182,46 @@ get_orgs() ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
             {error, {get_orgs_failed, _Other}}
+    end.
+
+-spec org_manual_update_router_dc(OrgID :: binary(), Balance :: non_neg_integer()) ->
+    ok | {error, any()}.
+org_manual_update_router_dc(OrgID, Balance) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/organizations/manual_update_router_dc">>,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Body = #{
+        organization_id => OrgID,
+        amount => Balance
+    },
+    Start = erlang:system_time(millisecond),
+    case
+        hackney:post(
+            Url,
+            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+            jsx:encode(Body),
+            Opts
+        )
+    of
+        {ok, 204, _Headers, _Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(org_manual_update_router_dc, ok, End - Start),
+            lager:debug("Body for ~p ~p", [Url, _Body]),
+            ok;
+        _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(
+                org_manual_update_router_dc,
+                error,
+                End - Start
+            ),
+            {error, {org_manual_update_router_dc_failed, _Other}}
     end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) ->
@@ -387,7 +429,13 @@ organizations_burned(Memo, HNTAmount, DCAmount) ->
     },
     gen_server:cast(?SERVER, {hnt_burn, Body}).
 
+-spec evict_org_from_cache(OrgID :: binary()) -> ok.
+evict_org_from_cache(OrgID) ->
+    e2qc:evict(?GET_ORG_CACHE_NAME, OrgID),
+    ok.
+
 -spec get_token() -> binary().
+
 get_token() ->
     gen_server:call(?SERVER, get_token).
 

@@ -142,11 +142,11 @@ device xor
 ##### Options
 XOR will only happen if `--commit` is used, otherwise it will be a dry run.
 
-### Oraganization `oraganization`
+### Organization `organization`
 
 #### All Orgs
 ```
-oraganization info all [--less 42] [--more 42]
+organization info all [--less 42] [--more 42]
 ```
 ##### Options
 `--less <amount>`
@@ -157,12 +157,12 @@ Filter to Organizations that have a balance more than `<amount>`.
 
 #### Info for 1 Org
 ```
-oraganization info <org_id>
+organization info <org_id>
 ```
 
 #### Update Org Balance
 ```
-oraganization update <org_id> -b <balance> [--commit]
+organization update <org_id> -b <balance> [--commit]
 ```
 
 ##### Options

@@ -6,7 +6,7 @@ fi
 
 j=1
 l=$#
-buf="[[\"dc_tracker\","
+buf="[[\"organization\","
 while [ $j -le $l ]; do
     buf="$buf\"$1\","
     j=$(( j + 1 ))

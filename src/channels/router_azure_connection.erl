@@ -1,7 +1,31 @@
 -module(router_azure_connection).
 
--export([fetch_device/1, create_device/1, delete_device/2]).
--compile([export_all, nowarn_export_all]).
+%% Create API
+-export([
+    from_connection_string/2,
+    new/4
+]).
+
+%% MQTT API
+-export([
+    mqtt_connect/1,
+    mqtt_subscribe/1,
+    mqtt_publish/2,
+    mqtt_cleanup/1
+]).
+
+%% HTTP API
+-export([
+    ensure_device_exists/1,
+    fetch_device/1,
+    create_device/1,
+    delete_device/2
+]).
+
+%% Helper API
+-export([
+    parse_connection_string/1
+]).
 
 -export_type([azure/0]).
 
@@ -67,8 +91,8 @@ new(HubName, PName, PKey, DeviceID) ->
 %% MQTT
 %% -------------------------------------------------------------------
 
--spec connect(#azure{}) -> {ok, #azure{}} | {error, any()}.
-connect(
+-spec mqtt_connect(#azure{}) -> {ok, #azure{}} | {error, any()}.
+mqtt_connect(
     #azure{
         mqtt_host = Host,
         mqtt_username = Username,
@@ -97,11 +121,30 @@ connect(
             {ok, Azure#azure{mqtt_connection = Connection}};
         Err ->
             lager:error("azure mqtt could not connect ~p", [Err]),
-            {error, failed_to_connect}
+            {error, Err}
     end.
 
-publish_event(#azure{device_id = DeviceID}) ->
-    <<"devices/", DeviceID/binary, "/messages/events>">>.
+-spec mqtt_subscribe(#azure{}) -> {ok, any(), any()} | {error, any()}.
+mqtt_subscribe(#azure{mqtt_connection = Conn, device_id = DeviceID}) ->
+    DownlinkTopic = <<"devices/", DeviceID/binary, "/messages/devicebound/#">>,
+    emqtt:subscribe(Conn, DownlinkTopic, 0).
+
+-spec mqtt_publish(#azure{}, binary()) -> {ok, any()} | {error, not_connected | failed_to_publish}.
+mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID}, Data) ->
+    UplinkTopic = <<"devices/", DeviceID/binary, "/messages/events">>,
+    try emqtt:publish(Conn, UplinkTopic, Data, 0) of
+        Resp ->
+            {ok, Resp}
+    catch
+        _:_ ->
+            {error, failed_to_publish}
+    end.
+
+-spec mqtt_cleanup(#azure{}) -> {ok, #azure{}}.
+mqtt_cleanup(#azure{mqtt_connection = Conn} = Azure) ->
+    (catch emqtt:disconnect(Conn)),
+    (catch emqtt:stop(Conn)),
+    {ok, Azure#azure{mqtt_connection = undefined}}.
 
 %% -------------------------------------------------------------------
 %% HTTP
@@ -123,8 +166,8 @@ ensure_device_exists(#azure{} = Azure) ->
 
 -spec fetch_device(#azure{}) -> {ok, map()} | {error, any()}.
 fetch_device(#azure{http_url = URL, http_token = Token} = _Azure) ->
-    Headers = ?MODULE:default_headers(Token),
-    lager:info("~n~p~n", [{URL, Headers}]),
+    Headers = default_headers(Token),
+
     case hackney:get(URL, Headers, <<>>, ?REQUEST_OPTIONS) of
         {ok, 200, _Headers, Body} ->
             {ok, jsx:decode(Body, [return_maps])};
@@ -134,7 +177,7 @@ fetch_device(#azure{http_url = URL, http_token = Token} = _Azure) ->
 
 -spec create_device(#azure{}) -> {ok, map()} | {error, any()}.
 create_device(#azure{http_url = URL, http_token = Token, device_id = Name} = _Azure) ->
-    Headers = ?MODULE:default_headers(Token),
+    Headers = default_headers(Token),
 
     PayloadMap = #{
         <<"deviceId">> => Name,

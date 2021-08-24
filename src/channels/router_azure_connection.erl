@@ -40,10 +40,10 @@
     policy_key :: binary(),
     device_id :: binary(),
     http_url :: binary(),
-    http_token :: binary(),
+    http_sas_uri :: binary(),
     mqtt_host :: binary(),
     mqtt_username :: binary(),
-    mqtt_password :: binary(),
+    mqtt_sas_uri :: binary(),
     mqtt_connection :: pid() | undefined
 }).
 
@@ -59,18 +59,15 @@ from_connection_string(ConnString, DeviceID) ->
     end.
 
 new(HubName, PName, PKey, DeviceID) ->
-    HTTP_SAS_URI = <<HubName/binary, ".azure-devices.net">>,
-    SAS_URI =
-        <<HubName/binary, ".azure-devices.net/", DeviceID/binary, ?MQTT_API_VERSION>>,
-
+    HttpSasUri = <<HubName/binary, ".azure-devices.net">>,
     HttpUrl =
         <<"https://", HubName/binary, ".azure-devices.net/devices/", DeviceID/binary,
             ?HTTP_API_VERSION>>,
-    HttpToken = generate_sas_token(HTTP_SAS_URI, PName, PKey, ?EXPIRATION_TIME),
 
+    MqttSasUri =
+        <<HubName/binary, ".azure-devices.net/", DeviceID/binary, ?MQTT_API_VERSION>>,
     MqttHost = <<HubName/binary, ".azure-evices.net">>,
     MqttUsername = <<MqttHost/binary, "/", DeviceID/binary, ?MQTT_API_VERSION>>,
-    MqttPassword = generate_sas_token(SAS_URI, PName, PKey, ?EXPIRATION_TIME),
 
     {ok, #azure{
         % General
@@ -80,11 +77,11 @@ new(HubName, PName, PKey, DeviceID) ->
         device_id = DeviceID,
         % HTTP
         http_url = HttpUrl,
-        http_token = HttpToken,
+        http_sas_uri = HttpSasUri,
         % MQTT
         mqtt_host = MqttHost,
         mqtt_username = MqttUsername,
-        mqtt_password = MqttPassword
+        mqtt_sas_uri = MqttSasUri
     }}.
 
 %% -------------------------------------------------------------------
@@ -96,11 +93,11 @@ mqtt_connect(
     #azure{
         mqtt_host = Host,
         mqtt_username = Username,
-        mqtt_password = Password,
         device_id = DeviceID
     } = Azure
 ) ->
     Port = 8883,
+    Password = generate_mqtt_sas_token(Azure),
 
     {ok, Connection} = emqtt:start_link(#{
         clientid => DeviceID,
@@ -165,7 +162,8 @@ ensure_device_exists(#azure{} = Azure) ->
     end.
 
 -spec fetch_device(#azure{}) -> {ok, map()} | {error, any()}.
-fetch_device(#azure{http_url = URL, http_token = Token} = _Azure) ->
+fetch_device(#azure{http_url = URL} = Azure) ->
+    Token = generate_http_sas_token(Azure),
     Headers = default_headers(Token),
 
     case hackney:get(URL, Headers, <<>>, ?REQUEST_OPTIONS) of
@@ -176,7 +174,8 @@ fetch_device(#azure{http_url = URL, http_token = Token} = _Azure) ->
     end.
 
 -spec create_device(#azure{}) -> {ok, map()} | {error, any()}.
-create_device(#azure{http_url = URL, http_token = Token, device_id = Name} = _Azure) ->
+create_device(#azure{http_url = URL, device_id = Name} = Azure) ->
+    Token = generate_http_sas_token(Azure),
     Headers = default_headers(Token),
 
     PayloadMap = #{
@@ -199,7 +198,8 @@ create_device(#azure{http_url = URL, http_token = Token, device_id = Name} = _Az
     end.
 
 -spec delete_device(#azure{}, force | explicit) -> ok | {error, any()}.
-delete_device(#azure{http_url = URL, http_token = Token} = Azure, DeleteType) ->
+delete_device(#azure{http_url = URL} = Azure, DeleteType) ->
+    Token = generate_http_sas_token(Azure),
     Headers =
         case DeleteType of
             explicit ->
@@ -240,6 +240,14 @@ parse_connection_string(Str) ->
         _ ->
             error
     end.
+
+-spec generate_http_sas_token(#azure{}) -> binary().
+generate_http_sas_token(#azure{http_sas_uri = URI, policy_name = PName, policy_key = PKey}) ->
+    generate_sas_token(URI, PName, PKey, ?EXPIRATION_TIME).
+
+-spec generate_mqtt_sas_token(#azure{}) -> binary().
+generate_mqtt_sas_token(#azure{mqtt_sas_uri = URI, policy_name = PName, policy_key = PKey}) ->
+    generate_sas_token(URI, PName, PKey, ?EXPIRATION_TIME).
 
 -spec generate_sas_token(binary(), binary(), binary(), number()) -> binary().
 generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->

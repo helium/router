@@ -42,11 +42,11 @@ new(HubName, PName, PKey, DeviceID) ->
     HttpUrl =
         <<"https://", HubName/binary, ".azure-devices.net/devices/", DeviceID/binary,
             ?HTTP_API_VERSION>>,
-    HttpToken = ?MODULE:generate_sas_token(HTTP_SAS_URI, PName, PKey, ?EXPIRATION_TIME),
+    HttpToken = generate_sas_token(HTTP_SAS_URI, PName, PKey, ?EXPIRATION_TIME),
 
     MqttHost = <<HubName/binary, ".azure-evices.net">>,
     MqttUsername = <<MqttHost/binary, "/", DeviceID/binary, ?MQTT_API_VERSION>>,
-    MqttPassword = ?MODULE:generate_sas_token(SAS_URI, PName, PKey, ?EXPIRATION_TIME),
+    MqttPassword = generate_sas_token(SAS_URI, PName, PKey, ?EXPIRATION_TIME),
 
     {ok, #azure{
         % General

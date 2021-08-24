@@ -11,6 +11,7 @@
     mqtt_connect/1,
     mqtt_subscribe/1,
     mqtt_publish/2,
+    mqtt_response/2,
     mqtt_cleanup/1
 ]).
 
@@ -127,6 +128,8 @@ mqtt_subscribe(#azure{mqtt_connection = Conn, device_id = DeviceID}) ->
     emqtt:subscribe(Conn, DownlinkTopic, 0).
 
 -spec mqtt_publish(#azure{}, binary()) -> {ok, any()} | {error, not_connected | failed_to_publish}.
+mqtt_publish(#azure{mqtt_connection = undefined}, _Data) ->
+    {error, not_connected};
 mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID}, Data) ->
     UplinkTopic = <<"devices/", DeviceID/binary, "/messages/events">>,
     try emqtt:publish(Conn, UplinkTopic, Data, 0) of
@@ -135,6 +138,13 @@ mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID}, Data) ->
     catch
         _:_ ->
             {error, failed_to_publish}
+    end.
+
+-spec mqtt_response(#azure{}, map()) -> {ok, binary()} | {error, unrecognized_response}.
+mqtt_response(#azure{mqtt_connection = Connection}, #{client_pid := ClientPid, payload := Payload}) ->
+    case ClientPid == Connection of
+        true -> {ok, Payload};
+        false -> {error, unrecognized_response}
     end.
 
 -spec mqtt_cleanup(#azure{}) -> {ok, #azure{}}.

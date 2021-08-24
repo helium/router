@@ -89,6 +89,15 @@ handle_call(_Msg, State) ->
     lager:warning("rcvd unknown call msg: ~p", [_Msg]),
     {ok, ok, State}.
 
+handle_info({publish, PublishPayload}, #state{azure = Azure, channel = Channel} = State) ->
+    case router_azure_connection:mqtt_response(Azure, PublishPayload) of
+        {ok, Payload} ->
+            Controller = router_channel:controller(Channel),
+            router_device_channels_worker:handle_downlink(Controller, Payload, Channel);
+        {error, _} ->
+            ok
+    end,
+    {ok, State};
 handle_info({?MODULE, connect, ChannelID}, #state{channel_id = ChannelID} = State) ->
     {ok, connect(State)};
 %% Ignore connect message not for us

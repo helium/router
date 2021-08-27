@@ -283,17 +283,7 @@ handle_call(
         AppKey,
         lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
-    DevAddr =
-        case router_device_devaddr:allocate(Device0, PubKeyBin) of
-            {ok, D} ->
-                D;
-            {error, _Reason} ->
-                lager:warning("failed to allocate devaddr for ~p: ~p", [
-                    router_device:id(Device0),
-                    _Reason
-                ]),
-                router_device_devaddr:default_devaddr()
-        end,
+    {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
     DeviceUpdates = [
         {keys, [{NwkSKey, AppSKey}]},
         {devaddr, DevAddr},
@@ -1203,17 +1193,7 @@ handle_join(
         AppKey,
         lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
-    DevAddr =
-        case router_device_devaddr:allocate(Device0, PubKeyBin) of
-            {ok, D} ->
-                D;
-            {error, _Reason} ->
-                lager:warning("failed to allocate devaddr for ~p: ~p", [
-                    router_device:id(Device0),
-                    _Reason
-                ]),
-                router_device_devaddr:default_devaddr()
-        end,
+    {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},

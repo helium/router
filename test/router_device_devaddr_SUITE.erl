@@ -150,7 +150,6 @@ route_packet(Config) ->
     DevAddr = router_device:devaddr(Device0),
 
     ?assert(DevAddr =/= undefined),
-    ?assert(DevAddr =/= router_device_devaddr:default_devaddr()),
 
     Stream !
         {send,

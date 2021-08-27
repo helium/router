@@ -22,7 +22,6 @@
     {router, [
         {max_v8_context, 1000},
         {oui, "${ROUTER_OUI}"},
-        {default_devaddr, "${ROUTER_DEFAULT_DEVADDR}"},
         {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
         {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
         {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},

@@ -178,7 +178,8 @@ mqtt_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -356,7 +357,8 @@ mqtt_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -543,7 +545,8 @@ mqtt_update_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -701,7 +704,8 @@ mqtt_update_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -855,7 +859,8 @@ mqtt_update_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),

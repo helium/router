@@ -156,7 +156,8 @@ http_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -324,7 +325,8 @@ http_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -487,7 +489,8 @@ http_update_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -599,7 +602,8 @@ http_update_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -709,7 +713,8 @@ http_update_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -876,7 +881,8 @@ http_decoded_payload_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -1011,7 +1017,8 @@ http_non_json_decoded_payload_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),

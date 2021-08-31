@@ -6,7 +6,7 @@
 -export([
     event_join_request/8,
     event_join_accept/5,
-    event_uplink/9,
+    event_uplink/10,
     event_uplink_dropped_device_inactive/4,
     event_uplink_dropped_not_enough_dc/4,
     event_uplink_dropped_late_packet/4,
@@ -116,6 +116,7 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
 -spec event_uplink(
     ID :: uuid_v4(),
     Timestamp :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     Frame :: #frame{},
     Device :: router_device:device(),
     Chain :: blockchain:blockchain(),
@@ -124,7 +125,18 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     Region :: atom(),
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
+event_uplink(
+    ID,
+    Timestamp,
+    HoldTime,
+    Frame,
+    Device,
+    Chain,
+    PubKeyBin,
+    Packet,
+    Region,
+    {Balance, Nonce}
+) ->
     #frame{
         mtype = MType,
         devaddr = DevAddr,
@@ -154,6 +166,7 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
         sub_category => SubCategory,
         description => Desc,
         reported_at => Timestamp,
+        hold_time => HoldTime,
         fcnt => FCnt,
         payload_size => PayloadSize,
         payload => base64:encode(Payload1),

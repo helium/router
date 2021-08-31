@@ -758,6 +758,7 @@ handle_cast(
                         ok = router_utils:event_uplink(
                             NewFrameCache#frame_cache.uuid,
                             PacketTime,
+                            HoldTime,
                             Frame,
                             Device2,
                             Blockchain,
@@ -795,6 +796,7 @@ handle_cast(
                                 ok = router_utils:event_uplink(
                                     OldUUID,
                                     PacketTime,
+                                    HoldTime,
                                     Frame,
                                     Device2,
                                     Blockchain,

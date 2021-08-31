@@ -346,7 +346,8 @@ event(Device, Map) ->
                             devaddr => maps:get(devaddr, Map),
                             hotspot => maps:get(hotspot, Map),
                             dc => maps:get(dc, Map),
-                            mac => maps:get(mac, Map)
+                            mac => maps:get(mac, Map),
+                            hold_time => maps:get(hold_time, Map)
                         };
                     {join_request, _SC} ->
                         #{

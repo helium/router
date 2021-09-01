@@ -9,7 +9,7 @@
     event_uplink/10,
     event_uplink_dropped_device_inactive/4,
     event_uplink_dropped_not_enough_dc/4,
-    event_uplink_dropped_late_packet/4,
+    event_uplink_dropped_late_packet/5,
     event_uplink_dropped_invalid_packet/8,
     event_downlink/10,
     event_downlink_dropped_payload_size_exceeded/5,
@@ -228,17 +228,19 @@ event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
 
 -spec event_uplink_dropped_late_packet(
     Timestamp :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> ok.
-event_uplink_dropped_late_packet(Timestamp, FCnt, Device, PubKeyBin) ->
+event_uplink_dropped_late_packet(Timestamp, HoldTime, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
         sub_category => uplink_dropped_late,
         description => <<"Late packet">>,
         reported_at => Timestamp,
+        hold_time => HoldTime,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,

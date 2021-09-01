@@ -332,6 +332,12 @@ event(Device, Map) ->
                             uplink_integration_res -> Report#{res => maps:get(response, Map)};
                             _ -> Report
                         end;
+                    {uplink_dropped, uplink_dropped_late} ->
+                        #{
+                            fcnt => maps:get(fcnt, Map),
+                            hotspot => maps:get(hotspot, Map),
+                            hold_time => maps:get(hold_time, Map)
+                        };
                     {uplink_dropped, _SC} ->
                         #{
                             fcnt => maps:get(fcnt, Map),

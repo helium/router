@@ -783,6 +783,7 @@ offer_cache_test(Config) ->
             DeviceWorkerPid,
             blockchain_state_channel_packet_v1:packet(SCPacket1),
             1,
+            2,
             PubKeyBin1
         )
     ),
@@ -791,6 +792,7 @@ offer_cache_test(Config) ->
             DeviceWorkerPid,
             blockchain_state_channel_packet_v1:packet(SCPacket2),
             1,
+            2,
             PubKeyBin2
         )
     ),
@@ -812,6 +814,7 @@ offer_cache_test(Config) ->
             DeviceWorkerPid,
             blockchain_state_channel_packet_v1:packet(SCPacket3),
             1,
+            2,
             PubKeyBin1
         )
     ),
@@ -840,6 +843,7 @@ offer_cache_test(Config) ->
             DeviceWorkerPid,
             blockchain_state_channel_packet_v1:packet(SCPacket4),
             1,
+            2,
             PubKeyBin1
         )
     ),
@@ -856,7 +860,8 @@ offer_cache_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin1))
-            }
+            },
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -885,6 +890,7 @@ offer_cache_test(Config) ->
             DeviceWorkerPid,
             blockchain_state_channel_packet_v1:packet(SCPacket5),
             1,
+            2,
             PubKeyBin1
         )
     ),

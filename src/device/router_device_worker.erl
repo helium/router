@@ -21,7 +21,7 @@
 -export([
     start_link/1,
     handle_offer/2,
-    accept_uplink/4,
+    accept_uplink/5,
     handle_join/9,
     handle_frame/8,
     get_queue_updates/3,
@@ -93,10 +93,11 @@ handle_offer(WorkerPid, Offer) ->
     WorkerPid :: pid(),
     Packet :: blockchain_helium_packet_v1:packet(),
     PacketTime :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> boolean().
-accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin) ->
-    gen_server:call(WorkerPid, {accept_uplink, Packet, PacketTime, PubKeyBin}).
+accept_uplink(WorkerPid, Packet, PacketTime, HoldTime, PubKeyBin) ->
+    gen_server:call(WorkerPid, {accept_uplink, Packet, PacketTime, HoldTime, PubKeyBin}).
 
 -spec handle_join(
     WorkerPid :: pid(),
@@ -199,7 +200,7 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
     }}.
 
 handle_call(
-    {accept_uplink, Packet, PacketTime, PubKeyBin},
+    {accept_uplink, Packet, PacketTime, HoldTime, PubKeyBin},
     _From,
     #state{device = Device, offer_cache = OfferCache0} = State
 ) ->
@@ -232,6 +233,7 @@ handle_call(
                             ),
                             ok = router_utils:event_uplink_dropped_late_packet(
                                 PacketTime,
+                                HoldTime,
                                 FCnt,
                                 Device,
                                 PubKeyBin
@@ -714,6 +716,7 @@ handle_cast(
                 late_packet ->
                     ok = router_utils:event_uplink_dropped_late_packet(
                         PacketTime,
+                        HoldTime,
                         router_device:fcnt(Device1),
                         Device1,
                         PubKeyBin

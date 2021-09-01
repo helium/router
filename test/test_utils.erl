@@ -48,6 +48,12 @@
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 init_per_testcase(TestCase, Config) ->
+    meck:new(router_device_devaddr, [passthrough]),
+    meck:expect(router_device_devaddr, allocate, fun(_, _) ->
+        DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+        {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
+    end),
+
     BaseDir = erlang:atom_to_list(TestCase),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, testing, true),
@@ -176,6 +182,7 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
+    meck:unload(router_device_devaddr),
     ok.
 
 start_swarm(BaseDir, Name, Port) ->

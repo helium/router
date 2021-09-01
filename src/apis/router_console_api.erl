@@ -695,7 +695,8 @@ get_token(Endpoint, Secret) ->
             ok = router_metrics:console_api_observe(get_token, ok, End - Start),
             #{<<"jwt">> := Token} = jsx:decode(Body, [return_maps]),
             Token;
-        _ ->
+        _Other ->
+            lager:error("we failed to get a proper token ~p", [_Other]),
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_token, error, End - Start),
             erlang:throw(get_token)

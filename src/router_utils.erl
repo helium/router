@@ -6,10 +6,10 @@
 -export([
     event_join_request/8,
     event_join_accept/5,
-    event_uplink/9,
+    event_uplink/10,
     event_uplink_dropped_device_inactive/4,
     event_uplink_dropped_not_enough_dc/4,
-    event_uplink_dropped_late_packet/4,
+    event_uplink_dropped_late_packet/5,
     event_uplink_dropped_invalid_packet/8,
     event_downlink/10,
     event_downlink_dropped_payload_size_exceeded/5,
@@ -116,6 +116,7 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
 -spec event_uplink(
     ID :: uuid_v4(),
     Timestamp :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     Frame :: #frame{},
     Device :: router_device:device(),
     Chain :: blockchain:blockchain(),
@@ -124,7 +125,18 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     Region :: atom(),
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
+event_uplink(
+    ID,
+    Timestamp,
+    HoldTime,
+    Frame,
+    Device,
+    Chain,
+    PubKeyBin,
+    Packet,
+    Region,
+    {Balance, Nonce}
+) ->
     #frame{
         mtype = MType,
         devaddr = DevAddr,
@@ -154,6 +166,7 @@ event_uplink(ID, Timestamp, Frame, Device, Chain, PubKeyBin, Packet, Region, {Ba
         sub_category => SubCategory,
         description => Desc,
         reported_at => Timestamp,
+        hold_time => HoldTime,
         fcnt => FCnt,
         payload_size => PayloadSize,
         payload => base64:encode(Payload1),
@@ -215,17 +228,19 @@ event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
 
 -spec event_uplink_dropped_late_packet(
     Timestamp :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> ok.
-event_uplink_dropped_late_packet(Timestamp, FCnt, Device, PubKeyBin) ->
+event_uplink_dropped_late_packet(Timestamp, HoldTime, FCnt, Device, PubKeyBin) ->
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
         sub_category => uplink_dropped_late,
         description => <<"Late packet">>,
         reported_at => Timestamp,
+        hold_time => HoldTime,
         fcnt => FCnt,
         payload_size => 0,
         payload => <<>>,

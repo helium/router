@@ -136,7 +136,8 @@ mac_commands_test(Config) ->
                         <<"lat">> => fun erlang:is_float/1,
                         <<"long">> => fun erlang:is_float/1
                     },
-                    <<"mac">> => ExpectedFopts
+                    <<"mac">> => ExpectedFopts,
+                    <<"hold_time">> => fun erlang:is_integer/1
                 }
             })
         end,
@@ -368,7 +369,8 @@ dupes_test(Config) ->
                     <<"lat">> => IsFloatOrBinary,
                     <<"long">> => IsFloatOrBinary
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -401,7 +403,8 @@ dupes_test(Config) ->
                     <<"lat">> => IsFloatOrBinary,
                     <<"long">> => IsFloatOrBinary
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -584,7 +587,8 @@ dupes2_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -776,7 +780,8 @@ join_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -1133,7 +1138,8 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -1311,7 +1317,8 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -1506,7 +1513,8 @@ adr_test(Config) ->
                     <<"data_rate_ack">> => 1,
                     <<"power_ack">> => 1
                 }
-            ]
+            ],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -1653,7 +1661,8 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 
@@ -1797,7 +1806,8 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"mac">> => []
+            <<"mac">> => [],
+            <<"hold_time">> => fun erlang:is_integer/1
         }
     }),
 

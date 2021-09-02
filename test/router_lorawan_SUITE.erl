@@ -341,7 +341,8 @@ lw_join_test(Config) ->
                     <<"lat">> => '_',
                     <<"long">> => '_'
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -470,7 +471,8 @@ lw_join_test(Config) ->
                     <<"lat">> => '_',
                     <<"long">> => '_'
                 },
-                <<"mac">> => fun erlang:is_list/1
+                <<"mac">> => fun erlang:is_list/1,
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),

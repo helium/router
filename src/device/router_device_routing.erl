@@ -930,7 +930,13 @@ send_to_device_worker(
                     Error;
                 {ok, WorkerPid} ->
                     case
-                        router_device_worker:accept_uplink(WorkerPid, Packet, PacketTime, PubKeyBin)
+                        router_device_worker:accept_uplink(
+                            WorkerPid,
+                            Packet,
+                            PacketTime,
+                            HoldTime,
+                            PubKeyBin
+                        )
                     of
                         false ->
                             lager:info("device worker refused to pick up the packet");

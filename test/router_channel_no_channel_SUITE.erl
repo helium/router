@@ -107,7 +107,8 @@ no_channel_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),
@@ -242,7 +243,8 @@ no_channel_test(Config) ->
                     <<"lat">> => fun erlang:is_float/1,
                     <<"long">> => fun erlang:is_float/1
                 },
-                <<"mac">> => []
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
             }
         }
     ),

@@ -50,6 +50,8 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 allocate(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
     Swarm = proplists:get_value(swarm, Config),
     Keys = proplists:get_value(keys, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
@@ -102,6 +104,8 @@ allocate(Config) ->
     ok.
 
 route_packet(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
     Swarm = proplists:get_value(swarm, Config),
     Keys = proplists:get_value(keys, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),

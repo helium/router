@@ -55,6 +55,8 @@
     delete/3
 ]).
 
+-define(QUEUE_SIZE_LIMIT, 20).
+
 -type device() :: #device_v6{}.
 
 -export_type([device/0]).
@@ -411,12 +413,19 @@ deserialize(Binary) ->
 can_queue_payload(_Payload, #device_v6{region = undefined}) ->
     {error, device_region_unknown};
 can_queue_payload(Payload, Device) ->
-    Region = ?MODULE:region(Device),
-    UpDR = ?MODULE:last_known_datarate(Device),
-    DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
-    MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
-    Size = erlang:byte_size(Payload),
-    {Size < MaxSize, Size, MaxSize, DownDR}.
+    Queue = ?MODULE:queue(Device),
+    Limit = get_queue_size_limit(),
+    case erlang:length(Queue) >= Limit of
+        true ->
+            {error, queue_size_limit};
+        false ->
+            Region = ?MODULE:region(Device),
+            UpDR = ?MODULE:last_known_datarate(Device),
+            DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
+            MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
+            Size = erlang:byte_size(Payload),
+            {Size < MaxSize, Size, MaxSize, DownDR}
+    end.
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions
@@ -454,6 +463,14 @@ delete(DB, CF, DeviceID) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec get_queue_size_limit() -> pos_integer().
+get_queue_size_limit() ->
+    case application:get_env(router, device_queue_size_limit, ?QUEUE_SIZE_LIMIT) of
+        [] -> ?QUEUE_SIZE_LIMIT;
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        Limit -> Limit
+    end.
 
 -spec get_fold(rocksdb:db_handle(), rocksdb:cf_handle(), function()) -> [device()].
 get_fold(DB, CF, FilterFun) ->

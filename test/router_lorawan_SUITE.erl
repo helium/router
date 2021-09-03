@@ -67,6 +67,11 @@ end_per_group(_, _) ->
     ok.
 
 init_per_testcase(TestCase, Config) ->
+    meck:new(router_device_devaddr, [passthrough]),
+    meck:expect(router_device_devaddr, allocate, fun(_, _) ->
+        DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+        {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
+    end),
     BaseDir =
         erlang:atom_to_list(TestCase) ++
             "-" ++ erlang:atom_to_list(proplists:get_value(region, Config)),
@@ -124,6 +129,7 @@ end_per_testcase(_TestCase, Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
     catch exit(whereis(libp2p_swarm_sup_join_test_swarm_0), kill),
+    meck:unload(router_device_devaddr),
     ok.
 
 %%--------------------------------------------------------------------

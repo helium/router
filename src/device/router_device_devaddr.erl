@@ -21,7 +21,6 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    default_devaddr/0,
     allocate/2,
     sort_devices/3,
     pubkeybin_to_loc/2,
@@ -57,21 +56,6 @@
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
-
--spec default_devaddr() -> binary().
-default_devaddr() ->
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    DefaultDevaddr = <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>,
-    case application:get_env(router, default_devaddr) of
-        undefined ->
-            DefaultDevaddr;
-        {ok, Base64Str} ->
-            try base64:decode(Base64Str) of
-                Decoded -> Decoded
-            catch
-                _:_ -> DefaultDevaddr
-            end
-    end.
 
 -spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->
     {ok, binary()} | {error, any()}.

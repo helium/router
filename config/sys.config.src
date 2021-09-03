@@ -40,7 +40,8 @@
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
-        {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"}
+        {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
+        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"}
     ]},
     {grpcbox, [
         {servers, [

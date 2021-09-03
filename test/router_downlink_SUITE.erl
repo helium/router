@@ -11,7 +11,8 @@
     console_tool_downlink_test/1,
     console_tool_downlink_order_test/1,
     console_tool_clear_queue_test/1,
-    console_tool_downlink_clear_queue_test/1
+    console_tool_downlink_clear_queue_test/1,
+    device_queue_size_limit_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -43,7 +44,8 @@ all() ->
         console_tool_downlink_test,
         console_tool_downlink_order_test,
         console_tool_clear_queue_test,
-        console_tool_downlink_clear_queue_test
+        console_tool_downlink_clear_queue_test,
+        device_queue_size_limit_test
     ].
 
 %%--------------------------------------------------------------------
@@ -490,6 +492,57 @@ console_tool_downlink_clear_queue_test(Config) ->
     end),
 
     ok = test_utils:ignore_messages(),
+    ok.
+
+device_queue_size_limit_test(Config) ->
+    #{} = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Grab the websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+
+    %% Queue a downlink for the default device
+    DownlinkMessage = #{
+        payload_raw => base64:encode(<<"basic downlink">>)
+    },
+    lists:foreach(
+        fun(_) ->
+            WSPid ! {downlink, DownlinkMessage}
+        end,
+        lists:seq(1, 22)
+    ),
+
+    %% Wait until Device has downlink
+    ok = test_utils:wait_until(fun() ->
+        20 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+    end),
+
+    test_utils:wait_for_console_event_sub(<<"downlink_dropped_misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink_dropped">>,
+        <<"sub_category">> => <<"downlink_dropped_misc">>,
+        <<"description">> => <<"Failed to queue downlink: queue_size_limit">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => fun erlang:is_map/1
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"downlink_dropped_misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink_dropped">>,
+        <<"sub_category">> => <<"downlink_dropped_misc">>,
+        <<"description">> => <<"Failed to queue downlink: queue_size_limit">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => fun erlang:is_map/1
+    }),
+
     ok.
 
 %% ------------------------------------------------------------------

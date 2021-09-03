@@ -157,6 +157,8 @@ packet_hash_cache_test(Config) ->
     ok.
 
 multi_buy_test(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     Keys = proplists:get_value(keys, Config),

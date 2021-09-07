@@ -12,7 +12,8 @@
     mqtt_subscribe/1,
     mqtt_publish/2,
     mqtt_response/2,
-    mqtt_cleanup/1
+    mqtt_cleanup/1,
+    mqtt_ping/1
 ]).
 
 %% HTTP API
@@ -152,6 +153,16 @@ mqtt_cleanup(#azure{mqtt_connection = Conn} = Azure) ->
     (catch emqtt:disconnect(Conn)),
     (catch emqtt:stop(Conn)),
     {ok, Azure#azure{mqtt_connection = undefined}}.
+
+-spec mqtt_ping(#azure{}) -> ok | {error, any()}.
+mqtt_ping(#azure{mqtt_connection = Conn}) ->
+    try emqtt:ping(Conn) of
+        pong ->
+            ok
+    catch
+        _Class:Reason ->
+            {error, Reason}
+    end.
 
 %% -------------------------------------------------------------------
 %% HTTP

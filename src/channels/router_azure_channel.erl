@@ -19,6 +19,7 @@
     code_change/3
 ]).
 
+-define(PING_TIMEOUT, timer:seconds(25)).
 -define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 
@@ -27,7 +28,8 @@
     channel_id :: binary(),
     azure :: router_azure_connection:azure(),
     conn_backoff :: backoff:backoff(),
-    conn_backoff_ref :: reference() | undefined
+    conn_backoff_ref :: reference() | undefined,
+    ping :: reference() | undefined
 }).
 
 %% ------------------------------------------------------------------
@@ -98,11 +100,29 @@ handle_info({publish, PublishPayload}, #state{azure = Azure, channel = Channel} 
             ok
     end,
     {ok, State};
-handle_info({?MODULE, connect, ChannelID}, #state{channel_id = ChannelID} = State) ->
-    {ok, connect(State)};
+handle_info(
+    {?MODULE, connect, ChannelID},
+    #state{channel_id = ChannelID, ping = TimerRef} = State0
+) ->
+    _ = (catch erlang:cancel_timer(TimerRef)),
+    case connect(State0) of
+        {connect, State1} ->
+            {ok, State1#state{ping = schedule_ping(ChannelID)}};
+        {reconnect, State1} ->
+            {ok, State1#state{ping = undefined}}
+    end;
 %% Ignore connect message not for us
 handle_info({?MODULE, connect, _}, State) ->
     {ok, State};
+handle_info({?MODULE, ping, ChannelID}, #state{channel_id = ChannelID, azure = Azure} = State) ->
+    case router_azure_connection:mqtt_ping(Azure) of
+        ok ->
+            lager:debug("[~s] pinged Azure successfully", [ChannelID]),
+            {ok, State#state{ping = schedule_ping(ChannelID)}};
+        {error, _Reason} ->
+            lager:error("[~s] failed to ping Azure connection: ~p", [ChannelID, _Reason]),
+            {ok, reconnect(State)}
+    end;
 handle_info(_Msg, State) ->
     lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {ok, State}.
@@ -165,6 +185,10 @@ reconnect(#state{channel_id = ChannelID, conn_backoff = Backoff0} = State) ->
         conn_backoff = Backoff1,
         conn_backoff_ref = TimerRef1
     }.
+
+-spec schedule_ping(binary()) -> reference().
+schedule_ping(ChannelID) ->
+    erlang:send_after(?PING_TIMEOUT, self(), {?MODULE, ping, ChannelID}).
 
 -spec send_connect_after(ChannelID :: binary(), Delay :: non_neg_integer()) -> reference().
 send_connect_after(ChannelID, Delay) ->

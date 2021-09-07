@@ -313,7 +313,7 @@ parse_connection_string_test() ->
     ?assertEqual(
         {ok, <<"test">>, <<"TestPolicy">>, <<"U2hhcmVkQWNjZXNzS2V5">>},
         parse_connection_string(
-            "HostName=test.azure-devices.net;SharedAccessKeyName=TestPolicy;SharedAccessKey=U2hhcmVkQWNjZXNzS2V5"
+            <<"HostName=test.azure-devices.net;SharedAccessKeyName=TestPolicy;SharedAccessKey=U2hhcmVkQWNjZXNzS2V5">>
         )
     ),
     ok.

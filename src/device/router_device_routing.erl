@@ -145,8 +145,6 @@ handle_offer(Offer, HandlerPid) ->
         ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
         ok = handle_offer_metrics(Routing, Resp, End - Start)
     end),
-    %% TODO: Remove when hotspots start reporting AS923 including subregions
-    ok = lorawan_location:maybe_fetch_offer_location(Offer),
     case Resp of
         {ok, _} -> ok;
         {error, _} = Error -> Error

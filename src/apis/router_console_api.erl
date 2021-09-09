@@ -646,6 +646,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"console">>} = JSONChannel) ->
     Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder, Template),
     {true, Channel};
 convert_channel(_Device, _Pid, _Channel) ->
+    lager:error("dropping unconvertable channel: ~p", [_Channel]),
     false.
 
 -spec convert_decoder(JSONChannel :: map()) -> undefined | router_decoder:decoder().

@@ -106,9 +106,9 @@ handle_info(
 ) ->
     _ = (catch erlang:cancel_timer(TimerRef)),
     case connect(State0) of
-        {connect, State1} ->
+        {ok, State1} ->
             {ok, State1#state{ping = schedule_ping(ChannelID)}};
-        {reconnect, State1} ->
+        {error, State1} ->
             {ok, State1#state{ping = undefined}}
     end;
 %% Ignore connect message not for us
@@ -154,7 +154,7 @@ setup_azure(Channel) ->
         Err -> Err
     end.
 
--spec connect(#state{}) -> #state{}.
+-spec connect(#state{}) -> {ok | error, #state{}}.
 connect(#state{azure = Azure0, conn_backoff = Backoff0, channel_id = ChannelID} = State) ->
     {ok, Azure1} = router_azure_connection:mqtt_cleanup(Azure0),
 
@@ -164,17 +164,17 @@ connect(#state{azure = Azure0, conn_backoff = Backoff0, channel_id = ChannelID} 
                 {ok, _, _} ->
                     lager:info("[~s] connected and subscribed", [ChannelID]),
                     {_, Backoff1} = backoff:succeed(Backoff0),
-                    State#state{
+                    {ok, State#state{
                         conn_backoff = Backoff1,
                         azure = Azure2
-                    };
+                    }};
                 {error, _SubReason} ->
                     lager:error("[~s] failed to subscribe: ~p", [ChannelID, _SubReason]),
-                    reconnect(State#state{azure = Azure2})
+                    {error, reconnect(State#state{azure = Azure2})}
             end;
         {error, _ConnReason} ->
             lager:error("[~s] failed to connect to: ~p", [ChannelID, _ConnReason]),
-            reconnect(State)
+            {error, reconnect(State)}
     end.
 
 -spec reconnect(#state{}) -> #state{}.

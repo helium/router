@@ -615,6 +615,20 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
     Template = convert_template(JSONChannel),
     Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
     {true, Channel};
+convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_azure_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    Args = #{
+        azure_hub_name => kvc:path([<<"credentials">>, <<"hub_name">>], JSONChannel),
+        azure_policy_name => kvc:path([<<"credentials">>, <<"policy_name">>], JSONChannel),
+        azure_policy_key => kvc:path([<<"credentials">>, <<"policy_key">>], JSONChannel)
+    },
+    DeviceID = router_device:id(Device),
+    Decoder = convert_decoder(JSONChannel),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
+    {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,

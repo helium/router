@@ -225,9 +225,9 @@ delete_device(#azure{http_url = URL} = Azure, DeleteType) ->
         case DeleteType of
             explicit ->
                 {ok, #{<<"etag">> := ETag}} = ?MODULE:fetch_device(Azure),
-                [{<<"If-Match">>, ensure_quoted(ETag)} | ?MODULE:default_headers(Token)];
+                [{<<"If-Match">>, ensure_quoted(ETag)} | default_headers(Token)];
             force ->
-                [{<<"If-Match">>, <<"*">>} | ?MODULE:default_headers(Token)]
+                [{<<"If-Match">>, <<"*">>} | default_headers(Token)]
         end,
 
     case hackney:delete(URL, Headers, <<>>, ?REQUEST_OPTIONS) of

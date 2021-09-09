@@ -26,7 +26,8 @@
 
 %% Helper API
 -export([
-    parse_connection_string/1
+    parse_connection_string/1,
+    connection_information/2
 ]).
 
 -export_type([azure/0]).
@@ -35,6 +36,7 @@
 -define(REQUEST_OPTIONS, [with_body, {ssl_options, [{versions, ['tlsv1.2']}]}]).
 -define(MQTT_API_VERSION, "/?api-version=2020-06-30").
 -define(HTTP_API_VERSION, "/?api-version=2020-03-13").
+-define(AZURE_HOST, <<".azure-devices.net">>).
 
 -record(azure, {
     hub_name :: binary(),
@@ -44,6 +46,7 @@
     http_url :: binary(),
     http_sas_uri :: binary(),
     mqtt_host :: binary(),
+    mqtt_port :: 1883 | 8883,
     mqtt_username :: binary(),
     mqtt_sas_uri :: binary(),
     mqtt_connection :: pid() | undefined
@@ -61,15 +64,14 @@ from_connection_string(ConnString, DeviceID) ->
     end.
 
 new(HubName, PName, PKey, DeviceID) ->
-    HttpSasUri = <<HubName/binary, ".azure-devices.net">>,
-    HttpUrl =
-        <<"https://", HubName/binary, ".azure-devices.net/devices/", DeviceID/binary,
-            ?HTTP_API_VERSION>>,
-
-    MqttSasUri =
-        <<HubName/binary, ".azure-devices.net/", DeviceID/binary, ?MQTT_API_VERSION>>,
-    MqttHost = <<HubName/binary, ".azure-evices.net">>,
-    MqttUsername = <<MqttHost/binary, "/", DeviceID/binary, ?MQTT_API_VERSION>>,
+    #{
+        http_sas_uri := HttpSasUri,
+        http_url := HttpUrl,
+        mqtt_sas_uri := MqttSasUri,
+        mqtt_host := MqttHost,
+        mqtt_port := MqttPort,
+        mqtt_username := MqttUsername
+    } = ?MODULE:connection_information(HubName, DeviceID),
 
     {ok, #azure{
         % General
@@ -82,9 +84,30 @@ new(HubName, PName, PKey, DeviceID) ->
         http_sas_uri = HttpSasUri,
         % MQTT
         mqtt_host = MqttHost,
+        mqtt_port = MqttPort,
         mqtt_username = MqttUsername,
         mqtt_sas_uri = MqttSasUri
     }}.
+
+-spec connection_information(binary(), binary()) -> map().
+connection_information(HubName, DeviceID) ->
+    HttpSasUri = <<HubName/binary, ?AZURE_HOST/binary>>,
+    HttpUrl =
+        <<"https://", HubName/binary, ?AZURE_HOST/binary, "/devices/", DeviceID/binary,
+            ?HTTP_API_VERSION>>,
+
+    MqttSasUri =
+        <<HubName/binary, ?AZURE_HOST/binary, "/", DeviceID/binary, ?MQTT_API_VERSION>>,
+    MqttHost = <<HubName/binary, ?AZURE_HOST/binary>>,
+    MqttUsername = <<MqttHost/binary, "/", DeviceID/binary, ?MQTT_API_VERSION>>,
+    #{
+        http_sas_uri => HttpSasUri,
+        http_url => HttpUrl,
+        mqtt_sas_uri => MqttSasUri,
+        mqtt_host => MqttHost,
+        mqtt_port => 8883,
+        mqtt_username => MqttUsername
+    }.
 
 %% -------------------------------------------------------------------
 %% MQTT
@@ -94,16 +117,16 @@ new(HubName, PName, PKey, DeviceID) ->
 mqtt_connect(
     #azure{
         mqtt_host = Host,
+        mqtt_port = Port,
         mqtt_username = Username,
         device_id = DeviceID
     } = Azure
 ) ->
-    Port = 8883,
     Password = generate_mqtt_sas_token(Azure),
 
     {ok, Connection} = emqtt:start_link(#{
         clientid => DeviceID,
-        ssl => true,
+        ssl => Port == 8883,
         ssl_opts => [{verify, verify_none}],
         host => erlang:binary_to_list(Host),
         port => Port,

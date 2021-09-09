@@ -389,7 +389,7 @@ event(Device, Map) ->
                 device_id => router_device:id(Device),
                 data => Data
             },
-            lager:debug("post ~p to ~p", [Body, Url]),
+            lager:debug("post ~p with ~p", [Url, Body]),
             Start = erlang:system_time(millisecond),
             case
                 hackney:post(

@@ -550,7 +550,7 @@ handle_cast(
                                 DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
-                            catch blockchain_state_channel_handler:send_response(
+                            catch blockchain_state_channel_common:send_response(
                                 Pid,
                                 blockchain_state_channel_response_v1:new(true)
                             ),
@@ -577,7 +577,7 @@ handle_cast(
                                 DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
-                            catch blockchain_state_channel_handler:send_response(
+                            catch blockchain_state_channel_common:send_response(
                                 OldPid,
                                 blockchain_state_channel_response_v1:new(true)
                             ),
@@ -801,7 +801,7 @@ handle_cast(
                         end,
                         case RSSI0 > OldRSSI of
                             false ->
-                                catch blockchain_state_channel_handler:send_response(
+                                catch blockchain_state_channel_common:send_response(
                                     Pid,
                                     blockchain_state_channel_response_v1:new(true)
                                 ),
@@ -824,7 +824,7 @@ handle_cast(
                                     )
                                 }};
                             true ->
-                                catch blockchain_state_channel_handler:send_response(
+                                catch blockchain_state_channel_common:send_response(
                                     OldPid,
                                     blockchain_state_channel_response_v1:new(true)
                                 ),
@@ -908,7 +908,7 @@ handle_info(
         Rx2
     ),
     lager:debug("sending join response ~p", [DownlinkPacket]),
-    catch blockchain_state_channel_handler:send_response(
+    catch blockchain_state_channel_common:send_response(
         Pid,
         blockchain_state_channel_response_v1:new(true, DownlinkPacket)
     ),
@@ -980,7 +980,7 @@ handle_info(
         {ok, Device1} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("sending frame response with no downlink"),
-            catch blockchain_state_channel_handler:send_response(
+            catch blockchain_state_channel_common:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true)
             ),
@@ -1025,7 +1025,7 @@ handle_info(
             end,
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
-            catch blockchain_state_channel_handler:send_response(
+            catch blockchain_state_channel_common:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
@@ -1046,7 +1046,7 @@ handle_info(
                 fcnt = FCnt
             }};
         noop ->
-            catch blockchain_state_channel_handler:send_response(
+            catch blockchain_state_channel_common:send_response(
                 Pid,
                 blockchain_state_channel_response_v1:new(true)
             ),

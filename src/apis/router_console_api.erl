@@ -402,6 +402,12 @@ event(Device, Map) ->
                 {ok, 200, _Headers, _Body} ->
                     End = erlang:system_time(millisecond),
                     ok = router_metrics:console_api_observe(report_status, ok, End - Start);
+                {ok, 404, _ResponseHeaders, _ResposnseBody} ->
+                    {ok, DB, CF} = router_db:get_devices(),
+                    ok = router_device:delete(DB, CF, DeviceID),
+                    ok = router_device_cache:delete(DeviceID),
+                    lager:info("device was removed, removing from DB and cache"),
+                    ok;
                 _Other ->
                     lager:warning("got non 200 resp ~p", [_Other]),
                     End = erlang:system_time(millisecond),

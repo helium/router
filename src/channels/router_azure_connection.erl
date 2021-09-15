@@ -300,8 +300,9 @@ generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
     ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
     ToSign = <<URI/binary, "\n", ExpireBin/binary>>,
     Signed = http_uri:encode(base64:encode(crypto:hmac(sha256, base64:decode(PolicyKey), ToSign))),
+    EncodedURI = http_uri:encode(URI),
 
-    <<"SharedAccessSignature ", "sr=", URI/binary, "&sig=", Signed/binary, "&se=", ExpireBin/binary,
+    <<"SharedAccessSignature ", "sr=", EncodedURI/binary, "&sig=", Signed/binary, "&se=", ExpireBin/binary,
         "&skn=", PolicyName/binary>>.
 
 -spec clean_connection_string(ConnectionString :: binary()) -> {ok, list(tuple())}.

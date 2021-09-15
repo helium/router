@@ -19,7 +19,7 @@
     code_change/3
 ]).
 
--define(PING_TIMEOUT, timer:seconds(60)).
+-define(PING_TIMEOUT, timer:seconds(25)).
 -define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 

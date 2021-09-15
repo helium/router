@@ -27,14 +27,16 @@
 %% Helper API
 -export([
     parse_connection_string/1,
-    connection_information/2
+    connection_information/2,
+    generate_http_sas_token/1,
+    generate_mqtt_sas_token/1
 ]).
 
 -export_type([azure/0]).
 
 -define(EXPIRATION_TIME, 3600).
 -define(REQUEST_OPTIONS, [with_body, {ssl_options, [{versions, ['tlsv1.2']}]}]).
--define(MQTT_API_VERSION, "/?api-version=2020-06-30").
+-define(MQTT_API_VERSION, "/?api-version=2018-06-30").
 -define(HTTP_API_VERSION, "/?api-version=2020-03-13").
 -define(AZURE_HOST, <<".azure-devices.net">>).
 

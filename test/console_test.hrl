@@ -53,9 +53,9 @@
 -define(CONSOLE_AZURE_CHANNEL, #{
     <<"type">> => <<"azure">>,
     <<"credentials">> => #{
-        <<"hub_name">> => <<"helium-iot-hub">>,
-        <<"policy_name">> => <<"fake-policy-name">>,
-        <<"policy_key">> => base64:encode(<<"obviously-fake-policy-token">>)
+        <<"azure_hub_name">> => <<"helium-iot-hub">>,
+        <<"azure_policy_name">> => <<"fake-policy-name">>,
+        <<"azure_policy_key">> => base64:encode(<<"obviously-fake-policy-token">>)
     },
     <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
     <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME

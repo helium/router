@@ -620,9 +620,9 @@ convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
     Handler = router_azure_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     Args = #{
-        azure_hub_name => kvc:path([<<"credentials">>, <<"hub_name">>], JSONChannel),
-        azure_policy_name => kvc:path([<<"credentials">>, <<"policy_name">>], JSONChannel),
-        azure_policy_key => kvc:path([<<"credentials">>, <<"policy_key">>], JSONChannel)
+        azure_hub_name => kvc:path([<<"credentials">>, <<"azure_hub_name">>], JSONChannel),
+        azure_policy_name => kvc:path([<<"credentials">>, <<"azure_policy_name">>], JSONChannel),
+        azure_policy_key => kvc:path([<<"credentials">>, <<"azure_policy_key">>], JSONChannel)
     },
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),

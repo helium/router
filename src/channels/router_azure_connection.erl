@@ -297,10 +297,10 @@ generate_mqtt_sas_token(#azure{mqtt_sas_uri = URI, policy_name = PName, policy_k
 
 -spec generate_sas_token(binary(), binary(), binary(), number()) -> binary().
 generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
-    ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
-    ToSign = <<URI/binary, "\n", ExpireBin/binary>>,
-    Signed = http_uri:encode(base64:encode(crypto:hmac(sha256, base64:decode(PolicyKey), ToSign))),
     EncodedURI = http_uri:encode(URI),
+    ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
+    ToSign = <<EncodedURI/binary, "\n", ExpireBin/binary>>,
+    Signed = http_uri:encode(base64:encode(crypto:hmac(sha256, base64:decode(PolicyKey), ToSign))),
 
     <<"SharedAccessSignature ", "sr=", EncodedURI/binary, "&sig=", Signed/binary, "&se=", ExpireBin/binary,
         "&skn=", PolicyName/binary>>.

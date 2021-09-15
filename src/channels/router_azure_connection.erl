@@ -157,13 +157,14 @@ mqtt_subscribe(#azure{mqtt_connection = Conn, device_id = DeviceID}) ->
 -spec mqtt_publish(#azure{}, binary()) -> {ok, any()} | {error, not_connected | failed_to_publish}.
 mqtt_publish(#azure{mqtt_connection = undefined}, _Data) ->
     {error, not_connected};
-mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID}, Data) ->
+mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID, mqtt_host = Host}, Data) ->
     UplinkTopic = <<"devices/", DeviceID/binary, "/messages/events">>,
     try emqtt:publish(Conn, UplinkTopic, Data, 0) of
         Resp ->
             {ok, Resp}
     catch
-        _:_ ->
+        _Class:_Reason ->
+            lager:warning("could not publish to azure ~p: ~p", [Host, {_Class, _Reason}]),
             {error, failed_to_publish}
     end.
 
@@ -181,12 +182,13 @@ mqtt_cleanup(#azure{mqtt_connection = Conn} = Azure) ->
     {ok, Azure#azure{mqtt_connection = undefined}}.
 
 -spec mqtt_ping(#azure{}) -> ok | {error, any()}.
-mqtt_ping(#azure{mqtt_connection = Conn}) ->
+mqtt_ping(#azure{mqtt_connection = Conn, mqtt_host = Host}) ->
     try emqtt:ping(Conn) of
         pong ->
             ok
     catch
         _Class:Reason ->
+            lager:warning("could not ping azure ~p: ~p", [Host, {_Class, Reason}]),
             {error, Reason}
     end.
 

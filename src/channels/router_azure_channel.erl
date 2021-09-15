@@ -37,7 +37,7 @@
 %% ------------------------------------------------------------------
 init({[Channel, Device], _}) ->
     ok = router_utils:lager_md(Device),
-    ChannelID = router_channel:id(Channel),
+    ChannelID = router_channel:unique_id(Channel),
     lager:info("init azure with ~p", [Channel]),
     case setup_azure(Channel) of
         {ok, Account} ->

@@ -305,8 +305,8 @@ generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
     ToSign = <<EncodedURI/binary, "\n", ExpireBin/binary>>,
     Signed = http_uri:encode(base64:encode(crypto:hmac(sha256, base64:decode(PolicyKey), ToSign))),
 
-    <<"SharedAccessSignature ", "sr=", EncodedURI/binary, "&sig=", Signed/binary, "&se=", ExpireBin/binary,
-        "&skn=", PolicyName/binary>>.
+    <<"SharedAccessSignature ", "sr=", EncodedURI/binary, "&sig=", Signed/binary, "&se=",
+        ExpireBin/binary, "&skn=", PolicyName/binary>>.
 
 -spec clean_connection_string(ConnectionString :: binary()) -> {ok, list(tuple())}.
 clean_connection_string(ConnectionString) ->

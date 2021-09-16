@@ -347,57 +347,57 @@ parse_connection_string_test() ->
     ),
     ok.
 
-get_device_test() ->
-    application:ensure_all_started(hackney),
-    %% application:ensure_all_started(lager),
+%% get_device_test() ->
+%%     application:ensure_all_started(hackney),
+%%     %% application:ensure_all_started(lager),
 
-    {ok, Azure} = ?MODULE:new(
-        <<"michael-iot-hub">>,
-        <<"device">>,
-        <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
-        <<"test-device-2">>
-    ),
+%%     {ok, Azure} = ?MODULE:new(
+%%         <<"michael-iot-hub">>,
+%%         <<"device">>,
+%%         <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
+%%         <<"test-device-2">>
+%%     ),
 
-    {ok, Device} = ?MODULE:fetch_device(Azure),
-    lager:info("Retrieved Device ~s", [io_lib:format("~n~120p~n", [Device])]),
+%%     {ok, Device} = ?MODULE:fetch_device(Azure),
+%%     lager:info("Retrieved Device ~s", [io_lib:format("~n~120p~n", [Device])]),
 
-    ok.
+%%     ok.
 
-create_and_delete_device_force_test() ->
-    application:ensure_all_started(hackney),
+%% create_and_delete_device_force_test() ->
+%%     application:ensure_all_started(hackney),
 
-    Name = <<"test-device-force">>,
-    {ok, Azure} = ?MODULE:new(
-        <<"michael-iot-hub">>,
-        <<"device">>,
-        <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
-        Name
-    ),
+%%     Name = <<"test-device-force">>,
+%%     {ok, Azure} = ?MODULE:new(
+%%         <<"michael-iot-hub">>,
+%%         <<"device">>,
+%%         <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
+%%         Name
+%%     ),
 
-    {ok, _DeviceForce} = ?MODULE:create_device(Azure),
+%%     {ok, _DeviceForce} = ?MODULE:create_device(Azure),
 
-    ok = ?MODULE:delete_device(Azure, force),
-    lager:info("Deleted Device ~p", [Name]),
+%%     ok = ?MODULE:delete_device(Azure, force),
+%%     lager:info("Deleted Device ~p", [Name]),
 
-    ok.
+%%     ok.
 
-create_and_delete_device_explicit_test() ->
-    application:ensure_all_started(hackney),
+%% create_and_delete_device_explicit_test() ->
+%%     application:ensure_all_started(hackney),
 
-    Name = <<"test-device-explicit">>,
-    {ok, Azure} = ?MODULE:new(
-        <<"michael-iot-hub">>,
-        <<"device">>,
-        <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
-        Name
-    ),
+%%     Name = <<"test-device-explicit">>,
+%%     {ok, Azure} = ?MODULE:new(
+%%         <<"michael-iot-hub">>,
+%%         <<"device">>,
+%%         <<"B2AUxyck5UgbutoUIgYbyUUeMgmkWOHJa6I+fUuoeA4=">>,
+%%         Name
+%%     ),
 
-    {ok, _DeviceExplicit} = ?MODULE:create_device(Azure),
-    lager:info("Crated Device ~s", [io_lib:format("~n~120p~n", [_DeviceExplicit])]),
+%%     {ok, _DeviceExplicit} = ?MODULE:create_device(Azure),
+%%     lager:info("Crated Device ~s", [io_lib:format("~n~120p~n", [_DeviceExplicit])]),
 
-    ok = ?MODULE:delete_device(Azure, explicit),
-    lager:info("Deleted Device ~p", [Name]),
+%%     ok = ?MODULE:delete_device(Azure, explicit),
+%%     lager:info("Deleted Device ~p", [Name]),
 
-    ok.
+%%     ok.
 
 -endif.

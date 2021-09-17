@@ -235,6 +235,9 @@ create_device(#azure{http_url = URL, device_id = Name} = Azure) ->
                 <<"primaryKey">> => <<"">>,
                 <<"secondaryKey">> => <<"">>
             }
+        },
+        <<"capabilities">> => #{
+            <<"iotEdge">> => true
         }
     },
     EncodedPayload = jsx:encode(PayloadMap),

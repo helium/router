@@ -42,8 +42,7 @@ init({[Channel, Device], _}) ->
     case setup_azure(Channel) of
         {ok, Account} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-            %% NOTE: connection is happening at the time of publish for now.
-            %% send_connect_after(ChannelID, 0),
+            send_connect_after(ChannelID, 0),
             {ok, #state{
                 channel = Channel,
                 channel_id = ChannelID,
@@ -62,9 +61,7 @@ handle_event(
     lager:debug("got data: ~p", [Data]),
 
     EncodedData = router_channel:encode_data(Channel, Data),
-    Response = router_azure_connection:mqtt_connect_and_publish(Azure, EncodedData),
-
-    lager:info("Response from mqtt: ~p", [Response]),
+    Response = router_azure_connection:mqtt_publish(Azure, EncodedData),
 
     RequestReport = make_request_report(Response, Data, State0),
     Pid = router_channel:controller(Channel),
@@ -74,11 +71,7 @@ handle_event(
         case Response of
             {error, failed_to_publish} ->
                 lager:error("[~s] failed to publish", [ChannelID]),
-                %% NOTE: connection is happening at time of publish right now,
-                %% this will come back when we can ensure a stable connection
-                %% with azure's mqtt broker.
-                %% reconnect(State0);
-                State0;
+                reconnect(State0);
             _ ->
                 lager:debug("[~s] published result: ~p data: ~p", [ChannelID, Response, EncodedData]),
                 State0

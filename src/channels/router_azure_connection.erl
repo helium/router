@@ -170,7 +170,7 @@ mqtt_subscribe(#azure{mqtt_connection = Conn, device_id = DeviceID}) ->
 mqtt_publish(#azure{mqtt_connection = undefined}, _Data) ->
     {error, not_connected};
 mqtt_publish(#azure{mqtt_connection = Conn, device_id = DeviceID, mqtt_host = Host}, Data) ->
-    UplinkTopic = <<"devices/", DeviceID/binary, "/messages/events">>,
+    UplinkTopic = <<"devices/", DeviceID/binary, "/messages/events/">>,
     try emqtt:publish(Conn, UplinkTopic, Data, 0) of
         Resp ->
             {ok, Resp}

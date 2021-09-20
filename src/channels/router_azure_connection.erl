@@ -8,6 +8,7 @@
 
 %% MQTT API
 -export([
+    mqtt_connect_and_publish/2,
     mqtt_connect/1,
     mqtt_subscribe/1,
     mqtt_publish/2,
@@ -115,6 +116,17 @@ connection_information(HubName, DeviceID) ->
 %% -------------------------------------------------------------------
 %% MQTT
 %% -------------------------------------------------------------------
+
+-spec mqtt_connect_and_publish(#azure{}, binary()) -> {ok, any()} | {error, any()}.
+mqtt_connect_and_publish(#azure{} = Azure0, Data) ->
+    case ?MODULE:mqtt_connect(Azure0) of
+        {ok, Azure1} ->
+            Resp = ?MODULE:mqtt_publish(Azure1, Data),
+            {ok, _Azure2} = ?MODULE:mqtt_cleanup(Azure1),
+            Resp;
+        {error, _} = Err ->
+            Err
+    end.
 
 -spec mqtt_connect(#azure{}) -> {ok, #azure{}} | {error, any()}.
 mqtt_connect(

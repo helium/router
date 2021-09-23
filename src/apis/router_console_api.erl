@@ -389,7 +389,7 @@ event(Device, Map) ->
                 device_id => router_device:id(Device),
                 data => Data
             },
-            lager:debug("post ~p to ~p", [Body, Url]),
+            lager:debug("post ~p with ~p", [Url, Body]),
             Start = erlang:system_time(millisecond),
             case
                 hackney:post(
@@ -615,6 +615,20 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
     Template = convert_template(JSONChannel),
     Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
     {true, Channel};
+convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_azure_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    Args = #{
+        azure_hub_name => kvc:path([<<"credentials">>, <<"azure_hub_name">>], JSONChannel),
+        azure_policy_name => kvc:path([<<"credentials">>, <<"azure_policy_name">>], JSONChannel),
+        azure_policy_key => kvc:path([<<"credentials">>, <<"azure_policy_key">>], JSONChannel)
+    },
+    DeviceID = router_device:id(Device),
+    Decoder = convert_decoder(JSONChannel),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template),
+    {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,
@@ -646,6 +660,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"console">>} = JSONChannel) ->
     Channel = router_channel:new(ID, Handler, Name, #{}, DeviceID, Pid, Decoder, Template),
     {true, Channel};
 convert_channel(_Device, _Pid, _Channel) ->
+    lager:error("dropping unconvertable channel: ~p", [_Channel]),
     false.
 
 -spec convert_decoder(JSONChannel :: map()) -> undefined | router_decoder:decoder().

@@ -498,7 +498,7 @@ wait_channel_data(Expected) ->
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_channel_data stacktrace ~p~n", [{_Reason, _Stacktrace}]),
-            ct:fail("wait_channel_data failed")
+            ct:fail("wait_channel_data failed caught ~p", [_Reason])
     end.
 
 wait_state_channel_message(Timeout) ->

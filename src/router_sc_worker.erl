@@ -243,16 +243,8 @@ schedule_next_tick() ->
 
 -spec maybe_start_state_channel(state()) -> state().
 maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
-    SCs = blockchain_state_channels_server:state_channels(),
-    OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) ->
-            blockchain_state_channel_v1:state(SC) == open andalso
-                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
-        end,
-        SCs
-    ),
-    OpenedCount = maps:size(OpenedSCs),
-    ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
+    OpenedCount = opened_sc_count(),
+    ActiveCount = active_sc_count(),
     InFlightCount = 0,
 
     HaveHeadroom = ActiveCount < OpenedCount,
@@ -283,16 +275,8 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
             State
     end;
 maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
-    SCs = blockchain_state_channels_server:state_channels(),
-    OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) ->
-            blockchain_state_channel_v1:state(SC) == open andalso
-                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
-        end,
-        SCs
-    ),
-    OpenedCount = maps:size(OpenedSCs),
-    ActiveCount = blockchain_state_channels_server:get_active_sc_count(),
+    OpenedCount = opened_sc_count(),
+    ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(
         "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
@@ -410,18 +394,26 @@ handle_sc_result(Error, Id) ->
 
 -spec sc_expiration() -> {ok, pos_integer()} | {error, any()}.
 sc_expiration() ->
-    SCs = blockchain_state_channels_server:state_channels(),
-    case SCs == #{} of
-        true ->
+    case maps:values(blockchain_state_channels_server:get_all()) of
+        [] ->
             {error, no_opened_sc};
-        false ->
-            [{_, {SoonestSCToExpire, _}} | _] =
+        SCs ->
+            [SoonestSCToExpire | _] =
                 lists:sort(
-                    fun({_, {SCA, _}}, {_, {SCB, _}}) ->
+                    fun(SCA, SCB) ->
                         blockchain_state_channel_v1:expire_at_block(SCA) <
                             blockchain_state_channel_v1:expire_at_block(SCB)
                     end,
-                    maps:to_list(SCs)
+                    SCs
                 ),
-            {ok, blockchain_state_channel_v1:expire_at_block(SoonestSCToExpire)}
+            Expiration = blockchain_state_channel_v1:expire_at_block(SoonestSCToExpire),
+            {ok, Expiration}
     end.
+
+-spec opened_sc_count() -> non_neg_integer().
+opened_sc_count() ->
+    maps:size(blockchain_state_channels_server:get_all()).
+
+-spec active_sc_count() -> non_neg_integer().
+active_sc_count() ->
+    blockchain_state_channels_server:get_actives_count().

@@ -245,20 +245,15 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
-    SCs = blockchain_state_channels_server:state_channels(),
-    OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) ->
-            blockchain_state_channel_v1:state(SC) == open andalso
-                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
-        end,
-        SCs
-    ),
-    ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),
-    ActiveSCs = blockchain_state_channels_server:active_scs(),
+    OpenedCount = maps:size(blockchain_state_channels_server:get_all()),
+    ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
+
+    ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
     ActiveCount = erlang:length(ActiveSCs),
     ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
+
     lists:foreach(
-        fun({_I, ActiveSC}) ->
+        fun(ActiveSC) ->
             ID = blockchain_utils:addr2name(blockchain_state_channel_v1:id(ActiveSC)),
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
@@ -266,7 +261,7 @@ record_state_channels() ->
             Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
             ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [ID])
         end,
-        lists:zip(lists:seq(1, ActiveCount), ActiveSCs)
+        ActiveSCs
     ),
     ok = cleanup_old_active_scs(ActiveSCs),
     ok.

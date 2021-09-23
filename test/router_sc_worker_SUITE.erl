@@ -70,7 +70,7 @@ sc_worker_test(Config) ->
     end),
 
     % Mock submit_txn to create/gossip block
-    meck:new(blockchain_worker, [passthrough]),
+    meck:new(blockchain_worker, [passthrough, no_history]),
     meck:expect(blockchain_worker, submit_txn, fun(Txn, Callback) ->
         case blockchain_test_utils:create_block(ConsensusMembers, [Txn]) of
             {error, _Reason} = Error ->

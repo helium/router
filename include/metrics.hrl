@@ -25,10 +25,10 @@
 
 -define(METRICS, [
     {?METRICS_DC, [], "Active State Channel balance"},
-    {?METRICS_SC_OPENED_COUNT, [], "Opened State Channel count"},
-    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channel count"},
-    {?METRICS_SC_ACTIVE_BALANCE, [name], "Active State Channel balance"},
-    {?METRICS_SC_ACTIVE_ACTORS, [name], "Active State Channel actors"},
+    {?METRICS_SC_OPENED_COUNT, [], "Opened State Channels count"},
+    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channels count"},
+    {?METRICS_SC_ACTIVE_BALANCE, [], "Active State Channels balance"},
+    {?METRICS_SC_ACTIVE_ACTORS, [], "Active State Channels actors"},
     {?METRICS_ROUTING_OFFER, [type, status, reason], "Routing Offer duration"},
     {?METRICS_ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration"},
     {?METRICS_PACKET_TRIP, [type, downlink], "Packet round trip duration"},

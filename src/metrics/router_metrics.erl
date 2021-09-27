@@ -252,48 +252,18 @@ record_state_channels() ->
     ActiveCount = erlang:length(ActiveSCs),
     ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
 
-    lists:foreach(
-        fun(ActiveSC) ->
-            ID = blockchain_utils:addr2name(blockchain_state_channel_v1:id(ActiveSC)),
+    {TotalDCLeft, TotalActors} = lists:foldl(
+        fun(ActiveSC, {DCs, Actors}) ->
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [ID]),
             Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
-            ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [ID])
+            {DCs + DCLeft, Actors + erlang:length(Summaries)}
         end,
+        {0, 0},
         ActiveSCs
     ),
-    ok = cleanup_old_active_scs(ActiveSCs),
-    ok.
-
--spec cleanup_old_active_scs(ActiveSCs :: [blockchain_state_channel_v1:state_channel()]) -> ok.
-cleanup_old_active_scs(ActiveSCs) ->
-    ActiveSCNames = [
-        blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC))
-        || SC <- ActiveSCs
-    ],
-    lists:foreach(
-        fun({[{"name", Name} | _], _V}) ->
-            case lists:member(Name, ActiveSCNames) of
-                true ->
-                    ok;
-                false ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE), [Name])
-            end
-        end,
-        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE))
-    ),
-    lists:foreach(
-        fun({[{"name", Name} | _], _V}) ->
-            case lists:member(Name, ActiveSCNames) of
-                true ->
-                    ok;
-                false ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS), [Name])
-            end
-        end,
-        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS))
-    ),
+    ok = notify(?METRICS_SC_ACTIVE_BALANCE, TotalDCLeft),
+    ok = notify(?METRICS_SC_ACTIVE_ACTORS, TotalActors),
     ok.
 
 -spec record_chain_blocks() -> ok.

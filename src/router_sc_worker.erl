@@ -26,7 +26,9 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    is_active/0
+    is_active/0,
+    force_open/0,
+    counts/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -73,6 +75,31 @@ start_link(Args) ->
 is_active() ->
     gen_server:call(?SERVER, is_active).
 
+-spec force_open() -> blockchain_txn_state_channel_open_v1:id().
+force_open() ->
+    gen_server:call(?SERVER, force_open).
+
+%%--------------------------------------------------------------------
+%% @doc
+%% This function returns: {OpenedCount, OverspentCount}
+%% to get more accurate count of useful state channels
+%% @end
+%%--------------------------------------------------------------------
+-spec counts() -> {non_neg_integer(), non_neg_integer()}.
+counts() ->
+    lists:foldl(
+        fun(SC, {OpenedCount, OverspentCount}) ->
+            TotalDC = blockchain_state_channel_v1:total_dcs(SC),
+            DCLeft = blockchain_state_channel_v1:amount(SC) - TotalDC,
+            case DCLeft of
+                0 -> {OpenedCount, OverspentCount + 1};
+                _ -> {OpenedCount + 1, OverspentCount}
+            end
+        end,
+        {0, 0},
+        maps:values(blockchain_state_channels_server:get_all())
+    ).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -88,6 +115,9 @@ init(Args) ->
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
+handle_call(force_open, _From, State) ->
+    {ok, ID} = open_next_state_channel(1, State),
+    {reply, ID, State#state{in_flight = [ID]}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -243,44 +273,44 @@ schedule_next_tick() ->
 
 -spec maybe_start_state_channel(state()) -> state().
 maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
-    OpenedCount = opened_sc_count(),
+    {OpenedCount, OverspentCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = 0,
 
     HaveHeadroom = ActiveCount < OpenedCount,
-    UnderLimit = OpenedCount + InFlightCount < Limit,
+    UnderLimit = OpenedCount + OverspentCount + InFlightCount < Limit,
 
     case {HaveHeadroom, UnderLimit} of
         {false, false} ->
             %% All open channels are active, nothing we can do about it until some close
             lager:warning(
-                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
-                [ActiveCount, OpenedCount, InFlightCount, Limit]
+                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
+                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
             ),
             State;
         {false, true} ->
             %% All open channels are active, getting a little tight
             lager:info(
-                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] all active, opening more",
-                [ActiveCount, OpenedCount, InFlightCount, Limit]
+                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] all active, opening more",
+                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
             ),
             {ok, ID} = open_next_state_channel(OpenedCount, State),
             State#state{in_flight = [ID]};
         {true, _} ->
             %% ActiveCount is less than OpenedCount, where we want to be
             lager:info(
-                "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] standing by...",
-                [ActiveCount, OpenedCount, InFlightCount, Limit]
+                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] standing by...",
+                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
             ),
             State
     end;
 maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
-    OpenedCount = opened_sc_count(),
+    {OpenedCount, _OverspentCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(
-        "[active: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
-        [ActiveCount, OpenedCount, InFlightCount, Limit]
+        "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
+        [ActiveCount, OpenedCount, _OverspentCount, InFlightCount, Limit]
     ),
     State.
 
@@ -409,10 +439,6 @@ sc_expiration() ->
             Expiration = blockchain_state_channel_v1:expire_at_block(SoonestSCToExpire),
             {ok, Expiration}
     end.
-
--spec opened_sc_count() -> non_neg_integer().
-opened_sc_count() ->
-    maps:size(blockchain_state_channels_server:get_all()).
 
 -spec active_sc_count() -> non_neg_integer().
 active_sc_count() ->

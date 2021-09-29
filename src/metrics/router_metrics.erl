@@ -245,8 +245,9 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
-    OpenedCount = maps:size(blockchain_state_channels_server:get_all()),
+    {OpenedCount, OverspentCount} = router_sc_worker:counts(),
     ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
+    ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 
     ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
     ActiveCount = erlang:length(ActiveSCs),
@@ -254,10 +255,16 @@ record_state_channels() ->
 
     {TotalDCLeft, TotalActors} = lists:foldl(
         fun(ActiveSC, {DCs, Actors}) ->
+            Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
-            {DCs + DCLeft, Actors + erlang:length(Summaries)}
+            %% If SC ran out of DC we should not be counted towards active metrics
+            case DCLeft of
+                0 ->
+                    {DCs, Actors};
+                _ ->
+                    {DCs + DCLeft, Actors + erlang:length(Summaries)}
+            end
         end,
         {0, 0},
         ActiveSCs

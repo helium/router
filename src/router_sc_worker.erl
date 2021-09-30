@@ -217,7 +217,7 @@ handle_info(?SC_TICK, #state{is_active = true} = State) ->
     Tref = schedule_next_tick(),
     {noreply, NewState#state{tref = Tref}};
 handle_info({sc_open_success, ID}, #state{is_active = true, in_flight = InFlight} = State) ->
-    lager:debug("sc_open_success for txn id ~p", [ID]),
+    lager:info("sc_open_success for txn id ~p", [ID]),
     {noreply, State#state{in_flight = lists:delete(ID, InFlight)}};
 handle_info({sc_open_failure, Error, ID}, #state{is_active = true, in_flight = InFlight} = State) ->
     lager:warning("sc_open_failure ~p for txn id ~p", [Error, ID]),

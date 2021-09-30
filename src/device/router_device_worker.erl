@@ -1026,7 +1026,7 @@ handle_info(
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
             catch blockchain_state_channel_common:send_response(
-                DownlinkPacket#frame_cache.pid,
+                Pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
             ok = router_metrics:packet_trip_observe_end(

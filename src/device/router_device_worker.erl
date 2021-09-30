@@ -1026,7 +1026,7 @@ handle_info(
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
             catch blockchain_state_channel_common:send_response(
-                Pid,
+                DownlinkPacket#frame_cache.pid,
                 blockchain_state_channel_response_v1:new(true, DownlinkPacket)
             ),
             ok = router_metrics:packet_trip_observe_end(
@@ -1612,7 +1612,7 @@ handle_frame_timeout(
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
-            } = lorawan_mac_region:rx1_window(
+            } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
                 0,
                 0,
@@ -1710,7 +1710,7 @@ handle_frame_timeout(
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx1_window(
+    } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
         0,
         0,

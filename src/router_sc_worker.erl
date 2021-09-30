@@ -92,16 +92,19 @@ force_open() ->
 counts() ->
     lists:foldl(
         fun(SC, {OpenedCount, OverspentCount, GettingCloseCount}) ->
+            Closed = blockchain_state_channel_v1:state(SC) == closed,
             Used = blockchain_state_channel_v1:total_dcs(SC),
             Max = blockchain_state_channel_v1:amount(SC),
             DCLeft = Max - Used,
             GettingClose = (100 * Used) / Max > ?GETTING_CLOSE_PERCENTAGE,
-            case {DCLeft, GettingClose} of
-                {0, _} ->
+            case {Closed, DCLeft, GettingClose} of
+                {true, _, _} ->
+                    {OpenedCount, OverspentCount, GettingCloseCount};
+                {_, 0, _} ->
                     {OpenedCount, OverspentCount + 1, GettingCloseCount};
-                {_, true} ->
+                {_, _, true} ->
                     {OpenedCount + 1, OverspentCount, GettingCloseCount + 1};
-                {_, false} ->
+                {_, _, false} ->
                     {OpenedCount + 1, OverspentCount, GettingCloseCount}
             end
         end,

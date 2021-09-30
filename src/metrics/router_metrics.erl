@@ -245,7 +245,7 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels() -> ok.
 record_state_channels() ->
-    {OpenedCount, OverspentCount} = router_sc_worker:counts(),
+    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(),
     ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
     ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 

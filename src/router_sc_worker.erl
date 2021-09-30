@@ -51,6 +51,8 @@
 % 15 seconds in millis
 -define(SC_TICK_INTERVAL, 15000).
 -define(SC_TICK, '__router_sc_tick').
+%% Percentqage a which we count the SC as getting close to full
+-define(GETTING_CLOSE_PERCENTAGE, 80).
 
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
@@ -81,22 +83,29 @@ force_open() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% This function returns: {OpenedCount, OverspentCount}
+%% This function returns: {OpenedCount, OverspentCount, GettingCloseCount}
 %% to get more accurate count of useful state channels
+%% OpenedCount includes the GettingCloseCount
 %% @end
 %%--------------------------------------------------------------------
--spec counts() -> {non_neg_integer(), non_neg_integer()}.
+-spec counts() -> {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
 counts() ->
     lists:foldl(
-        fun(SC, {OpenedCount, OverspentCount}) ->
-            TotalDC = blockchain_state_channel_v1:total_dcs(SC),
-            DCLeft = blockchain_state_channel_v1:amount(SC) - TotalDC,
-            case DCLeft of
-                0 -> {OpenedCount, OverspentCount + 1};
-                _ -> {OpenedCount + 1, OverspentCount}
+        fun(SC, {OpenedCount, OverspentCount, GettingCloseCount}) ->
+            Used = blockchain_state_channel_v1:total_dcs(SC),
+            Max = blockchain_state_channel_v1:amount(SC),
+            DCLeft = Max - Used,
+            GettingClose = (100 * Used) / Max > ?GETTING_CLOSE_PERCENTAGE,
+            case {DCLeft, GettingClose} of
+                {0, _} ->
+                    {OpenedCount, OverspentCount + 1, GettingCloseCount};
+                {_, true} ->
+                    {OpenedCount + 1, OverspentCount, GettingCloseCount + 1};
+                {_, false} ->
+                    {OpenedCount + 1, OverspentCount, GettingCloseCount}
             end
         end,
-        {0, 0},
+        {0, 0, 0},
         maps:values(blockchain_state_channels_server:get_all())
     ).
 
@@ -273,44 +282,77 @@ schedule_next_tick() ->
 
 -spec maybe_start_state_channel(state()) -> state().
 maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
-    {OpenedCount, OverspentCount} = ?MODULE:counts(),
+    {OpenedCount, OverspentCount, GettingCloseCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = 0,
+    LeftOverOpened = OpenedCount - ActiveCount - GettingCloseCount,
 
-    HaveHeadroom = ActiveCount < OpenedCount,
+    HaveHeadroom = LeftOverOpened > 0,
     UnderLimit = OpenedCount + OverspentCount + InFlightCount < Limit,
 
     case {HaveHeadroom, UnderLimit} of
         {false, false} ->
             %% All open channels are active, nothing we can do about it until some close
             lager:warning(
-                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
-                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
+                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
+                [
+                    ActiveCount,
+                    OverspentCount,
+                    ?GETTING_CLOSE_PERCENTAGE,
+                    GettingCloseCount,
+                    OpenedCount,
+                    InFlightCount,
+                    Limit
+                ]
             ),
             State;
         {false, true} ->
             %% All open channels are active, getting a little tight
             lager:info(
-                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] all active, opening more",
-                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
+                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] all active, opening more",
+                [
+                    ActiveCount,
+                    OverspentCount,
+                    ?GETTING_CLOSE_PERCENTAGE,
+                    GettingCloseCount,
+                    OpenedCount,
+                    InFlightCount,
+                    Limit
+                ]
             ),
             {ok, ID} = open_next_state_channel(OpenedCount, State),
             State#state{in_flight = [ID]};
         {true, _} ->
-            %% ActiveCount is less than OpenedCount, where we want to be
+            %% if we have LeftOverOpened > 0, where we want to be
             lager:info(
-                "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] standing by...",
-                [ActiveCount, OpenedCount, OverspentCount, InFlightCount, Limit]
+                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] standing by...",
+                [
+                    ActiveCount,
+                    OverspentCount,
+                    ?GETTING_CLOSE_PERCENTAGE,
+                    GettingCloseCount,
+                    OpenedCount,
+                    InFlightCount,
+                    Limit
+                ]
             ),
             State
     end;
 maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
-    {OpenedCount, _OverspentCount} = ?MODULE:counts(),
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(
-        "[active: ~p] [opened: ~p] [overspent: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
-        [ActiveCount, OpenedCount, _OverspentCount, InFlightCount, Limit]
+        "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
+        [
+            ActiveCount,
+            _OverspentCount,
+            ?GETTING_CLOSE_PERCENTAGE,
+            _GettingCloseCount,
+            OpenedCount,
+            InFlightCount,
+            Limit
+        ]
     ),
     State.
 

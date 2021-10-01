@@ -256,7 +256,8 @@ record_dc_balance(PubkeyBin) ->
 
 -spec record_state_channels(Chain :: blockchain:blockchain()) -> ok.
 record_state_channels(Chain) ->
-    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Chain),
+    {ok, Height} = blockchain:height(Chain),
+    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Height),
     ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
     ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 

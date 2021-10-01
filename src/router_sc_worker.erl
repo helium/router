@@ -105,7 +105,7 @@ counts(Height) ->
             ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
             ExpireIn = ExpireAtBlock - Height,
             GettingClose =
-                (100 * Used) / Max > ?GETTING_CLOSE_DC andalso ExpireIn < ?GETTING_CLOSE_EXPIRE,
+                (100 * Used) / Max > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
             case {Closed, DCLeft, GettingClose} of
                 {true, _, _} ->
                     {OpenedCount, OverspentCount, GettingCloseCount};

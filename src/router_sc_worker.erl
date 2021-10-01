@@ -28,7 +28,7 @@
     start_link/1,
     is_active/0,
     force_open/0,
-    counts/0
+    counts/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -52,12 +52,17 @@
 -define(SC_TICK_INTERVAL, 15000).
 -define(SC_TICK, '__router_sc_tick').
 %% Percentqage a which we count the SC as getting close to full
--define(GETTING_CLOSE_PERCENTAGE, 80).
+
+%% in %
+-define(GETTING_CLOSE_DC, 80).
+%% in block
+-define(GETTING_CLOSE_EXPIRE, 25).
 
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
     sig_fun :: libp2p_crypto:sig_fun(),
     chain = undefined :: undefined | blockchain:blockchain(),
+    height = undefined :: undefined | non_neg_integer(),
     oui = undefined :: undefined | non_neg_integer(),
     is_active = false :: boolean(),
     tref = undefined :: undefined | reference(),
@@ -88,15 +93,19 @@ force_open() ->
 %% OpenedCount includes the GettingCloseCount
 %% @end
 %%--------------------------------------------------------------------
--spec counts() -> {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
-counts() ->
+-spec counts(Height :: non_neg_integer()) ->
+    {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
+counts(Height) ->
     lists:foldl(
         fun(SC, {OpenedCount, OverspentCount, GettingCloseCount}) ->
             Closed = blockchain_state_channel_v1:state(SC) == closed,
             Used = blockchain_state_channel_v1:total_dcs(SC),
             Max = blockchain_state_channel_v1:amount(SC),
             DCLeft = Max - Used,
-            GettingClose = (100 * Used) / Max > ?GETTING_CLOSE_PERCENTAGE,
+            ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
+            ExpireIn = ExpireAtBlock - Height,
+            GettingClose =
+                (100 * Used) / Max > ?GETTING_CLOSE_DC andalso ExpireIn < ?GETTING_CLOSE_EXPIRE,
             case {Closed, DCLeft, GettingClose} of
                 {true, _, _} ->
                     {OpenedCount, OverspentCount, GettingCloseCount};
@@ -127,9 +136,9 @@ init(Args) ->
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
-handle_call(force_open, _From, State) ->
+handle_call(force_open, _From, #state{in_flight = InFlight} = State) ->
     {ok, ID} = open_next_state_channel(1, State),
-    {reply, ID, State#state{in_flight = [ID]}};
+    {reply, ID, State#state{in_flight = [ID | InFlight]}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -145,11 +154,12 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
         Chain ->
+            {ok, Height} = blockchain:height(Chain),
             Limit = max_sc_open(Chain),
             case router_utils:get_oui() of
                 undefined ->
                     lager:warning("OUI undefined"),
-                    {noreply, State#state{chain = Chain, open_sc_limit = Limit}};
+                    {noreply, State#state{chain = Chain, height = Height, open_sc_limit = Limit}};
                 OUI ->
                     %% We have a chain and an oui on chain
                     %% Only activate if we're on sc_version=2
@@ -157,6 +167,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                         {ok, 2} ->
                             {noreply, State#state{
                                 chain = Chain,
+                                height = Height,
                                 oui = OUI,
                                 open_sc_limit = Limit,
                                 is_active = true
@@ -164,6 +175,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
                         _ ->
                             {noreply, State#state{
                                 chain = Chain,
+                                height = Height,
                                 oui = OUI,
                                 open_sc_limit = Limit,
                                 is_active = false
@@ -193,13 +205,24 @@ handle_info(
             lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
+            {ok, Height} = blockchain:height(Chain),
             Limit = max_sc_open(Chain),
             %% Only activate if we're on sc_version=2
             case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
                 {ok, 2} ->
-                    {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = true}};
+                    {noreply, State#state{
+                        height = Height,
+                        oui = OUI,
+                        open_sc_limit = Limit,
+                        is_active = true
+                    }};
                 _ ->
-                    {noreply, State#state{oui = OUI, open_sc_limit = Limit, is_active = false}}
+                    {noreply, State#state{
+                        height = Height,
+                        oui = OUI,
+                        open_sc_limit = Limit,
+                        is_active = false
+                    }}
             end
     end;
 handle_info(
@@ -284,8 +307,8 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
-    {OpenedCount, OverspentCount, GettingCloseCount} = ?MODULE:counts(),
+maybe_start_state_channel(#state{height = Height, in_flight = [], open_sc_limit = Limit} = State) ->
+    {OpenedCount, OverspentCount, GettingCloseCount} = ?MODULE:counts(Height),
     ActiveCount = active_sc_count(),
     InFlightCount = 0,
     LeftOverOpened = OpenedCount - ActiveCount - GettingCloseCount,
@@ -297,11 +320,10 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
         {false, false} ->
             %% All open channels are active, nothing we can do about it until some close
             lager:warning(
-                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
+                "[active: ~p] [overspent: ~p] [getting close: ~p] [opened: ~p] [in flight ~p] [max: ~p] limit reached, cant open more",
                 [
                     ActiveCount,
                     OverspentCount,
-                    ?GETTING_CLOSE_PERCENTAGE,
                     GettingCloseCount,
                     OpenedCount,
                     InFlightCount,
@@ -312,11 +334,10 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
         {false, true} ->
             %% All open channels are active, getting a little tight
             lager:info(
-                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] all active, opening more",
+                "[active: ~p] [overspent: ~p] [getting close: ~p] [opened: ~p] [in flight ~p] [max: ~p] all active, opening more",
                 [
                     ActiveCount,
                     OverspentCount,
-                    ?GETTING_CLOSE_PERCENTAGE,
                     GettingCloseCount,
                     OpenedCount,
                     InFlightCount,
@@ -328,11 +349,10 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
         {true, _} ->
             %% if we have LeftOverOpened > 0, where we want to be
             lager:info(
-                "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] standing by...",
+                "[active: ~p] [overspent: ~p] [getting close: ~p] [opened: ~p] [in flight ~p] [max: ~p] standing by...",
                 [
                     ActiveCount,
                     OverspentCount,
-                    ?GETTING_CLOSE_PERCENTAGE,
                     GettingCloseCount,
                     OpenedCount,
                     InFlightCount,
@@ -341,16 +361,17 @@ maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State)
             ),
             State
     end;
-maybe_start_state_channel(#state{in_flight = InFlight, open_sc_limit = Limit} = State) ->
-    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(),
+maybe_start_state_channel(
+    #state{chain = Chain, in_flight = InFlight, open_sc_limit = Limit} = State
+) ->
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Chain),
     ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(
-        "[active: ~p] [overspent: ~p] [more than ~p%: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
+        "[active: ~p] [overspent: ~p] [getting close: ~p] [opened: ~p] [in flight ~p] [max: ~p] we got a txn in flight lets wait",
         [
             ActiveCount,
             _OverspentCount,
-            ?GETTING_CLOSE_PERCENTAGE,
             _GettingCloseCount,
             OpenedCount,
             InFlightCount,

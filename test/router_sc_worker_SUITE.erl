@@ -18,6 +18,7 @@
     pubkey :: libp2p_crypto:public_key(),
     sig_fun :: libp2p_crypto:sig_fun(),
     chain = undefined :: undefined | blockchain:blockchain(),
+    height = undefined :: undefined | non_neg_integer(),
     oui = undefined :: undefined | non_neg_integer(),
     is_active = false :: boolean(),
     tref = undefined :: undefined | reference(),

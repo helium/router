@@ -38,6 +38,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+    chain = undefined :: undefined | blockchain:blockchain(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     routing_packet_duration :: map(),
     packet_duration :: map()
@@ -138,7 +139,7 @@ init(Args) ->
     ),
     {ok, PubKey, _, _} = blockchain_swarm:keys(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    _ = schedule_next_tick(),
+    erlang:send_after(500, self(), post_init),
     {ok, #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
@@ -189,9 +190,19 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{chain = undefined} = State) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            _ = schedule_next_tick(),
+            {noreply, State#state{chain = Chain}}
+    end;
 handle_info(
     ?METRICS_TICK,
     #state{
+        chain = Chain,
         pubkey_bin = PubkeyBin,
         routing_packet_duration = RPD,
         packet_duration = PD
@@ -201,7 +212,7 @@ handle_info(
     erlang:spawn(
         fun() ->
             ok = record_dc_balance(PubkeyBin),
-            ok = record_state_channels(),
+            ok = record_state_channels(Chain),
             ok = record_chain_blocks(),
             ok = record_vm_stats(),
             ok = record_ets(),
@@ -243,9 +254,9 @@ record_dc_balance(PubkeyBin) ->
             ok = notify(?METRICS_DC, Balance)
     end.
 
--spec record_state_channels() -> ok.
-record_state_channels() ->
-    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(),
+-spec record_state_channels(Chain :: blockchain:blockchain()) -> ok.
+record_state_channels(Chain) ->
+    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Chain),
     ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
     ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 

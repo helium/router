@@ -405,14 +405,10 @@ make_response_report({ok, Response}, Channel) ->
 -spec connect(URI :: binary(), DeviceID :: binary(), Name :: binary()) ->
     {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
-    Opts = [
-        {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URI, Opts) of
-        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when
-            Scheme == mqtt orelse
-                Scheme == mqtts
+    case uri_string:parse(URI) of
+        #{scheme := Scheme, userinfo := UserInfo, host := Host, port := Port} when
+              Scheme == mqtt orelse
+              Scheme == mqtts
         ->
             %% An optional userinfo subcomponent that may consist of a user name
             %% and an optional password preceded by a colon (:), followed by an

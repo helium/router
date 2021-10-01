@@ -1,6 +1,11 @@
-FROM heliumsystems/builder-erlang:1
+FROM heliumsystems/builder-erlang:2
 
 WORKDIR /opt/router
+
+# FIXME: do NOT merge with this _checkouts hack!
+# See https://github.com/msantos/inert/pull/8
+# which adds #include <stdint.h> to inert/c_src/inert_drv.c
+ADD _checkouts/ _checkouts/
 
 ADD rebar3 rebar3
 ADD rebar.config rebar.config

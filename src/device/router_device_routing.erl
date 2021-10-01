@@ -887,7 +887,7 @@ get_device(DevEUI, AppEUI, Msg, MIC, Chain) ->
 find_device(_Msg, _MIC, [], _Chain) ->
     {error, not_found};
 find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
-    case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
+    case crypto:macN(cmac, crypto:alias(aes_cbc128), AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
@@ -1099,7 +1099,7 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
 brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
     DeviceID = router_device:id(Device),
     try
-        case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
+        case crypto:macN(cmac, crypto:alias(aes_cbc128), NwkSKey, B0, 4) of
             MIC ->
                 true;
             _ ->
@@ -1107,7 +1107,7 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
                 case router_device:fcnt(Device) > ?MAX_16_BITS - 100 of
                     true ->
                         B0_32 = b0_from_payload(Payload, 32),
-                        case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
+                        case crypto:macN(cmac, crypto:alias(aes_cbc128), NwkSKey, B0_32, 4) of
                             MIC ->
                                 lager:warning(
                                     [{device_id, DeviceID}],

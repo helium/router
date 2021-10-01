@@ -189,7 +189,7 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
             FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, FOptsBin:FOptsLen/binary,
             Port:8/integer, Data/binary>>,
     B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
-    MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
+    MIC = crypto:macN(cmac, crypto:alias(aes_cbc128), NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
     <<Payload0/binary, MIC:4/binary>>.
 
 -spec frame_timeout() -> non_neg_integer().

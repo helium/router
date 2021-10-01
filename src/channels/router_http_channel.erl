@@ -157,15 +157,12 @@ make_http_req(Method, URL, Headers, Payload) ->
 check_url(_URL, false) ->
     ok;
 check_url(URL, true) ->
-    Opts = [
-        {scheme_defaults, [{http, 80}, {https, 443}]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URL, Opts) of
+    case uri_string:parse(URL) of
         {error, _Reason} ->
             lager:info("got bad URL ~p ~p", [URL, _Reason]),
             {error, bad_url};
-        {ok, {_Scheme, _UserInfo, BinHost, _Port, _Path, _Query}} ->
+        #{scheme := _Scheme, userinfo := _UserInfo, host := BinHost,
+          port := _Port, path := _Path, query := _Query} ->
             Host = erlang:binary_to_list(BinHost),
             case is_non_local_address(Host) of
                 {error, _Reason} ->

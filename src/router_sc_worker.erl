@@ -362,9 +362,9 @@ maybe_start_state_channel(#state{height = Height, in_flight = [], open_sc_limit 
             State
     end;
 maybe_start_state_channel(
-    #state{chain = Chain, in_flight = InFlight, open_sc_limit = Limit} = State
+    #state{height = Height, in_flight = InFlight, open_sc_limit = Limit} = State
 ) ->
-    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Chain),
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Height),
     ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(

@@ -312,11 +312,11 @@ generate_mqtt_sas_token(#azure{mqtt_sas_uri = URI, policy_name = PName, policy_k
 
 -spec generate_sas_token(binary(), binary(), binary(), number()) -> binary().
 generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
-    EncodedURI = uri_string:recomose(URI),
+    EncodedURI = uri_string:recompose(URI),
     ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
     ToSign = <<EncodedURI/binary, "\n", ExpireBin/binary>>,
     Unencoded = base64:encode(crypto:mac(hmac, sha256, base64:decode(PolicyKey), ToSign)),
-    Signed = case uri_string:recomose(#{path => Unencoded}) of
+    Signed = case uri_string:recompose(#{path => Unencoded}) of
                  {error, What, Why} ->
                      lager:warning("can't URI encode: ~s ~s", [What, Why]);
                  UriEncoded -> UriEncoded

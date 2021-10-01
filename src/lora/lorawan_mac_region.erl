@@ -159,8 +159,8 @@ rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
         'EU868' ->
             if
                 % In Europe the RX Windows uses different frequencies, TX power rules and Duty cycle rules.
-                % If the signal is poor then prefer window 2 where power is higher.  See - https://github.com/helium/router/issues/423
-                RxQ#rxq.rssi > 80 -> rx2_window(Region, RxQ);
+                % If the signal is poor then prefer window 2 where TX power is higher.  See - https://github.com/helium/router/issues/423
+                RxQ#rxq.rssi < -80 -> rx2_window(Region, RxQ);
                 true -> rx1_window(Region, Delay, Offset, RxQ)
             end;
         _ ->

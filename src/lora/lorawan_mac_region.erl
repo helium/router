@@ -40,8 +40,9 @@
 
 -define(US915_MAX_DOWNLINK_SIZE, 242).
 -define(CN470_MAX_DOWNLINK_SIZE, 242).
--define(AS923_MAX_DOWNLINK_SIZE, 250).
--define(AU915_MAX_DOWNLINK_SIZE, 250).
+-define(AS923_MAX_DOWNLINK_SIZE, 242).
+-define(AU915_MAX_DOWNLINK_SIZE, 242).
+-define(EU863_MAX_DOWNLINK_SIZE, 242).
 
 -define(AS923_PAYLOAD_SIZE_MAP, #{
     0 => 59,
@@ -55,29 +56,29 @@
 }).
 
 -define(CN470_PAYLOAD_SIZE_MAP, #{
-    0 => 51,
-    1 => 51,
-    2 => 51,
-    3 => 115,
-    4 => 242,
-    5 => 242
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 230,
+    5 => 230
 }).
 
 -define(US915_PAYLOAD_SIZE_MAP, #{
-    0 => 11,
-    1 => 53,
-    2 => 125,
-    3 => 242,
-    4 => 242,
+    0 => 19,
+    1 => 61,
+    2 => 133,
+    3 => 250,
+    4 => 250,
     %% 5 => rfu,
     %% 6 => rfu,
     %% 7 => rfu,
-    8 => 53,
-    9 => 129,
-    10 => 242,
-    11 => 242,
-    12 => 242,
-    13 => 242
+    8 => 41,
+    9 => 117,
+    10 => 230,
+    11 => 230,
+    12 => 230,
+    13 => 230
 }).
 
 -define(AU915_PAYLOAD_SIZE_MAP, #{
@@ -85,18 +86,29 @@
     1 => 59,
     2 => 59,
     3 => 123,
-    4 => 250,
-    5 => 250,
-    6 => 250,
+    4 => 230,
+    5 => 230,
+    6 => 230  ,
     %% 7 => undefined,
     8 => 61,
     9 => 137,
-    10 => 250,
-    11 => 250,
-    12 => 250,
-    13 => 250
+    10 => 230,
+    11 => 230,
+    12 => 230,
+    13 => 230
     %% 14 => undefined,
     %% 15 => undefined,
+}).
+
+-define(EU863_PAYLOAD_SIZE_MAP, #{
+    0 => 59,
+    1 => 59,
+    2 => 59,
+    3 => 123,
+    4 => 230,
+    5 => 230,
+    6 => 230,
+    7 => 230
 }).
 
 %% ------------------------------------------------------------------
@@ -196,7 +208,9 @@ max_payload_size(Region, DR) ->
     case TopLevelRegion of
         'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?AS923_MAX_DOWNLINK_SIZE);
         'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?CN470_MAX_DOWNLINK_SIZE);
+        'US915' -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE);
         'AU915' -> maps:get(DR, ?AU915_PAYLOAD_SIZE_MAP, ?AU915_MAX_DOWNLINK_SIZE);
+        'EU863' -> maps:get(DR, ?EU863_PAYLOAD_SIZE_MAP, ?EU863_MAX_DOWNLINK_SIZE);
         _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
     end.
 

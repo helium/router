@@ -137,6 +137,11 @@ data_test_1(Config) ->
 
     ok.
 
+%%--------------------------------------------------------------------
+%% data_test_2
+%% Same as data_test_1 (except REGION = EU868)
+%%--------------------------------------------------------------------
+
 data_test_2(Config) ->
     #{
         pubkey_bin := PubKeyBin,
@@ -249,7 +254,15 @@ data_test_2(Config) ->
 
     ok.
 
-    data_test_3(Config) ->
+%%--------------------------------------------------------------------
+%% data_test_3
+%% Same as data_test_1
+%%   (except REGION = EU868)
+%%   (except RSSI = -135.0)
+%%   (This is intended to test rx windows 2 preference)
+%%--------------------------------------------------------------------
+
+data_test_3(Config) ->
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,

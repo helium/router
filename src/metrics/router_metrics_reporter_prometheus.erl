@@ -59,7 +59,10 @@ handle_event({data, Key, Data, _MetaData}, State) when Key == ?METRICS_WS ->
     {ok, State};
 handle_event({data, Key, Data, _MetaData}, State) when
     Key == ?METRICS_SC_OPENED_COUNT;
+    Key == ?METRICS_SC_OVERSPENT_COUNT;
     Key == ?METRICS_SC_ACTIVE_COUNT;
+    Key == ?METRICS_SC_ACTIVE_BALANCE;
+    Key == ?METRICS_SC_ACTIVE_ACTORS;
     Key == ?METRICS_DC;
     Key == ?METRICS_CHAIN_BLOCKS
 ->
@@ -68,9 +71,7 @@ handle_event({data, Key, Data, _MetaData}, State) when
 handle_event({data, Key, Data, MetaData}, State) when
     Key == ?METRICS_VM_CPU;
     Key == ?METRICS_VM_PROC_Q;
-    Key == ?METRICS_VM_ETS_MEMORY;
-    Key == ?METRICS_SC_ACTIVE_BALANCE;
-    Key == ?METRICS_SC_ACTIVE_ACTORS
+    Key == ?METRICS_VM_ETS_MEMORY
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), MetaData, Data),
     {ok, State};
@@ -102,6 +103,7 @@ terminate(_Reason, _State) ->
 -spec declare_metric(atom(), list(), string()) -> any().
 declare_metric(Key, Meta, Desc) when
     Key == ?METRICS_SC_OPENED_COUNT;
+    Key == ?METRICS_SC_OVERSPENT_COUNT;
     Key == ?METRICS_SC_ACTIVE_COUNT;
     Key == ?METRICS_SC_ACTIVE_BALANCE;
     Key == ?METRICS_SC_ACTIVE_ACTORS;

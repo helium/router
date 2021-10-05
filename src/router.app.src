@@ -17,7 +17,6 @@
         helium_proto,
         observer_cli,
         hackney,
-        e2qc,
         kvc,
         jsx,
         emqtt,

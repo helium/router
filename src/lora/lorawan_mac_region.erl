@@ -211,7 +211,7 @@ max_payload_size(Region, DR) ->
         'US915' -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE);
         'AU915' -> maps:get(DR, ?AU915_PAYLOAD_SIZE_MAP, ?AU915_MAX_DOWNLINK_SIZE);
         'EU863' -> maps:get(DR, ?EU863_PAYLOAD_SIZE_MAP, ?EU863_MAX_DOWNLINK_SIZE);
-        _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
+        _ -> maps:get(DR, ?EU868_PAYLOAD_SIZE_MAP, ?EU868_MAX_DOWNLINK_SIZE)
     end.
 
 %% ------------------------------------------------------------------

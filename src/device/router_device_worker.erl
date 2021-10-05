@@ -2144,5 +2144,6 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ACK = router_utils:mtype_to_ack(MType),
     Metadata = router_device:metadata(Device),
     ADRAllowed = maps:get(adr_allowed, Metadata, false),
+    ChannelCorrection = router_device:channel_correction(Device),
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
-    DeviceQueue =/= [] orelse ACK == 1 orelse ADR.
+    DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.

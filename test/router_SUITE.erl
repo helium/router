@@ -13,6 +13,7 @@
     join_test/1,
     us915_join_enabled_cf_list_test/1,
     us915_join_disabled_cf_list_test/1,
+    us915_link_adr_req_timing_test/1,
     adr_test/1
 ]).
 
@@ -45,6 +46,7 @@ all() ->
         join_test,
         us915_join_enabled_cf_list_test,
         us915_join_disabled_cf_list_test,
+        us915_link_adr_req_timing_test,
         adr_test
     ].
 
@@ -934,6 +936,311 @@ us915_join_disabled_cf_list_test(Config) ->
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
 
     libp2p_swarm:stop(Swarm),
+
+    ok.
+
+us915_link_adr_req_timing_test(Config) ->
+    ok = application:set_env(router, testing, false),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    DefaultFrameTimeout = timer:seconds(2),
+
+    %% ========================================================================
+    %% Sending the first packet [fcnt: 0] expecting LNS to send link_adr_req
+    %% commands with downlink.
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    {ok, #{<<"reported_at">> := UplinkReportedAt0}} = test_utils:wait_for_console_event(
+        <<"uplink">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => 0,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    {ok, #{<<"reported_at">> := DownlinkReportedAt0}} = test_utils:wait_for_console_event_sub(
+        <<"downlink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"downlink">>,
+            <<"sub_category">> => <<"downlink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 27,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW500">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"integration">> => #{
+                    <<"id">> => fun erlang:is_binary/1,
+                    <<"name">> => fun erlang:is_binary/1,
+                    <<"status">> => <<"success">>
+                },
+                <<"mac">> => [
+                    #{
+                        <<"command">> => <<"link_adr_req">>,
+                        <<"data_rate">> => fun erlang:is_integer/1,
+                        <<"tx_power">> => fun erlang:is_integer/1,
+                        <<"channel_mask">> => fun erlang:is_integer/1,
+                        <<"channel_mask_control">> => fun erlang:is_integer/1,
+                        <<"number_of_transmissions">> => fun erlang:is_integer/1
+                    },
+                    #{
+                        <<"command">> => <<"link_adr_req">>,
+                        <<"data_rate">> => fun erlang:is_integer/1,
+                        <<"tx_power">> => fun erlang:is_integer/1,
+                        <<"channel_mask">> => fun erlang:is_integer/1,
+                        <<"channel_mask_control">> => fun erlang:is_integer/1,
+                        <<"number_of_transmissions">> => fun erlang:is_integer/1
+                    }
+                ]
+            }
+        }
+    ),
+
+    Time0 = DownlinkReportedAt0 - UplinkReportedAt0,
+    ?assert(Time0 < DefaultFrameTimeout, "Downlink delivered before default timeout"),
+    ?assert(Time0 < (DefaultFrameTimeout / 3), "Downlink delivered within reasonable window"),
+
+    ok = test_utils:ignore_messages(),
+
+    %% ========================================================================
+    %% Sending the second packet [fcnt: 1] acknowledging the link_adr_req with
+    %% link_adr_ans command. Nothing should be going down to the device, so we
+    %% use the uplink_integration_req event to do our frame timeout calculation.
+    %% NOTE: The frame timeout for this frame is still much shorter than we
+    %% expect because the devices channel_correction does not get set until
+    %% after the frame acknowledging the settings has been processed.
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1,
+                #{fopts => [{link_adr_ans, 1, 1, 1}]}
+            )},
+
+    {ok, #{<<"id">> := UplinkUUID1, <<"reported_at">> := UplinkReportedAt1}} = test_utils:wait_for_console_event(
+        <<"uplink">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => 1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [
+                    #{
+                        <<"command">> => <<"link_adr_ans">>,
+                        <<"channel_mask_ack">> => 1,
+                        <<"data_rate_ack">> => 1,
+                        <<"power_ack">> => 1
+                    }
+                ],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    {ok, #{<<"reported_at">> := DownlinkReportedAt1}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_integration_req">>,
+        #{
+            <<"id">> => UplinkUUID1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_integration_req">>,
+            <<"description">> => erlang:list_to_binary(
+                io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+            ),
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"req">> => #{
+                    <<"method">> => <<"POST">>,
+                    <<"url">> => <<?CONSOLE_URL/binary, "/channel">>,
+                    <<"body">> => fun erlang:is_binary/1,
+                    <<"headers">> => fun erlang:is_map/1,
+                    <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
+                },
+                <<"integration">> => #{
+                    <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                    <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                    <<"status">> => <<"success">>
+                }
+            }
+        }
+    ),
+
+    Time1 = DownlinkReportedAt1 - UplinkReportedAt1,
+    ?assert(
+        Time1 < DefaultFrameTimeout,
+        "No downlink to be sent, adr not acknowledged, still short window"
+    ),
+
+    ok = test_utils:ignore_messages(),
+
+    %% ========================================================================
+    %% Sending the third packet [fcnt: 2], just a basic packet. Nothing is going
+    %% down the device, so we use the uplink_integration_req event to do our
+    %% frame timeout calculation. By this time the device has recognized that
+    %% its channels haven been corrected, and it should use a longer frame
+    %% timeout to increase our chances of multi-buy packets.
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                2
+            )},
+
+    {ok, #{<<"id">> := UplinkUUID2, <<"reported_at">> := UplinkReportedAt2}} = test_utils:wait_for_console_event(
+        <<"uplink">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => 2,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    {ok, #{<<"reported_at">> := DownlinkReportedAt2}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_integration_req">>,
+        #{
+            <<"id">> => UplinkUUID2,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_integration_req">>,
+            <<"description">> => erlang:list_to_binary(
+                io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
+            ),
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"req">> => #{
+                    <<"method">> => <<"POST">>,
+                    <<"url">> => <<?CONSOLE_URL/binary, "/channel">>,
+                    <<"body">> => fun erlang:is_binary/1,
+                    <<"headers">> => fun erlang:is_map/1,
+                    <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
+                },
+                <<"integration">> => #{
+                    <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
+                    <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
+                    <<"status">> => <<"success">>
+                }
+            }
+        }
+    ),
+
+    Time2 = DownlinkReportedAt2 - UplinkReportedAt2,
+    ?assert(
+        DefaultFrameTimeout < Time2,
+        "No downlink content waiting to be sent, waited for longer window"
+    ),
 
     ok.
 

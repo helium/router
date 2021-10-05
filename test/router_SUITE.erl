@@ -1162,7 +1162,7 @@ us915_link_adr_req_timing_test(Config) ->
     %% Sending the third packet [fcnt: 2], just a basic packet. Nothing is going
     %% down the device, so we use the uplink_integration_req event to do our
     %% frame timeout calculation. By this time the device has recognized that
-    %% it's channels haven been corrected, and it should use a longer frame
+    %% its channels haven been corrected, and it should use a longer frame
     %% timeout to increase our chances of multi-buy packets.
 
     Stream !

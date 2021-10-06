@@ -15,6 +15,7 @@
     join2_window/2,
     rx1_window/4,
     rx2_window/2,
+    rx1_or_rx2_window/4,
     set_channels/3,
     max_uplink_snr/2,
     max_downlink_snr/3,
@@ -150,6 +151,21 @@ rx2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
     tx_window(?FUNCTION_NAME, RxQ, TxQ).
+
+-spec rx1_or_rx2_window(atom(), number(), number(), #rxq{}) -> #txq{}.
+rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
+    TopLevelRegion = top_level_region(Region),
+    case TopLevelRegion of
+        'EU868' ->
+            if
+                % In Europe the RX Windows uses different frequencies, TX power rules and Duty cycle rules.
+                % If the signal is poor then prefer window 2 where TX power is higher.  See - https://github.com/helium/router/issues/423
+                RxQ#rxq.rssi < -80 -> rx2_window(Region, RxQ);
+                true -> rx1_window(Region, Delay, Offset, RxQ)
+            end;
+        _ ->
+            rx1_window(Region, Delay, Offset, RxQ)
+    end.
 
 %% ------------------------------------------------------------------
 %% Region Wrapped Helper Functions

@@ -1612,7 +1612,7 @@ handle_frame_timeout(
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
-            } = lorawan_mac_region:rx1_window(
+            } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
                 0,
                 0,
@@ -1710,7 +1710,7 @@ handle_frame_timeout(
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx1_window(
+    } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
         0,
         0,

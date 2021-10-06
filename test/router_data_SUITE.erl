@@ -59,7 +59,7 @@ data_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
 

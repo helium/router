@@ -214,7 +214,7 @@ lw_join_test(Config) ->
     end,
 
     %% Check that device is in cache now
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 

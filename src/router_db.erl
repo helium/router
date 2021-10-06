@@ -13,7 +13,8 @@
 -export([
     start_link/1,
     get/0,
-    get_xor_filter_devices/0
+    get_xor_filter_devices/0,
+    get_devices/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -51,6 +52,10 @@ get() ->
 get_xor_filter_devices() ->
     gen_server:call(?SERVER, get_xor_filter_devices).
 
+-spec get_devices() -> {ok, rocksdb:db_handle(), rocksdb:cf_handle()}.
+get_devices() ->
+    gen_server:call(?SERVER, get_devices).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -64,6 +69,9 @@ handle_call(get, _From, #state{db = DB, cfs = CFs} = State) ->
     {reply, {ok, DB, [DefaultCF, DevicesCF]}, State};
 handle_call(get_xor_filter_devices, _From, #state{db = DB, cfs = CFs} = State) ->
     CF = maps:get(xor_filter_devices, CFs),
+    {reply, {ok, DB, CF}, State};
+handle_call(get_devices, _From, #state{db = DB, cfs = CFs} = State) ->
+    CF = maps:get(devices, CFs),
     {reply, {ok, DB, CF}, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

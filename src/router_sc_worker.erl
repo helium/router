@@ -82,6 +82,7 @@ start_link(Args) ->
 is_active() ->
     gen_server:call(?SERVER, is_active).
 
+%% TODO: Fix force open nonce
 -spec force_open() -> blockchain_txn_state_channel_open_v1:id().
 force_open() ->
     gen_server:call(?SERVER, force_open).
@@ -385,8 +386,9 @@ maybe_start_state_channel(
 open_next_state_channel(NumExistingSCs, #state{
     pubkey = PubKey,
     sig_fun = SigFun,
+    chain = Chain,
     oui = OUI,
-    chain = Chain
+    in_flight = InFlight
 }) ->
     Ledger = blockchain:ledger(Chain),
     {ok, ChainHeight} = blockchain:height(Chain),
@@ -403,7 +405,7 @@ open_next_state_channel(NumExistingSCs, #state{
                     (get_sc_buffer() * NumExistingSCs)
         end,
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    Nonce = get_nonce(PubkeyBin, Ledger),
+    Nonce = get_nonce(PubkeyBin, Ledger) + erlang:length(InFlight),
     Id = create_and_send_sc_open_txn(
         PubkeyBin,
         SigFun,

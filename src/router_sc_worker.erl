@@ -98,19 +98,19 @@ force_open() ->
     {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
 counts(Height) ->
     lists:foldl(
-        fun(SC, {OpenedCount, OverspentCount, GettingCloseCount}) ->
+        fun({SC, SCState, _Pid}, {OpenedCount, OverspentCount, GettingCloseCount}) ->
             Closed = blockchain_state_channel_v1:state(SC) == closed,
+            Overspent = SCState == overspent,
             Used = blockchain_state_channel_v1:total_dcs(SC),
             Max = blockchain_state_channel_v1:amount(SC),
-            DCLeft = Max - Used,
             ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
             ExpireIn = ExpireAtBlock - Height,
             GettingClose =
                 (100 * Used) / Max > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
-            case {Closed, DCLeft, GettingClose} of
+            case {Closed, Overspent, GettingClose} of
                 {true, _, _} ->
                     {OpenedCount, OverspentCount, GettingCloseCount};
-                {_, 0, _} ->
+                {_, true, _} ->
                     {OpenedCount, OverspentCount + 1, GettingCloseCount};
                 {_, _, true} ->
                     {OpenedCount + 1, OverspentCount, GettingCloseCount + 1};
@@ -496,9 +496,9 @@ sc_expiration() ->
         [] ->
             {error, no_opened_sc};
         SCs ->
-            [SoonestSCToExpire | _] =
+            [{SoonestSCToExpire, _, _} | _] =
                 lists:sort(
-                    fun(SCA, SCB) ->
+                    fun({SCA, _, _}, {SCB, _, _}) ->
                         blockchain_state_channel_v1:expire_at_block(SCA) <
                             blockchain_state_channel_v1:expire_at_block(SCB)
                     end,

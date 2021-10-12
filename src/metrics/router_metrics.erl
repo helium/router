@@ -38,6 +38,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+    chain = undefined :: undefined | blockchain:blockchain(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     routing_packet_duration :: map(),
     packet_duration :: map()
@@ -138,7 +139,7 @@ init(Args) ->
     ),
     {ok, PubKey, _, _} = blockchain_swarm:keys(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    _ = schedule_next_tick(),
+    erlang:send_after(500, self(), post_init),
     {ok, #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
@@ -189,9 +190,19 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{chain = undefined} = State) ->
+    case blockchain_worker:blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            _ = schedule_next_tick(),
+            {noreply, State#state{chain = Chain}}
+    end;
 handle_info(
     ?METRICS_TICK,
     #state{
+        chain = Chain,
         pubkey_bin = PubkeyBin,
         routing_packet_duration = RPD,
         packet_duration = PD
@@ -201,7 +212,7 @@ handle_info(
     erlang:spawn(
         fun() ->
             ok = record_dc_balance(PubkeyBin),
-            ok = record_state_channels(),
+            ok = record_state_channels(Chain),
             ok = record_chain_blocks(),
             ok = record_vm_stats(),
             ok = record_ets(),
@@ -243,62 +254,35 @@ record_dc_balance(PubkeyBin) ->
             ok = notify(?METRICS_DC, Balance)
     end.
 
--spec record_state_channels() -> ok.
-record_state_channels() ->
-    SCs = blockchain_state_channels_server:state_channels(),
-    OpenedSCs = maps:filter(
-        fun(_ID, {SC, _}) ->
-            blockchain_state_channel_v1:state(SC) == open andalso
-                blockchain_state_channel_v1:total_dcs(SC) < blockchain_state_channel_v1:amount(SC)
-        end,
-        SCs
-    ),
-    ok = notify(?METRICS_SC_OPENED_COUNT, maps:size(OpenedSCs)),
-    ActiveSCs = blockchain_state_channels_server:active_scs(),
+-spec record_state_channels(Chain :: blockchain:blockchain()) -> ok.
+record_state_channels(Chain) ->
+    {ok, Height} = blockchain:height(Chain),
+    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Height),
+    ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
+    ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
+
+    ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
     ActiveCount = erlang:length(ActiveSCs),
     ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
-    lists:foreach(
-        fun({_I, ActiveSC}) ->
-            ID = blockchain_utils:addr2name(blockchain_state_channel_v1:id(ActiveSC)),
+
+    {TotalDCLeft, TotalActors} = lists:foldl(
+        fun(ActiveSC, {DCs, Actors}) ->
+            Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
             TotalDC = blockchain_state_channel_v1:total_dcs(ActiveSC),
             DCLeft = blockchain_state_channel_v1:amount(ActiveSC) - TotalDC,
-            ok = notify(?METRICS_SC_ACTIVE_BALANCE, DCLeft, [ID]),
-            Summaries = blockchain_state_channel_v1:summaries(ActiveSC),
-            ok = notify(?METRICS_SC_ACTIVE_ACTORS, erlang:length(Summaries), [ID])
-        end,
-        lists:zip(lists:seq(1, ActiveCount), ActiveSCs)
-    ),
-    ok = cleanup_old_active_scs(ActiveSCs),
-    ok.
-
--spec cleanup_old_active_scs(ActiveSCs :: [blockchain_state_channel_v1:state_channel()]) -> ok.
-cleanup_old_active_scs(ActiveSCs) ->
-    ActiveSCNames = [
-        blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC))
-        || SC <- ActiveSCs
-    ],
-    lists:foreach(
-        fun({[{"name", Name} | _], _V}) ->
-            case lists:member(Name, ActiveSCNames) of
-                true ->
-                    ok;
-                false ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE), [Name])
+            %% If SC ran out of DC we should not be counted towards active metrics
+            case DCLeft of
+                0 ->
+                    {DCs, Actors};
+                _ ->
+                    {DCs + DCLeft, Actors + erlang:length(Summaries)}
             end
         end,
-        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_BALANCE))
+        {0, 0},
+        ActiveSCs
     ),
-    lists:foreach(
-        fun({[{"name", Name} | _], _V}) ->
-            case lists:member(Name, ActiveSCNames) of
-                true ->
-                    ok;
-                false ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS), [Name])
-            end
-        end,
-        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_SC_ACTIVE_ACTORS))
-    ),
+    ok = notify(?METRICS_SC_ACTIVE_BALANCE, TotalDCLeft),
+    ok = notify(?METRICS_SC_ACTIVE_ACTORS, TotalActors),
     ok.
 
 -spec record_chain_blocks() -> ok.

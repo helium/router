@@ -78,7 +78,7 @@ device_worker_late_packet_double_charge_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     WorkerId = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device} = router_device:get_by_id(DB, CF, WorkerId),
 
@@ -339,7 +339,7 @@ device_update_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Check that device is in cache now
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     DeviceID = ?CONSOLE_DEVICE_ID,
     ?assertMatch({ok, _}, router_device:get_by_id(DB, CF, DeviceID)),
 

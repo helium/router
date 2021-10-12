@@ -6,6 +6,7 @@
 
 -define(METRICS_DC, router_dc_balance).
 -define(METRICS_SC_OPENED_COUNT, router_state_channel_opened_count).
+-define(METRICS_SC_OVERSPENT_COUNT, router_state_channel_overspent_count).
 -define(METRICS_SC_ACTIVE_COUNT, router_state_channel_active_count).
 -define(METRICS_SC_ACTIVE_BALANCE, router_state_channel_active_balance).
 -define(METRICS_SC_ACTIVE_ACTORS, router_state_channel_active_actors).
@@ -25,10 +26,11 @@
 
 -define(METRICS, [
     {?METRICS_DC, [], "Active State Channel balance"},
-    {?METRICS_SC_OPENED_COUNT, [], "Opened State Channel count"},
-    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channel count"},
-    {?METRICS_SC_ACTIVE_BALANCE, [name], "Active State Channel balance"},
-    {?METRICS_SC_ACTIVE_ACTORS, [name], "Active State Channel actors"},
+    {?METRICS_SC_OPENED_COUNT, [], "Opened State Channels count"},
+    {?METRICS_SC_OVERSPENT_COUNT, [], "Overspent State Channels count"},
+    {?METRICS_SC_ACTIVE_COUNT, [], "Active State Channels count"},
+    {?METRICS_SC_ACTIVE_BALANCE, [], "Active State Channels balance"},
+    {?METRICS_SC_ACTIVE_ACTORS, [], "Active State Channels actors"},
     {?METRICS_ROUTING_OFFER, [type, status, reason], "Routing Offer duration"},
     {?METRICS_ROUTING_PACKET, [type, status, reason, downlink], "Routing Packet duration"},
     {?METRICS_PACKET_TRIP, [type, downlink], "Packet round trip duration"},

@@ -316,13 +316,13 @@ handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
         case blockchain_worker:blockchain() of
             undefined ->
                 ok = schedule_post_init(),
-                {noreply, State};
+                State;
             Chain ->
                 case router_utils:get_oui() of
                     undefined ->
                         lager:warning("OUI undefined"),
                         ok = schedule_post_init(),
-                        {noreply, State};
+                        State;
                     OUI ->
                         case enabled() of
                             true ->

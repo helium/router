@@ -1612,7 +1612,7 @@ handle_frame_timeout(
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
-            } = lorawan_mac_region:rx1_window(
+            } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
                 0,
                 0,
@@ -1710,7 +1710,7 @@ handle_frame_timeout(
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx1_window(
+    } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
         0,
         0,
@@ -2144,5 +2144,6 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ACK = router_utils:mtype_to_ack(MType),
     Metadata = router_device:metadata(Device),
     ADRAllowed = maps:get(adr_allowed, Metadata, false),
+    ChannelCorrection = router_device:channel_correction(Device),
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
-    DeviceQueue =/= [] orelse ACK == 1 orelse ADR.
+    DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.

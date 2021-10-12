@@ -52,7 +52,7 @@ init(Args) ->
     WSEndpoint = maps:get(ws_endpoint, Args),
     Token = router_console_api:get_token(),
     WSPid = start_ws(WSEndpoint, Token),
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     {ok, #state{
         ws = WSPid,
         ws_endpoint = WSEndpoint,

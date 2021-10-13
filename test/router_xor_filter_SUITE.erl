@@ -11,6 +11,7 @@
     max_filters_devices_test/1,
     ignore_largest_filter_test/1,
     migrate_filter_test/1,
+    move_to_front_test/1,
     evenly_rebalance_filter_test/1,
     oddly_rebalance_filter_test/1,
     remove_devices_filter_test/1,
@@ -64,6 +65,7 @@ all() ->
         max_filters_devices_test,
         ignore_largest_filter_test,
         migrate_filter_test,
+        move_to_front_test,
         evenly_rebalance_filter_test,
         oddly_rebalance_filter_test,
         remove_devices_filter_test,
@@ -435,6 +437,104 @@ migrate_filter_test(Config) ->
     ?assertEqual(5, erlang:length(maps:get(2, State3#state.filter_to_devices))),
     ?assertEqual(0, erlang:length(maps:get(3, State3#state.filter_to_devices))),
     ?assertEqual(3, erlang:length(maps:get(4, State3#state.filter_to_devices))),
+
+    ?assert(meck:validate(blockchain_worker)),
+    meck:unload(blockchain_worker),
+    ok.
+
+move_to_front_test(Config) ->
+    %% When filters get large, they are expensive to add single devices to,
+    %% instead of manually creating migrations, we can say across what number of
+    %% filters we want to distribute the devices we know about.
+    %% -------
+    %% > router_xor_filter_worker:move_to_front(_NumGroups = 2, _Commit = true).
+    %% 0 - long term storage
+    %% 1 - long term storage
+    %% 2 - cheap adding devices
+    %% 3 - cheap adding devices
+    %% 4 - cheap adding devices
+    Chain = proplists:get_value(chain, Config),
+    OUI1 = proplists:get_value(oui, Config),
+    Tab = proplists:get_value(ets, Config),
+
+    %% Init worker
+    application:set_env(router, router_xor_filter_worker, false),
+    erlang:whereis(router_xor_filter_worker) ! post_init,
+
+    %% Wait until xor filter worker started properly
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_xor_filter_worker),
+        State#state.chain =/= undefined andalso
+            State#state.oui =/= undefined
+    end),
+
+    %% ------------------------------------------------------------
+    Round1Devices = n_rand_devices(10),
+    Round2Devices = Round1Devices ++ n_rand_devices(200),
+    Round3Devices = Round2Devices ++ n_rand_devices(30),
+    Round4Devices = Round3Devices ++ n_rand_devices(6),
+    Round5Devices = Round4Devices ++ n_rand_devices(50),
+
+    lists:foreach(
+        fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
+            true = ets:insert(Tab, {devices, Devices}),
+            ok = router_xor_filter_worker:check_filters(),
+
+            %% should have pushed a new filter to the chain
+            ok = expect_block(ExpectedBlock, Chain),
+
+            Filters1 = get_filters(Chain, OUI1),
+            ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
+        end,
+        [
+            #{devices => Round1Devices, block => 3, filter_count => 2},
+            %% largest filter
+            #{devices => Round2Devices, block => 4, filter_count => 3},
+            #{devices => Round3Devices, block => 5, filter_count => 4},
+            #{devices => Round4Devices, block => 6, filter_count => 5},
+            %% We should not craft filters above 5
+            #{devices => Round5Devices, block => 7, filter_count => 5}
+        ]
+    ),
+
+    %% ct:print("~nBefore Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
+    %% Order: One   - 50 device
+    %%        Two   - 10 devices
+    %%        Three - 200 devices
+    %%        Four  - 30 devices
+    %%        Five  - 6 devices
+    [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
+    ?assertEqual(sort_binaries_by_size(Filters1), [Five, Two, Four, One, Three]),
+
+    {ok, _Old, _New, _Costs} = router_xor_filter_worker:move_to_front(
+        _NumGroups = 2,
+        _Commit = true
+    ),
+
+    %% Wait until filters are committed
+    %% Next filter would be 8
+    %% Plus updating other filters (+4)
+    %% Expecting 8 + 4 == 12
+    ok = expect_block(12, Chain),
+
+    %% ct:print("~nAfter Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
+    %% Order: One   - 148 devices
+    %%        Two   - 148 devices
+    %%        Three - 0 devices
+    %%        Four  - 0 devices
+    %%        Five  - 0 devices
+    State = sys:get_state(router_xor_filter_worker),
+    ?assertEqual(148, erlang:length(maps:get(0, State#state.filter_to_devices))),
+    ?assertEqual(148, erlang:length(maps:get(1, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(2, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(3, State#state.filter_to_devices))),
+    ?assertEqual(0, erlang:length(maps:get(4, State#state.filter_to_devices))),
+
+    Filters2 = get_filters(Chain, OUI1),
+    [OneSize, TwoSize, ThreeSize, FourSize, FiveSize] = bin_sizes(Filters2),
+    ?assertEqual(OneSize, TwoSize),
+    ?assertEqual(ThreeSize, FourSize),
+    ?assertEqual(ThreeSize, FiveSize),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

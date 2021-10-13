@@ -16,6 +16,7 @@
     check_filters/0,
     rebalance_filters/0,
     migrate_filter/3,
+    move_to_front/2,
     get_balanced_filters/0,
     commit_groups_to_filters/1,
     refresh_cache/0,
@@ -129,6 +130,12 @@ rebalance_filters() ->
         Costs :: #{0..4 => non_neg_integer()}}.
 migrate_filter(From, To, Commit) ->
     gen_server:call(?SERVER, {migrate_filter, From, To, Commit}, infinity).
+
+-spec move_to_front(FrontNum :: 0..4, Commit :: boolean()) ->
+    {ok, CurrentMapping :: filter_eui_mapping(), ChangedFilters :: filter_eui_mapping(),
+        Costs :: #{0..4 => non_neg_integer()}}.
+move_to_front(FrontNum, Commit) ->
+    gen_server:call(?SERVER, {move_to_front, FrontNum, Commit}, infinity).
 
 -spec get_balanced_filters() -> {ok, Old :: filter_eui_mapping(), New :: filter_eui_mapping()}.
 get_balanced_filters() ->
@@ -278,6 +285,40 @@ handle_call(
 
     lager:info(
         "migrating: proposed group size: ~p, cost: ~p",
+        [maps:map(fun(_, V) -> length(V) end, MigratedFilters), Costs]
+    ),
+
+    NewPendingTxns =
+        case Commit of
+            true ->
+                lager:info("migrating: comitting groups to filters"),
+                {ok, NewPending} = commit_groups_to_filters(MigratedFilters, State),
+                NewPending;
+            false ->
+                lager:info("migrating: DRY RUN---"),
+                #{}
+        end,
+
+    Reply = {ok, FilterToDevices, MigratedFilters, Costs},
+
+    {reply, Reply, State#state{pending_txns = maps:merge(CurrentPendingTxns, NewPendingTxns)}};
+handle_call(
+    {move_to_front, FrontNum, Commit},
+    _From,
+    #state{pending_txns = CurrentPendingTxns, filter_to_devices = FilterToDevices} = State
+) ->
+    lager:info("migrating all filters to front ~p filters", [FrontNum]),
+
+    {ok, _OldGroup, MigratedFilters0} = get_balanced_filters_across_n_groups(
+        FilterToDevices,
+        FrontNum
+    ),
+    BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
+    MigratedFilters = maps:merge(BaseEmpty, MigratedFilters0),
+    Costs = estimate_cost_for_groups(MigratedFilters, State),
+
+    lager:info(
+        "migrating: porposed group size: ~p, cost: ~p",
         [maps:map(fun(_, V) -> length(V) end, MigratedFilters), Costs]
     ),
 
@@ -530,6 +571,11 @@ terminate(_Reason, #state{}) ->
 -spec get_balanced_filters(filter_eui_mapping()) ->
     {ok, CurrentMapping :: filter_eui_mapping(), ProposedMapping :: filter_eui_mapping()}.
 get_balanced_filters(FilterToDevices) ->
+    get_balanced_filters_across_n_groups(FilterToDevices, 5).
+
+-spec get_balanced_filters_across_n_groups(filter_eui_mapping(), NumGroups :: 1..5) ->
+    {ok, CurrentMapping :: filter_eui_mapping(), ProposedMapping :: filter_eui_mapping()}.
+get_balanced_filters_across_n_groups(FilterToDevices, NumGroups) ->
     BalancedFilterToDevices =
         case router_console_api:get_all_devices() of
             {error, _Reason} ->
@@ -537,7 +583,7 @@ get_balanced_filters(FilterToDevices) ->
                 {error, {could_not_rebalance_filters, _Reason}};
             {ok, Devices} ->
                 DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
-                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, 5),
+                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, NumGroups),
                 maps:from_list([
                     {Idx, assign_filter_index(Idx, Group)}
                     || {Idx, Group} <- enumerate_0(Grouped)

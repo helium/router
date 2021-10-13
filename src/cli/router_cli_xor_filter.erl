@@ -39,6 +39,7 @@ filter_usage() ->
             "  filter report --id=<id>                          - Filter info for a device\n"
             "  filter reset_db  --commit                        - Reset rocksdb from Console api\n"
             "  filter migrate --from=<from> --to=<to> --commit  - Migrate devices, emptying filter <from> (Remember: filters are 0-indexed)\n"
+            "  filter move_to_front <NumGroups>                 - Migrate devices to <NumGroups> filters, emptying the rest\n"
             "\n"
         ]
     ].
@@ -75,6 +76,12 @@ filter_cmd() ->
                 {commit, [{longname, "commit"}, {datatype, boolean}]}
             ],
             fun filter_migrate/3
+        ],
+        [
+            ["filter", "move_to_front", '*'],
+            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
+            fun filter_move_to_front/3
         ]
     ].
 
@@ -96,6 +103,30 @@ filter_migrate(["filter", "migrate"], [], Flags) ->
             {cost, maps:get(Index, Costs)}
         ]
         || Index <- [FromIndex, ToIndex]
+    ],
+
+    case Commit of
+        false ->
+            DryRun = [[{filter, "DRY"}, {old_size, "RUN"}, {new_size, "!!!"}, {cost, "!!!"}]],
+            c_table(DryRun ++ Output);
+        true ->
+            c_table(Output)
+    end.
+
+filter_move_to_front(["filter", "move_to_front", NumGroupStr], [], Flags) ->
+    Commit = maps:is_key(commit, maps:from_list(Flags)),
+    NumGroups = erlang:list_to_integer(NumGroupStr),
+
+    {ok, Curr, NewGroups, Costs} = router_xor_filter_worker:move_to_front(NumGroups, Commit),
+
+    Output = [
+        [
+            {filter, Index},
+            {old_size, length(maps:get(Index, Curr))},
+            {new_size, length(maps:get(Index, NewGroups))},
+            {cost, maps:get(Index, Costs)}
+        ]
+        || Index <- lists:seq(0, 4)
     ],
 
     case Commit of

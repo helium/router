@@ -1,5 +1,9 @@
 [
-    {libp2p, [{max_tcp_connections, 50000}]},
+    {libp2p, [
+        {use_dns_for_seeds, true},
+        {seed_dns_cname, "seed.helium.io"},
+        {max_tcp_connections, 50000}
+    ]},
     {blockchain, [
         {base_dir, "/var/data"},
         {update_dir, "update"},

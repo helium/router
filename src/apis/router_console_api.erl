@@ -368,6 +368,8 @@ event(Device, Map) ->
                     {C, _SC} when
                         C == uplink orelse
                             C == downlink orelse
+                          %% FIXME: 'join_request' never matches because of previous pattern,
+                          %% but why doesn't compiler/lint complain?
                             C == join_request orelse
                             C == join_accept
                     ->
@@ -380,7 +382,7 @@ event(Device, Map) ->
                             hotspot => maps:get(hotspot, Map)
                         }
                 end,
-            Body = #{
+            Body0 = #{
                 id => maps:get(id, Map),
                 category => Category,
                 sub_category => SubCategory,
@@ -389,6 +391,10 @@ event(Device, Map) ->
                 device_id => router_device:id(Device),
                 data => Data
             },
+            Body = case Category of
+                       join_request -> Body0#{join => maps:get(join, Map)};
+                       _ -> Body0
+                   end,
             lager:debug("post ~p with ~p", [Url, Body]),
             Start = erlang:system_time(millisecond),
             case

@@ -4,7 +4,7 @@
 -include("router_device_worker.hrl").
 
 -export([
-    event_join_request/8,
+    event_join_request/9,
     event_join_accept/5,
     event_uplink/10,
     event_uplink_dropped_device_inactive/4,
@@ -38,7 +38,8 @@
 -export_type([uuid_v4/0]).
 
 -spec event_join_request(
-    ID :: uuid_v4(),
+    JoinAcceptArgs :: router_device_worker:join_accept_args(),
+    JoinCache :: router_device_worker:join_cache(),
     Timestamp :: non_neg_integer(),
     Device :: router_device:device(),
     Chain :: blockchain:blockchain(),
@@ -47,7 +48,17 @@
     Region :: atom(),
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
+event_join_request(
+    JoinAcceptArgs,
+    JoinCache,
+    Timestamp,
+    Device,
+    Chain,
+    PubKeyBin,
+    Packet,
+    Region,
+    {Balance, Nonce}
+) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
 
@@ -64,7 +75,7 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
     Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
 
     Map = #{
-        id => ID,
+        id => JoinCache#join_cache.uuid,
         category => join_request,
         sub_category => undefined,
         description =>
@@ -81,6 +92,16 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
             balance => Balance,
             nonce => Nonce,
             used => Used
+        },
+        join => #{
+            %% Add non-overlappting fields with above: contents of #join_cache,
+            %% #join_accept_args and #device
+            uuid => JoinCache#join_cache.uuid,
+            rssi => JoinCache#join_cache.rssi,
+            region => JoinAcceptArgs#join_accept_args.region,
+            app_nonce => JoinAcceptArgs#join_accept_args.app_nonce,
+            app_key => JoinAcceptArgs#join_accept_args.app_key,
+            device => Device
         }
     },
     ok = router_console_api:event(Device, Map).

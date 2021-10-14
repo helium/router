@@ -704,6 +704,19 @@ join_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             }
+        },
+        <<"join">> => #{
+            %% From #join_accept_args in include/router_device_worker.hrl
+            <<"uuid">> => FIXME,
+            <<"rssi">> => FIXME,
+            %% From #join_accept_args in include/router_device_worker.hrl;
+            %% see craft_join_reply() in device/router_device_worker.erl;
+            %% but devaddr is already accessible via .data above
+            <<"region">> => FIXME,
+            <<"app_nonce"> => FIXME,
+            <<"app_key">> => AppKey,
+            %% From #device in include/router_device.hrl
+            <<"device">> => FIXME
         }
     }),
 

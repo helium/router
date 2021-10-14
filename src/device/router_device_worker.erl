@@ -511,7 +511,8 @@ handle_cast(
                     ]),
                     _ = erlang:send_after(Timeout, self(), {join_timeout, DevNonce}),
                     ok = router_utils:event_join_request(
-                        JoinCache#join_cache.uuid,
+                        JoinAcceptArgs,
+                        JoinCache,
                         PacketTime,
                         Device1,
                         Chain,
@@ -535,7 +536,8 @@ handle_cast(
                     pid = OldPid
                 } = JoinCache1 ->
                     ok = router_utils:event_join_request(
-                        UUID,
+                        JoinAcceptArgs,
+                        JoinCache1,
                         PacketTime,
                         Device1,
                         Chain,

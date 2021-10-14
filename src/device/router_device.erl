@@ -26,6 +26,7 @@
     app_s_key/1,
     devaddr/1, devaddr/2,
     dev_nonces/1, dev_nonces/2,
+    is_nonce_valid/2,
     fcnt/1, fcnt/2,
     fcntdown/1, fcntdown/2,
     offset/1, offset/2,
@@ -135,6 +136,18 @@ dev_nonces(Device) ->
 -spec dev_nonces([binary()], device()) -> device().
 dev_nonces(Nonces, Device) ->
     Device#device_v6{dev_nonces = lists:sublist(Nonces, 25)}.
+
+-spec is_nonce_valid(binary(), device()) -> boolean().
+is_nonce_valid(DevNonce, Device) ->
+    %% For 1.1 and 1.0.4 end-devices LoRaWAN now specifies montonically incrementing nonce values.
+    %% Prior versions expected random value nonces.  Ideally we'd have a specific check for
+    %% devNonce > priorDevNonce.  For now keep the valid check consistent with random values.
+    case lists:member(DevNonce, Device:dev_nonces(Device)) of
+        true ->
+            true;
+        false ->
+            false
+    end.
 
 -spec fcnt(device()) -> non_neg_integer().
 fcnt(Device) ->

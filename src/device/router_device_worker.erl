@@ -1128,7 +1128,7 @@ validate_join(
     Blockchain,
     OfferCache
 ) when MType == ?JOIN_REQ ->
-    case lists:member(DevNonce, router_device:dev_nonces(Device)) of
+    case router_device:is_nonce_valid(Device) of
         true ->
             {error, bad_nonce};
         false ->

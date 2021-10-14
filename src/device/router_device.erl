@@ -144,9 +144,9 @@ is_nonce_valid(DevNonce, Device) ->
     %% devNonce > priorDevNonce.  For now keep the valid check consistent with random values.
     case lists:member(DevNonce, Device:dev_nonces(Device)) of
         true ->
-            true;
+            false;
         false ->
-            false
+            true
     end.
 
 -spec fcnt(device()) -> non_neg_integer().

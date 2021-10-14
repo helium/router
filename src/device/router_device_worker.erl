@@ -1128,10 +1128,10 @@ validate_join(
     Blockchain,
     OfferCache
 ) when MType == ?JOIN_REQ ->
-    case router_device:is_nonce_valid(Device) of
-        true ->
-            {error, bad_nonce};
+    case router_device:is_nonce_valid(DevNonce, Device) of
         false ->
+            {error, bad_nonce};
+        true ->
             PayloadSize = erlang:byte_size(Payload),
             PHash = blockchain_helium_packet_v1:packet_hash(Packet),
             case maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of

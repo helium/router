@@ -205,8 +205,8 @@ handle_cast(
         device = Device
     } = State
 ) ->
-    {ok, Map} = send_to_channel(JoinData, Device, EventMgrPid, Blockchain),
-    lager:debug("frame_timeout for data: ~p", [Map]),
+    {ok, Map} = send_join_to_channel(JoinData, Device, EventMgrPid, Blockchain),
+    lager:debug("join_timeout for data: ~p", [Map]),
     {noreply, State};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
@@ -244,7 +244,7 @@ handle_cast(
 ) ->
     case maps:take(UUID, DataCache0) of
         {CachedData, DataCache1} ->
-            {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
+            {ok, Map} = send_data_to_channel(CachedData, Device, EventMgrPid, Blockchain),
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
             {noreply, State#state{data_cache = DataCache1}};
         error ->
@@ -552,21 +552,30 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
 downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
--spec send_to_channel(
-    CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
+-spec send_join_to_channel(
+    JoinCache :: #join_cache{},
     Device :: router_device:device(),
     EventMgrRef :: pid(),
     Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
-send_to_channel(
-    #join_cache{uuid = UUID, packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime}},
+send_join_to_channel(
+    #join_cache{
+        uuid = UUID,
+        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime} = SelectedPacket,
+        packets = CollectedPackets
+    },
     Device,
     EventMgrRef,
-    _Blockchain
+    Blockchain
 ) ->
+    FormatHotspot = fun({Packet, PubKeyBin, Region, Time}) ->
+        %% FIXME: Do we have hold_time for join packets?
+        format_hotspot(PubKeyBin, Packet, Region, Time, _HoldTime = 0, Blockchain)
+    end,
+
     %% No touchy, this is set in STONE
     Map = #{
-        %% FIXME: REMOVE THIS!!!!!
+        %% TODO: How do we tell integrations the difference between joins and frames?
         type => join,
         uuid => UUID,
         id => router_device:id(Device),
@@ -578,16 +587,21 @@ send_to_channel(
         reported_at => PacketTime,
         payload => <<>>,
         payload_size => 0,
-        %% FIXME: Do joins have ports?
         port => 0,
-        %% FIXME: Do we want to fill the assigned devaddr here?
+        %% REVIEW: Do we want to fill the assigned devaddr here?
         devaddr => <<>>,
-        %% FIXME: How much hotspot data do we want
-        hotspots => []
+        hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
     },
     ok = router_channel:handle_data(EventMgrRef, Map, UUID),
-    {ok, Map};
-send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
+    {ok, Map}.
+
+-spec send_data_to_channel(
+    CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
+    Device :: router_device:device(),
+    EventMgrRef :: pid(),
+    Blockchain :: blockchain:blockchain()
+) -> {ok, map()}.
+send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     FormatHotspot = fun(DataCache) ->
         format_hotspot(DataCache, Blockchain)
     end,
@@ -760,6 +774,17 @@ format_hotspot(
     },
     Chain
 ) ->
+    format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain).
+
+-spec format_hotspot(
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: #packet_pb{},
+    Region :: atom(),
+    Time :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
+    Chain :: blockchain:blockchain()
+) -> map().
+format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),

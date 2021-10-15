@@ -5,6 +5,7 @@
 
 -define(NO_ERROR, 0).
 -define(CONNECT_ERROR, 1).
+-define(JOIN_ERROR, 2).
 -define(DISCO_FRAME_TIMEOUT, timer:seconds(8)).
 
 -export([start/1]).
@@ -31,26 +32,30 @@ start(Map) ->
                 frame_timeout => frame_timeout(),
                 discovery => true
             }),
-            Device = router_device_worker:fake_join(WorkerPid, PubKeyBin),
-            Body = jsx:encode(#{txn_id => TxnID, error => ?NO_ERROR}),
-            Packets = lists:map(
-                fun(FCnt) ->
-                    frame_payload(
-                        ?UNCONFIRMED_UP,
-                        router_device:devaddr(Device),
-                        router_device:nwk_s_key(Device),
-                        router_device:app_s_key(Device),
-                        FCnt,
-                        #{body => <<1:8, Body/binary>>}
-                    )
-                end,
-                lists:seq(1, 10)
-            ),
-            case send(PubKeyBin, DeviceID, Packets, Sig, 10) of
-                ok ->
-                    ok;
-                error ->
-                    send_error(WorkerPid, Device, TxnID, PubKeyBin, ?CONNECT_ERROR)
+            case router_device_worker:fake_join(WorkerPid, PubKeyBin) of
+                {error, _Reason, Device} ->
+                    send_error(WorkerPid, Device, TxnID, PubKeyBin, ?JOIN_ERROR);
+                {ok, Device} ->
+                    Body = jsx:encode(#{txn_id => TxnID, error => ?NO_ERROR}),
+                    Packets = lists:map(
+                        fun(FCnt) ->
+                            frame_payload(
+                                ?UNCONFIRMED_UP,
+                                router_device:devaddr(Device),
+                                router_device:nwk_s_key(Device),
+                                router_device:app_s_key(Device),
+                                FCnt,
+                                #{body => <<1:8, Body/binary>>}
+                            )
+                        end,
+                        lists:seq(1, 10)
+                    ),
+                    case send(PubKeyBin, DeviceID, Packets, Sig, 10) of
+                        ok ->
+                            ok;
+                        error ->
+                            send_error(WorkerPid, Device, TxnID, PubKeyBin, ?CONNECT_ERROR)
+                    end
             end
     end.
 

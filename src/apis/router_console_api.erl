@@ -858,7 +858,7 @@ json_device_to_record(JSONDevice, use_meta_defaults) ->
 -spec json_device_to_record(
     JSONDevice :: map(),
     ADRDefault :: undefined | boolean(),
-    US915CFListDefault :: undefined | boolean()
+    CFListDefault :: undefined | boolean()
 ) -> router_device:device().
 json_device_to_record(JSONDevice, ADRDefault, CFListDefault) ->
     ID = kvc:path([<<"id">>], JSONDevice),

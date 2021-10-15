@@ -16,7 +16,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    handle_join/1,
+    handle_join/2,
     handle_device_update/2,
     handle_frame/2,
     report_request/4,
@@ -74,9 +74,9 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec handle_join(pid()) -> ok.
-handle_join(Pid) ->
-    gen_server:cast(Pid, handle_join).
+-spec handle_join(pid(), #join_cache{}) -> ok.
+handle_join(Pid, JoinCache) ->
+    gen_server:cast(Pid, {handle_join, JoinCache}).
 
 -spec handle_device_update(pid(), router_device:device()) -> ok.
 handle_device_update(Pid, Device) ->
@@ -197,7 +197,16 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(handle_join, State) ->
+handle_cast(
+    {handle_join, JoinData = #join_cache{}},
+    #state{
+        chain = Blockchain,
+        event_mgr = EventMgrPid,
+        device = Device
+    } = State
+) ->
+    {ok, Map} = send_to_channel(JoinData, Device, EventMgrPid, Blockchain),
+    lager:debug("frame_timeout for data: ~p", [Map]),
     {noreply, State};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
@@ -549,6 +558,35 @@ downlink_decode(Payload) ->
     EventMgrRef :: pid(),
     Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
+send_to_channel(
+    #join_cache{uuid = UUID, packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime}},
+    Device,
+    EventMgrRef,
+    _Blockchain
+) ->
+    %% No touchy, this is set in STONE
+    Map = #{
+        %% FIXME: REMOVE THIS!!!!!
+        type => join,
+        uuid => UUID,
+        id => router_device:id(Device),
+        name => router_device:name(Device),
+        dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+        app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        metadata => router_device:metadata(Device),
+        fcnt => 0,
+        reported_at => PacketTime,
+        payload => <<>>,
+        payload_size => 0,
+        %% FIXME: Do joins have ports?
+        port => 0,
+        %% FIXME: Do we want to fill the assigned devaddr here?
+        devaddr => <<>>,
+        %% FIXME: How much hotspot data do we want
+        hotspots => []
+    },
+    ok = router_channel:handle_data(EventMgrRef, Map, UUID),
+    {ok, Map};
 send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     FormatHotspot = fun(DataCache) ->
         format_hotspot(DataCache, Blockchain)

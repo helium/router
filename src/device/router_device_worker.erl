@@ -876,7 +876,7 @@ handle_info(
         join_attempt_count = JoinAttemptCount
     } = State
 ) ->
-    #join_cache{
+    Join = #join_cache{
         join_accept_args = JoinAcceptArgs,
         packet_selected = PacketSelected,
         packets = Packets,
@@ -919,7 +919,7 @@ handle_info(
         join,
         true
     ),
-    ok = router_device_channels_worker:handle_join(ChannelsWorker),
+    ok = router_device_channels_worker:handle_join(ChannelsWorker, Join),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
     {noreply, State#state{

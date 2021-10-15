@@ -1244,9 +1244,9 @@ craft_join_reply(
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     CFList =
-        case {Region, maps:get(cf_list_enabled, router_device:metadata(Device), false)} of
-            {'US915', false} -> <<>>;
-            _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
+        case maps:get(cf_list_enabled, router_device:metadata(Device), true) of
+            false -> <<>>;
+            true -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     ReplyPayload =
         <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,

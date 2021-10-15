@@ -846,13 +846,13 @@ json_device_to_record(JSONDevice, ignore_meta_defaults) ->
     json_device_to_record(
         JSONDevice,
         _IgnoreADRMeta = undefined,
-        _IgnoreUS915CFListMeta = undefined
+        _IgnoreCFListMeta = undefined
     );
 json_device_to_record(JSONDevice, use_meta_defaults) ->
     json_device_to_record(
         JSONDevice,
         _ADRDefault = false,
-        _US915CFListDefault = false
+        _CFListDefault = true
     ).
 
 -spec json_device_to_record(
@@ -860,14 +860,14 @@ json_device_to_record(JSONDevice, use_meta_defaults) ->
     ADRDefault :: undefined | boolean(),
     US915CFListDefault :: undefined | boolean()
 ) -> router_device:device().
-json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault) ->
+json_device_to_record(JSONDevice, ADRDefault, CFListDefault) ->
     ID = kvc:path([<<"id">>], JSONDevice),
     Metadata = #{
         labels => kvc:path([<<"labels">>], JSONDevice, undefined),
         organization_id => kvc:path([<<"organization_id">>], JSONDevice, undefined),
         multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
         adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault),
-        cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault)
+        cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, CFListDefault)
     },
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},

@@ -591,7 +591,7 @@ send_join_to_channel(
         devaddr => <<>>,
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
     },
-    ok = router_channel:handle_data(EventMgrRef, Map, UUID),
+    ok = router_channel:handle_join(EventMgrRef, Map, UUID),
     {ok, Map}.
 
 -spec send_data_to_channel(

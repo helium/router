@@ -611,6 +611,13 @@ join_sent_to_integration_test(Config) ->
     PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey2),
     {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
 
+    %% Tell the channel that it wants join_requests sent to it
+    Tab = proplists:get_value(ets, Config),
+    HTTPChannel = maps:merge(?CONSOLE_HTTP_CHANNEL, #{
+        <<"receive_joins">> => true
+    }),
+    _ = ets:insert(Tab, {channels, [HTTPChannel]}),
+
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{})},
@@ -643,8 +650,8 @@ join_sent_to_integration_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Waiting for data from HTTP channel
+    %% <<"type">> => <<"join">>,
     test_utils:wait_channel_data(#{
-        <<"type">> => <<"join">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>

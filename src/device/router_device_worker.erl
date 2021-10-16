@@ -586,7 +586,8 @@ handle_cast(
                                 DevNonce,
                                 JoinCache1#join_cache{
                                     rssi = NewRSSI,
-                                    packet_selected = {Packet0, PubKeyBin, Region, PacketTime, HoldTime},
+                                    packet_selected =
+                                        {Packet0, PubKeyBin, Region, PacketTime, HoldTime},
                                     packets = NewPackets,
                                     pid = Pid
                                 },
@@ -876,13 +877,14 @@ handle_info(
         join_attempt_count = JoinAttemptCount
     } = State
 ) ->
-    Join = #join_cache{
-        join_accept_args = JoinAcceptArgs,
-        packet_selected = PacketSelected,
-        packets = Packets,
-        device = Device0,
-        pid = Pid
-    } = maps:get(DevNonce, JoinCache),
+    Join =
+        #join_cache{
+            join_accept_args = JoinAcceptArgs,
+            packet_selected = PacketSelected,
+            packets = Packets,
+            device = Device0,
+            pid = Pid
+        } = maps:get(DevNonce, JoinCache),
     {Packet, PubKeyBin, Region, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,

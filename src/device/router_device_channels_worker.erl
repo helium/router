@@ -561,22 +561,21 @@ downlink_decode(Payload) ->
 send_join_to_channel(
     #join_cache{
         uuid = UUID,
-        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime} = SelectedPacket,
+        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, _HoldTime} = SelectedPacket,
         packets = CollectedPackets
     },
     Device,
     EventMgrRef,
     Blockchain
 ) ->
-    FormatHotspot = fun({Packet, PubKeyBin, Region, Time}) ->
-        %% FIXME: Do we have hold_time for join packets?
-        format_hotspot(PubKeyBin, Packet, Region, Time, _HoldTime = 0, Blockchain)
+    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime}) ->
+        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Blockchain)
     end,
 
     %% No touchy, this is set in STONE
     Map = #{
         %% TODO: How do we tell integrations the difference between joins and frames?
-        type => join,
+        %% type => join,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),

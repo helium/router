@@ -24,11 +24,21 @@
     rssi :: float(),
     join_accept_args :: #join_accept_args{},
     packet_selected ::
-        {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
-            non_neg_integer()},
+        {
+            Packet :: blockchain_helium_packet_v1:packet(),
+            PubKeyBin :: libp2p_crypto:pubkey_bin(),
+            Region :: atom(),
+            PacketTime :: non_neg_integer(),
+            HoldTime :: non_neg_integer()
+        },
     packets = [] :: [
-        {blockchain_helium_packet_v1:packet(), libp2p_crypto:pubkey_bin(), atom(),
-            non_neg_integer()}
+        {
+            Packet :: blockchain_helium_packet_v1:packet(),
+            PubKeyBin :: libp2p_crypto:pubkey_bin(),
+            Region :: atom(),
+            PacketTime :: non_neg_integer(),
+            HoldTime :: non_neg_integer()
+        }
     ],
     device :: router_device:device(),
     pid :: pid()

@@ -868,7 +868,7 @@ deframe_join_packet(
 ) when MType == ?JOIN_ACCEPT ->
     ct:pal("Enc join ~w", [EncPayload]),
     Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
-    {AppNonce, NetID, DevAddr, DLSettings, RxDelay, MIC, CFList} =
+    {JoinNonce, NetID, DevAddr, DLSettings, RxDelay, MIC, CFList} =
         case Payload of
             <<AN:3/binary, NID:3/binary, DA:4/binary, DL:8/integer-unsigned, RxD:8/integer-unsigned,
                 M:4/binary>> ->
@@ -886,12 +886,12 @@ deframe_join_packet(
     NwkSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#01, JoinNonce/binary, NetID/binary, DevNonce/binary>>)
     ),
     AppSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#02, JoinNonce/binary, NetID/binary, DevNonce/binary>>)
     ),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey, CFList}.
 

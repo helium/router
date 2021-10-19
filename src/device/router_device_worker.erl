@@ -282,14 +282,14 @@ handle_call(
             ]),
             {reply, {error, no_app_key, Device0}, State};
         [{AppKey, _} | _] ->
-            AppNonce = crypto:strong_rand_bytes(3),
+            JoinNonce = crypto:strong_rand_bytes(3),
             DevNonce = crypto:strong_rand_bytes(2),
             NwkSKey = crypto:block_encrypt(
                 aes_ecb,
                 AppKey,
                 lorawan_utils:padded(
                     16,
-                    <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
+                    <<16#01, JoinNonce/binary, ?NET_ID/binary, DevNonce/binary>>
                 )
             ),
             AppSKey = crypto:block_encrypt(
@@ -297,7 +297,7 @@ handle_call(
                 AppKey,
                 lorawan_utils:padded(
                     16,
-                    <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
+                    <<16#02, JoinNonce/binary, ?NET_ID/binary, DevNonce/binary>>
                 )
             ),
             {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
@@ -1203,16 +1203,16 @@ handle_join(
     AppKey,
     Device0
 ) ->
-    AppNonce = crypto:strong_rand_bytes(3),
+    JoinNonce = crypto:strong_rand_bytes(3),
     NwkSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#01, JoinNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
     AppSKey = crypto:block_encrypt(
         aes_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#02, JoinNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
     DeviceName = router_device:name(APIDevice),
@@ -1245,7 +1245,7 @@ handle_join(
     ),
     {ok, Device1, #join_accept_args{
         region = Region,
-        app_nonce = AppNonce,
+        app_nonce = JoinNonce,
         dev_addr = DevAddr,
         app_key = AppKey
     }}.
@@ -1253,7 +1253,7 @@ handle_join(
 -spec craft_join_reply(router_device:device(), #join_accept_args{}, integer()) -> binary().
 craft_join_reply(
     Device,
-    #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey},
+    #join_accept_args{region = Region, app_nonce = JoinNonce, dev_addr = DevAddr, app_key = AppKey},
     JoinAttemptCount
 ) ->
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
@@ -1265,7 +1265,7 @@ craft_join_reply(
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     ReplyPayload =
-        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
+        <<JoinNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
             ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(

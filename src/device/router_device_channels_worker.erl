@@ -585,8 +585,7 @@ send_join_to_channel(
         fcnt => 0,
         reported_at => PacketTime,
         port => 0,
-        %% REVIEW: Do we want to fill the assigned devaddr here?
-        devaddr => <<>>,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
     },
     ok = router_channel:handle_join(EventMgrRef, Map, UUID),

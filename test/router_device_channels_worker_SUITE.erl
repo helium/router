@@ -664,7 +664,7 @@ join_sent_to_integration_test(Config) ->
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"port">> => 0,
-        <<"devaddr">> => <<>>,
+        <<"devaddr">> => fun erlang:is_binary/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),

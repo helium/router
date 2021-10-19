@@ -584,8 +584,6 @@ send_join_to_channel(
         metadata => router_device:metadata(Device),
         fcnt => 0,
         reported_at => PacketTime,
-        payload => <<>>,
-        payload_size => 0,
         port => 0,
         %% REVIEW: Do we want to fill the assigned devaddr here?
         devaddr => <<>>,

@@ -49,7 +49,7 @@
 ) -> ok.
 event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
     DevEUI = router_device:dev_eui(Device),
-    AppEUI = router_device:app_eui(Device),
+    JoinEUI = router_device:app_eui(Device),
 
     Payload0 = blockchain_helium_packet_v1:payload(Packet),
     Payload1 =
@@ -68,7 +68,7 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
         category => join_request,
         sub_category => undefined,
         description =>
-            <<"Join request from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
+            <<"Join request from JoinEUI: ", (lorawan_utils:binary_to_hex(JoinEUI))/binary,
                 " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
         reported_at => Timestamp,
         fcnt => 0,
@@ -94,14 +94,14 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
 ) -> ok.
 event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
-    AppEUI = router_device:app_eui(Device),
+    JoinEUI = router_device:app_eui(Device),
     Payload = blockchain_helium_packet_v1:payload(Packet),
     Map = #{
         id => router_utils:uuid_v4(),
         category => join_accept,
         sub_category => undefined,
         description =>
-            <<"Join accept from AppEUI: ", (lorawan_utils:binary_to_hex(AppEUI))/binary,
+            <<"Join accept from JoinEUI: ", (lorawan_utils:binary_to_hex(JoinEUI))/binary,
                 " DevEUI: ", (lorawan_utils:binary_to_hex(DevEUI))/binary>>,
         reported_at => erlang:system_time(millisecond),
         fcnt => 0,

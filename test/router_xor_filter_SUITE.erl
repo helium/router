@@ -163,7 +163,7 @@ publish_xor_test(Config) ->
         {app_eui, ?APPEUI}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(<<"ID2">>)),
-    DeviceDevEuiAppEui = router_xor_filter_worker:deveui_appeui(Device),
+    DeviceDevEuiJoinEui = router_xor_filter_worker:deveui_joineui(Device),
 
     BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
 
@@ -173,7 +173,7 @@ publish_xor_test(Config) ->
         maps:merge(BaseEmpty, #{
             1 => [
                 #{
-                    eui => DeviceDevEuiAppEui,
+                    eui => DeviceDevEuiJoinEui,
                     filter_index => 1,
                     device_id => ?CONSOLE_DEVICE_ID
                 }
@@ -186,8 +186,8 @@ publish_xor_test(Config) ->
     ?assertEqual(2, erlang:length(Filters)),
 
     [Filter1, Filter2] = Filters,
-    ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiAppEui)),
-    ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiAppEui)),
+    ?assertNot(xor16:contain({Filter1, ?HASH_FUN}, DeviceDevEuiJoinEui)),
+    ?assert(xor16:contain({Filter2, ?HASH_FUN}, DeviceDevEuiJoinEui)),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -408,7 +408,7 @@ migrate_filter_test(Config) ->
         lists:usort([
             xor16:contain(
                 {Three, fun xxhash:hash64/1},
-                router_xor_filter_worker:deveui_appeui(Device)
+                router_xor_filter_worker:deveui_joineui(Device)
             )
             || Device <- AllDevices
         ]),
@@ -419,7 +419,7 @@ migrate_filter_test(Config) ->
         lists:usort([
             xor16:contain(
                 {Four, fun xxhash:hash64/1},
-                router_xor_filter_worker:deveui_appeui(Device)
+                router_xor_filter_worker:deveui_joineui(Device)
             )
             || Device <- AllDevices
         ]),
@@ -791,7 +791,7 @@ remove_devices_filter_test(Config) ->
     %% %% Make sure removed devices are not in those filters
     %% Filters = get_filters(Chain, OUI1),
     %% Containment = [
-    %%     xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_appeui(Device))
+    %%     xor16:contain({Filter, fun xxhash:hash64/1}, router_xor_filter_worker:deveui_joineui(Device))
     %%     || Filter <- Filters, Device <- Removed
     %% ],
     %% ?assertEqual(
@@ -867,7 +867,7 @@ remove_devices_filter_after_restart_test(Config) ->
     Containment1 = [
         xor16:contain(
             {Filter, fun xxhash:hash64/1},
-            router_xor_filter_worker:deveui_appeui(Device)
+            router_xor_filter_worker:deveui_joineui(Device)
         )
         || Filter <- Filters1, Device <- Removed
     ],
@@ -908,7 +908,7 @@ remove_devices_filter_after_restart_test(Config) ->
     %% Containment2 = [
     %%     xor16:contain(
     %%         {Filter, fun xxhash:hash64/1},
-    %%         router_xor_filter_worker:deveui_appeui(Device)
+    %%         router_xor_filter_worker:deveui_joineui(Device)
     %%     )
     %%     || Filter <- Filters2, Device <- Removed
     %% ],
@@ -1059,7 +1059,7 @@ remove_devices_single_txn_db_test(Config) ->
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
-    Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
+    Round1DevicesEUI = [router_xor_filter_worker:deveui_joineui(Device) || Device <- Round1Devices],
 
     Fitlers0 = get_filters(Chain, OUI1),
     ?assertEqual(1, erlang:length(Fitlers0)),
@@ -1139,7 +1139,7 @@ remove_devices_multiple_txn_db_test(Config) ->
     Round3Devices = n_rand_devices(30) ++ Round2Devices,
     Round4Devices = n_rand_devices(40) ++ Round3Devices,
     Round5Devices = n_rand_devices(50) ++ Round4Devices,
-    DeviceEUIs = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round5Devices],
+    DeviceEUIs = [router_xor_filter_worker:deveui_joineui(Device) || Device <- Round5Devices],
 
     Fitlers0 = get_filters(Chain, OUI1),
     ?assertEqual(1, erlang:length(Fitlers0)),
@@ -1220,7 +1220,10 @@ send_updates_to_console_test(Config) ->
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
-    _Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
+    _Round1DevicesEUI = [
+        router_xor_filter_worker:deveui_joineui(Device)
+        || Device <- Round1Devices
+    ],
 
     true = ets:insert(Tab, {devices, Round1Devices}),
     ok = router_xor_filter_worker:check_filters(),
@@ -1534,7 +1537,10 @@ estimate_cost_test(Config) ->
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
-    _Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
+    _Round1DevicesEUI = [
+        router_xor_filter_worker:deveui_joineui(Device)
+        || Device <- Round1Devices
+    ],
 
     LegacyFee = 0,
 

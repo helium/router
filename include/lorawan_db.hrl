@@ -135,7 +135,7 @@
     profile :: nonempty_string(),
     % application arguments
     appargs :: any(),
-    appeui :: eui(),
+    joineui :: eui(),
     appkey :: seckey(),
     desc :: 'undefined' | string(),
     last_joins :: [{calendar:datetime(), binary()}],

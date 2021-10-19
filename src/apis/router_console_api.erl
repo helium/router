@@ -13,7 +13,7 @@
 -export([
     start_link/1,
     get_device/1,
-    get_devices_by_deveui_appeui/2,
+    get_devices_by_deveui_joineui/2,
     get_all_devices/0,
     get_channels/2,
     event/2,
@@ -52,7 +52,7 @@
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
 -define(GET_ORG_CACHE_NAME, router_console_api_get_org).
--define(GET_DEVICES_CACHE_NAME, router_console_api_get_devices_by_deveui_appeui).
+-define(GET_DEVICES_CACHE_NAME, router_console_api_get_devices_by_deveui_joineui).
 %% E2QC durations are in seconds while our eviction handling is milliseconds
 -define(GET_ORG_LIFETIME, 300).
 -define(GET_DEVICES_LIFETIME, 10).
@@ -131,15 +131,15 @@ get_all_devices() ->
             {error, Other}
     end.
 
--spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->
+-spec get_devices_by_deveui_joineui(DevEui :: binary(), JoinEui :: binary()) ->
     [{binary(), router_device:device()}].
-get_devices_by_deveui_appeui(DevEui, AppEui) ->
+get_devices_by_deveui_joineui(DevEui, JoinEui) ->
     e2qc:cache(
         ?GET_DEVICES_CACHE_NAME,
-        {DevEui, AppEui},
+        {DevEui, JoinEui},
         ?GET_DEVICES_LIFETIME,
         fun() ->
-            get_devices_by_deveui_appeui_(DevEui, AppEui)
+            get_devices_by_deveui_joineui_(DevEui, JoinEui)
         end
     ).
 
@@ -760,14 +760,14 @@ get_device_(Endpoint, Token, Device) ->
             {error, {get_device_failed, _Other}}
     end.
 
--spec get_devices_by_deveui_appeui_(DevEui :: binary(), AppEui :: binary()) ->
+-spec get_devices_by_deveui_joineui_(DevEui :: binary(), JoinEui :: binary()) ->
     [{binary(), router_device:device()}].
-get_devices_by_deveui_appeui_(DevEui, AppEui) ->
+get_devices_by_deveui_joineui_(DevEui, JoinEui) ->
     {Endpoint, Token} = token_lookup(),
     Url =
         <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
             (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
-            (lorawan_utils:binary_to_hex(AppEui))/binary>>,
+            (lorawan_utils:binary_to_hex(JoinEui))/binary>>,
     lager:debug("get ~p", [Url]),
     Opts = [
         with_body,
@@ -779,7 +779,7 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
             End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_devices_by_deveui_appeui, ok, End - Start),
+            ok = router_metrics:console_api_observe(get_devices_by_deveui_joineui, ok, End - Start),
             lists:map(
                 fun(JSONDevice) ->
                     AppKey = lorawan_utils:hex_to_binary(
@@ -792,7 +792,7 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
         _Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(
-                get_devices_by_deveui_appeui,
+                get_devices_by_deveui_joineui,
                 error,
                 End - Start
             ),

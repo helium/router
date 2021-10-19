@@ -3,7 +3,7 @@
 XOR Filters are part of the OUI purchased when running an instance of Router.
 The maximum allowed under an OUI is a [chain variable `max_xor_filter_num`](https://api.helium.io/v1/vars/max_xor_filter_num) (default: 5).
 
-Device credentials are hashed (DevEUI, AppEUI) into the filters to allow gateways to check where to send Join Requests.
+Device credentials are hashed (DevEUI, JoinEUI) into the filters to allow gateways to check where to send Join Requests.
 
 There is a fee to submit XOR txns with the chain based on the byte_size of the filter up to the [`max_xor_filter_size`](https://api.helium.io/v1/vars/max_xor_filter_size).
 

@@ -25,7 +25,7 @@
 ]).
 
 -export([
-    deveui_appeui/1,
+    deveui_joineui/1,
     get_devices_deveui_app_eui/1
 ]).
 
@@ -146,11 +146,11 @@ get_balanced_filters() ->
 commit_groups_to_filters(NewGroups) ->
     gen_server:call(?SERVER, {commit_groups_to_filters, NewGroups}).
 
--spec deveui_appeui(router_device:device()) -> device_eui().
-deveui_appeui(Device) ->
+-spec deveui_joineui(router_device:device()) -> device_eui().
+deveui_joineui(Device) ->
     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-    <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>.
+    <<JoinEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+    <<DevEUI:64/integer-unsigned-little, JoinEUI:64/integer-unsigned-little>>.
 
 -spec report_device_status(router_device:device()) -> proplists:proplist().
 report_device_status(Device) ->
@@ -419,8 +419,8 @@ handle_info(
             UpdatesToSubmit =
                 lists:filtermap(
                     fun
-                        ({new, NewDevicesDevEuiAppEui}) ->
-                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiAppEui),
+                        ({new, NewDevicesDevEuiJoinEui}) ->
+                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiJoinEui),
                             case lists:member(Bin, BinFilters) of
                                 true ->
                                     lager:error(
@@ -428,16 +428,16 @@ handle_info(
                                     ),
                                     false;
                                 false ->
-                                    {true, {new, Filter, NewDevicesDevEuiAppEui}}
+                                    {true, {new, Filter, NewDevicesDevEuiJoinEui}}
                             end;
-                        ({update, Index, NewDevicesDevEuiAppEui}) ->
+                        ({update, Index, NewDevicesDevEuiJoinEui}) ->
                             Existing = lists:nth(Index + 1, BinFilters),
-                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiAppEui),
+                            {ok, Filter, Bin} = new_xor_filter_and_bin(NewDevicesDevEuiJoinEui),
                             case Existing == Bin of
                                 true ->
                                     false;
                                 false ->
-                                    {true, {update, Index, Filter, NewDevicesDevEuiAppEui}}
+                                    {true, {update, Index, Filter, NewDevicesDevEuiJoinEui}}
                             end
                     end,
                     Updates
@@ -445,7 +445,7 @@ handle_info(
 
             {Pendings1, _} = lists:foldl(
                 fun
-                    ({new, Filter, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({new, Filter, NewDevicesDevEuiJoinEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
                         Hash = submit_txn(Txn),
@@ -458,12 +458,12 @@ handle_info(
                         {
                             maps:put(
                                 Hash,
-                                {Index, assign_filter_index(Index, NewDevicesDevEuiAppEui)},
+                                {Index, assign_filter_index(Index, NewDevicesDevEuiJoinEui)},
                                 Pendings
                             ),
                             Nonce + 1
                         };
-                    ({update, Index, Filter, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
+                    ({update, Index, Filter, NewDevicesDevEuiJoinEui}, {Pendings, Nonce}) ->
                         lager:info("updating filter @ index ~p", [Index]),
                         Txn = craft_update_filter_txn(
                             PubKey,
@@ -482,7 +482,7 @@ handle_info(
                         {
                             maps:put(
                                 Hash,
-                                {Index, assign_filter_index(Index, NewDevicesDevEuiAppEui)},
+                                {Index, assign_filter_index(Index, NewDevicesDevEuiJoinEui)},
                                 Pendings
                             ),
                             Nonce + 1
@@ -509,15 +509,15 @@ handle_info(
         filter_to_devices = FilterToDevices
     } = State0
 ) ->
-    {Index, DevicesDevEuiAppEui} = maps:get(Hash, Pendings),
+    {Index, DevicesDevEuiJoinEui} = maps:get(Hash, Pendings),
     lager:info("successfully submitted txn: ~p added ~p to filter ~p", [
         lager:pr(Hash, blockchain_txn_routing_v1),
-        DevicesDevEuiAppEui,
+        DevicesDevEuiJoinEui,
         Index
     ]),
     State1 = State0#state{
         pending_txns = maps:remove(Hash, Pendings),
-        filter_to_devices = maps:put(Index, DevicesDevEuiAppEui, FilterToDevices)
+        filter_to_devices = maps:put(Index, DevicesDevEuiJoinEui, FilterToDevices)
     },
 
     ok = do_updates_from_filter_to_devices_diff(
@@ -582,8 +582,8 @@ get_balanced_filters_across_n_groups(FilterToDevices, NumGroups) ->
                 lager:error("failed to get devices ~p", [_Reason]),
                 {error, {could_not_rebalance_filters, _Reason}};
             {ok, Devices} ->
-                DevicesDevEuiAppEUI = get_devices_deveui_app_eui(Devices),
-                Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, NumGroups),
+                DevicesDevEuiJoinEUI = get_devices_deveui_app_eui(Devices),
+                Grouped = distribute_devices_across_n_groups(DevicesDevEuiJoinEUI, NumGroups),
                 maps:from_list([
                     {Idx, assign_filter_index(Idx, Group)}
                     || {Idx, Group} <- enumerate_0(Grouped)
@@ -839,12 +839,12 @@ estimate_cost(
 
             EstimatedCosts = lists:map(
                 fun
-                    ({new, NewDevicesDevEuiAppEui}) ->
-                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
+                    ({new, NewDevicesDevEuiJoinEui}) ->
+                        Filter = new_xor_filter(NewDevicesDevEuiJoinEui),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1),
                         blockchain_txn_routing_v1:calculate_fee(Txn, Chain);
-                    ({update, Index, NewDevicesDevEuiAppEui}) ->
-                        Filter = new_xor_filter(NewDevicesDevEuiAppEui),
+                    ({update, Index, NewDevicesDevEuiJoinEui}) ->
+                        Filter = new_xor_filter(NewDevicesDevEuiJoinEui),
                         Txn = craft_update_filter_txn(PubKey, SigFun, Chain, OUI, Filter, 1, Index),
                         blockchain_txn_routing_v1:calculate_fee(Txn, Chain)
                 end,
@@ -949,11 +949,11 @@ craft_updates(Updates, BinFilters, MaxXorFilter) ->
                     case smallest_first(maps:to_list(maps:merge(BaseEmpty, Map))) of
                         [] ->
                             [{update, 0, Added}];
-                        [{Index, SmallestDevicesDevEuiAppEui} | _] ->
+                        [{Index, SmallestDevicesDevEuiJoinEui} | _] ->
                             %% NOTE: we only remove from filters we're updating
                             %% with devices to add. Removes aren't as important
                             %% as adds, and can incur unnecessary costs.
-                            AddedDevices = Added ++ SmallestDevicesDevEuiAppEui,
+                            AddedDevices = Added ++ SmallestDevicesDevEuiJoinEui,
                             [{update, Index, AddedDevices -- maps:get(Index, Removed, [])}]
                     end
             end
@@ -966,26 +966,26 @@ get_devices_deveui_app_eui(Devices) ->
 
 -spec get_devices_deveui_app_eui(
     Devices :: [router_device:device()],
-    DevEUIsAppEUIs :: list(device_dev_eui_app_eui())
+    DevEUIsJoinEUIs :: list(device_dev_eui_app_eui())
 ) -> list(device_dev_eui_app_eui()).
-get_devices_deveui_app_eui([], DevEUIsAppEUIs) ->
-    lists:usort(DevEUIsAppEUIs);
-get_devices_deveui_app_eui([Device | Devices], DevEUIsAppEUIs) ->
-    try deveui_appeui(Device) of
-        DevEUiAppEUI ->
+get_devices_deveui_app_eui([], DevEUIsJoinEUIs) ->
+    lists:usort(DevEUIsJoinEUIs);
+get_devices_deveui_app_eui([Device | Devices], DevEUIsJoinEUIs) ->
+    try deveui_joineui(Device) of
+        DevEUiJoinEUI ->
             Entry = #{
-                eui => DevEUiAppEUI,
+                eui => DevEUiJoinEUI,
                 filter_index => unset,
                 device_id => router_device:id(Device)
             },
-            get_devices_deveui_app_eui(Devices, [Entry | DevEUIsAppEUIs])
+            get_devices_deveui_app_eui(Devices, [Entry | DevEUIsJoinEUIs])
     catch
         _C:_R ->
-            lager:warning("failed to get deveui_appeui for device ~p: ~p", [
+            lager:warning("failed to get deveui_joineui for device ~p: ~p", [
                 router_device:id(Device),
                 {_C, _R}
             ]),
-            get_devices_deveui_app_eui(Devices, DevEUIsAppEUIs)
+            get_devices_deveui_app_eui(Devices, DevEUIsJoinEUIs)
     end.
 
 -spec smallest_first([{any(), L1 :: list()} | {any(), any(), L1 :: list()}]) -> list().
@@ -1010,14 +1010,14 @@ assign_filter_index(Index, DeviceEuis) when is_list(DeviceEuis) ->
 -spec contained_in_filters(
     BinFilters :: list(binary()),
     FilterToDevices :: map(),
-    DevicesDevEuiAppEui :: devices_dev_eui_app_eui()
+    DevicesDevEuiJoinEui :: devices_dev_eui_app_eui()
 ) ->
     {
         Curent :: filter_eui_mapping(),
         Added :: devices_dev_eui_app_eui(),
         Removed :: filter_eui_mapping()
     }.
-contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
+contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiJoinEui) ->
     ContainedBy = fun(Filter) ->
         fun(#{eui := Bin}) ->
             xor16:contain({Filter, ?HASH_FUN}, Bin)
@@ -1033,7 +1033,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
         lists:flatten(maps:values(FilterToDevices))
     ),
     %% subtract new devices from list
-    IncomingDevIds = [{DID, EUI} || #{device_id := DID, eui := EUI} <- DevicesDevEuiAppEui],
+    IncomingDevIds = [{DID, EUI} || #{device_id := DID, eui := EUI} <- DevicesDevEuiJoinEui],
     MaybeRemovedDevices = lists:flatten(maps:values(maps:without(IncomingDevIds, Keyed))),
 
     {CurrFilter, Removed, Added, _} =
@@ -1071,7 +1071,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                     end,
                 {InFilterAcc1, RemovedAcc1, AddedLeftover, RemovedLeftover}
             end,
-            {#{}, #{}, DevicesDevEuiAppEui, MaybeRemovedDevices},
+            {#{}, #{}, DevicesDevEuiJoinEui, MaybeRemovedDevices},
             enumerate_0(BinFilters)
         ),
     {CurrFilter, Added, Removed}.
@@ -1199,7 +1199,7 @@ is_unset_filter_index_in_list(#{eui := EUI1, device_id := ID1}, L) ->
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-device_deveui_appeui(Device) ->
+device_deveui_joineui(Device) ->
     [D] = get_devices_deveui_app_eui([Device]),
     D.
 
@@ -1211,17 +1211,17 @@ new_xor_filter_bin(Devices) ->
     {Bin, _} = xor16:to_bin({Filter, ?HASH_FUN}),
     {ok, Bin}.
 
-deveui_appeui_test() ->
+deveui_joineui_test() ->
     DevEUI = 6386327472473908003,
-    AppEUI = 6386327472473964541,
+    JoinEUI = 6386327472473964541,
     DeviceUpdates = [
         {dev_eui, <<DevEUI:64/integer-unsigned-big>>},
-        {app_eui, <<AppEUI:64/integer-unsigned-big>>}
+        {app_eui, <<JoinEUI:64/integer-unsigned-big>>}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(<<"ID0">>)),
     ?assertEqual(
-        <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>,
-        deveui_appeui(Device)
+        <<DevEUI:64/integer-unsigned-little, JoinEUI:64/integer-unsigned-little>>,
+        deveui_joineui(Device)
     ).
 
 should_update_filters_test() ->
@@ -1255,7 +1255,7 @@ test_for_should_update_filters_test() ->
         {ok, [Device0]}
     end),
 
-    {ok, BinFilter} = new_xor_filter_bin([device_deveui_appeui(Device0)]),
+    {ok, BinFilter} = new_xor_filter_bin([device_deveui_joineui(Device0)]),
     Routing0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, Routing0}
@@ -1294,9 +1294,9 @@ test_for_should_update_filters_test() ->
 
     ExpectedUpdateFilter0 = [
         {update, 0, [
-            device_deveui_appeui(Device1),
+            device_deveui_joineui(Device1),
             %% Already in the filter
-            assign_filter_index_map(0, device_deveui_appeui(Device0))
+            assign_filter_index_map(0, device_deveui_joineui(Device0))
         ]}
     ],
     ?assertMatch(
@@ -1343,9 +1343,9 @@ test_for_should_update_filters_test() ->
 
     %% ------------------------
     % Testing that we removed Device0 and Device1 but from diff filters
-    {ok, BinFilter0} = new_xor_filter_bin([device_deveui_appeui(Device0)]),
+    {ok, BinFilter0} = new_xor_filter_bin([device_deveui_joineui(Device0)]),
     RoutingRemoved0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter0, [], 1),
-    {ok, BinFilter1} = new_xor_filter_bin([device_deveui_appeui(Device1)]),
+    {ok, BinFilter1} = new_xor_filter_bin([device_deveui_joineui(Device1)]),
     RoutingRemoved1 = blockchain_ledger_routing_v1:update(
         RoutingRemoved0,
         {new_xor, BinFilter1},
@@ -1360,8 +1360,8 @@ test_for_should_update_filters_test() ->
     end),
 
     % Make are the devices are in the filters
-    ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_appeui(Device0))),
-    ?assert(xor16:contain({BinFilter1, ?HASH_FUN}, deveui_appeui(Device1))),
+    ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_joineui(Device0))),
+    ?assert(xor16:contain({BinFilter1, ?HASH_FUN}, deveui_joineui(Device1))),
     ?assertMatch(
         %% NOTE: No txns for only removed devices
         %% {RoutingRemoved1, [{update, 1, []}, {update, 0, []}], _CurrentMapping},
@@ -1455,7 +1455,7 @@ test_for_should_update_filters_test() ->
 
     %% ------------------------
     % Devices already in Filter should not cause updates
-    {ok, BinFilterLast} = new_xor_filter_bin([device_deveui_appeui(Device5)]),
+    {ok, BinFilterLast} = new_xor_filter_bin([device_deveui_joineui(Device5)]),
     RoutingLast = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilterLast, [], 1),
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
         {ok, RoutingLast}
@@ -1505,7 +1505,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 2>>}
     ],
     Device8 = router_device:update(DeviceUpdates8, router_device:new("ID8")),
-    {ok, BinFilter7} = new_xor_filter_bin([device_deveui_appeui(Device7)]),
+    {ok, BinFilter7} = new_xor_filter_bin([device_deveui_joineui(Device7)]),
     Routing7 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter7, [], 1),
 
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) -> {ok, Routing7} end),
@@ -1514,8 +1514,8 @@ test_for_should_update_filters_test() ->
 
     ExpectedUpdateFilter5 = [
         {update, 0, [
-            device_deveui_appeui(Device8),
-            assign_filter_index_map(0, device_deveui_appeui(Device7))
+            device_deveui_joineui(Device8),
+            assign_filter_index_map(0, device_deveui_joineui(Device7))
         ]}
     ],
     ?assertMatch(

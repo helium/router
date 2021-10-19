@@ -176,7 +176,7 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
-    e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
+    e2qc:teardown(router_console_api_get_devices_by_deveui_joineui),
     e2qc:teardown(router_console_api_get_org),
     application:stop(e2qc),
     ok = application:stop(throttle),
@@ -683,9 +683,10 @@ join_payload(AppKey, DevNonce) ->
     MType = ?JOIN_REQ,
     MHDRRFU = 0,
     Major = 0,
-    AppEUI = lorawan_utils:reverse(?APPEUI),
+    JoinEUI = lorawan_utils:reverse(?APPEUI),
     DevEUI = lorawan_utils:reverse(?DEVEUI),
-    Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
+    Payload0 =
+        <<MType:3, MHDRRFU:3, Major:2, JoinEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
     MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
     <<Payload0/binary, MIC:4/binary>>.
 
@@ -878,7 +879,7 @@ deframe_join_packet(
                 {AN, NID, DA, DL, RxD, M, CFL}
         end,
     ct:pal("Dec join ~w", [Payload]),
-    %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(JoinEUI0), lorawan_utils:reverse(DevEUI0)},
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     MIC = crypto:cmac(aes_cbc128, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
     NetID = <<"He2">>,

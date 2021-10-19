@@ -483,7 +483,7 @@ render_topic(Template, Device) ->
 render_topic_test() ->
     DeviceID = <<"device_123">>,
     DevEUI = lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
-    AppEUI = lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
+    JoinEUI = lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
     DeviceUpdates = [
         {name, <<"device_name">>},
         {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
@@ -497,7 +497,7 @@ render_topic_test() ->
         render_topic(<<"{{organization_id}}/{{device_id}}">>, Device)
     ),
     ?assertEqual(
-        <<AppEUI/binary, "/", DevEUI/binary>>,
+        <<JoinEUI/binary, "/", DevEUI/binary>>,
         render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)
     ),
     ?assertEqual(

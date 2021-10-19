@@ -272,13 +272,13 @@ handle_call(
 ) ->
     lager:info("faking join"),
     DevEui = router_device:dev_eui(Device0),
-    AppEui = router_device:app_eui(Device0),
-    case router_console_api:get_devices_by_deveui_appeui(DevEui, AppEui) of
+    JoinEui = router_device:app_eui(Device0),
+    case router_console_api:get_devices_by_deveui_joineui(DevEui, JoinEui) of
         [] ->
-            lager:error("failed to get app key for device ~p with DevEUI=~p AppEUI=~p", [
+            lager:error("failed to get app key for device ~p with DevEUI=~p JoinEUI=~p", [
                 router_device:id(Device0),
                 lorawan_utils:binary_to_hex(DevEui),
-                lorawan_utils:binary_to_hex(AppEui)
+                lorawan_utils:binary_to_hex(JoinEui)
             ]),
             {reply, {error, no_app_key, Device0}, State};
         [{AppKey, _} | _] ->
@@ -1133,7 +1133,7 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
 validate_join(
     #packet_pb{
         payload =
-            <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
+            <<MType:3, _MHDRRFU:3, _Major:2, _JoinEUI0:8/binary, _DevEUI0:8/binary,
                 DevNonce:2/binary, _MIC:4/binary>> = Payload
     } = Packet,
     PubKeyBin,
@@ -1194,8 +1194,8 @@ validate_join(
 handle_join(
     #packet_pb{
         payload =
-            <<_MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, DevNonce:2/binary,
-                _MIC:4/binary>>
+            <<_MType:3, _MHDRRFU:3, _Major:2, JoinEUI0:8/binary, DevEUI0:8/binary,
+                DevNonce:2/binary, _MIC:4/binary>>
     } = Packet,
     PubKeyBin,
     HotspotRegion,
@@ -1217,12 +1217,12 @@ handle_join(
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
-    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+    {JoinEUI, DevEUI} = {lorawan_utils:reverse(JoinEUI0), lorawan_utils:reverse(DevEUI0)},
     {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
-        {app_eui, AppEUI},
+        {app_eui, JoinEUI},
         {keys, [{NwkSKey, AppSKey} | router_device:keys(Device0)]},
         {devaddr, DevAddr},
         {fcntdown, 0},
@@ -1235,10 +1235,10 @@ handle_join(
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
     lager:debug(
-        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
+        "DevEUI ~s with JoinEUI ~s tried to join with nonce ~p via ~s",
         [
             lorawan_utils:binary_to_hex(DevEUI),
-            lorawan_utils:binary_to_hex(AppEUI),
+            lorawan_utils:binary_to_hex(JoinEUI),
             DevNonce,
             blockchain_utils:addr2name(PubKeyBin)
         ]
@@ -1388,7 +1388,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     DevEUI = router_device:dev_eui(Device0),
-    AppEUI = router_device:app_eui(Device0),
+    JoinEUI = router_device:app_eui(Device0),
     AName = blockchain_utils:addr2name(PubKeyBin),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
@@ -1419,7 +1419,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
-                            lorawan_utils:binary_to_hex(AppEUI),
+                            lorawan_utils:binary_to_hex(JoinEUI),
                             lorawan_mac_commands:parse_fopts(Data),
                             AName
                         ]
@@ -1466,7 +1466,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
-                            lorawan_utils:binary_to_hex(AppEUI),
+                            lorawan_utils:binary_to_hex(JoinEUI),
                             AName
                         ]
                     ),
@@ -1482,7 +1482,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                         [
                             lorawan_utils:mtype(MType),
                             lorawan_utils:binary_to_hex(DevEUI),
-                            lorawan_utils:binary_to_hex(AppEUI),
+                            lorawan_utils:binary_to_hex(JoinEUI),
                             ACK,
                             lorawan_mac_commands:parse_fopts(FOpts),
                             FCnt,

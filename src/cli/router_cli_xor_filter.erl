@@ -301,7 +301,7 @@ report_device(DeviceID) ->
                 false;
             true ->
                 {ok, DB1, CF1} = router_db:get_xor_filter_devices(),
-                EUI = router_xor_filter_worker:deveui_appeui(Device),
+                EUI = router_xor_filter_worker:deveui_joineui(Device),
                 case rocksdb:get(DB1, CF1, EUI, []) of
                     {ok, Bin} ->
                         maps:get(filter_index, binary_to_term(Bin), false);

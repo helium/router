@@ -19,7 +19,7 @@
     new/1,
     id/1,
     name/1, name/2,
-    app_eui/1, app_eui/2,
+    join_eui/1, join_eui/2,
     dev_eui/1, dev_eui/2,
     keys/1, keys/2,
     nwk_s_key/1,
@@ -84,13 +84,13 @@ name(Device) ->
 name(Name, Device) ->
     Device#device_v6{name = Name}.
 
--spec app_eui(device()) -> binary() | undefined.
-app_eui(Device) ->
-    Device#device_v6.app_eui.
+-spec join_eui(device()) -> binary() | undefined.
+join_eui(Device) ->
+    Device#device_v6.join_eui.
 
--spec app_eui(binary(), device()) -> device().
-app_eui(EUI, Device) ->
-    Device#device_v6{app_eui = EUI}.
+-spec join_eui(binary(), device()) -> device().
+join_eui(EUI, Device) ->
+    Device#device_v6{join_eui = EUI}.
 
 -spec dev_eui(device()) -> binary() | undefined.
 dev_eui(Device) ->
@@ -229,8 +229,8 @@ update([], Device) ->
     Device;
 update([{name, Value} | T], Device) ->
     update(T, ?MODULE:name(Value, Device));
-update([{app_eui, Value} | T], Device) ->
-    update(T, ?MODULE:app_eui(Value, Device));
+update([{join_eui, Value} | T], Device) ->
+    update(T, ?MODULE:join_eui(Value, Device));
 update([{dev_eui, Value} | T], Device) ->
     update(T, ?MODULE:dev_eui(Value, Device));
 update([{keys, Value} | T], Device) ->
@@ -276,7 +276,7 @@ deserialize(Binary) ->
                 id = V5#device_v5.id,
                 name = V5#device_v5.name,
                 dev_eui = V5#device_v5.dev_eui,
-                app_eui = V5#device_v5.app_eui,
+                join_eui = V5#device_v5.join_eui,
                 keys = V5#device_v5.keys,
                 devaddr = V5#device_v5.devaddr,
                 dev_nonces = V5#device_v5.dev_nonces,
@@ -297,7 +297,7 @@ deserialize(Binary) ->
                 id = V4#device_v4.id,
                 name = V4#device_v4.name,
                 dev_eui = V4#device_v4.dev_eui,
-                app_eui = V4#device_v4.app_eui,
+                join_eui = V4#device_v4.join_eui,
                 keys = [{V4#device_v4.nwk_s_key, V4#device_v4.app_s_key}],
                 devaddr = V4#device_v4.devaddr,
                 dev_nonces = [V4#device_v4.join_nonce],
@@ -318,7 +318,7 @@ deserialize(Binary) ->
                 id = V3#device_v3.id,
                 name = V3#device_v3.name,
                 dev_eui = V3#device_v3.dev_eui,
-                app_eui = V3#device_v3.app_eui,
+                join_eui = V3#device_v3.join_eui,
                 keys = [{V3#device_v3.nwk_s_key, V3#device_v3.app_s_key}],
                 devaddr = V3#device_v3.devaddr,
                 dev_nonces = [V3#device_v3.join_nonce],
@@ -339,7 +339,7 @@ deserialize(Binary) ->
                 id = V2#device_v2.id,
                 name = V2#device_v2.name,
                 dev_eui = V2#device_v2.dev_eui,
-                app_eui = V2#device_v2.app_eui,
+                join_eui = V2#device_v2.join_eui,
                 keys = [{V2#device_v2.nwk_s_key, V2#device_v2.app_s_key}],
                 devaddr = undefined,
                 dev_nonces = [V2#device_v2.join_nonce],
@@ -365,7 +365,7 @@ deserialize(Binary) ->
                 id = V1#device_v1.id,
                 name = V1#device_v1.name,
                 dev_eui = V1#device_v1.dev_eui,
-                app_eui = V1#device_v1.app_eui,
+                join_eui = V1#device_v1.join_eui,
                 keys = [{V1#device_v1.nwk_s_key, V1#device_v1.app_s_key}],
                 devaddr = undefined,
                 dev_nonces = [V1#device_v1.join_nonce],
@@ -385,7 +385,7 @@ deserialize(Binary) ->
                 id = V0#device.id,
                 name = V0#device.name,
                 dev_eui = V0#device.dev_eui,
-                app_eui = V0#device.app_eui,
+                join_eui = V0#device.join_eui,
                 keys = [{V0#device.nwk_s_key, V0#device.app_s_key}],
                 devaddr = undefined,
                 dev_nonces = [V0#device.join_nonce],
@@ -523,10 +523,10 @@ name_test() ->
     ?assertEqual(undefined, name(Device)),
     ?assertEqual(<<"name">>, name(name(<<"name">>, Device))).
 
-app_eui_test() ->
+join_eui_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(undefined, app_eui(Device)),
-    ?assertEqual(<<"app_eui">>, app_eui(app_eui(<<"app_eui">>, Device))).
+    ?assertEqual(undefined, join_eui(Device)),
+    ?assertEqual(<<"join_eui">>, join_eui(join_eui(<<"join_eui">>, Device))).
 
 dev_eui_test() ->
     Device = new(<<"id">>),
@@ -616,7 +616,7 @@ update_test() ->
     Device = new(<<"id">>),
     Updates = [
         {name, <<"name">>},
-        {app_eui, <<"app_eui">>},
+        {join_eui, <<"join_eui">>},
         {dev_eui, <<"dev_eui">>},
         {keys, [{<<"nwk_s_key">>, <<"app_s_key">>}]},
         {devaddr, <<"devaddr">>},
@@ -636,7 +636,7 @@ update_test() ->
     UpdatedDevice = #device_v6{
         id = <<"id">>,
         name = <<"name">>,
-        app_eui = <<"app_eui">>,
+        join_eui = <<"join_eui">>,
         dev_eui = <<"dev_eui">>,
         keys = [{<<"nwk_s_key">>, <<"app_s_key">>}],
         devaddr = <<"devaddr">>,

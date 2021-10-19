@@ -19,7 +19,7 @@
 -include("console_test.hrl").
 -include("lorawan_vars.hrl").
 
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 %%--------------------------------------------------------------------
@@ -90,7 +90,7 @@ decode_test(Config) ->
         <<"downlink_url">> => fun erlang:is_binary/1,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -200,7 +200,7 @@ timeout_test(Config) ->
         <<"downlink_url">> => fun erlang:is_binary/1,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -288,7 +288,7 @@ too_many_test(Config) ->
         <<"downlink_url">> => fun erlang:is_binary/1,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,

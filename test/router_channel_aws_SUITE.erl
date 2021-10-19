@@ -17,7 +17,7 @@
 -include("console_test.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 -define(ETS, ?MODULE).
 

@@ -20,7 +20,7 @@
 -export([lw_join_test/1]).
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
--define(APPEUI, <<0, 0, 0, 0, 0, 0, 0, 0>>).
+-define(JOINEUI, <<0, 0, 0, 0, 0, 0, 0, 0>>).
 -define(DEVEUI, <<16#EF, 16#BE, 16#AD, 16#DE, 16#EF, 16#BE, 16#AD, 16#DE>>).
 -define(ETS, suite_config).
 
@@ -94,7 +94,7 @@ init_per_testcase(TestCase, Config) ->
             forward => self(),
             ets => Tab,
             app_key => AppKey,
-            app_eui => ?APPEUI,
+            join_eui => ?JOINEUI,
             dev_eui => ?DEVEUI
         }},
         {port, 3000}
@@ -251,7 +251,7 @@ lw_join_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -415,7 +415,7 @@ lw_join_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,

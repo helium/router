@@ -470,7 +470,7 @@ render_topic(Template, Device) ->
         "device_id" => router_device:id(Device),
         "device_name" => router_device:name(Device),
         "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-        "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        "join_eui" => lorawan_utils:binary_to_hex(router_device:join_eui(Device)),
         "organization_id" => maps:get(organization_id, Metadata, <<>>)
     },
     bbmustache:render(Template, Map).
@@ -487,7 +487,7 @@ render_topic_test() ->
     DeviceUpdates = [
         {name, <<"device_name">>},
         {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 1>>},
-        {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>},
+        {join_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>},
         {metadata, #{organization_id => <<"org_123">>}}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(DeviceID)),
@@ -498,7 +498,7 @@ render_topic_test() ->
     ),
     ?assertEqual(
         <<JoinEUI/binary, "/", DevEUI/binary>>,
-        render_topic(<<"{{app_eui}}/{{device_eui}}">>, Device)
+        render_topic(<<"{{join_eui}}/{{device_eui}}">>, Device)
     ),
     ?assertEqual(
         <<"org_123/device_name">>,

@@ -565,7 +565,7 @@ send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         id => router_device:id(Device),
         name => router_device:name(Device),
         dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-        app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        join_eui => lorawan_utils:binary_to_hex(router_device:join_eui(Device)),
         metadata => router_device:metadata(Device),
         fcnt => FCnt,
         reported_at => Time,

@@ -180,7 +180,7 @@ Data payload example sent to integrations
     "id": "device_uuid",
     "name": "device_name",
     "dev_eui": "dev_eui",
-    "app_eui": "app_eui",
+    "join_eui": "join_eui",
     "metadata": {},
     "fcnt": 2,
     "reported_at": 1619562788361,

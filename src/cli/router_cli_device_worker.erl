@@ -226,7 +226,7 @@ format_device_for_table(D) ->
 
 -spec format_device_for_list(router_device:device()) -> [string()].
 format_device_for_list(D) ->
-    Fields = [id, name, app_eui, dev_eui, devaddr, fcnt, fcntdown, queue, metadata, is_active],
+    Fields = [id, name, join_eui, dev_eui, devaddr, fcnt, fcntdown, queue, metadata, is_active],
     Longest = lists:max([length(atom_to_list(X)) || X <- Fields, is_atom(X)]),
     lists:map(
         fun(Field) ->

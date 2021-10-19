@@ -20,7 +20,7 @@
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 %%--------------------------------------------------------------------
@@ -103,7 +103,7 @@ data_test_1(Config) ->
                 ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -190,7 +190,7 @@ data_test_2(Config) ->
                 ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -311,7 +311,7 @@ data_test_3(Config) ->
                 ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,

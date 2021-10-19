@@ -272,7 +272,7 @@ handle_call(
 ) ->
     lager:info("faking join"),
     DevEui = router_device:dev_eui(Device0),
-    JoinEui = router_device:app_eui(Device0),
+    JoinEui = router_device:join_eui(Device0),
     case router_console_api:get_devices_by_deveui_joineui(DevEui, JoinEui) of
         [] ->
             lager:error("failed to get app key for device ~p with DevEUI=~p JoinEUI=~p", [
@@ -362,7 +362,7 @@ handle_cast(
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
+                {join_eui, router_device:join_eui(APIDevice)},
                 {metadata, router_device:metadata(APIDevice)},
                 {is_active, IsActive}
             ],
@@ -1222,7 +1222,7 @@ handle_join(
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
-        {app_eui, JoinEUI},
+        {join_eui, JoinEUI},
         {keys, [{NwkSKey, AppSKey} | router_device:keys(Device0)]},
         {devaddr, DevAddr},
         {fcntdown, 0},
@@ -1388,7 +1388,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     DevEUI = router_device:dev_eui(Device0),
-    JoinEUI = router_device:app_eui(Device0),
+    JoinEUI = router_device:join_eui(Device0),
     AName = blockchain_utils:addr2name(PubKeyBin),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
     lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),

@@ -17,7 +17,7 @@
 -include("console_test.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 -define(MQTT_TIMEOUT, timer:seconds(2)).
 
@@ -72,7 +72,7 @@ mqtt_test(Config) ->
     DownlinkTemplate = kvc:path([<<"credentials">>, <<"downlink">>, <<"topic">>], MQTTChannel),
     DeviceUpdates = [
         {dev_eui, ?DEVEUI},
-        {app_eui, ?APPEUI},
+        {join_eui, ?JOINEUI},
         {metadata, #{organization_id => ?CONSOLE_ORG_ID}}
     ],
     DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
@@ -118,7 +118,7 @@ mqtt_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -263,7 +263,7 @@ mqtt_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -440,7 +440,7 @@ mqtt_update_test(Config) ->
     UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">>, <<"topic">>], MQTTChannel),
     DeviceUpdates = [
         {dev_eui, ?DEVEUI},
-        {app_eui, ?APPEUI},
+        {join_eui, ?JOINEUI},
         {metadata, #{organization_id => ?CONSOLE_ORG_ID}}
     ],
     DeviceForTemplate = router_device:update(DeviceUpdates, router_device:new(?CONSOLE_DEVICE_ID)),
@@ -485,7 +485,7 @@ mqtt_update_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -600,7 +600,7 @@ mqtt_update_test(Config) ->
     %% Switching topic channel should update but no restart
     Tab = proplists:get_value(ets, Config),
 
-    UplinkTemplate1 = <<"uplink/{{app_eui}}/{{device_eui}}">>,
+    UplinkTemplate1 = <<"uplink/{{join_eui}}/{{device_eui}}">>,
     UplinkTopic1 = render_topic(UplinkTemplate1, DeviceForTemplate),
     MQTTChannel0 = #{
         <<"type">> => <<"mqtt">>,
@@ -644,7 +644,7 @@ mqtt_update_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -799,7 +799,7 @@ mqtt_update_test(Config) ->
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"join_eui">> => lorawan_utils:binary_to_hex(?JOINEUI),
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
@@ -924,7 +924,7 @@ render_topic(Template, Device) ->
     Map = #{
         "device_id" => router_device:id(Device),
         "device_eui" => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
-        "app_eui" => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        "join_eui" => lorawan_utils:binary_to_hex(router_device:join_eui(Device)),
         "organization_id" => maps:get(organization_id, Metadata, <<>>)
     },
     bbmustache:render(Template, Map).

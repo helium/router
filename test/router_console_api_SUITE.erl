@@ -15,7 +15,7 @@
 -include("lorawan_vars.hrl").
 -include("router_device_worker.hrl").
 
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 %%--------------------------------------------------------------------

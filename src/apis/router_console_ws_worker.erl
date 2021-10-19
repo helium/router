@@ -348,7 +348,7 @@ update_device_record(DB, CF, DeviceID) ->
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
+                {join_eui, router_device:join_eui(APIDevice)},
                 {metadata, router_device:metadata(APIDevice)},
                 {is_active, router_device:is_active(APIDevice)}
             ],

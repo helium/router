@@ -36,7 +36,7 @@
 -include("console_test.hrl").
 
 -define(HASH_FUN, fun xxhash:hash64/1).
--define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
+-define(JOINEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
 -record(state, {
@@ -160,7 +160,7 @@ publish_xor_test(Config) ->
 
     DeviceUpdates = [
         {dev_eui, ?DEVEUI},
-        {app_eui, ?APPEUI}
+        {join_eui, ?JOINEUI}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(<<"ID2">>)),
     DeviceDevEuiJoinEui = router_xor_filter_worker:deveui_joineui(Device),
@@ -1281,7 +1281,7 @@ between_worker_device_add_remove_send_updates_to_console_test(Config) ->
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
-    Updates = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Updates = [{join_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
     Device1ID = <<"device-1">>,
     Device1 = router_device:update(Updates, router_device:new(Device1ID)),
     Device2ID = <<"device-2">>,
@@ -1340,7 +1340,7 @@ device_add_multiple_send_updates_to_console_test(Config) ->
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
-    Updates = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Updates = [{join_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
     Device1ID = <<"device-1">>,
     Device1 = router_device:update(Updates, router_device:new(Device1ID)),
     Device2ID = <<"device-2">>,
@@ -1401,13 +1401,13 @@ device_add_unique_and_matching_send_updates_to_console_test(Config) ->
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
-    Updates1 = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Updates1 = [{join_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
     Device1ID = <<"device-1">>,
     Device1 = router_device:update(Updates1, router_device:new(Device1ID)),
     Device1IDCopy = <<"device-1-copy">>,
     Device1Copy = router_device:update(Updates1, router_device:new(Device1IDCopy)),
 
-    Updates2 = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Updates2 = [{join_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
     Device2ID = <<"device-3">>,
     Device2 = router_device:update(Updates2, router_device:new(Device2ID)),
 
@@ -1471,7 +1471,7 @@ device_removed_send_updates_to_console_test(Config) ->
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
-    Updates = [{app_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
+    Updates = [{join_eui, crypto:strong_rand_bytes(8)}, {dev_eui, crypto:strong_rand_bytes(8)}],
     Device1ID = <<"device-1">>,
     Device1 = router_device:update(Updates, router_device:new(Device1ID)),
     Device2ID = <<"device-2">>,
@@ -1600,7 +1600,7 @@ n_rand_devices(N) ->
     lists:map(
         fun(Idx) ->
             Updates = [
-                {app_eui, crypto:strong_rand_bytes(8)},
+                {join_eui, crypto:strong_rand_bytes(8)},
                 {dev_eui, crypto:strong_rand_bytes(8)}
             ],
             Name = erlang:list_to_binary(io_lib:format("Device-~p", [Idx])),

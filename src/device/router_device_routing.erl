@@ -323,7 +323,7 @@ print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
             DevEUI2 = lorawan_utils:binary_to_hex(DevEUI1),
             JoinEUI2 = lorawan_utils:binary_to_hex(JoinEUI1),
             lager:debug(
-                [{app_eui, JoinEUI1}, {dev_eui, DevEUI1}],
+                [{join_eui, JoinEUI1}, {dev_eui, DevEUI1}],
                 "responded ~p to join deveui=~s joineui=~s (~p/~p) from: ~p (pid: ~p)",
                 [Resp, DevEUI2, JoinEUI2, DevEUI0, JoinEUI0, HotspotName, HandlerPid]
             );
@@ -368,7 +368,7 @@ join_offer_(Offer, _Pid) ->
     case get_devices(DevEUI1, JoinEUI1) of
         {error, _Reason} ->
             lager:debug(
-                [{app_eui, JoinEUI1}, {dev_eui, DevEUI1}],
+                [{join_eui, JoinEUI1}, {dev_eui, DevEUI1}],
                 "failed to find device matching ~p/~p",
                 [
                     {DevEUI1, DevEUI0},
@@ -378,7 +378,7 @@ join_offer_(Offer, _Pid) ->
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, []} ->
             lager:debug(
-                [{app_eui, JoinEUI1}, {dev_eui, DevEUI1}],
+                [{join_eui, JoinEUI1}, {dev_eui, DevEUI1}],
                 "did not find any device matching ~p/~p",
                 [
                     {DevEUI1, DevEUI0},
@@ -388,7 +388,7 @@ join_offer_(Offer, _Pid) ->
             {error, ?CONSOLE_UNKNOWN_DEVICE};
         {ok, [Device | _] = Devices} ->
             lager:debug(
-                [{app_eui, JoinEUI1}, {dev_eui, DevEUI1}],
+                [{join_eui, JoinEUI1}, {dev_eui, DevEUI1}],
                 "found devices ~p matching ~p/~p",
                 [
                     [router_device:id(D) || D <- Devices],
@@ -754,7 +754,7 @@ packet(
             end;
         {error, api_not_found} ->
             lager:debug(
-                [{app_eui, JoinEUI}, {dev_eui, DevEUI}],
+                [{join_eui, JoinEUI}, {dev_eui, DevEUI}],
                 "no key for ~p ~p received by ~s",
                 [
                     lorawan_utils:binary_to_hex(DevEUI),
@@ -765,7 +765,7 @@ packet(
             {error, undefined_app_key};
         {error, _Reason} ->
             lager:debug(
-                [{app_eui, JoinEUI}, {dev_eui, DevEUI}],
+                [{join_eui, JoinEUI}, {dev_eui, DevEUI}],
                 "Device ~s with JoinEUI ~s tried to join through ~s " ++
                     "but had a bad Message Intregity Code~n",
                 [lorawan_utils:binary_to_hex(DevEUI), lorawan_utils:binary_to_hex(JoinEUI), AName]

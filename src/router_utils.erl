@@ -49,7 +49,7 @@
 ) -> ok.
 event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
     DevEUI = router_device:dev_eui(Device),
-    JoinEUI = router_device:app_eui(Device),
+    JoinEUI = router_device:join_eui(Device),
 
     Payload0 = blockchain_helium_packet_v1:payload(Packet),
     Payload1 =
@@ -94,7 +94,7 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
 ) -> ok.
 event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
-    JoinEUI = router_device:app_eui(Device),
+    JoinEUI = router_device:join_eui(Device),
     Payload = blockchain_helium_packet_v1:payload(Packet),
     Map = #{
         id => router_utils:uuid_v4(),
@@ -558,7 +558,7 @@ b0(Dir, DevAddr, FCnt, Len) ->
 lager_md(Device) ->
     lager:md([
         {device_id, router_device:id(Device)},
-        {app_eui, router_device:app_eui(Device)},
+        {join_eui, router_device:join_eui(Device)},
         {dev_eui, router_device:dev_eui(Device)},
         {devaddr, router_device:devaddr(Device)}
     ]).
@@ -578,7 +578,7 @@ trace(DeviceID) ->
         FileName,
         [
             {module, router_device_routing},
-            {app_eui, router_device:app_eui(Device)},
+            {join_eui, router_device:join_eui(Device)},
             {dev_eui, router_device:dev_eui(Device)}
         ],
         debug
@@ -867,7 +867,7 @@ trace_test() ->
     DeviceID = <<"12345678910">>,
     Device = router_device:update(
         [
-            {app_eui, <<"app_eui">>},
+            {join_eui, <<"join_eui">>},
             {dev_eui, <<"dev_eui">>},
             {devaddr, <<"devaddr">>}
         ],

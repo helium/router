@@ -766,7 +766,7 @@ get_devices_by_deveui_joineui_(DevEui, JoinEui) ->
     {Endpoint, Token} = token_lookup(),
     Url =
         <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
-            (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
+            (lorawan_utils:binary_to_hex(DevEui))/binary, "&join_eui=",
             (lorawan_utils:binary_to_hex(JoinEui))/binary>>,
     lager:debug("get ~p", [Url]),
     Opts = [
@@ -872,7 +872,7 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault) ->
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},
         {dev_eui, lorawan_utils:hex_to_binary(kvc:path([<<"dev_eui">>], JSONDevice))},
-        {app_eui, lorawan_utils:hex_to_binary(kvc:path([<<"app_eui">>], JSONDevice))},
+        {join_eui, lorawan_utils:hex_to_binary(kvc:path([<<"join_eui">>], JSONDevice))},
         {metadata, maps:filter(fun(_K, V) -> V =/= undefined end, Metadata)},
         {is_active, kvc:path([<<"active">>], JSONDevice)}
     ],

@@ -43,7 +43,7 @@ init_router_config(Config, NumRouters) ->
             forward => self(),
             ets => Tab,
             app_key => ?APPKEY,
-            app_eui => ?APPEUI,
+            join_eui => ?JOINEUI,
             dev_eui => ?DEVEUI
         }},
         {port, 3000}

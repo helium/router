@@ -62,7 +62,7 @@
     controller :: pid() | undefined,
     decoder :: undefined | router_decoder:decoder(),
     payload_template :: undefined | binary(),
-    receive_joins = false :: boolean()
+    channel_options :: map()
 }).
 
 -type channel() :: #channel{}.
@@ -166,7 +166,8 @@ new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template) ->
         device_id = DeviceID,
         controller = Pid,
         decoder = Decoder,
-        payload_template = Template
+        payload_template = Template,
+        channel_options = #{}
     }.
 
 -spec new(
@@ -178,9 +179,9 @@ new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template) ->
     Pid :: pid(),
     Decoder :: undefined | router_decoder:decoder(),
     Template :: undefined | binary(),
-    ReceiveJoins :: boolean()
+    ChannelOptions :: map()
 ) -> channel().
-new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template, ReceiveJoins) ->
+new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template, ChannelOptions) ->
     #channel{
         id = ID,
         handler = Handler,
@@ -190,7 +191,7 @@ new(ID, Handler, Name, Args, DeviceID, Pid, Decoder, Template, ReceiveJoins) ->
         controller = Pid,
         decoder = Decoder,
         payload_template = Template,
-        receive_joins = ReceiveJoins
+        channel_options = ChannelOptions
     }.
 
 -spec id(channel()) -> binary().
@@ -239,7 +240,7 @@ hash(Channel0) ->
 
 -spec receive_joins(channel()) -> boolean().
 receive_joins(Channel) ->
-    Channel#channel.receive_joins.
+    maps:get(receive_joins, Channel#channel.channel_options, false).
 
 -spec to_map(channel()) -> map().
 to_map(Channel) ->
@@ -323,7 +324,7 @@ new_test() ->
         controller = self(),
         decoder = undefined,
         payload_template = undefined,
-        receive_joins = false
+        channel_options = #{}
     },
     ?assertEqual(
         Channel0,
@@ -346,7 +347,7 @@ new_test() ->
         controller = self(),
         decoder = Decoder,
         payload_template = undefined,
-        receive_joins = false
+        channel_options = #{}
     },
     ?assertEqual(
         Channel1,
@@ -369,7 +370,7 @@ new_test() ->
         controller = self(),
         decoder = Decoder,
         payload_template = <<"template">>,
-        receive_joins = false
+        channel_options = #{}
     },
     ?assertEqual(
         Channel2,
@@ -393,7 +394,7 @@ new_test() ->
         controller = self(),
         decoder = Decoder,
         payload_template = <<"template">>,
-        receive_joins = true
+        channel_options = #{foo => true, bar => false}
     },
     ?assertEqual(
         Channel3,
@@ -406,7 +407,7 @@ new_test() ->
             self(),
             Decoder,
             <<"template">>,
-            true
+            #{foo => true, bar => false}
         )
     ).
 
@@ -429,7 +430,8 @@ id_test() ->
         device_id = <<"device_id">>,
         controller = self(),
         decoder = Decoder,
-        payload_template = undefined
+        payload_template = undefined,
+        channel_options = #{}
     },
     ?assertEqual(<<"channel_id">>, id(Channel1)).
 
@@ -452,7 +454,8 @@ unique_id_test() ->
         device_id = <<"device_id">>,
         controller = self(),
         decoder = Decoder,
-        payload_template = undefined
+        payload_template = undefined,
+        channel_options = #{}
     },
     ?assertEqual(<<"channel_iddecoder_id">>, unique_id(Channel1)).
 
@@ -543,7 +546,7 @@ receive_joins_test() ->
         self(),
         <<>>,
         <<>>,
-        true
+        #{receive_joins => true}
     ),
     ?assertEqual(true, receive_joins(Channel)).
 

@@ -366,6 +366,7 @@ event(Device, Map) ->
                             dc => maps:get(dc, Map)
                         };
                     {C, _SC} when
+                        %% TODO: join_request guard never applies; see prev arm
                         C == uplink orelse
                             C == downlink orelse
                             C == join_request orelse
@@ -611,7 +612,10 @@ convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
         Pid,
         Decoder,
         Template,
-        ReceiveJoins
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
     ),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
@@ -665,7 +669,10 @@ convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
         Pid,
         Decoder,
         Template,
-        ReceiveJoins
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
     ),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>} = JSONChannel) ->
@@ -697,7 +704,10 @@ convert_channel(Device, Pid, #{<<"type">> := <<"aws">>} = JSONChannel) ->
         Pid,
         Decoder,
         Template,
-        ReceiveJoins
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
     ),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"console">>} = JSONChannel) ->
@@ -717,7 +727,10 @@ convert_channel(Device, Pid, #{<<"type">> := <<"console">>} = JSONChannel) ->
         Pid,
         Decoder,
         Template,
-        ReceiveJoins
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
     ),
     {true, Channel};
 convert_channel(_Device, _Pid, _Channel) ->

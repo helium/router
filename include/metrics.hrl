@@ -23,6 +23,7 @@
 -define(METRICS_VM_CPU, router_vm_cpu).
 -define(METRICS_VM_PROC_Q, router_vm_process_queue).
 -define(METRICS_VM_ETS_MEMORY, router_vm_ets_memory).
+-define(METRICS_XOR_FILTER, metrics_xor_filter).
 
 -define(METRICS, [
     {?METRICS_DC, [], "Active State Channel balance"},
@@ -43,5 +44,6 @@
     {?METRICS_CHAIN_BLOCKS, [], "Router's blockchain blocks"},
     {?METRICS_VM_CPU, [cpu], "Router CPU usage"},
     {?METRICS_VM_PROC_Q, [name], "Router process queue"},
-    {?METRICS_VM_ETS_MEMORY, [name], "Router ets memory"}
+    {?METRICS_VM_ETS_MEMORY, [name], "Router ets memory"},
+    {?METRICS_XOR_FILTER, [], "Router XOR Filter udpates"}
 ]).

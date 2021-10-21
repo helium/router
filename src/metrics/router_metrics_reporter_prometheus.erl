@@ -64,6 +64,7 @@ handle_event({data, Key, Data, _MetaData}, State) when
     Key == ?METRICS_SC_ACTIVE_BALANCE;
     Key == ?METRICS_SC_ACTIVE_ACTORS;
     Key == ?METRICS_DC;
+    Key == ?METRICS_XOR_FILTER;
     Key == ?METRICS_CHAIN_BLOCKS
 ->
     _ = prometheus_gauge:set(erlang:atom_to_list(Key), Data),
@@ -108,6 +109,7 @@ declare_metric(Key, Meta, Desc) when
     Key == ?METRICS_SC_ACTIVE_BALANCE;
     Key == ?METRICS_SC_ACTIVE_ACTORS;
     Key == ?METRICS_DC;
+    Key == ?METRICS_XOR_FILTER;
     Key == ?METRICS_CHAIN_BLOCKS;
     Key == ?METRICS_VM_CPU;
     Key == ?METRICS_VM_PROC_Q;

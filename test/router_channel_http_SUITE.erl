@@ -91,6 +91,7 @@ http_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -226,6 +227,7 @@ http_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -424,6 +426,7 @@ http_update_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -832,6 +835,7 @@ http_decoded_payload_test(Config) ->
     %% Waiting for data from HTTP channel
     %% Make sure our decoded payload is present
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,

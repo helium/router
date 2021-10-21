@@ -425,6 +425,7 @@ late_packet_test(Config) ->
 
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -650,8 +651,8 @@ join_sent_to_integration_test(Config) ->
     test_utils:wait_state_channel_message(1250),
 
     %% Waiting for data from HTTP channel
-    %% <<"type">> => <<"join">>,
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"join">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>

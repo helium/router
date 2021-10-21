@@ -96,6 +96,7 @@ data_test_1(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -183,6 +184,7 @@ data_test_2(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -304,6 +306,7 @@ data_test_3(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>

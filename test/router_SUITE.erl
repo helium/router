@@ -225,6 +225,7 @@ dupes_test(Config) ->
 
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -525,6 +526,7 @@ dupes2_test(Config) ->
 
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -1348,6 +1350,7 @@ adr_test(Config) ->
 
     %% Wait HTTP channel data
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -1531,6 +1534,7 @@ adr_test(Config) ->
     %% Waiting for data from HTTP channel
     %% ---------------------------------------------------------------
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -1714,6 +1718,7 @@ adr_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -1905,6 +1910,7 @@ adr_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -2050,6 +2056,7 @@ adr_test(Config) ->
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,

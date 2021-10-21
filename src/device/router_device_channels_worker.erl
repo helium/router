@@ -574,8 +574,7 @@ send_join_to_channel(
 
     %% No touchy, this is set in STONE
     Map = #{
-        %% TODO: How do we tell integrations the difference between joins and frames?
-        %% type => join,
+        type => join,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),
@@ -609,6 +608,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     %% No touchy, this is set in STONE
     Map = #{
+        type => frame,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),

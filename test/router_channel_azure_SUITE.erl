@@ -131,6 +131,7 @@ azure_test(Config) ->
     end,
 
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -268,6 +269,7 @@ azure_test(Config) ->
 
     %% Waiting for data from MQTT channel
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,

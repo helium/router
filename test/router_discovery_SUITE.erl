@@ -144,6 +144,7 @@ disovery_test(Config) ->
     %% Make sure that we got our txn id in the payload
     Body1 = jsx:encode(#{txn_id => TxnID1, error => 0}),
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -209,6 +210,7 @@ disovery_test(Config) ->
 
     %% Make sure that we got our txn id in the payload
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -294,6 +296,7 @@ disovery_test(Config) ->
 
     Body3 = jsx:encode(#{txn_id => TxnID3, error => 0}),
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>
@@ -373,6 +376,7 @@ fail_to_connect_test(Config) ->
 
     Body1 = jsx:encode(#{txn_id => TxnID1, error => 1}),
     test_utils:wait_channel_data(#{
+        <<"type">> => <<"frame">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> =>

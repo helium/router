@@ -157,7 +157,8 @@ clear_queue(Pid) ->
 device_update(Pid) ->
     gen_server:cast(Pid, device_update).
 
--spec fake_join(Pid :: pid(), PubkeyBin :: libp2p_crypto:pubkey_bin()) -> router_device:device().
+-spec fake_join(Pid :: pid(), PubkeyBin :: libp2p_crypto:pubkey_bin()) ->
+    {ok, router_device:device()} | {error, any(), router_device:device()}.
 fake_join(Pid, PubkeyBin) ->
     gen_server:call(Pid, {fake_join, PubkeyBin}).
 
@@ -272,33 +273,48 @@ handle_call(
     lager:info("faking join"),
     DevEui = router_device:dev_eui(Device0),
     AppEui = router_device:app_eui(Device0),
-    [{AppKey, _} | _] = router_console_api:get_devices_by_deveui_appeui(DevEui, AppEui),
-    AppNonce = crypto:strong_rand_bytes(3),
-    DevNonce = crypto:strong_rand_bytes(2),
-    NwkSKey = crypto:block_encrypt(
-        aes_ecb,
-        AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
-    ),
-    AppSKey = crypto:block_encrypt(
-        aes_ecb,
-        AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
-    ),
-    {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
-    DeviceUpdates = [
-        {keys, [{NwkSKey, AppSKey}]},
-        {devaddr, DevAddr},
-        {fcntdown, 0},
-        {channel_correction, false}
-    ],
-    Device1 = router_device:update(DeviceUpdates, Device0),
-    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-    {reply, Device1, State#state{
-        device = Device1,
-        downlink_handled_at = {-1, erlang:system_time(millisecond)},
-        fcnt = -1
-    }};
+    case router_console_api:get_devices_by_deveui_appeui(DevEui, AppEui) of
+        [] ->
+            lager:error("failed to get app key for device ~p with DevEUI=~p AppEUI=~p", [
+                router_device:id(Device0),
+                lorawan_utils:binary_to_hex(DevEui),
+                lorawan_utils:binary_to_hex(AppEui)
+            ]),
+            {reply, {error, no_app_key, Device0}, State};
+        [{AppKey, _} | _] ->
+            AppNonce = crypto:strong_rand_bytes(3),
+            DevNonce = crypto:strong_rand_bytes(2),
+            NwkSKey = crypto:block_encrypt(
+                aes_ecb,
+                AppKey,
+                lorawan_utils:padded(
+                    16,
+                    <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
+                )
+            ),
+            AppSKey = crypto:block_encrypt(
+                aes_ecb,
+                AppKey,
+                lorawan_utils:padded(
+                    16,
+                    <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
+                )
+            ),
+            {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
+            DeviceUpdates = [
+                {keys, [{NwkSKey, AppSKey}]},
+                {devaddr, DevAddr},
+                {fcntdown, 0},
+                {channel_correction, false}
+            ],
+            Device1 = router_device:update(DeviceUpdates, Device0),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            {reply, {ok, Device1}, State#state{
+                device = Device1,
+                downlink_handled_at = {-1, erlang:system_time(millisecond)},
+                fcnt = -1
+            }}
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.

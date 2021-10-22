@@ -971,7 +971,7 @@ schedule_next_tick() ->
 
 -spec schedule_org_eviction(OrgID :: binary(), Reason :: any()) -> ok.
 schedule_org_eviction(OrgID, Reason) ->
-    _ = erlang:send_after(?GET_ORG_EVICTION_TIMEOUT, self(), {evict_org, OrgID, Reason}),
+    _ = erlang:send_after(?GET_ORG_EVICTION_TIMEOUT, ?SERVER, {evict_org, OrgID, Reason}),
     ok.
 
 -spec store_pending_burns(

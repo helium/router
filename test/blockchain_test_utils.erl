@@ -209,7 +209,7 @@ regossip_block(Block, SwarmTID) ->
     libp2p_group_gossip:send(
         libp2p_swarm:gossip_group(SwarmTID),
         ?GOSSIP_PROTOCOL_V1,
-        blockchain_gossip_handler:gossip_data(SwarmTID, Block)
+        blockchain_gossip_handler:gossip_data_v1(SwarmTID, Block)
     ).
 
 signatures(ConsensusMembers, BinBlock) ->

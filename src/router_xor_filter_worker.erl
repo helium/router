@@ -448,7 +448,7 @@ handle_info(
                     ({new, Filter, NewDevicesDevEuiAppEui}, {Pendings, Nonce}) ->
                         lager:info("adding new filter"),
                         Txn = craft_new_filter_txn(PubKey, SigFun, Chain, OUI, Filter, Nonce + 1),
-                        Hash = submit_txn(Txn),
+                        Hash = submit_txn(Txn, Chain),
                         lager:info("new filter txn ~p submitted ~p", [
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
@@ -474,7 +474,7 @@ handle_info(
                             Nonce + 1,
                             Index
                         ),
-                        Hash = submit_txn(Txn),
+                        Hash = submit_txn(Txn, Chain),
                         lager:info("updating filter txn ~p submitted ~p", [
                             Hash,
                             lager:pr(Txn, blockchain_txn_routing_v1)
@@ -606,7 +606,7 @@ commit_groups_to_filters(NewGroups, #state{chain = Chain, oui = OUI} = State) ->
                 Nonce = CurrNonce + Count + 1,
                 Filter = new_xor_filter(GroupEuis),
                 Txn = craft_rebalance_update_filter_txn(Idx, Nonce, Filter, State),
-                Hash = submit_txn(Txn),
+                Hash = submit_txn(Txn, Chain),
                 lager:info("updating filter txn ~p submitted ~p", [
                     Hash,
                     lager:pr(Txn, blockchain_txn_routing_v1)
@@ -1132,8 +1132,14 @@ craft_update_filter_txn(PubKey, SignFun, Chain, OUI, Filter, Nonce, Index) ->
     Txn1 = blockchain_txn_routing_v1:fee(Txn0, Fees),
     blockchain_txn_routing_v1:sign(Txn1, SignFun).
 
--spec submit_txn(Txn :: blockchain_txn_routing_v1:txn_routing()) -> blockchain_txn:hash().
-submit_txn(Txn) ->
+-spec submit_txn(
+    Txn :: blockchain_txn_routing_v1:txn_routing(),
+    Chain :: blockchain:blockchain()
+) -> blockchain_txn:hash().
+submit_txn(Txn, Chain) ->
+    Cost = blockchain_txn_routing_v1:calculate_fee(Txn, Chain),
+    ok = router_metrics:xor_filter_update(Cost),
+
     Hash = blockchain_txn_routing_v1:hash(Txn),
     Self = self(),
     Callback = fun(Return) -> Self ! {?SUBMIT_RESULT, Hash, Return} end,

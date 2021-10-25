@@ -20,6 +20,7 @@
     downlink_inc/2,
     ws_state/1,
     network_id_inc/1,
+    xor_filter_update/1,
     get_reporter_props/1
 ]).
 
@@ -116,6 +117,10 @@ ws_state(State) ->
 -spec network_id_inc(any()) -> ok.
 network_id_inc(NetID) ->
     ok = notify(?METRICS_NETWORK_ID, undefined, [NetID]).
+
+-spec xor_filter_update(DC :: non_neg_integer()) -> ok.
+xor_filter_update(DC) ->
+    ok = notify(?METRICS_XOR_FILTER, DC).
 
 -spec get_reporter_props(atom()) -> list().
 get_reporter_props(Reporter) ->

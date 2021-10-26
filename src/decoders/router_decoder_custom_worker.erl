@@ -82,7 +82,7 @@ init(Args) ->
 
 handle_call({decode, Payload, Port, UplinkDetails}, _From, #state{timer = TimerRef0} = State0) ->
     _ = erlang:cancel_timer(TimerRef0),
-    {Reply, State1} = decode(Payload, Port, UplinkDetails, State0, 3),
+    {Reply, State1} = decode(Payload, Port, UplinkDetails, State0, ?MAX_RETRIES),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
     {reply, Reply, State1#state{timer = TimerRef1}};
 handle_call(_Msg, _From, State) ->

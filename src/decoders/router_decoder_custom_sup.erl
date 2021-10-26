@@ -14,7 +14,7 @@
     start_link/0,
     add/1,
     delete/1,
-    decode/3
+    decode/4
 ]).
 
 %% ------------------------------------------------------------------
@@ -55,8 +55,23 @@
     ","        % comma
     "\\s*?"    % zero or more whitespace
     "\\w+?"    % argument of 1 or more characters
+    "(,\\s*\\w+)*" % optional arg for object containing dev_eui, etc.
+    "(,\\s*\\.\\.\\.\\w+)*" % optional variadic arg
     "\\)"      % close paren
 >>).
+
+%% Caveat with repsect to the above JavaScript function signature:
+%% Backwards compatibility requires newer args being optional, but
+%% new feature (GitHub issue #439) benefits from an additional param.
+%% Functions in JS may fetch unspecified parameters via `arguments`, and
+%% although modern ECMAscript specs (ES6+?) recommend variadic signatures,
+%% `arguments` maintains backwards compatibility with our older decoders.
+%% Therefore, accommodate both styles within optional part of REGEX above:
+%% e.g., function foo(bar, ...rest) can be called as foo(1,2,3,4,5,6)
+%% https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions#rest_parameters
+%% TODO there may be caveats that are unclear from reading spec such as
+%% whether whitespace is legal within the variadic arg syntax or not:
+%% https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html
 
 -record(custom_decoder, {
     id :: binary(),
@@ -87,8 +102,13 @@ delete(ID) ->
     true = ets:delete(?ETS, ID),
     ok.
 
--spec decode(router_decoder:decoder(), string(), integer()) -> {ok, any()} | {error, any()}.
-decode(Decoder, Payload, Port) ->
+-spec decode(
+    Decoder :: router_decoder:decoder(),
+    Payload :: string(),
+    Port :: integer(),
+    UplinkDetails :: map()
+) -> {ok, any()} | {error, any()}.
+decode(Decoder, Payload, Port, UplinkDetails) ->
     ID = router_decoder:id(Decoder),
     case lookup(ID) of
         {error, _Reason} ->
@@ -96,11 +116,11 @@ decode(Decoder, Payload, Port) ->
                 {error, _} = Error ->
                     Error;
                 {ok, Pid} ->
-                    router_decoder_custom_worker:decode(Pid, Payload, Port)
+                    router_decoder_custom_worker:decode(Pid, Payload, Port, UplinkDetails)
             end;
         {ok, #custom_decoder{pid = Pid} = CustomDecoder} ->
             ok = insert(CustomDecoder#custom_decoder{last_used = erlang:system_time(seconds)}),
-            router_decoder_custom_worker:decode(Pid, Payload, Port)
+            router_decoder_custom_worker:decode(Pid, Payload, Port, UplinkDetails)
     end.
 
 %% ------------------------------------------------------------------
@@ -267,8 +287,18 @@ get_oldest_decoder_test() ->
 is_valid_decoder_function_test_() ->
     [
         %%% VALID FUNCTIONS
-        %% normal
+        %% normal, original style
         ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder(bytes, port) {}">>)),
+        %% normal, with arg for #439
+        ?_assertMatch(
+            true,
+            is_valid_decoder_function(<<"function Decoder(bytes, port, uplink_details) {}">>)
+        ),
+        %% normal with variadic/rest arg, with arg for #439
+        ?_assertMatch(
+            true,
+            is_valid_decoder_function(<<"function Decoder(bytes, port, ...rest) {}">>)
+        ),
         %% single spaces
         ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (bytes, port) {}">>)),
         %% multiple spaces right side
@@ -297,7 +327,14 @@ is_valid_decoder_function_test_() ->
         %% mispelled function name
         ?_assertMatch(false, is_valid_decoder_function(<<"function Decodre (bytes, port) {}">>)),
         %% missing space after function
-        ?_assertMatch(false, is_valid_decoder_function(<<"functionDecoder (bytes, port) {}">>))
+        ?_assertMatch(false, is_valid_decoder_function(<<"functionDecoder (bytes, port) {}">>)),
+        %% trailing command within arg list
+        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder(bytes, port,) {}">>)),
+        %% illegal space within variadic arg syntax
+        ?_assertMatch(
+            false,
+            is_valid_decoder_function(<<"function Decoder(bytes, port, ... rest) {}">>)
+        )
     ].
 
 -endif.

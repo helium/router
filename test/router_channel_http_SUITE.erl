@@ -982,10 +982,10 @@ http_non_json_decoded_payload_test(Config) ->
                 %% #{body => <<1:8/integer, Body/binary>>}
             )},
 
-    %% Waiting for data from HTTP channel Make sure our decoded payload is
-    %% present NOTE: console callback wraps payload in small map so we can match
+    %% Waiting for data from HTTP channel. Make sure our decoded payload is
+    %% present. NOTE: console callback wraps payload in small map, so we can match
     %% against it using our usual utilities. Just passing in the
-    %% `DecodedPayload' doesn't worke here.
+    %% `DecodedPayload' doesn't work here.
     test_utils:wait_channel_data(#{body => DecodedPayload}),
 
     %% Waiting for report channel status from HTTP channel

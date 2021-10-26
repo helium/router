@@ -644,7 +644,10 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
         Pid,
         Decoder,
         Template,
-        ReceiveJoins
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
     ),
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->

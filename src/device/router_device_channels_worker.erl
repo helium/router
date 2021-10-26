@@ -608,7 +608,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     %% No touchy, this is set in STONE
     Map = #{
-        type => frame,
+        type => uplink,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),
@@ -627,7 +627,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspots => lists:map(FormatHotspot, CachedData1)
     },
-    ok = router_channel:handle_data(EventMgrRef, Map, UUID),
+    ok = router_channel:handle_uplink(EventMgrRef, Map, UUID),
     {ok, Map}.
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->

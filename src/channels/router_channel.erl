@@ -21,7 +21,7 @@
     add/3,
     delete/2,
     update/3,
-    handle_data/3,
+    handle_uplink/3,
     handle_join/3
 ]).
 
@@ -104,12 +104,12 @@ update(Pid, Channel, Device) ->
     Handler = ?MODULE:handler(Channel),
     gen_event:call(Pid, Handler, {update, Channel, Device}).
 
--spec handle_data(
+-spec handle_uplink(
     EventManagerPid :: pid(),
     Data :: map(),
     UUID :: router_utils:uuid_v4()
 ) -> ok.
-handle_data(Pid, Data, UUID) ->
+handle_uplink(Pid, Data, UUID) ->
     ok = gen_event:notify(Pid, {data, UUID, Data}).
 
 -spec handle_join(

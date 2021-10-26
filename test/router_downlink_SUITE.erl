@@ -285,7 +285,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
 
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
-        <<"type">> => <<"frame">>,
+        <<"type">> => <<"uplink">>,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,

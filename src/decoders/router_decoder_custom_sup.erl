@@ -60,7 +60,7 @@
     "\\)"      % close paren
 >>).
 
-%% Caveat with repsect to the above JavaScript function signature:
+%% Caveat with respect to the above JavaScript function signature:
 %% Backwards compatibility requires newer args being optional, but
 %% new feature (GitHub issue #439) benefits from an additional param.
 %% Functions in JS may fetch unspecified parameters via `arguments`, and

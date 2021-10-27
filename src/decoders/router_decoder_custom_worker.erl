@@ -63,7 +63,7 @@ start_link(Args) ->
 
 -spec decode(pid(), string(), integer(), map()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port, UplinkDetails) ->
-    gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_RETRIES).
+    gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_EXECUTION).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -137,9 +137,8 @@ decode(
     of
         {error, invalid_context} ->
             Context1 = init_context(VM, Function),
-            %% REVIEW: if there's no delay/back-off/timer before retry here,
-            %% why DoS attack ourselves since multiple other workers are
-            %% probably experiencing same V8 client issue?
+            %% TODO: use Ferd's `backoff' library.
+            %% See stateful use: ../device/router_device_channels_worker.erl
             decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
         Reply ->
             {Reply, State}

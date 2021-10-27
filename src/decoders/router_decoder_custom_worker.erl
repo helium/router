@@ -38,10 +38,10 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMER, timer:hours(48)).
-%% REVIEW: was 500 *retries* via ?MAX_EXECUTION which seemed excessive
 
 % Router-to-V8 retry countdown
--define(MAX_RETRIES, 20).
+-define(MAX_RETRIES, 500).
+
 % V8's JS timeout in milliseconds
 -define(MAX_EXECUTION, 500).
 
@@ -63,9 +63,6 @@ start_link(Args) ->
 
 -spec decode(pid(), string(), integer(), map()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port, UplinkDetails) ->
-    %% REVIEW: this was ?MAX_EXECUTION which gets supplied to
-    %% erlang_v8:call() as max running time, but this calls within
-    %% router and uses final param as time-to-live (TTL) countdown.
     gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_RETRIES).
 
 %% ------------------------------------------------------------------

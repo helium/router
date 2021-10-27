@@ -265,6 +265,60 @@ random_test() ->
     ?assertMatch({ok, Result0}, ?MODULE:decode(Pid, Payload0, Port, #{})),
     ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port, #{})),
 
+    %% Confirm JavaScript engine ignores extra parameter when populated,
+    %% needed due to JS semantics for equivalence of false, 0, {}, etc.
+    UplinkInfo = #{
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
+        <<"fcnt">> => 1,
+        <<"reported_at">> => 2147483647,
+        <<"devaddr">> => lorawan_utils:binary_to_hex(<<1>>)
+    },
+    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port, UplinkInfo)),
+
+    gen_server:stop(Pid),
+    gen_server:stop(VMPid),
+    ?assert(meck:validate(router_decoder_custom_sup)),
+    meck:unload(router_decoder_custom_sup),
+    ok.
+
+with_uplink_info_test() ->
+    meck:new(router_decoder_custom_sup, [passthrough]),
+    meck:expect(router_decoder_custom_sup, delete, fun(_) -> ok end),
+
+    {ok, VMPid} = router_v8:start_link(#{}),
+
+    ID = <<"ID">>,
+    {ok, VM} = router_v8:get(),
+    Function =
+        <<"\n"
+            "function Decoder(bytes, port, uplink_info) { \n"
+            "  var decoded = {};\n"
+            "  if (uplink_info) {\n"
+            "    decoded.dev_eui = uplink_info.dev_eui;\n"
+            "    decoded.app_eui = uplink_info.app_eui;\n"
+            "    decoded.fcnt = uplink_info.fcnt;\n"
+            "    decoded.reported_at = uplink_info.reported_at;\n"
+            "    decoded.devaddr = uplink_info.devaddr;\n"
+            "  }\n"
+            "  return decoded; \n"
+            "}\n">>,
+
+    Args = #{id => ID, vm => VM, function => Function},
+    {ok, Pid} = ?MODULE:start_link(Args),
+
+    UplinkInfo = #{
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
+        <<"fcnt">> => 1,
+        <<"reported_at">> => 2147483647,
+        <<"devaddr">> => lorawan_utils:binary_to_hex(<<1>>)
+    },
+    Result = UplinkInfo,
+    Port = 6,
+
+    ?assertMatch({ok, Result}, ?MODULE:decode(Pid, [], Port, UplinkInfo)),
+
     gen_server:stop(Pid),
     gen_server:stop(VMPid),
     ?assert(meck:validate(router_decoder_custom_sup)),

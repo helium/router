@@ -231,7 +231,8 @@ handle_info(
     #state{is_active = true, chain = Chain} = State
 ) ->
     Limit = max_sc_open(Chain),
-    {noreply, State#state{open_sc_limit = Limit}};
+    {ok, Height} = blockchain:height(Chain),
+    {noreply, State#state{open_sc_limit = Limit, height = Height}};
 handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),

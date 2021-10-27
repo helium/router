@@ -44,6 +44,11 @@
 -define(ETS, router_decoder_custom_sup_ets).
 -define(MAX_V8_CONTEXT, 100).
 
+%% Caveat with respect to the following JavaScript function signature:
+%% Backwards compatibility requires newer args being optional, but
+%% new feature (GitHub issue #439) benefits from an additional param.
+%% Functions in JS may fetch unspecified parameters via `arguments`.
+
 %% erlfmt-ignore
 -define(DECODER_FUNCTION_REGEX, <<
     "function" % function
@@ -56,22 +61,8 @@
     "\\s*?"    % zero or more whitespace
     "\\w+?"    % argument of 1 or more characters
     "(,\\s*\\w+)*" % optional arg for object containing dev_eui, etc.
-    "(,\\s*\\.\\.\\.\\w+)*" % optional variadic arg
     "\\)"      % close paren
 >>).
-
-%% Caveat with respect to the above JavaScript function signature:
-%% Backwards compatibility requires newer args being optional, but
-%% new feature (GitHub issue #439) benefits from an additional param.
-%% Functions in JS may fetch unspecified parameters via `arguments`, and
-%% although modern ECMAscript specs (ES6+?) recommend variadic signatures,
-%% `arguments` maintains backwards compatibility with our older decoders.
-%% Therefore, accommodate both styles within optional part of REGEX above:
-%% e.g., function foo(bar, ...rest) can be called as foo(1,2,3,4,5,6)
-%% https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions#rest_parameters
-%% TODO there may be caveats that are unclear from reading spec such as
-%% whether whitespace is legal within the variadic arg syntax or not:
-%% https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html
 
 -record(custom_decoder, {
     id :: binary(),
@@ -293,11 +284,6 @@ is_valid_decoder_function_test_() ->
         ?_assertMatch(
             true,
             is_valid_decoder_function(<<"function Decoder(bytes, port, uplink_details) {}">>)
-        ),
-        %% normal with variadic/rest arg, with arg for #439
-        ?_assertMatch(
-            true,
-            is_valid_decoder_function(<<"function Decoder(bytes, port, ...rest) {}">>)
         ),
         %% single spaces
         ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (bytes, port) {}">>)),

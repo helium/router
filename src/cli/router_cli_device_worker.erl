@@ -41,6 +41,7 @@ device_usage() ->
             "  device queue --id=<id>                        - Queue of messages for device\n",
             "  device queue clear --id=<id>                  - Empties the devices queue\n",
             "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",
+            "  device prune --commit                         - Removes Devices from Rocks that don't exist in Console",
             "Msg Options:\n\n",
             "  --id=<id>              - ID of Device, do not wrap, will be converted to binary\n",
             "  --payload=<content>    - Content for message " ++
@@ -84,6 +85,12 @@ device_cmd() ->
                 {payload, [{longname, "payload"}, {datatype, string}]}
             ],
             prepend_device_id(fun device_queue_add_front/4)
+        ],
+        [
+            ["device", "prune"],
+            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
+            fun device_prune/3
         ]
     ].
 
@@ -165,6 +172,54 @@ device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
         Msg
     ]).
 
+device_prune(["device", "prune"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
+
+    {ok, DB, CF} = router_db:get_devices(),
+    RocksDevices = router_device:get(DB, CF),
+    {ok, ConsoleDevices} = router_console_api:get_all_devices(),
+
+    RocksDeviceIDs = [router_device:id(D) || D <- RocksDevices],
+    ConsoleDeviceIDs = [router_device:id(D) || D <- ConsoleDevices],
+    RocksOrphanedDeviceIDs = sets:to_list(
+        sets:subtract(
+            sets:from_list(RocksDeviceIDs),
+            sets:from_list(ConsoleDeviceIDs)
+        )
+    ),
+
+    RocksLen = length(RocksDeviceIDs),
+    ConsoleLen = length(ConsoleDeviceIDs),
+    OrphanLen = length(RocksOrphanedDeviceIDs),
+
+    Output0 = [
+        [{key, rocks}, {value, RocksLen}],
+        [{key, console}, {value, ConsoleLen}],
+        [{key, orphaned_in_rocks}, {value, OrphanLen}]
+    ],
+
+    Output1 =
+        case Commit of
+            true ->
+                lists:foreach(
+                    fun({Idx, DeviceID}) ->
+                        ok = router_device:delete(DB, CF, DeviceID),
+                        ok = router_device_cache:delete(DeviceID),
+                        io:format("  Deleted: ~p/~p\r", [Idx, OrphanLen])
+                    end,
+                    lists:zip(lists:seq(1, OrphanLen), RocksOrphanedDeviceIDs)
+                ),
+                Output0;
+            false ->
+                [
+                    [{key, "DRY RUN"}, {value, "!!!"}]
+                    | Output0
+                ]
+        end,
+
+    c_table(Output1).
+
 %%--------------------------------------------------------------------
 %% router_cnonsole_dc_tracker interface
 %%--------------------------------------------------------------------
@@ -196,7 +251,7 @@ lookup_and_get_worker(DeviceID) ->
 -spec c_list(list(string())) -> clique_status:status().
 c_list(L) -> [clique_status:list(L)].
 
--spec c_table(proplists:proplist()) -> clique_status:status().
+-spec c_table(list(proplists:proplist()) | proplists:proplist()) -> clique_status:status().
 c_table(PropLists) -> [clique_status:table(PropLists)].
 
 -spec c_text(string(), list(term())) -> clique_status:status().

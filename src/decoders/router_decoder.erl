@@ -17,7 +17,7 @@
     init_ets/0,
     add/1,
     delete/1,
-    decode/3
+    decode/4
 ]).
 
 -ifdef(TEST).
@@ -77,11 +77,12 @@ delete(ID) ->
 -spec decode(
     DecoderID :: binary(),
     Payload :: binary(),
-    Port :: integer()
+    Port :: integer(),
+    UplinkDetails :: map()
 ) -> {ok, any()} | {error, any()}.
-decode(DecoderID, Payload, Port) ->
+decode(DecoderID, Payload, Port, UplinkDetails) ->
     Start = erlang:system_time(millisecond),
-    try decode_(DecoderID, Payload, Port) of
+    try decode_(DecoderID, Payload, Port, UplinkDetails) of
         {Type, {ok, _} = OK} ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:decoder_observe(Type, ok, End - Start),
@@ -107,15 +108,24 @@ decode(DecoderID, Payload, Port) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec decode_(DecoderID :: binary(), Payload :: binary(), Port :: integer()) ->
-    {DecoderType :: atom(), {ok, DecodedPayload :: any()}} | {atom(), {error, any()}}.
-decode_(DecoderID, Payload, Port) ->
+-spec decode_(
+    DecoderID :: binary(),
+    Payload :: binary(),
+    Port :: integer(),
+    UplinkDetails :: map()
+) -> {DecoderType :: atom(), {ok, DecodedPayload :: any()}} | {atom(), {error, any()}}.
+decode_(DecoderID, Payload, Port, UplinkDetails) ->
     case lookup(DecoderID) of
         {error, not_found} ->
             {unknown_decoder, {error, unknown_decoder}};
         {ok, #decoder{type = custom} = Decoder} ->
             {custom,
-                router_decoder_custom_sup:decode(Decoder, erlang:binary_to_list(Payload), Port)};
+                router_decoder_custom_sup:decode(
+                    Decoder,
+                    erlang:binary_to_list(Payload),
+                    Port,
+                    UplinkDetails
+                )};
         {ok, #decoder{type = cayenne} = Decoder} ->
             {cayenne, router_decoder_cayenne:decode(Decoder, Payload, Port)};
         {ok, #decoder{type = browan_object_locator} = Decoder} ->

@@ -343,8 +343,8 @@ too_many_test(Config) ->
     NewDecoderID = router_decoder:id(NewDecoder),
     [{NewDecoderID, _}] = ets:lookup(router_decoder_custom_sup_ets, NewDecoderID),
     %% decoder gets auto restarted if removed
-    ?assertEqual({ok, undefined}, router_decoder:decode(DecoderID, <<>>, 1)),
-    ?assertEqual({ok, <<"ok">>}, router_decoder:decode(NewDecoderID, <<>>, 1)),
+    ?assertEqual({ok, undefined}, router_decoder:decode(DecoderID, <<>>, 1, #{})),
+    ?assertEqual({ok, <<"ok">>}, router_decoder:decode(NewDecoderID, <<>>, 1, #{})),
     ?assertEqual(1, ets:info(router_decoder_custom_sup_ets, size)),
     ok.
 

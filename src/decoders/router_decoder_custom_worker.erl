@@ -17,7 +17,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    decode/3
+    decode/4
 ]).
 
 %% ------------------------------------------------------------------
@@ -38,6 +38,11 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMER, timer:hours(48)).
+
+% Router-to-V8 retry countdown
+-define(MAX_RETRIES, 500).
+
+% V8's JS timeout in milliseconds
 -define(MAX_EXECUTION, 500).
 
 -record(state, {
@@ -56,9 +61,9 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec decode(pid(), string(), integer()) -> {ok, any()} | {error, any()}.
-decode(Pid, Payload, Port) ->
-    gen_server:call(Pid, {decode, Payload, Port}, ?MAX_EXECUTION).
+-spec decode(pid(), string(), integer(), map()) -> {ok, any()} | {error, any()}.
+decode(Pid, Payload, Port, UplinkDetails) ->
+    gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_EXECUTION).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -72,9 +77,9 @@ init(Args) ->
     TimerRef = erlang:send_after(?TIMER, self(), timeout),
     {ok, #state{id = ID, vm = VM, context = Context, function = Function, timer = TimerRef}}.
 
-handle_call({decode, Payload, Port}, _From, #state{timer = TimerRef0} = State0) ->
+handle_call({decode, Payload, Port, UplinkDetails}, _From, #state{timer = TimerRef0} = State0) ->
     _ = erlang:cancel_timer(TimerRef0),
-    {Reply, State1} = decode(Payload, Port, State0, 3),
+    {Reply, State1} = decode(Payload, Port, UplinkDetails, State0, ?MAX_RETRIES),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
     {reply, Reply, State1#state{timer = TimerRef1}};
 handle_call(_Msg, _From, State) ->
@@ -114,16 +119,27 @@ init_context(VM, Function) ->
 -spec decode(
     Payload :: string(),
     Port :: non_neg_integer(),
+    UplinkDetails :: map(),
     State :: state(),
     Retries :: non_neg_integer()
 ) -> {any(), state()}.
-decode(_Payload, _Port, State, 0) ->
+decode(_Payload, _Port, _UplinkDetails, State, 0) ->
     {{error, failed_too_many_times}, State};
-decode(Payload, Port, #state{vm = VM, context = Context0, function = Function} = State, Retry) ->
-    case erlang_v8:call(VM, Context0, <<"Decoder">>, [Payload, Port], ?MAX_EXECUTION) of
+decode(
+    Payload,
+    Port,
+    UplinkDetails,
+    #state{vm = VM, context = Context0, function = Function} = State,
+    Retry
+) ->
+    case
+        erlang_v8:call(VM, Context0, <<"Decoder">>, [Payload, Port, UplinkDetails], ?MAX_EXECUTION)
+    of
         {error, invalid_context} ->
             Context1 = init_context(VM, Function),
-            decode(Payload, Port, State#state{context = Context1}, Retry - 1);
+            %% TODO: use Ferd's `backoff' library.
+            %% See stateful use: ../device/router_device_channels_worker.erl
+            decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
         Reply ->
             {Reply, State}
     end.
@@ -192,9 +208,9 @@ load_test() ->
         fun(X) ->
             case X rem 2 of
                 0 ->
-                    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port));
+                    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port, #{}));
                 _ ->
-                    ?assertMatch({ok, _}, ?MODULE:decode(Pid, lists:seq(1, X), Port))
+                    ?assertMatch({ok, _}, ?MODULE:decode(Pid, lists:seq(1, X), Port, #{}))
             end
         end,
         lists:seq(1, 1000)
@@ -246,8 +262,62 @@ random_test() ->
     },
     Port = 6,
 
-    ?assertMatch({ok, Result0}, ?MODULE:decode(Pid, Payload0, Port)),
-    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port)),
+    ?assertMatch({ok, Result0}, ?MODULE:decode(Pid, Payload0, Port, #{})),
+    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port, #{})),
+
+    %% Confirm JavaScript engine ignores extra parameter when populated,
+    %% needed due to JS semantics for equivalence of false, 0, {}, etc.
+    UplinkInfo = #{
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
+        <<"fcnt">> => 1,
+        <<"reported_at">> => 2147483647,
+        <<"devaddr">> => lorawan_utils:binary_to_hex(<<1>>)
+    },
+    ?assertMatch({ok, Result1}, ?MODULE:decode(Pid, Payload1, Port, UplinkInfo)),
+
+    gen_server:stop(Pid),
+    gen_server:stop(VMPid),
+    ?assert(meck:validate(router_decoder_custom_sup)),
+    meck:unload(router_decoder_custom_sup),
+    ok.
+
+with_uplink_info_test() ->
+    meck:new(router_decoder_custom_sup, [passthrough]),
+    meck:expect(router_decoder_custom_sup, delete, fun(_) -> ok end),
+
+    {ok, VMPid} = router_v8:start_link(#{}),
+
+    ID = <<"ID">>,
+    {ok, VM} = router_v8:get(),
+    Function =
+        <<"\n"
+            "function Decoder(bytes, port, uplink_info) { \n"
+            "  var decoded = {};\n"
+            "  if (uplink_info) {\n"
+            "    decoded.dev_eui = uplink_info.dev_eui;\n"
+            "    decoded.app_eui = uplink_info.app_eui;\n"
+            "    decoded.fcnt = uplink_info.fcnt;\n"
+            "    decoded.reported_at = uplink_info.reported_at;\n"
+            "    decoded.devaddr = uplink_info.devaddr;\n"
+            "  }\n"
+            "  return decoded; \n"
+            "}\n">>,
+
+    Args = #{id => ID, vm => VM, function => Function},
+    {ok, Pid} = ?MODULE:start_link(Args),
+
+    UplinkInfo = #{
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 0, 0, 0, 0, 1>>),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(<<0, 0, 0, 2, 0, 0, 0, 1>>),
+        <<"fcnt">> => 1,
+        <<"reported_at">> => 2147483647,
+        <<"devaddr">> => lorawan_utils:binary_to_hex(<<1>>)
+    },
+    Result = UplinkInfo,
+    Port = 6,
+
+    ?assertMatch({ok, Result}, ?MODULE:decode(Pid, [], Port, UplinkInfo)),
 
     gen_server:stop(Pid),
     gen_server:stop(VMPid),

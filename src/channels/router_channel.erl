@@ -280,7 +280,7 @@ encode_data(undefined, TemplateArgs, Channel) ->
     end;
 encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel) ->
     DecoderID = router_decoder:id(Decoder),
-    case router_decoder:decode(DecoderID, Payload, Port) of
+    case router_decoder:decode(DecoderID, Payload, Port, TemplateArgs) of
         {ok, DecodedPayload} ->
             router_channel_utils:maybe_apply_template(
                 ?MODULE:payload_template(Channel),

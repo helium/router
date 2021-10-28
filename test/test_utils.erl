@@ -811,12 +811,18 @@ match_map(Expected, Got) when is_map(Got) ->
                             false -> {false, {missing_key, K}}
                         end;
                     (K, V, true) when is_map(V) ->
-                        match_map(V, maps:get(K, Got, #{}));
+                        case match_map(V, maps:get(K, Got, #{})) of
+                            true -> true;
+                            Err -> {false, {key, K, Err}}
+                        end;
                     (K, V0, true) when is_list(V0) ->
                         V1 = lists:zip(lists:seq(1, erlang:length(V0)), lists:sort(V0)),
                         G0 = maps:get(K, Got, []),
                         G1 = lists:zip(lists:seq(1, erlang:length(G0)), lists:sort(G0)),
-                        match_map(maps:from_list(V1), maps:from_list(G1));
+                        case match_map(maps:from_list(V1), maps:from_list(G1)) of
+                            true -> true;
+                            Err -> {false, {key, K, Err}}
+                        end;
                     (K, V, true) ->
                         case maps:get(K, Got, undefined) of
                             V -> true;

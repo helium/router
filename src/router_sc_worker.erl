@@ -105,8 +105,10 @@ counts(Height) ->
             Max = blockchain_state_channel_v1:amount(SC),
             ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
             ExpireIn = ExpireAtBlock - Height,
-            GettingClose =
-                (100 * Used) / Max > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
+            PercentUsage = (100 * Used) / Max,
+            GettingClose = PercentUsage > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
+            SCName = blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC)),
+            lager:debug("~p expires in ~p (usage=~p%)", [SCName, ExpireIn, PercentUsage]),
             case {Closed, Overspent, GettingClose} of
                 {true, _, _} ->
                     {OpenedCount, OverspentCount, GettingCloseCount};
@@ -231,7 +233,8 @@ handle_info(
     #state{is_active = true, chain = Chain} = State
 ) ->
     Limit = max_sc_open(Chain),
-    {noreply, State#state{open_sc_limit = Limit}};
+    {ok, Height} = blockchain:height(Chain),
+    {noreply, State#state{open_sc_limit = Limit, height = Height}};
 handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),

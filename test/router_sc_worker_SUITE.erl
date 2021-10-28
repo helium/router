@@ -123,15 +123,22 @@ sc_worker_test(Config) ->
     ?assertEqual(2, maps:size(blockchain_state_channels_server:get_all())),
     ?assertEqual(1, blockchain_state_channels_server:get_actives_count()),
 
-    % Force tick again, in this case nothing should happen as we have a good number of SCs opened
+    % Force tick again, the first SC is getting close to expire so lets open more
     router_sc_worker ! '__router_sc_tick',
-    timer:sleep(5000),
+    ok = test_utils:wait_until(fun() -> {ok, 5} == blockchain:height(Chain) end),
 
-    ?assertEqual(2, maps:size(blockchain_state_channels_server:get_all())),
+    ?assertEqual(3, maps:size(blockchain_state_channels_server:get_all())),
     ?assertEqual(1, blockchain_state_channels_server:get_actives_count()),
 
+    % Force tick again, nothing should happen now
+    router_sc_worker ! '__router_sc_tick',
+    timer:sleep(1000),
+
+    ?assertEqual(3, maps:size(blockchain_state_channels_server:get_all())),
+    ?assertEqual(1, blockchain_state_channels_server:get_actives_count()),
     State = sys:get_state(router_sc_worker),
     ?assertEqual(0, erlang:length(State#state.in_flight)),
+    ?assertEqual(5, State#state.height),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

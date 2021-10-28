@@ -67,20 +67,15 @@ init({[Channel, Device], _}) ->
         downlink_topic = render_topic(DownlinkTemplate, Device)
     }}.
 
-handle_event({data, UUIDRef, Data}, #state{channel = Channel} = State0) ->
-    Pid = router_channel:controller(Channel),
-    Response = publish(Data, State0),
-    RequestReport = make_request_report(Response, Data, State0),
-    ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
+handle_event({join, UUIDRef, Data}, #state{channel = Channel} = State0) ->
     State1 =
-        case Response of
-            {error, failed_to_publish} ->
-                reconnect(State0);
-            _ ->
-                State0
+        case router_channel:receive_joins(Channel) of
+            true -> do_handle_event(UUIDRef, Data, State0);
+            false -> State0
         end,
-    ResponseReport = make_response_report(Response, Channel),
-    ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
+    {ok, State1};
+handle_event({data, UUIDRef, Data}, #state{} = State0) ->
+    State1 = do_handle_event(UUIDRef, Data, State0),
     {ok, State1};
 handle_event(_Msg, #state{channel_id = ChannelID} = State) ->
     lager:warning("[~s] rcvd unknown cast msg: ~p", [ChannelID, _Msg]),
@@ -270,6 +265,32 @@ terminate(_Reason, #state{connection = Conn}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+-spec do_handle_event(
+    UUIDRef :: router_utils:uuid_v4(),
+    Data :: map(),
+    #state{}
+) -> #state{}.
+do_handle_event(
+    UUIDRef,
+    Data,
+    #state{
+        channel = Channel
+    } = State0
+) ->
+    Pid = router_channel:controller(Channel),
+    Response = publish(Data, State0),
+    RequestReport = make_request_report(Response, Data, State0),
+    ok = router_device_channels_worker:report_request(Pid, UUIDRef, Channel, RequestReport),
+    State1 =
+        case Response of
+            {error, failed_to_publish} ->
+                reconnect(State0);
+            _ ->
+                State0
+        end,
+    ResponseReport = make_response_report(Response, Channel),
+    ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
+    State1.
 
 -spec ping(Conn :: pid()) -> ok | {error, any()}.
 ping(Conn) ->

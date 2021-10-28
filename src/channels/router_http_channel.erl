@@ -52,8 +52,57 @@ init({[Channel, Device], _}) ->
         url_params = UrlParams
     }}.
 
-handle_event(
-    {data, UUIDRef, Data},
+handle_event({join, UUIDRef, Data}, #state{channel = Channel} = State0) ->
+    State1 =
+        case router_channel:receive_joins(Channel) of
+            true -> do_handle_event(UUIDRef, Data, State0);
+            false -> State0
+        end,
+    {ok, State1};
+handle_event({data, UUIDRef, Data}, State0) ->
+    State1 = do_handle_event(UUIDRef, Data, State0),
+    {ok, State1};
+handle_event(_Msg, State) ->
+    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
+    {ok, State}.
+
+handle_call({update, Channel, _Device}, State) ->
+    Args = #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
+    UrlParams = maps:get(url_params, Args, []),
+    Headers1 = content_type_or_default(Headers0),
+    {ok, ok, State#state{
+        channel = Channel,
+        url = URL,
+        headers = Headers1,
+        method = Method,
+        url_params = UrlParams
+    }};
+handle_call(_Msg, State) ->
+    lager:warning("rcvd unknown call msg: ~p", [_Msg]),
+    {ok, ok, State}.
+
+handle_info(_Msg, State) ->
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
+    {ok, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
+
+-spec do_handle_event(
+    UUIDRef :: router_utils:uuid_v4(),
+    Data :: map(),
+    #state{}
+) -> #state{}.
+do_handle_event(
+    UUIDRef,
+    Data,
     #state{
         channel = Channel,
         url = URL0,
@@ -90,40 +139,7 @@ handle_event(
 
     ResponseReport = make_response_report(Res, Channel),
     ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
-
-    {ok, State};
-handle_event(_Msg, State) ->
-    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
-    {ok, State}.
-
-handle_call({update, Channel, _Device}, State) ->
-    Args = #{url := URL, headers := Headers0, method := Method} = router_channel:args(Channel),
-    UrlParams = maps:get(url_params, Args, []),
-    Headers1 = content_type_or_default(Headers0),
-    {ok, ok, State#state{
-        channel = Channel,
-        url = URL,
-        headers = Headers1,
-        method = Method,
-        url_params = UrlParams
-    }};
-handle_call(_Msg, State) ->
-    lager:warning("rcvd unknown call msg: ~p", [_Msg]),
-    {ok, ok, State}.
-
-handle_info(_Msg, State) ->
-    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
-    {ok, State}.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-terminate(_Reason, _State) ->
-    ok.
-
-%% ------------------------------------------------------------------
-%% Internal Function Definitions
-%% ------------------------------------------------------------------
+    State.
 
 -spec url_check_enabled() -> boolean().
 url_check_enabled() ->

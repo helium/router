@@ -16,7 +16,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    handle_join/1,
+    handle_join/2,
     handle_device_update/2,
     handle_frame/2,
     report_request/4,
@@ -74,9 +74,9 @@
 start_link(Args) ->
     gen_server:start_link(?SERVER, Args, []).
 
--spec handle_join(pid()) -> ok.
-handle_join(Pid) ->
-    gen_server:cast(Pid, handle_join).
+-spec handle_join(pid(), #join_cache{}) -> ok.
+handle_join(Pid, JoinCache) ->
+    gen_server:cast(Pid, {handle_join, JoinCache}).
 
 -spec handle_device_update(pid(), router_device:device()) -> ok.
 handle_device_update(Pid, Device) ->
@@ -197,7 +197,16 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(handle_join, State) ->
+handle_cast(
+    {handle_join, JoinData = #join_cache{}},
+    #state{
+        chain = Blockchain,
+        event_mgr = EventMgrPid,
+        device = Device
+    } = State
+) ->
+    {ok, Map} = send_join_to_channel(JoinData, Device, EventMgrPid, Blockchain),
+    lager:debug("join_timeout for data: ~p", [Map]),
     {noreply, State};
 handle_cast({handle_device_update, Device}, State) ->
     {noreply, State#state{device = Device}};
@@ -235,7 +244,7 @@ handle_cast(
 ) ->
     case maps:take(UUID, DataCache0) of
         {CachedData, DataCache1} ->
-            {ok, Map} = send_to_channel(CachedData, Device, EventMgrPid, Blockchain),
+            {ok, Map} = send_data_to_channel(CachedData, Device, EventMgrPid, Blockchain),
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
             {noreply, State#state{data_cache = DataCache1}};
         error ->
@@ -543,13 +552,51 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
 downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
--spec send_to_channel(
+-spec send_join_to_channel(
+    JoinCache :: #join_cache{},
+    Device :: router_device:device(),
+    EventMgrRef :: pid(),
+    Blockchain :: blockchain:blockchain()
+) -> {ok, map()}.
+send_join_to_channel(
+    #join_cache{
+        uuid = UUID,
+        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, _HoldTime} = SelectedPacket,
+        packets = CollectedPackets
+    },
+    Device,
+    EventMgrRef,
+    Blockchain
+) ->
+    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime}) ->
+        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Blockchain)
+    end,
+
+    %% No touchy, this is set in STONE
+    Map = #{
+        type => join,
+        uuid => UUID,
+        id => router_device:id(Device),
+        name => router_device:name(Device),
+        dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
+        app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
+        metadata => router_device:metadata(Device),
+        fcnt => 0,
+        reported_at => PacketTime,
+        port => 0,
+        devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+        hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
+    },
+    ok = router_channel:handle_join(EventMgrRef, Map, UUID),
+    {ok, Map}.
+
+-spec send_data_to_channel(
     CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
     Device :: router_device:device(),
     EventMgrRef :: pid(),
     Blockchain :: blockchain:blockchain()
 ) -> {ok, map()}.
-send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
+send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     FormatHotspot = fun(DataCache) ->
         format_hotspot(DataCache, Blockchain)
     end,
@@ -561,6 +608,7 @@ send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     %% No touchy, this is set in STONE
     Map = #{
+        type => uplink,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),
@@ -579,7 +627,7 @@ send_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspots => lists:map(FormatHotspot, CachedData1)
     },
-    ok = router_channel:handle_data(EventMgrRef, Map, UUID),
+    ok = router_channel:handle_uplink(EventMgrRef, Map, UUID),
     {ok, Map}.
 
 -spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
@@ -722,6 +770,17 @@ format_hotspot(
     },
     Chain
 ) ->
+    format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain).
+
+-spec format_hotspot(
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: #packet_pb{},
+    Region :: atom(),
+    Time :: non_neg_integer(),
+    HoldTime :: non_neg_integer(),
+    Chain :: blockchain:blockchain()
+) -> map().
+format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),

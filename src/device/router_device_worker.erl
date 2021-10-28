@@ -466,7 +466,7 @@ handle_cast(
             {noreply, State}
     end;
 handle_cast(
-    {join, Packet0, PacketTime, _HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
+    {join, Packet0, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
     #state{
         chain = Chain,
         db = DB,
@@ -510,7 +510,7 @@ handle_cast(
                         uuid = router_utils:uuid_v4(),
                         rssi = NewRSSI,
                         join_accept_args = JoinAcceptArgs,
-                        packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
+                        packet_selected = {Packet0, PubKeyBin, Region, PacketTime, HoldTime},
                         device = Device1,
                         pid = Pid
                     },
@@ -546,7 +546,7 @@ handle_cast(
                 #join_cache{
                     uuid = UUID,
                     rssi = OldRSSI,
-                    packet_selected = {OldPacket, _, _, _} = OldSelected,
+                    packet_selected = {OldPacket, _, _, _, _} = OldSelected,
                     packets = OldPackets,
                     pid = OldPid
                 } = JoinCache1 ->
@@ -581,7 +581,7 @@ handle_cast(
                                 DevNonce,
                                 JoinCache1#join_cache{
                                     packets = [
-                                        {Packet0, PubKeyBin, Region, PacketTime}
+                                        {Packet0, PubKeyBin, Region, PacketTime, HoldTime}
                                         | OldPackets
                                     ]
                                 },
@@ -602,7 +602,8 @@ handle_cast(
                                 DevNonce,
                                 JoinCache1#join_cache{
                                     rssi = NewRSSI,
-                                    packet_selected = {Packet0, PubKeyBin, Region, PacketTime},
+                                    packet_selected =
+                                        {Packet0, PubKeyBin, Region, PacketTime, HoldTime},
                                     packets = NewPackets,
                                     pid = Pid
                                 },
@@ -892,14 +893,15 @@ handle_info(
         join_attempt_count = JoinAttemptCount
     } = State
 ) ->
-    #join_cache{
-        join_accept_args = JoinAcceptArgs,
-        packet_selected = PacketSelected,
-        packets = Packets,
-        device = Device0,
-        pid = Pid
-    } = maps:get(DevNonce, JoinCache),
-    {Packet, PubKeyBin, Region, _PacketTime} = PacketSelected,
+    Join =
+        #join_cache{
+            join_accept_args = JoinAcceptArgs,
+            packet_selected = PacketSelected,
+            packets = Packets,
+            device = Device0,
+            pid = Pid
+        } = maps:get(DevNonce, JoinCache),
+    {Packet, PubKeyBin, Region, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),
@@ -935,7 +937,7 @@ handle_info(
         join,
         true
     ),
-    ok = router_device_channels_worker:handle_join(ChannelsWorker),
+    ok = router_device_channels_worker:handle_join(ChannelsWorker, Join),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
     ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
     {noreply, State#state{

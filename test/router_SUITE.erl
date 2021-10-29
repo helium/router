@@ -599,7 +599,7 @@ dupes2_test(Config) ->
 
     receive
         {console_event, <<"uplink">>, <<"uplink_unconfirmed">>, Map} ->
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
+            ct:pal("[~p:~p:~p] ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, Map]),
             ct:fail(extra_uplink_unconfirmed)
     after 1000 -> ok
     end,

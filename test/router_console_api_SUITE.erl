@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
+-export([pagniation_test/1, ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -29,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [ws_get_address_test, fetch_queue_test, consume_queue_test].
+    [pagniation_test, ws_get_address_test, fetch_queue_test, consume_queue_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -46,6 +46,16 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+pagniation_test(Config) ->
+    Tab = proplists:get_value(ets, Config),
+    MaxDevices = 10,
+    Devices = n_rand_devices(MaxDevices),
+    true = ets:insert(Tab, {devices, Devices}),
+
+    {ok, APIDevices} = router_console_api:get_devices(),
+    ?assertEqual(MaxDevices, erlang:length(APIDevices)),
+    ok.
 
 ws_get_address_test(_Config) ->
     _WSPid =
@@ -339,3 +349,18 @@ fetch_queue_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+n_rand_devices(N) ->
+    lists:map(
+        fun(Idx) ->
+            ID = erlang:list_to_binary(io_lib:format("Device-~p", [Idx])),
+            Updates = [
+                {app_eui, crypto:strong_rand_bytes(8)},
+                {dev_eui, crypto:strong_rand_bytes(8)},
+                {name, ID}
+            ],
+            Device = router_device:update(Updates, router_device:new(ID)),
+            Device
+        end,
+        lists:seq(1, N)
+    ).

@@ -54,13 +54,15 @@
     "function" % function
     "\\s+"     % one or more whitespace
     "Decoder"  % Decoder
-    "\\s*?"    % zero or more whitespace
+    "\\s*?"    % zero or more whitespace before arg-list
     "\\("      % open paren
+    "\\s*?"    % zero or more whitespace before first arg
     "\\w+?"    % argument of 1 or more characters
     ","        % comma
-    "\\s*?"    % zero or more whitespace
+    "\\s*?"    % zero or more whitespace before second arg
     "\\w+?"    % argument of 1 or more characters
     "(,\\s*\\w+)*" % optional arg for object containing dev_eui, etc.
+    "\\s*?"    % zero or more whitespace end arg-list
     "\\)"      % close paren
 >>).
 
@@ -302,6 +304,14 @@ is_valid_decoder_function_test_() ->
         ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (one, two) {}">>)),
         %% single letter arguments
         ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (a,b) {}">>)),
+        %% Leading parenthesis allergic whitespace
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a, b)">>)),
+        %% Closing parenthesis allergic  whitespace
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (a, b  )">>)),
+        %% Paren alergic whitespace
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a, b    )">>)),
+        %% Parent allergic whitesapce with optional 3rd arg
+        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a,  b,  c  )">>)),
 
         %%% INVALID FUNCTIONS
         %% lowercase function name

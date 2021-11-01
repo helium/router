@@ -110,9 +110,8 @@ init([]) ->
             ?SUP(router_devices_sup, []),
             ?WORKER(router_sc_worker, [SCWorkerOpts]),
             ?SUP(router_console_sup, []),
-            ?WORKER(router_v8, [#{}]),
+            ?SUP(router_decoder_sup, []),
             ?WORKER(router_device_devaddr, [#{}]),
-            ?SUP(router_decoder_custom_sup, []),
             ?WORKER(router_xor_filter_worker, [#{}])
         ]}}.
 

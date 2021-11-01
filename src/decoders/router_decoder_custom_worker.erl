@@ -38,22 +38,22 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMER, timer:hours(48)).
-
-% Router-to-V8 retry countdown
--define(MAX_RETRIES, 500).
-
 % V8's JS timeout in milliseconds
--define(MAX_EXECUTION, 500).
+-define(MAX_EXECUTION_TIME, 500).
+-define(INIT_CONTEXT, init_context).
+-define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
     id :: binary(),
     vm :: pid(),
-    context :: pid(),
+    context :: context() | undefined,
     function :: binary(),
-    timer :: reference()
+    timer :: reference(),
+    backoff :: any()
 }).
 
--type state() :: #state{}.
+-type context() :: integer().
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -63,7 +63,7 @@ start_link(Args) ->
 
 -spec decode(pid(), string(), integer(), map()) -> {ok, any()} | {error, any()}.
 decode(Pid, Payload, Port, UplinkDetails) ->
-    gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_EXECUTION).
+    gen_server:call(Pid, {decode, Payload, Port, UplinkDetails}, ?MAX_EXECUTION_TIME).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -73,15 +73,49 @@ init(Args) ->
     ID = maps:get(id, Args),
     VM = maps:get(vm, Args),
     Function = maps:get(function, Args),
-    Context = init_context(VM, Function),
     TimerRef = erlang:send_after(?TIMER, self(), timeout),
-    {ok, #state{id = ID, vm = VM, context = Context, function = Function, timer = TimerRef}}.
+    self() ! ?INIT_CONTEXT,
+    State = #state{
+        id = ID,
+        vm = VM,
+        context = undefined,
+        function = Function,
+        timer = TimerRef,
+        backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
+    },
+    {ok, State}.
 
-handle_call({decode, Payload, Port, UplinkDetails}, _From, #state{timer = TimerRef0} = State0) ->
+handle_call({decode, _Payload, _Port, _UplinkDetails}, _From, #state{context = undefined} = State0) ->
+    {reply, {error, no_context}, State0};
+handle_call(
+    {decode, Payload, Port, UplinkDetails},
+    _From,
+    #state{vm = VM, context = Context0, timer = TimerRef0, backoff = Backoff0} = State0
+) ->
     _ = erlang:cancel_timer(TimerRef0),
-    {Reply, State1} = decode(Payload, Port, UplinkDetails, State0, ?MAX_RETRIES),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-    {reply, Reply, State1#state{timer = TimerRef1}};
+    State1 = State0#state{timer = TimerRef1},
+    case
+        erlang_v8:call(
+            VM,
+            Context0,
+            <<"Decoder">>,
+            [Payload, Port, UplinkDetails],
+            ?MAX_EXECUTION_TIME
+        )
+    of
+        {error, invalid_context} ->
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
+            {reply, {error, invalid_context}, State1#state{
+                context = undefined,
+                backoff = Backoff1
+            }};
+        {error, _} = Error ->
+            {reply, Error, State1};
+        {ok, _} = OK ->
+            {reply, OK, State1}
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -90,6 +124,20 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(
+    ?INIT_CONTEXT,
+    #state{id = ID, vm = VM, function = Function, backoff = Backoff0} = State
+) ->
+    case init_context(VM, Function) of
+        {ok, Context} ->
+            {_Delay, Backoff1} = backoff:succeed(Backoff0),
+            {noreply, State#state{context = Context, backoff = Backoff1}};
+        {error, _Reason} ->
+            lager:warning("failed to init context for ~p with ~p error: ~p", [ID, Function, _Reason]),
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
+            {noreply, State#state{backoff = Backoff1}}
+    end;
 handle_info(timeout, #state{id = ID} = State) ->
     lager:info("context ~p has not been used for awhile, shutting down", [ID]),
     {stop, normal, State};
@@ -110,38 +158,18 @@ terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec init_context(VMPid :: pid(), Function :: binary()) -> any().
+-spec init_context(VMPid :: pid(), Function :: binary()) -> {ok, context()} | {error, any()}.
 init_context(VM, Function) ->
-    {ok, Context} = erlang_v8:create_context(VM),
-    {ok, _} = erlang_v8:eval(VM, Context, Function),
-    Context.
-
--spec decode(
-    Payload :: string(),
-    Port :: non_neg_integer(),
-    UplinkDetails :: map(),
-    State :: state(),
-    Retries :: non_neg_integer()
-) -> {any(), state()}.
-decode(_Payload, _Port, _UplinkDetails, State, 0) ->
-    {{error, failed_too_many_times}, State};
-decode(
-    Payload,
-    Port,
-    UplinkDetails,
-    #state{vm = VM, context = Context0, function = Function} = State,
-    Retry
-) ->
-    case
-        erlang_v8:call(VM, Context0, <<"Decoder">>, [Payload, Port, UplinkDetails], ?MAX_EXECUTION)
-    of
-        {error, invalid_context} ->
-            Context1 = init_context(VM, Function),
-            %% TODO: use Ferd's `backoff' library.
-            %% See stateful use: ../device/router_device_channels_worker.erl
-            decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
-        Reply ->
-            {Reply, State}
+    case erlang_v8:create_context(VM) of
+        {error, _} = Error0 ->
+            Error0;
+        {ok, Context} ->
+            case erlang_v8:eval(VM, Context, Function) of
+                {error, _} = Error1 ->
+                    Error1;
+                {ok, _} ->
+                    {ok, Context}
+            end
     end.
 
 %% ------------------------------------------------------------------

@@ -95,7 +95,7 @@ allocate(Config) ->
     ),
     ?assertEqual(16, erlang:length(DevAddrs)),
 
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H), %% ToDo: Do not hardcode NetID
     Expected = [
         <<(I - 1):25/integer-unsigned-little, DevAddrPrefix:7/integer>>
         || I <- lists:seq(1, 8)

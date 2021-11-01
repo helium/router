@@ -69,7 +69,7 @@ end_per_group(_, _) ->
 init_per_testcase(TestCase, Config) ->
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, allocate, fun(_, _) ->
-        DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+        DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H), %% ToDo - Do not hardcode NetID
         {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
     end),
     BaseDir =

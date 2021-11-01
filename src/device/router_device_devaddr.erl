@@ -162,8 +162,11 @@ handle_call(
                         {Nth, LastBase + 1}
                 end
         end,
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
+    [OfficialNetID|_] = blockchain_ledger_v1:get_netids(), %% ToDo - Create dynamic NetID allocator
+    DevAddr = blockchain_ledger_v1:create_addr(3, OfficialNetID, DevaddrBase), %% ToDo - Sort out big vs litte endian in DevaddrBase
+    Reply = {ok, DevAddr},
+    %% DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H), %% ToDo - Do not hardcode NetID
+    %% Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
     {reply, Reply, State#state{devaddr_used = maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

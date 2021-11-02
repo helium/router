@@ -1,4 +1,4 @@
-.PHONY: compile clean test rel run grpc docker-build docker-test docker-run
+.PHONY: compile clean docs test rel run grpc docker-build docker-test docker-run
 grpc_services_directory=src/grpc/autogen
 
 REBAR=./rebar3
@@ -9,6 +9,12 @@ compile: | $(grpc_services_directory)
 
 clean:
 	git clean -dXfffffffffff
+	rm -f docs/*.{png,svg} || true
+
+docs:
+	@which plantuml || (echo "Run: apt-get install plantuml"; false)
+	(cd docs/ && plantuml -tsvg *.plantuml)
+	(cd docs/ && plantuml -tpng *.plantuml)
 
 test: | $(grpc_services_directory)
 	$(REBAR) fmt --verbose --check rebar.config

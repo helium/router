@@ -25,7 +25,10 @@ end box
 database     "Router\nDB"                   as db       order 100
 participant  "V8\n(JS)"                     as v8       order 200
 
-title Decode LoRaWAN frame payload via JavaScript in V8
+title
+        Decode LoRaWAN frame payload via JavaScript in V8
+        Evaluating a custom decoder function
+end title
 
 skinparam sequence {
         LifeLineBorderColor #LightSteelBlue
@@ -35,38 +38,42 @@ skinparam sequence {
 
 ...
 
-group Evaluating a custom JavaScript decoder function
-        [-> listener ++: Encoded payload
-        note right: gRPC service via grpcbox
-        listener -> channels --++ : gen_event
-        channels -> channels : add_sup_handler
-        note left: ./src/channels/router_channel.erl
+[-> listener ++: Encoded payload
+note right: gRPC service via grpcbox
+listener -> channels --++ : gen_event
+channels -> channels : add_sup_handler
+note left: ./src/channels/router_channel.erl
 
-        channels -> decoder ++ : decode()
-        note left: ./src/decoders/router_decoder*.erl
-        decoder -> v8 ++ : erlang_v8:call()
-        decoder <- v8 -- : Decoded
-        channels <- decoder -- : Decoded
+channels -> decoder ++ : decode()
+note left
+        ./src/decoders/router_decoder.erl
+        ./src/decoders/router_decoder_custom_sup.erl
+end note
+decoder -> decoder : gen_server\nhandle_call\n{decode,...}
+note left: ./src/decoders/router_decoder_custom_worker.erl
+decoder -> v8 ++ : erlang_v8:call()
+decoder <- v8 -- : Decoded
+channels <- decoder -- : Decoded
 
-        channels -> device ++ : gen_server
-        
-        device -> device : handle_frame
-        note right: Cache by UUID
+channels -> device ++ : gen_server
 
-        device -> device : frame_timeout
-        note right: ./src/device/router_device_channels_worker.erl        
-        device -> device : send_join_to_channel()\nsend_data_to_channel()
-        channels <- device -- : Decoded
-        [<- channels : gen_event notify
-        note right
-                ./src/channels/router_channel.erl
-                Deliver decoded payload to channel subscribers ("integrations")
-                e.g., ./src/channels/router_http_channel.erl
-        end note
+device -> device : handle_frame
+note right: Cache by UUID
 
-        channels ->o api -- : Decoded
-        note right: ./src/channels/router_console_channel.erl
-end
+device -> device : frame_timeout
+note right: ./src/device/router_device_channels_worker.erl
+device -> device : send_join_to_channel()\nsend_data_to_channel()
+channels <- device -- : Decoded
+[<- channels : gen_event notify
+note right
+        ./src/channels/router_channel.erl
+        Deliver decoded payload to channel subscribers ("integrations")
+        e.g., ./src/channels/router_http_channel.erl
+end note
+
+channels ->o api -- : Decoded
+note right: ./src/channels/router_console_channel.erl
+
 ...
 
 @enduml

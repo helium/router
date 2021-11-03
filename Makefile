@@ -9,7 +9,6 @@ compile: | $(grpc_services_directory)
 
 clean:
 	git clean -dXfffffffffff
-	rm -f docs/*.{png,svg} || true
 
 docs:
 	@which plantuml || (echo "Run: apt-get install plantuml"; false)

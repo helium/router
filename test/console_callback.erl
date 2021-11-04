@@ -102,7 +102,6 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
     end;
 %% Get All Orgs
 handle('GET', [<<"api">>, <<"router">>, <<"organizations">>], Req, Args) ->
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, req]),
     Tab = maps:get(ets, Args),
     Qs = elli_request:query_str(Req),
     {Orgs, ResourceID} =

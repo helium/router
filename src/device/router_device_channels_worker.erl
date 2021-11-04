@@ -561,15 +561,15 @@ downlink_decode(Payload) ->
 send_join_to_channel(
     #join_cache{
         uuid = UUID,
-        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, _HoldTime} = SelectedPacket,
+        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, HoldTime} = SelectedPacket,
         packets = CollectedPackets
     },
     Device,
     EventMgrRef,
     Blockchain
 ) ->
-    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime}) ->
-        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Blockchain)
+    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime0}) ->
+        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime0, Blockchain)
     end,
 
     %% No touchy, this is set in STONE
@@ -583,6 +583,7 @@ send_join_to_channel(
         metadata => router_device:metadata(Device),
         fcnt => 0,
         reported_at => PacketTime,
+        hold_time => HoldTime,
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])

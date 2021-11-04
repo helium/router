@@ -150,26 +150,7 @@ get_org(OrgID) ->
 -spec get_orgs() -> {ok, list()} | {error, any()}.
 get_orgs() ->
     {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations">>,
-    lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_orgs, ok, End - Start),
-            lager:debug("Body for ~p ~p", [Url, Body]),
-            {ok, jsx:decode(Body, [return_maps])};
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
-            {error, {get_orgs_failed, _Other}}
-    end.
+    get_orgs(Endpoint, Token, [], undefined).
 
 -spec org_manual_update_router_dc(OrgID :: binary(), Balance :: non_neg_integer()) ->
     ok | {error, any()}.
@@ -603,6 +584,44 @@ get_devices(Endpoint, Token, AccDevices, ResourceID) ->
         Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_devices, error, End - Start),
+            {error, Other}
+    end.
+
+-spec get_orgs(
+    Endpoint :: binary(),
+    Token :: binary(),
+    AccOrgs :: list(),
+    ResourceID :: binary() | undefined
+) -> {ok, list()} | {error, any()}.
+get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
+    Url =
+        case ResourceID of
+            undefined ->
+                <<Endpoint/binary, "/api/router/organizations">>;
+            ResourceID when is_binary(ResourceID) ->
+                <<Endpoint/binary, "/api/router/organizations?after=", ResourceID/binary>>
+        end,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, ok, End - Start),
+            case jsx:decode(Body, [return_maps]) of
+                #{<<"data">> := Orgs, <<"after">> := NewResourceID} ->
+                    get_orgs(Endpoint, Token, AccOrgs ++ Orgs, NewResourceID);
+                #{<<"data">> := Orgs} ->
+                    {ok, AccOrgs ++ Orgs}
+            end;
+        Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
             {error, Other}
     end.
 

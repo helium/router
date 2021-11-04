@@ -58,14 +58,6 @@ device_to_json(Device) ->
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
     Tab = maps:get(ets, Args),
     Qs = elli_request:query_str(Req),
-    Split = fun(Ds) ->
-        case erlang:length(Ds) of
-            L when L > 1 ->
-                lists:split(erlang:trunc(L / 2), Ds);
-            _ ->
-                {Ds, []}
-        end
-    end,
     {Devices, ResourceID} =
         case ets:lookup(Tab, devices) of
             [] ->
@@ -89,12 +81,12 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
                 {[], undefined};
             [{devices, {Qs, Ds}}] ->
                 UUID = router_utils:uuid_v4(),
-                {PickedDevices, LeftOverDevices} = Split(Ds),
+                {PickedDevices, LeftOverDevices} = split_list(Ds),
                 true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
                 {PickedDevices, UUID};
             [{devices, Ds}] ->
                 UUID = router_utils:uuid_v4(),
-                {PickedDevices, LeftOverDevices} = Split(Ds),
+                {PickedDevices, LeftOverDevices} = split_list(Ds),
                 true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
                 {PickedDevices, UUID}
         end,
@@ -105,6 +97,45 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
             {200, [],
                 jsx:encode(#{
                     data => lists:map(fun device_to_json/1, Devices),
+                    'after' => ResourceID
+                })}
+    end;
+%% Get All Orgs
+handle('GET', [<<"api">>, <<"router">>, <<"organizations">>], Req, Args) ->
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, req]),
+    Tab = maps:get(ets, Args),
+    Qs = elli_request:query_str(Req),
+    {Orgs, ResourceID} =
+        case ets:lookup(Tab, organizations) of
+            [] ->
+                {[], undefined};
+            [{organizations, {Qs, []}}] ->
+                true = ets:delete(Tab, organizations),
+                {[], undefined};
+            [{organizations, {Qs, Os}}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedOrgs, LeftOverOrgs} = split_list(Os),
+                true = ets:insert(
+                    Tab,
+                    {organizations, {<<"after=", UUID/binary>>, LeftOverOrgs}}
+                ),
+                {PickedOrgs, UUID};
+            [{organizations, Os}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedOrgs, LeftOverOrgs} = split_list(Os),
+                true = ets:insert(
+                    Tab,
+                    {organizations, {<<"after=", UUID/binary>>, LeftOverOrgs}}
+                ),
+                {PickedOrgs, UUID}
+        end,
+    case ResourceID of
+        undefined ->
+            {200, [], jsx:encode(#{data => Orgs})};
+        ResourceID when is_binary(ResourceID) ->
+            {200, [],
+                jsx:encode(#{
+                    data => Orgs,
                     'after' => ResourceID
                 })}
     end;
@@ -435,3 +466,12 @@ init_ws([<<"websocket">>], _Req, _Args) ->
     {ok, handover};
 init_ws(_, _, _) ->
     ignore.
+
+-spec split_list(List :: list()) -> {list(), list()}.
+split_list(List) ->
+    case erlang:length(List) of
+        L when L > 1 ->
+            lists:split(erlang:trunc(L / 2), List);
+        _ ->
+            {List, []}
+    end.

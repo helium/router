@@ -267,17 +267,6 @@ encode_data(undefined, #{payload := Payload} = TemplateArgs, Channel) ->
         ?MODULE:payload_template(Channel),
         maps:put(payload, base64:encode(Payload), TemplateArgs)
     );
-encode_data(undefined, TemplateArgs, Channel) ->
-    case maps:is_key(payload, TemplateArgs) of
-        false ->
-            %% Join packet omits 'payload' and 'payload_size'
-            router_channel_utils:maybe_apply_template(
-                ?MODULE:payload_template(Channel),
-                TemplateArgs
-            );
-        true ->
-            mismatched_keys_in_TemplateArgs
-    end;
 encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel) ->
     DecoderID = router_decoder:id(Decoder),
     case router_decoder:decode(DecoderID, Payload, Port, TemplateArgs) of
@@ -307,7 +296,13 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
                     payload => base64:encode(Payload)
                 })
             )
-    end.
+    end;
+encode_data(_Decoder, TemplateArgs, Channel) ->
+    lager:info("missing payload and port [device: ~p]", [?MODULE:device_id(Channel)]),
+    router_channel_utils:maybe_apply_template(
+        ?MODULE:payload_template(Channel),
+        TemplateArgs
+    ).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

@@ -16,3 +16,17 @@ services:
       network_mode: host
       volumes:
           - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  node_exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: helium_node_exporter
+    command:
+      - '--path.rootfs=/host'
+      - "--collector.disable-defaults"
+      - "--collector.filesystem"
+      - "--collector.netstat"
+      - "--collector.meminfo"
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - '/:/host:ro,rslave'

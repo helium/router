@@ -563,4 +563,33 @@ hash_test() ->
     Hash = crypto:hash(sha256, erlang:term_to_binary(Channel1)),
     ?assertEqual(Hash, hash(Channel0)).
 
+channel_record_update_test() ->
+    %% This test exists to make sure upgrades are considered if anything needs
+    %% to touch the #channel{} record definition.
+    ?assertMatch(
+        {
+            channel,
+            _Id,
+            _Handler,
+            _Name,
+            _Args,
+            _DeviceID,
+            _Controller,
+            _Decoder,
+            _PayloadTemplate,
+            _ChannelOptions
+        },
+        new(
+            <<"channel_id">>,
+            router_http_channel,
+            <<"channel_name">>,
+            [],
+            <<"device_id">>,
+            self(),
+            <<>>,
+            <<>>,
+            #{receive_joins => true}
+        )
+    ).
+
 -endif.

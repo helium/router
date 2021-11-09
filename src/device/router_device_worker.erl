@@ -2165,3 +2165,21 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ChannelCorrection = router_device:channel_correction(Device),
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
     DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+channel_record_update_test() ->
+    %% This test exists to make sure upgrades are considered if anything needs
+    %% to touch the #downlink{} record definition.
+    ?assertMatch(
+        {
+            downlink,
+            _Confirmed,
+            _Port,
+            _Payload,
+            _Channel
+        },
+        #downlink{}
+    ).
+-endif.

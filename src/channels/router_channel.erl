@@ -297,12 +297,12 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
                 })
             )
     end;
-encode_data(_Decoder, TemplateArgs, Channel) ->
-    lager:info("missing payload and port [device: ~p]", [?MODULE:device_id(Channel)]),
-    router_channel_utils:maybe_apply_template(
-        ?MODULE:payload_template(Channel),
-        TemplateArgs
-    ).
+encode_data(_Decoder, TemplateArgs, _Channel) ->
+    lager:info("encoding join [device: ~p] [channel: ~p]", [
+        ?MODULE:device_id(_Channel),
+        ?MODULE:unique_id(_Channel)
+    ]),
+    jsx:encode(TemplateArgs).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

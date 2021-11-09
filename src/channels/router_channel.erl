@@ -298,7 +298,7 @@ encode_data(Decoder, #{payload := Payload, port := Port} = TemplateArgs, Channel
             )
     end;
 encode_data(_Decoder, TemplateArgs, _Channel) ->
-    lager:info("encoding join [device: ~p] [channel: ~p]", [
+    lager:debug("encoding join [device: ~p] [channel: ~p]", [
         ?MODULE:device_id(_Channel),
         ?MODULE:unique_id(_Channel)
     ]),

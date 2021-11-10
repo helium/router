@@ -23,7 +23,7 @@
 -define(METRICS_VM_CPU, router_vm_cpu).
 -define(METRICS_VM_PROC_Q, router_vm_process_queue).
 -define(METRICS_VM_ETS_MEMORY, router_vm_ets_memory).
--define(METRICS_XOR_FILTER, metrics_xor_filter).
+-define(METRICS_XOR_FILTER, router_xor_filter).
 
 -define(METRICS, [
     {?METRICS_DC, [], "Active State Channel balance"},

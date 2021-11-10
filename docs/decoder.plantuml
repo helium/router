@@ -13,10 +13,10 @@ collections  "Blockchain\nCore"             as core     order 10
 entity       "State\nChannel"               as sc       order 20
 box "Exists entirely within router's BEAM image"
 participant  "Listener\nfor gRPC\n(ranch)"  as listener order 30
-participant  "Channels\n(Integrations)"     as channels order 40
-'control      "Router\ninit()"               as init     order 50
-database     ETS                            as ets      order 51
+'control      "Router\ninit/1"               as init     order 40
+participant  "Channels\n(Integrations)"     as channels order 50
 participant  Device                         as device   order 60
+database     ETS                            as ets      order 61
 participant  Metrics                        as metrics  order 70
 participant  DevAddr                        as devaddr  order 80
 participant  Decoder                        as decoder  order 90
@@ -44,17 +44,6 @@ listener -> channels --++ : gen_event
 channels -> channels : add_sup_handler
 note left: ./src/channels/router_channel.erl
 
-channels -> decoder ++ : decode()
-note left
-        ./src/decoders/router_decoder.erl
-        ./src/decoders/router_decoder_custom_sup.erl
-end note
-decoder -> decoder : gen_server\nhandle_call:\ndecode
-note left: ./src/decoders/router_decoder_custom_worker.erl
-decoder -> v8 ++ : erlang_v8:call()
-decoder <- v8 -- : Decoded
-channels <- decoder -- : Decoded
-
 channels -> device ++ : gen_server
 note left: ./src/device/router_device_channels_worker.erl
 
@@ -62,8 +51,23 @@ device -> device : handle_cast:\nhandle_join or\nhandle_frame
 note right: Cache by UUID
 
 device -> device : handle_cast:\nframe_timeout
-device -> device : send_join_to_channel() or\nsend_data_to_channel()
-channels <- device -- : Decoded
+device -> device : send_join_to_channel()\n or\nsend_data_to_channel()
+channels <- device -- : encode_payload()
+note right: Yes, it is called "encode_payload" despite imitating "decode"
+
+channels -> decoder ++ : decode()
+note left
+        ./src/decoders/router_decoder.erl
+        ./src/decoders/router_decoder_custom_sup.erl
+end note
+decoder -> ets ++ : lookup()
+decoder <- ets -- : custom_decoder\n JavaScript function definition
+decoder -> decoder : gen_server\nhandle_call:\ndecode
+note left: ./src/decoders/router_decoder_custom_worker.erl
+decoder -> v8 ++ : erlang_v8:call()
+decoder <- v8 -- : Decoded
+channels <- decoder -- : Decoded
+
 [<- channels : gen_event notify
 note right
         ./src/channels/router_channel.erl

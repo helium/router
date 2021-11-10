@@ -473,7 +473,8 @@ dupes_test(Config) ->
     ),
     ct:pal("Reply ~p", [Reply1]),
     true = lists:keymember(link_adr_req, 1, Reply1#frame.fopts),
-    ?assertEqual(1, Reply1#frame.adr), %% "ADR bit normally must be set if MAC ADR command is downlinked"
+    %% "ADR bit normally must be set if MAC ADR command is downlinked"
+    ?assertEqual(1, Reply1#frame.adr),
 
     %% Make sure we did not get a duplicate
     receive

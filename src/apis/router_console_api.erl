@@ -549,6 +549,11 @@ terminate(_Reason, #state{db = DB, pending_burns = P}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% The function recursively get all devices from Console using pagination
+%% @end
+%%%-------------------------------------------------------------------
 -spec get_devices(
     Endpoint :: binary(),
     Token :: binary(),
@@ -587,6 +592,11 @@ get_devices(Endpoint, Token, AccDevices, ResourceID) ->
             {error, Other}
     end.
 
+%%%-------------------------------------------------------------------
+%% @doc
+%% The function recursively get all orgs from Console using pagination
+%% @end
+%%%-------------------------------------------------------------------
 -spec get_orgs(
     Endpoint :: binary(),
     Token :: binary(),

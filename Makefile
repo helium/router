@@ -1,4 +1,6 @@
-.PHONY: compile clean docs test rel run grpc docker-build docker-test docker-run
+.PHONY: compile clean docs test rel run grpc
+.PHONY: docker-build docker-docs docker-test docker-run
+
 grpc_services_directory=src/grpc/autogen
 
 REBAR=./rebar3

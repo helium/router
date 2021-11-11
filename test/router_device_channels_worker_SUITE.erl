@@ -666,6 +666,7 @@ join_sent_to_integration_test(Config) ->
         <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
+        <<"hold_time">> => fun erlang:is_integer/1,
         <<"port">> => 0,
         <<"devaddr">> => fun erlang:is_binary/1,
         <<"hotspots">> => [

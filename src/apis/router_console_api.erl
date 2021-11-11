@@ -225,12 +225,12 @@ org_manual_update_router_dc(OrgID, Balance) ->
     end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) ->
-    [router_channel:channel()].
+    {ok, [router_channel:channel()]} | {error, any()}.
 get_channels(Device, DeviceWorkerPid) ->
     {Endpoint, Token} = token_lookup(),
     case get_device_(Endpoint, Token, Device) of
-        {error, _Reason} ->
-            [];
+        {error, _Reason} = Error ->
+            Error;
         {ok, JSON} ->
             Channels0 = kvc:path([<<"channels">>], JSON),
             Channels1 = lists:filtermap(
@@ -239,7 +239,7 @@ get_channels(Device, DeviceWorkerPid) ->
                 end,
                 Channels0
             ),
-            Channels1
+            {ok, Channels1}
     end.
 
 -spec event(Device :: router_device:device(), Map :: map()) -> ok.

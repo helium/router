@@ -14,7 +14,8 @@
     us915_join_enabled_cf_list_test/1,
     us915_join_disabled_cf_list_test/1,
     us915_link_adr_req_timing_test/1,
-    adr_test/1
+    adr_test/1,
+    adr_downlink_timing_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -47,7 +48,8 @@ all() ->
         us915_join_enabled_cf_list_test,
         us915_join_disabled_cf_list_test,
         us915_link_adr_req_timing_test,
-        adr_test
+        adr_test,
+        adr_downlink_timing_test
     ].
 
 %%--------------------------------------------------------------------
@@ -1243,6 +1245,206 @@ us915_link_adr_req_timing_test(Config) ->
         DefaultFrameTimeout < Time2,
         "No downlink content waiting to be sent, waited for longer window"
     ),
+
+    ok.
+
+adr_downlink_timing_test(Config) ->
+    %% During regular unconfirmed uplink operation, Router will wait extra time to
+    %% have a better chance of getting packets. At some point in time, the ADREngine
+    %% may determine that it can adjust something for a device and send a downlink.
+    %% WHen that happens we need to make sure we're not missing the downlink window.
+
+    %% Tell the device to enable adr
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {adr_allowed, true}),
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    ok = application:set_env(router, testing, false),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Send up to min-adr-history-len # of packets to get off 'hold'.
+    ok = lists:foreach(
+        fun(_Idx) ->
+            FrameOptions =
+                case _Idx of
+                    1 ->
+                        #{
+                            wants_adr => true,
+                            snr => 20.0,
+                            fopts => [{link_adr_ans, 1, 1, 1}]
+                        };
+                    _ ->
+                        #{wants_adr => true, snr => 20.0}
+                end,
+
+            %% Device sends unconfirmed up
+            Stream !
+                {send,
+                    test_utils:frame_packet(
+                        ?UNCONFIRMED_UP,
+                        PubKeyBin,
+                        router_device:nwk_s_key(Device0),
+                        router_device:app_s_key(Device0),
+                        _Idx,
+                        FrameOptions
+                    )},
+
+            %% Unconfirmed uplink from device
+            test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"category">> => <<"uplink">>,
+                <<"sub_category">> => <<"uplink_unconfirmed">>,
+                <<"description">> => fun erlang:is_binary/1,
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"device_id">> => ?CONSOLE_DEVICE_ID,
+                <<"data">> => #{
+                    <<"dc">> => fun erlang:is_map/1,
+                    <<"fcnt">> => fun erlang:is_integer/1,
+                    <<"payload_size">> => fun erlang:is_integer/1,
+                    <<"payload">> => fun erlang:is_binary/1,
+                    <<"port">> => fun erlang:is_integer/1,
+                    <<"devaddr">> => fun erlang:is_binary/1,
+                    <<"hotspot">> => #{
+                        <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                        <<"name">> => erlang:list_to_binary(HotspotName),
+                        <<"rssi">> => 0.0,
+                        <<"snr">> => 20.0,
+                        <<"spreading">> => fun erlang:is_binary/1,
+                        <<"frequency">> => fun erlang:is_float/1,
+                        <<"channel">> => fun erlang:is_number/1,
+                        <<"lat">> => fun erlang:is_float/1,
+                        <<"long">> => fun erlang:is_float/1
+                    },
+                    <<"mac">> => fun erlang:is_list/1,
+                    <<"hold_time">> => fun erlang:is_integer/1
+                }
+            })
+        end,
+        lists:seq(0, 20)
+    ),
+
+    %% Clear old messages to ensure we're not picking up any other type of downlink.
+    ok = test_utils:ignore_messages(),
+
+    %% -------------------------------------------------------------------
+    %% Now we should be getting adr adjustment
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                21,
+                #{
+                    wants_adr => true,
+                    snr => 20.0
+                }
+            )},
+
+    %% Unconfirmed uplink from device
+    {ok, #{<<"id">> := _UplinkUUID1, <<"reported_at">> := UplinkTime}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => fun erlang:is_map/1,
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 20.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    %% Unconfirmed downlink sent to device containing ADR adjustment
+    {ok, #{<<"reported_at">> := DownlinkTime}} = test_utils:wait_for_console_event_sub(
+        <<"downlink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"downlink">>,
+            <<"sub_category">> => <<"downlink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 27,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW500">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"integration">> => #{
+                    <<"id">> => fun erlang:is_binary/1,
+                    <<"name">> => fun erlang:is_binary/1,
+                    <<"status">> => <<"success">>
+                },
+                <<"mac">> => [
+                    %% Note these commands are not the same as sub-band 2 configuration.
+                    #{
+                        <<"channel_mask">> => 0,
+                        <<"channel_mask_control">> => 7,
+                        <<"command">> => <<"link_adr_req">>,
+                        <<"data_rate">> => 3,
+                        <<"number_of_transmissions">> => 0,
+                        <<"tx_power">> => 7
+                    },
+                    #{
+                        <<"channel_mask">> => 65280,
+                        <<"channel_mask_control">> => 0,
+                        <<"command">> => <<"link_adr_req">>,
+                        <<"data_rate">> => 3,
+                        <<"number_of_transmissions">> => 0,
+                        <<"tx_power">> => 7
+                    }
+                ]
+            }
+        }
+    ),
+    Time = DownlinkTime - UplinkTime,
+    %% ct:print("[up: ~p] [down: ~p] [diff: ~p]", [UplinkTime, DownlinkTime, Time]),
+    ?assert(Time =< 250, "Missed the downlink window"),
+    ?assert(0 < Time, "Downlinks cannot happen in the past"),
 
     ok.
 

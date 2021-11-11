@@ -131,6 +131,12 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> false;
             [{cf_list_enabled, IS2}] -> IS2
         end,
+    ADRAllowed =
+        case ets:lookup(Tab, adr_allowed) of
+            [] -> false;
+            [{adr_allowed, IS3}] -> IS3
+        end,
+
     Body = #{
         <<"id">> => DeviceID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -142,7 +148,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
         <<"multi_buy">> => 1,
-        <<"adr_allowed">> => false,
+        <<"adr_allowed">> => ADRAllowed,
         <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled
     },
     case NotFound of

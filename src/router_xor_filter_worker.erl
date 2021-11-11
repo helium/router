@@ -577,7 +577,7 @@ get_balanced_filters(FilterToDevices) ->
     {ok, CurrentMapping :: filter_eui_mapping(), ProposedMapping :: filter_eui_mapping()}.
 get_balanced_filters_across_n_groups(FilterToDevices, NumGroups) ->
     BalancedFilterToDevices =
-        case router_console_api:get_all_devices() of
+        case router_console_api:get_devices() of
             {error, _Reason} ->
                 lager:error("failed to get devices ~p", [_Reason]),
                 {error, {could_not_rebalance_filters, _Reason}};
@@ -868,7 +868,7 @@ estimate_cost(
         Routing :: blockchain_ledger_routin_v1:routing()
     }.
 get_device_updates(Chain, OUI, FilterToDevices) ->
-    case router_console_api:get_all_devices() of
+    case router_console_api:get_devices() of
         {error, _Reason} ->
             {error, could_not_get_devices, _Reason};
         {ok, Devices} ->
@@ -1244,7 +1244,7 @@ test_for_should_update_filters_test() ->
     meck:expect(blockchain, ledger, fun(_) -> ledger end),
     %% This set the max xor filter chain var
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {error, no_devices_on_purpose}
     end),
 
@@ -1257,7 +1257,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device0 = router_device:update(Device0Updates, router_device:new(<<"ID0">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device0]}
     end),
 
@@ -1294,7 +1294,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"ID1">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device0, Device1]}
     end),
 
@@ -1313,7 +1313,7 @@ test_for_should_update_filters_test() ->
     %% ------------------------
     % Testing that we removed Device0
     meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device1]}
     end),
 
@@ -1333,7 +1333,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"ID2">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device1, Device2]}
     end),
 
@@ -1361,7 +1361,7 @@ test_for_should_update_filters_test() ->
         {ok, RoutingRemoved1}
     end),
 
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, []}
     end),
 
@@ -1380,7 +1380,7 @@ test_for_should_update_filters_test() ->
 
     %% Adding a device to a filter should cause the remove to go through.
     %% Only the filter that is chosen for adds removes it device.
-    meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device2]} end),
+    meck:expect(router_console_api, get_devices, fun() -> {ok, [Device2]} end),
     ExpectedUpdateRemoveFitler = [{update, 1, get_devices_deveui_app_eui([Device2])}],
     ?assertMatch(
         {RoutingRemoved1, ExpectedUpdateRemoveFitler, _CurrentMapping},
@@ -1397,7 +1397,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 1>>}
     ],
     Device3 = router_device:update(DeviceUpdates3, router_device:new(<<"ID3">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device3]}
     end),
 
@@ -1422,7 +1422,7 @@ test_for_should_update_filters_test() ->
         {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
     ],
     Device4 = router_device:update(DeviceUpdates4, router_device:new(<<"ID2">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device4]}
     end),
 
@@ -1440,7 +1440,7 @@ test_for_should_update_filters_test() ->
     ],
     Device5 = router_device:update(DeviceUpdates5, router_device:new(<<"ID0">>)),
     Device5Copy = router_device:update(DeviceUpdates5, router_device:new(<<"ID0Copy">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device5, Device5Copy]}
     end),
 
@@ -1467,7 +1467,7 @@ test_for_should_update_filters_test() ->
         {ok, RoutingLast}
     end),
 
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device5Copy]}
     end),
 
@@ -1484,7 +1484,7 @@ test_for_should_update_filters_test() ->
     ],
     Device6 = router_device:update(DeviceUpdates6, router_device:new(<<"ID6">>)),
     Device6Copy = router_device:update(DeviceUpdates6, router_device:new(<<"ID6Copy">>)),
-    meck:expect(router_console_api, get_all_devices, fun() ->
+    meck:expect(router_console_api, get_devices, fun() ->
         {ok, [Device6, Device6Copy]}
     end),
 
@@ -1515,7 +1515,7 @@ test_for_should_update_filters_test() ->
     Routing7 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter7, [], 1),
 
     meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) -> {ok, Routing7} end),
-    meck:expect(router_console_api, get_all_devices, fun() -> {ok, [Device7, Device7, Device8]} end),
+    meck:expect(router_console_api, get_devices, fun() -> {ok, [Device7, Device7, Device8]} end),
     meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
 
     ExpectedUpdateFilter5 = [

@@ -178,7 +178,7 @@ device_prune(["device", "prune"], [], Flags) ->
 
     {ok, DB, CF} = router_db:get_devices(),
     RocksDevices = router_device:get(DB, CF),
-    {ok, ConsoleDevices} = router_console_api:get_all_devices(),
+    {ok, ConsoleDevices} = router_console_api:get_devices(),
 
     RocksDeviceIDs = [router_device:id(D) || D <- RocksDevices],
     ConsoleDeviceIDs = [router_device:id(D) || D <- ConsoleDevices],

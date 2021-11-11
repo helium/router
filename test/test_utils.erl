@@ -419,20 +419,32 @@ wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) 
                         {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_for_console_event_sub (explicit id) ~p data failed ~n~p", [
-                            SubCategory,
-                            Reason
-                        ])
+                        ct:fail(
+                            "wait_for_console_event_sub (explicit id: ~p) ~p data failed ~n~p",
+                            [
+                                ExpectedUUID,
+                                SubCategory,
+                                Reason
+                            ]
+                        )
                 end
-        after 4250 -> ct:fail("wait_for_console_event_sub (explicit id) ~p timeout", [SubCategory])
+        after 4250 ->
+            ct:fail("wait_for_console_event_sub (explicit id: ~p) ~p timeout", [
+                ExpectedUUID,
+                SubCategory
+            ])
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event_sub (explicit id) ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~p~n", [
+                ExpectedUUID,
                 SubCategory,
                 {_Reason, _Stacktrace}
             ]),
-            ct:fail("wait_for_console_event_sub (explicit id) ~p failed", [SubCategory])
+            ct:fail("wait_for_console_event_sub (explicit id: ~p) ~p failed", [
+                ExpectedUUID,
+                SubCategory
+            ])
     end;
 wait_for_console_event_sub(SubCategory, Expected) ->
     try

@@ -54,7 +54,7 @@
     backoff :: any()
 }).
 
--type context() :: integer().
+-type context() :: integer() | {error, crashed | invalid_context}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions

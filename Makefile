@@ -33,6 +33,10 @@ run: | $(grpc_services_directory)
 docker-build:
 	docker build -f Dockerfile-local --force-rm -t quay.io/team-helium/router:local .
 
+docker-docs:
+	docker build -f Dockerfile-docs -t router-docs .
+	docker run --rm -it -v "$(shell pwd):/opt/router" router-docs
+
 docker-test:
 	docker run --rm -it --init --name=helium_router_test quay.io/team-helium/router:local make test
 

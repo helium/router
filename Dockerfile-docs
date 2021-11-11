@@ -1,0 +1,12 @@
+FROM debian:testing-slim
+
+WORKDIR /opt/router
+
+ENV DEBIAN_FRONTEND noninteractive
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends plantuml make wget
+
+# Being Debian-based, ensure use of latest released library:
+RUN wget http://sourceforge.net/projects/plantuml/files/plantuml.jar/download -O /usr/share/plantuml/plantuml.jar
+
+CMD ["make", "docs"]

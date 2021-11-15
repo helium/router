@@ -41,6 +41,7 @@
 ]).
 
 -define(SERVER, ?MODULE).
+-define(REFRESH_CHANNELS, refresh_channels).
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_INIT,
@@ -170,7 +171,7 @@ new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time, HoldTime) ->
 
 -spec refresh_channels(Pid :: pid()) -> ok.
 refresh_channels(Pid) ->
-    Pid ! refresh_channels,
+    Pid ! ?REFRESH_CHANNELS,
     ok.
 
 %% ------------------------------------------------------------------
@@ -342,40 +343,46 @@ handle_cast(_Msg, State) ->
 %% Channel Handling
 %% ------------------------------------------------------------------
 handle_info(
-    refresh_channels,
+    ?REFRESH_CHANNELS,
     #state{event_mgr = EventMgrRef, device = Device, channels = Channels0} = State
 ) ->
-    APIChannels = lists:foldl(
-        fun(Channel, Acc) ->
-            ID = router_channel:unique_id(Channel),
-            maps:put(ID, Channel, Acc)
-        end,
-        #{},
-        router_console_api:get_channels(Device, self())
-    ),
-    Channels1 =
-        case maps:size(APIChannels) == 0 of
-            true ->
-                %% API returned no channels removing all of them and adding the "no channel"
-                lists:foreach(
-                    fun
-                        ({router_no_channel, <<"no_channel">>}) -> ok;
-                        (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
-                    end,
-                    gen_event:which_handlers(EventMgrRef)
-                ),
-                NoChannel = maybe_start_no_channel(Device, EventMgrRef),
-                #{router_channel:unique_id(NoChannel) => NoChannel};
-            false ->
-                %% Start channels asynchronously
-                lists:foreach(
-                    fun(Channel) -> self() ! {start_channel, Channel} end,
-                    maps:values(APIChannels)
-                ),
-                %% Removing old channels left in cache but not in API call
-                remove_old_channels(EventMgrRef, APIChannels, Channels0)
-        end,
-    {noreply, State#state{channels = Channels1}};
+    case router_console_api:get_channels(Device, self()) of
+        {error, _Reason} ->
+            _ = erlang:send_after(timer:seconds(1), self(), ?REFRESH_CHANNELS),
+            lager:warning("failed to get channels ~p, retrying in 1s", [_Reason]);
+        {ok, APIChannels0} ->
+            APIChannels1 = lists:foldl(
+                fun(Channel, Acc) ->
+                    ID = router_channel:unique_id(Channel),
+                    maps:put(ID, Channel, Acc)
+                end,
+                #{},
+                APIChannels0
+            ),
+            Channels1 =
+                case maps:size(APIChannels1) == 0 of
+                    true ->
+                        %% API returned no channels removing all of them and adding the "no channel"
+                        lists:foreach(
+                            fun
+                                ({router_no_channel, <<"no_channel">>}) -> ok;
+                                (Handler) -> gen_event:delete_handler(EventMgrRef, Handler, [])
+                            end,
+                            gen_event:which_handlers(EventMgrRef)
+                        ),
+                        NoChannel = maybe_start_no_channel(Device, EventMgrRef),
+                        #{router_channel:unique_id(NoChannel) => NoChannel};
+                    false ->
+                        %% Start channels asynchronously
+                        lists:foreach(
+                            fun(Channel) -> self() ! {start_channel, Channel} end,
+                            maps:values(APIChannels1)
+                        ),
+                        %% Removing old channels left in cache but not in API call
+                        remove_old_channels(EventMgrRef, APIChannels1, Channels0)
+                end,
+            {noreply, State#state{channels = Channels1}}
+    end;
 handle_info(
     {start_channel, Channel},
     #state{
@@ -561,15 +568,15 @@ downlink_decode(Payload) ->
 send_join_to_channel(
     #join_cache{
         uuid = UUID,
-        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, _HoldTime} = SelectedPacket,
+        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, HoldTime} = SelectedPacket,
         packets = CollectedPackets
     },
     Device,
     EventMgrRef,
     Blockchain
 ) ->
-    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime}) ->
-        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Blockchain)
+    FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime0}) ->
+        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime0, Blockchain)
     end,
 
     %% No touchy, this is set in STONE
@@ -583,6 +590,7 @@ send_join_to_channel(
         metadata => router_device:metadata(Device),
         fcnt => 0,
         reported_at => PacketTime,
+        hold_time => HoldTime,
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])

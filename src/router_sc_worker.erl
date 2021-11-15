@@ -139,8 +139,9 @@ init(Args) ->
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
-handle_call(force_open, _From, #state{in_flight = InFlight} = State) ->
-    {ok, ID} = open_next_state_channel(1, State),
+handle_call(force_open, _From, #state{height = Height, in_flight = InFlight} = State) ->
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Height),
+    {ok, ID} = open_next_state_channel(OpenedCount, State),
     {reply, ID, State#state{in_flight = [ID | InFlight]}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

@@ -38,9 +38,10 @@
 
 -define(SERVER, ?MODULE).
 -define(TIMER, timer:hours(48)).
+-define(MAX_RETRIES, 3).
 % V8's JS timeout in milliseconds
 -define(MAX_EXECUTION_TIME, 500).
--define(INIT_CONTEXT, init_context).
+%% -define(INIT_CONTEXT, init_context).
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 
@@ -53,7 +54,7 @@
     backoff :: any()
 }).
 
--type context() :: integer().
+-type context() :: integer() | {error, crashed | invalid_context}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -73,49 +74,55 @@ init(Args) ->
     ID = maps:get(id, Args),
     VM = maps:get(vm, Args),
     Function = maps:get(function, Args),
+    Context = init_context(VM, Function),
     TimerRef = erlang:send_after(?TIMER, self(), timeout),
-    self() ! ?INIT_CONTEXT,
+    %% self() ! ?INIT_CONTEXT,
     State = #state{
         id = ID,
         vm = VM,
-        context = undefined,
+        context = Context,
         function = Function,
         timer = TimerRef,
         backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
     },
     {ok, State}.
 
-handle_call({decode, _Payload, _Port, _UplinkDetails}, _From, #state{context = undefined} = State0) ->
-    {reply, {error, no_context}, State0};
-handle_call(
-    {decode, Payload, Port, UplinkDetails},
-    _From,
-    #state{vm = VM, context = Context0, timer = TimerRef0, backoff = Backoff0} = State0
-) ->
+%% handle_call({decode, _Payload, _Port, _UplinkDetails}, _From, #state{context = undefined} = State0) ->
+%%     {reply, {error, no_context}, State0};
+%% handle_call(
+%%     {decode, Payload, Port, UplinkDetails},
+%%     _From,
+%%     #state{vm = VM, context = Context0, timer = TimerRef0, backoff = Backoff0} = State0
+%% ) ->
+%%     _ = erlang:cancel_timer(TimerRef0),
+%%     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
+%%     State1 = State0#state{timer = TimerRef1},
+%%     case
+%%         erlang_v8:call(
+%%             VM,
+%%             Context0,
+%%             <<"Decoder">>,
+%%             [Payload, Port, UplinkDetails],
+%%             ?MAX_EXECUTION_TIME
+%%         )
+%%     of
+%%         {error, invalid_context} ->
+%%             {Delay, Backoff1} = backoff:fail(Backoff0),
+%%             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
+%%             {reply, {error, invalid_context}, State1#state{
+%%                 context = undefined,
+%%                 backoff = Backoff1
+%%             }};
+%%         {error, _} = Error ->
+%%             {reply, Error, State1};
+%%         {ok, _} = OK ->
+%%             {reply, OK, State1}
+%%     end;
+handle_call({decode, Payload, Port, UplinkDetails}, _From, #state{timer = TimerRef0} = State0) ->
     _ = erlang:cancel_timer(TimerRef0),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-    State1 = State0#state{timer = TimerRef1},
-    case
-        erlang_v8:call(
-            VM,
-            Context0,
-            <<"Decoder">>,
-            [Payload, Port, UplinkDetails],
-            ?MAX_EXECUTION_TIME
-        )
-    of
-        {error, invalid_context} ->
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
-            {reply, {error, invalid_context}, State1#state{
-                context = undefined,
-                backoff = Backoff1
-            }};
-        {error, _} = Error ->
-            {reply, Error, State1};
-        {ok, _} = OK ->
-            {reply, OK, State1}
-    end;
+    {Reply, State1} = decode(Payload, Port, UplinkDetails, State0, ?MAX_RETRIES),
+    {reply, Reply, State1#state{timer = TimerRef1}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -124,20 +131,20 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(
-    ?INIT_CONTEXT,
-    #state{id = ID, vm = VM, function = Function, backoff = Backoff0} = State
-) ->
-    case init_context(VM, Function) of
-        {ok, Context} ->
-            {_Delay, Backoff1} = backoff:succeed(Backoff0),
-            {noreply, State#state{context = Context, backoff = Backoff1}};
-        {error, _Reason} ->
-            lager:warning("failed to init context for ~p with ~p error: ~p", [ID, Function, _Reason]),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
-            {noreply, State#state{backoff = Backoff1}}
-    end;
+%% handle_info(
+%%     ?INIT_CONTEXT,
+%%     #state{id = ID, vm = VM, function = Function, backoff = Backoff0} = State
+%% ) ->
+%%     case init_context(VM, Function) of
+%%         {ok, Context} ->
+%%             {_Delay, Backoff1} = backoff:succeed(Backoff0),
+%%             {noreply, State#state{context = Context, backoff = Backoff1}};
+%%         {error, _Reason} ->
+%%             lager:warning("failed to init context for ~p with ~p error: ~p", [ID, Function, _Reason]),
+%%             {Delay, Backoff1} = backoff:fail(Backoff0),
+%%             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
+%%             {noreply, State#state{backoff = Backoff1}}
+%%     end;
 handle_info(timeout, #state{id = ID} = State) ->
     lager:info("context ~p has not been used for awhile, shutting down", [ID]),
     {stop, normal, State};
@@ -148,6 +155,12 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+terminate(_Reason, #state{id = ID, context = Context} = _State) when
+    not erlang:is_integer(Context)
+->
+    ok = router_decoder_custom_sup:delete(ID),
+    lager:info("decoder with invalid context ~p went down: ~p", [ID, _Reason]),
+    ok;
 terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
     catch erlang_v8:destroy_context(VM, Context),
     ok = router_decoder_custom_sup:delete(ID),
@@ -170,6 +183,57 @@ init_context(VM, Function) ->
                 {ok, _} ->
                     {ok, Context}
             end
+    end.
+
+%% FIXME: Bringing back the retry mechanism for decoding until we have the
+%% context issue figured out on a better way. If there is not context, let's try
+%% at least one more time to create it. If a context was nuked by another, reset
+%% and try again.
+-spec decode(
+    Payload :: string(),
+    Port :: non_neg_integer(),
+    UplinkDetails :: map(),
+    State :: #state{},
+    Retries :: non_neg_integer()
+) -> {any(), #state{}}.
+decode(_Payload, _Port, _UplinkDetails, State, 0) ->
+    {{error, failed_too_many_times}, State};
+decode(
+    Payload,
+    Port,
+    UplinkDetails,
+    #state{context = Ctx, vm = VM, function = Function} = State,
+    Retry
+) when not erlang:is_number(Ctx) ->
+    case init_context(VM, Function) of
+        {ok, Context} ->
+            decode(Payload, Port, UplinkDetails, State#state{context = Context}, Retry);
+        Err ->
+            {Err, State}
+    end;
+decode(
+    Payload,
+    Port,
+    UplinkDetails,
+    #state{vm = VM, context = Context0, function = Function} = State,
+    Retry
+) ->
+    case
+        erlang_v8:call(
+            VM,
+            Context0,
+            <<"Decoder">>,
+            [Payload, Port, UplinkDetails],
+            ?MAX_EXECUTION_TIME
+        )
+    of
+        {error, invalid_context} ->
+            Context1 = init_context(VM, Function),
+            %% TODO: use Ferd's `backoff' library.
+            %% See stateful use: ../device/router_device_channels_worker.erl
+            decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
+        Reply ->
+            {Reply, State}
     end.
 
 %% ------------------------------------------------------------------
@@ -350,6 +414,43 @@ with_uplink_info_test() ->
     gen_server:stop(Pid),
     gen_server:stop(VMPid),
     ?assert(meck:validate(router_decoder_custom_sup)),
+    meck:unload(router_decoder_custom_sup),
+    ok.
+
+another_test() ->
+    meck:new(router_decoder_custom_sup, [passthrough]),
+    meck:expect(router_decoder_custom_sup, delete, fun(_) -> ok end),
+
+    {ok, VMPid} = router_v8:start_link(#{}),
+    {ok, VM} = router_v8:get(),
+
+    GoodFunction = <<"function Decoder() { return 1; }">>,
+    BadFunction = <<"function Decoder() { returrrrrrn 1; }">>,
+
+    GoodArgs = #{id => <<"GoodID">>, vm => VM, function => GoodFunction},
+    BadArgs = #{id => <<"BadID">>, vm => VM, function => BadFunction},
+
+    {ok, GoodPid} = ?MODULE:start_link(GoodArgs),
+    Payload = erlang:binary_to_list(base64:decode(<<"AQQACgsgGAQgAAA=">>)),
+    Port = 6,
+    Result = 1,
+
+    %% Make sure decodes work
+    ?assertMatch({ok, Result}, ?MODULE:decode(GoodPid, Payload, Port, #{call => 1})),
+    ?assertMatch({ok, Result}, ?MODULE:decode(GoodPid, Payload, Port, #{call => 2})),
+
+    {ok, BadPid} = ?MODULE:start_link(BadArgs),
+    ?assertMatch({error, _}, ?MODULE:decode(BadPid, Payload, Port, #{call => 3})),
+
+    %% Good Decoder hasn't broken
+    One = (catch ?MODULE:decode(GoodPid, Payload, Port, #{call => 4})),
+    ?assertMatch({ok, Result}, One),
+
+    gen_server:stop(GoodPid),
+    gen_server:stop(BadPid),
+
+    gen_server:stop(VMPid),
+    meck:validate(router_decoder_custom_sup),
     meck:unload(router_decoder_custom_sup),
     ok.
 

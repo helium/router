@@ -55,29 +55,89 @@ device_to_json(Device) ->
     }.
 
 %% Get All Devices
-handle('GET', [<<"api">>, <<"router">>, <<"devices">>], _Req, Args) ->
+handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
     Tab = maps:get(ets, Args),
-    Body =
+    Qs = elli_request:query_str(Req),
+    {Devices, ResourceID} =
         case ets:lookup(Tab, devices) of
             [] ->
-                [
-                    #{
-                        <<"id">> => ?CONSOLE_DEVICE_ID,
-                        <<"name">> => ?CONSOLE_DEVICE_NAME,
-                        <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-                        <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
-                        <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
-                        <<"channels">> => [],
-                        <<"labels">> => ?CONSOLE_LABELS,
-                        <<"organization_id">> => ?CONSOLE_ORG_ID,
-                        <<"active">> => true,
-                        <<"multi_buy">> => 1
-                    }
-                ];
-            [{devices, Devices}] ->
-                lists:map(fun device_to_json/1, Devices)
+                {[
+                        #{
+                            <<"id">> => ?CONSOLE_DEVICE_ID,
+                            <<"name">> => ?CONSOLE_DEVICE_NAME,
+                            <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
+                            <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
+                            <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
+                            <<"channels">> => [],
+                            <<"labels">> => ?CONSOLE_LABELS,
+                            <<"organization_id">> => ?CONSOLE_ORG_ID,
+                            <<"active">> => true,
+                            <<"multi_buy">> => 1
+                        }
+                    ],
+                    undefined};
+            [{devices, {Qs, []}}] ->
+                true = ets:delete(Tab, devices),
+                {[], undefined};
+            [{devices, {Qs, Ds}}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedDevices, LeftOverDevices} = split_list(Ds),
+                true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
+                {PickedDevices, UUID};
+            [{devices, Ds}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedDevices, LeftOverDevices} = split_list(Ds),
+                true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
+                {PickedDevices, UUID}
         end,
-    {200, [], jsx:encode(Body)};
+    case ResourceID of
+        undefined ->
+            {200, [], jsx:encode(#{data => lists:map(fun device_to_json/1, Devices)})};
+        ResourceID when is_binary(ResourceID) ->
+            {200, [],
+                jsx:encode(#{
+                    data => lists:map(fun device_to_json/1, Devices),
+                    'after' => ResourceID
+                })}
+    end;
+%% Get All Orgs
+handle('GET', [<<"api">>, <<"router">>, <<"organizations">>], Req, Args) ->
+    Tab = maps:get(ets, Args),
+    Qs = elli_request:query_str(Req),
+    {Orgs, ResourceID} =
+        case ets:lookup(Tab, organizations) of
+            [] ->
+                {[], undefined};
+            [{organizations, {Qs, []}}] ->
+                true = ets:delete(Tab, organizations),
+                {[], undefined};
+            [{organizations, {Qs, Os}}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedOrgs, LeftOverOrgs} = split_list(Os),
+                true = ets:insert(
+                    Tab,
+                    {organizations, {<<"after=", UUID/binary>>, LeftOverOrgs}}
+                ),
+                {PickedOrgs, UUID};
+            [{organizations, Os}] ->
+                UUID = router_utils:uuid_v4(),
+                {PickedOrgs, LeftOverOrgs} = split_list(Os),
+                true = ets:insert(
+                    Tab,
+                    {organizations, {<<"after=", UUID/binary>>, LeftOverOrgs}}
+                ),
+                {PickedOrgs, UUID}
+        end,
+    case ResourceID of
+        undefined ->
+            {200, [], jsx:encode(#{data => Orgs})};
+        ResourceID when is_binary(ResourceID) ->
+            {200, [],
+                jsx:encode(#{
+                    data => Orgs,
+                    'after' => ResourceID
+                })}
+    end;
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
@@ -131,6 +191,12 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> false;
             [{cf_list_enabled, IS2}] -> IS2
         end,
+    ADRAllowed =
+        case ets:lookup(Tab, adr_allowed) of
+            [] -> false;
+            [{adr_allowed, IS3}] -> IS3
+        end,
+
     Body = #{
         <<"id">> => DeviceID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -142,7 +208,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
         <<"multi_buy">> => 1,
-        <<"adr_allowed">> => false,
+        <<"adr_allowed">> => ADRAllowed,
         <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled
     },
     case NotFound of
@@ -405,3 +471,12 @@ init_ws([<<"websocket">>], _Req, _Args) ->
     {ok, handover};
 init_ws(_, _, _) ->
     ignore.
+
+-spec split_list(List :: list()) -> {list(), list()}.
+split_list(List) ->
+    case erlang:length(List) of
+        L when L > 1 ->
+            lists:split(erlang:trunc(L / 2), List);
+        _ ->
+            {List, []}
+    end.

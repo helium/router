@@ -645,7 +645,8 @@ handle_cast(
         fcnt = LastSeenFCnt,
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce,
-        discovery = Disco
+        discovery = Disco,
+        adr_engine = ADREngine
     } = State
 ) ->
     MetricPacketType =
@@ -777,10 +778,22 @@ handle_cast(
                             Region,
                             BalanceNonce
                         ),
+                        %% REVIEW: ADR adjustments are only considered for the
+                        %% first received frame. This frame could be replaced by
+                        %% a later frame with better signal that then causes an
+                        %% adjustment downlink, but it will miss the downlink
+                        %% window. Could argue that ADR should not be happening
+                        %% if different frames cause different ADR results.
+                        {_, ADRAdjustment} = maybe_track_adr_packet(
+                            Device2,
+                            ADREngine,
+                            NewFrameCache
+                        ),
                         Timeout = calculate_packet_timeout(
                             Device2,
                             Frame,
                             PacketTime,
+                            ADRAdjustment,
                             DefaultFrameTimeout
                         ),
                         lager:debug("setting frame timeout [fcnt: ~p] [timeout: ~p]", [
@@ -1621,6 +1634,7 @@ handle_frame_timeout(
                     fcnt = FCntDown,
                     fopts = FOpts1,
                     fport = Port,
+                    adr = Frame#frame.adr,
                     ack = ACK,
                     data = <<>>
                 },
@@ -1718,6 +1732,7 @@ handle_frame_timeout(
             fcnt = FCntDown,
             fopts = FOpts1,
             fport = Port,
+            adr = Frame#frame.adr,
             ack = ACK,
             data = ReplyPayload,
             fpending = FPending
@@ -2139,13 +2154,18 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
     end.
 
 -spec calculate_packet_timeout(
-    rourter_device:device(),
-    #frame{},
-    non_neg_integer(),
-    non_neg_integer()
+    Device :: rourter_device:device(),
+    Frame :: #frame{},
+    PacketTime :: non_neg_integer(),
+    ADRAdjustment :: lorawan_adr:adjustment(),
+    DefaultFrameTimeout :: non_neg_integer()
 ) -> non_neg_integer().
-calculate_packet_timeout(Device, Frame, PacketTime, DefaultFrameTimeout) ->
-    case maybe_will_downlink(Device, Frame) orelse application:get_env(router, testing, false) of
+calculate_packet_timeout(Device, Frame, PacketTime, ADRAdjustment, DefaultFrameTimeout) ->
+    case
+        ADRAdjustment /= hold orelse
+            maybe_will_downlink(Device, Frame) orelse
+            application:get_env(router, testing, false)
+    of
         false ->
             ?DEFAULT_FRAME_TIMEOUT;
         true ->
@@ -2165,3 +2185,21 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ChannelCorrection = router_device:channel_correction(Device),
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
     DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+channel_record_update_test() ->
+    %% This test exists to make sure upgrades are considered if anything needs
+    %% to touch the #downlink{} record definition.
+    ?assertMatch(
+        {
+            downlink,
+            _Confirmed,
+            _Port,
+            _Payload,
+            _Channel
+        },
+        #downlink{}
+    ).
+-endif.

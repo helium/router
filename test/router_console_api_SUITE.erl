@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
+-export([pagniation_test/1, ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -29,7 +29,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [ws_get_address_test, fetch_queue_test, consume_queue_test].
+    [pagniation_test, ws_get_address_test, fetch_queue_test, consume_queue_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -46,6 +46,25 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+pagniation_test(Config) ->
+    Tab = proplists:get_value(ets, Config),
+    Max = 100,
+    lists:foreach(
+        fun(_) ->
+            Devices = n_rand_devices(Max),
+            true = ets:insert(Tab, {devices, Devices}),
+            {ok, APIDevices} = router_console_api:get_devices(),
+            ?assertEqual(Max, erlang:length(APIDevices)),
+
+            Orgs = n_rand_orgs(Max),
+            true = ets:insert(Tab, {organizations, Orgs}),
+            {ok, APIOrgs} = router_console_api:get_orgs(),
+            ?assertEqual(Max, erlang:length(APIOrgs))
+        end,
+        lists:seq(1, 3)
+    ),
+    ok.
 
 ws_get_address_test(_Config) ->
     _WSPid =
@@ -339,3 +358,32 @@ fetch_queue_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+n_rand_devices(N) ->
+    lists:map(
+        fun(Idx) ->
+            ID = erlang:list_to_binary(io_lib:format("Device-~p", [Idx])),
+            Updates = [
+                {app_eui, crypto:strong_rand_bytes(8)},
+                {dev_eui, crypto:strong_rand_bytes(8)},
+                {name, ID}
+            ],
+            Device = router_device:update(Updates, router_device:new(ID)),
+            Device
+        end,
+        lists:seq(1, N)
+    ).
+
+n_rand_orgs(N) ->
+    lists:map(
+        fun(I) ->
+            Name = erlang:list_to_binary(io_lib:format("Org-~p", [I])),
+            #{
+                id => router_utils:uuid_v4(),
+                name => Name,
+                balance => 100 * I,
+                nonce => I
+            }
+        end,
+        lists:seq(1, N)
+    ).

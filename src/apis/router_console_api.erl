@@ -14,7 +14,7 @@
     start_link/1,
     get_device/1,
     get_devices_by_deveui_appeui/2,
-    get_all_devices/0,
+    get_devices/0,
     get_channels/2,
     event/2,
     get_downlink_url/2,
@@ -92,22 +92,11 @@ get_device(DeviceID) ->
             {ok, json_device_to_record(JSONDevice, use_meta_defaults)}
     end.
 
--spec get_all_devices() -> {ok, [router_device:device()]} | {error, any()}.
-get_all_devices() ->
+-spec get_devices() -> {ok, [router_device:device()]} | {error, any()}.
+get_devices() ->
     {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/devices">>,
-    lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_all_devices, ok, End - Start),
+    case get_devices(Endpoint, Token, [], undefined) of
+        {ok, JSONDevices} ->
             FilterMapFun = fun(JSONDevice) ->
                 try json_device_to_record(JSONDevice, ignore_meta_defaults) of
                     Device -> {true, Device}
@@ -123,11 +112,9 @@ get_all_devices() ->
             {ok,
                 lists:filtermap(
                     FilterMapFun,
-                    jsx:decode(Body, [return_maps])
+                    JSONDevices
                 )};
         Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_all_devices, error, End - Start),
             {error, Other}
     end.
 
@@ -163,26 +150,7 @@ get_org(OrgID) ->
 -spec get_orgs() -> {ok, list()} | {error, any()}.
 get_orgs() ->
     {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations">>,
-    lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_orgs, ok, End - Start),
-            lager:debug("Body for ~p ~p", [Url, Body]),
-            {ok, jsx:decode(Body, [return_maps])};
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
-            {error, {get_orgs_failed, _Other}}
-    end.
+    get_orgs(Endpoint, Token, [], undefined).
 
 -spec org_manual_update_router_dc(OrgID :: binary(), Balance :: non_neg_integer()) ->
     ok | {error, any()}.
@@ -225,12 +193,12 @@ org_manual_update_router_dc(OrgID, Balance) ->
     end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) ->
-    [router_channel:channel()].
+    {ok, [router_channel:channel()]} | {error, any()}.
 get_channels(Device, DeviceWorkerPid) ->
     {Endpoint, Token} = token_lookup(),
     case get_device_(Endpoint, Token, Device) of
-        {error, _Reason} ->
-            [];
+        {error, _Reason} = Error ->
+            Error;
         {ok, JSON} ->
             Channels0 = kvc:path([<<"channels">>], JSON),
             Channels1 = lists:filtermap(
@@ -239,7 +207,7 @@ get_channels(Device, DeviceWorkerPid) ->
                 end,
                 Channels0
             ),
-            Channels1
+            {ok, Channels1}
     end.
 
 -spec event(Device :: router_device:device(), Map :: map()) -> ok.
@@ -580,8 +548,96 @@ terminate(_Reason, #state{db = DB, pending_burns = P}) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% The function recursively get all devices from Console using pagination
+%% @end
+%%%-------------------------------------------------------------------
+-spec get_devices(
+    Endpoint :: binary(),
+    Token :: binary(),
+    AccDevices :: list(),
+    ResourceID :: binary() | undefined
+) -> {ok, [router_device:device()]} | {error, any()}.
+get_devices(Endpoint, Token, AccDevices, ResourceID) ->
+    Url =
+        case ResourceID of
+            undefined ->
+                <<Endpoint/binary, "/api/router/devices">>;
+            ResourceID when is_binary(ResourceID) ->
+                <<Endpoint/binary, "/api/router/devices?after=", ResourceID/binary>>
+        end,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_devices, ok, End - Start),
+            case jsx:decode(Body, [return_maps]) of
+                #{<<"data">> := Devices, <<"after">> := NewResourceID} ->
+                    get_devices(Endpoint, Token, AccDevices ++ Devices, NewResourceID);
+                #{<<"data">> := Devices} ->
+                    {ok, AccDevices ++ Devices}
+            end;
+        Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_devices, error, End - Start),
+            {error, Other}
+    end.
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% The function recursively get all orgs from Console using pagination
+%% @end
+%%%-------------------------------------------------------------------
+-spec get_orgs(
+    Endpoint :: binary(),
+    Token :: binary(),
+    AccOrgs :: list(),
+    ResourceID :: binary() | undefined
+) -> {ok, list()} | {error, any()}.
+get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
+    Url =
+        case ResourceID of
+            undefined ->
+                <<Endpoint/binary, "/api/router/organizations">>;
+            ResourceID when is_binary(ResourceID) ->
+                <<Endpoint/binary, "/api/router/organizations?after=", ResourceID/binary>>
+        end,
+    lager:debug("get ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, ok, End - Start),
+            case jsx:decode(Body, [return_maps]) of
+                #{<<"data">> := Orgs, <<"after">> := NewResourceID} ->
+                    get_orgs(Endpoint, Token, AccOrgs ++ Orgs, NewResourceID);
+                #{<<"data">> := Orgs} ->
+                    {ok, AccOrgs ++ Orgs}
+            end;
+        Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
+            {error, Other}
+    end.
+
 -spec convert_channel(Device :: router_device:device(), Pid :: pid(), JSONChannel :: map()) ->
     false | {true, router_channel:channel()}.
+
 convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_http_channel,

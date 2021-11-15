@@ -538,9 +538,10 @@ validate_packet_offer(Offer, _Pid, Chain) ->
 
 -spec validate_devaddr(non_neg_integer(), blockchain:blockchain()) -> ok | {error, any()}.
 validate_devaddr(DevAddr, Chain) ->
-    AddrBase = blockchain_ledger_v1:get_nwk_addr(DevAddr),
+    Ledger = blockchain:ledger(Chain),
+    AddrBase = blockchain_ledger_v1:get_subnet_addr(DevAddr, Ledger),
     OUI = router_utils:get_oui(),
-    try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+    try blockchain_ledger_v1:find_routing(OUI, Ledger) of
         {ok, RoutingEntry} ->
             Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
             case

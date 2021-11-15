@@ -85,22 +85,23 @@ allocate(Config) ->
             erlang:element(4, State) =/= []
     end),
 
-    DevAddrs = lists:foldl(
+    SubnetAddrs = lists:foldl(
         fun(_I, Acc) ->
             {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
-            [DevAddr | Acc]
+            SubnetAddr = blockchain_ledger_v1:get_subnet_addr(DevAddr, Ledger),
+            [SubnetAddr | Acc]
         end,
         [],
         lists:seq(1, 16)
     ),
-    ?assertEqual(16, erlang:length(DevAddrs)),
+    ?assertEqual(16, erlang:length(SubnetAddrs)),
 
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H), %% ToDo: Do not hardcode NetID
+    DevAddrPrefix = 0,
     Expected = [
         <<(I - 1):25/integer-unsigned-little, DevAddrPrefix:7/integer>>
         || I <- lists:seq(1, 8)
     ],
-    ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(DevAddrs)),
+    ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(SubnetAddrs)),
     ok.
 
 route_packet(Config) ->

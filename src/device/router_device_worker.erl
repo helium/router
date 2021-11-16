@@ -750,7 +750,7 @@ handle_cast(
                 false
             ),
             {noreply, State};
-        {ok, Frame, Device2, SendToChannels, BalanceNonce} ->
+        {ok, Frame, Device2, SendToChannels, BalanceNonce, Replay} ->
             RSSI0 = blockchain_helium_packet_v1:signal_strength(Packet0),
             FCnt = router_device:fcnt(Device2),
             NewFrameCache = #frame_cache{
@@ -881,8 +881,10 @@ handle_cast(
                         Frame,
                         Region,
                         PacketTime,
-                        HoldTime
+                        HoldTime,
+                        Replay
                     ),
+                    % TODO
                     ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
                 false ->
                     ok
@@ -1358,7 +1360,7 @@ validate_frame(
     Window = PacketTime - DownlinkHandledAtTime,
     case maps:get(FCnt, FrameCache, undefined) of
         #frame_cache{} ->
-            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false);
         undefined when FrameAck == 0 andalso FCnt =< LastSeenFCnt ->
             lager:debug("we got a late unconfirmed up packet for ~p: lastSeendFCnt: ~p", [
                 FCnt,
@@ -1380,10 +1382,10 @@ validate_frame(
                 "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
                 [FCnt, DownlinkHandledAtFCnt, Window]
             ),
-            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain);
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true);
         undefined ->
             ok = do_multi_buy(Packet, Device0, FrameAck),
-            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain)
+            validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false)
     end.
 
 -spec validate_frame_(
@@ -1392,12 +1394,13 @@ validate_frame(
     Region :: atom(),
     Device :: router_device:device(),
     OfferCache :: map(),
-    Blockchain :: blockchain:blockchain()
+    Blockchain :: blockchain:blockchain(),
+    Replay :: boolean()
 ) ->
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
-        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}, boolean()}
     | {error, any()}.
-validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchain) ->
+validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchain, Replay) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1474,7 +1477,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                         fport = FPort,
                         data = undefined
                     },
-                    {ok, Frame, Device1, false, {Balance, Nonce}};
+                    {ok, Frame, Device1, false, {Balance, Nonce}, Replay};
                 0 when FOptsLen /= 0 ->
                     lager:debug(
                         "bad ~s packet from ~s ~s received by ~s -- double fopts~n",
@@ -1539,7 +1542,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                         fport = FPort,
                         data = Data
                     },
-                    {ok, Frame, Device1, true, {Balance, Nonce}}
+                    {ok, Frame, Device1, true, {Balance, Nonce}, Replay}
             end
     end.
 

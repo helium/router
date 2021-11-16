@@ -428,6 +428,7 @@ late_packet_test(Config) ->
     %% Waiting for data from HTTP channel with 2 hotspots
     test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -776,6 +777,7 @@ join_sent_to_integration_with_decoder_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"port">> => 0,
         <<"devaddr">> => fun erlang:is_binary/1,
+        <<"hold_time">> => 100,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),

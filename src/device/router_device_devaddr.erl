@@ -163,7 +163,8 @@ handle_call(
                 end
         end,
     Ledger = blockchain:ledger(Chain),
-    DevAddr = blockchain_ledger_v1:create_devaddr(DevaddrBase, Ledger),
+    SubnetAddr = DevaddrBase,
+    DevAddr = blockchain_ledger_v1:create_devaddr(SubnetAddr, Ledger),
     Reply = {ok, DevAddr},
     {reply, Reply, State#state{devaddr_used = maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
 handle_call(_Msg, _From, State) ->

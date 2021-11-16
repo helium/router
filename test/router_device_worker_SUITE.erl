@@ -10,6 +10,7 @@
     device_update_test/1,
     drop_downlink_test/1,
     replay_joins_test/1,
+    replay_uplink_test/1,
     device_worker_stop_children_test/1,
     device_worker_late_packet_double_charge_test/1,
     offer_cache_test/1,
@@ -45,6 +46,7 @@ all() ->
         device_update_test,
         drop_downlink_test,
         replay_joins_test,
+        replay_uplink_test,
         device_worker_late_packet_double_charge_test,
         offer_cache_test,
         load_offer_cache_test,
@@ -713,6 +715,126 @@ replay_joins_test(Config) ->
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device4)
     ),
+
+    ok.
+
+replay_uplink_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> =>
+            <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary, "/",
+                ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => false
+        },
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
+
+    timer:sleep(2000 + 100),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => true,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> =>
+            <<?CONSOLE_URL/binary, "/api/v1/down/", ?CONSOLE_HTTP_CHANNEL_ID/binary, "/",
+                ?CONSOLE_HTTP_CHANNEL_DOWNLINK_TOKEN/binary, "/", ?CONSOLE_DEVICE_ID/binary>>,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => #{
+            <<"labels">> => ?CONSOLE_LABELS,
+            <<"organization_id">> => ?CONSOLE_ORG_ID,
+            <<"multi_buy">> => 1,
+            <<"adr_allowed">> => false,
+            <<"cf_list_enabled">> => false
+        },
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => [
+            #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"reported_at">> => fun erlang:is_integer/1,
+                <<"hold_time">> => fun erlang:is_integer/1,
+                <<"status">> => <<"success">>,
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            }
+        ]
+    }),
 
     ok.
 

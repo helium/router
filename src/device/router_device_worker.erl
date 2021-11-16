@@ -1341,7 +1341,7 @@ do_multi_buy(Packet, Device, FrameAck) ->
 ) ->
     {error, any()}
     | {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
-        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}.
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}, boolean()}.
 validate_frame(
     Packet,
     PacketTime,

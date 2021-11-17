@@ -98,8 +98,6 @@
 
 %% Packet hash cache
 -define(PHASH_TO_DEVICE_CACHE, phash_to_device_cache).
--define(PHASH_TO_DEVICE_CACHE_MAXSIZE, 4 * 1024 * 1024).
--define(PHASH_TO_DEVICE_CACHE_MINSIZE, round(0.3 * ?PHASH_TO_DEVICE_CACHE_MAXSIZE)).
 %% e2qc lifetime is in seconds
 %% (?RX2WINDOW + 1) to give a better chance for late packets
 -define(PHASH_TO_DEVICE_CACHE_LIFETIME, 3).
@@ -977,19 +975,17 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
 %%%-------------------------------------------------------------------
 -spec cache_device_for_hash(PHash :: binary(), Device :: router_device:device()) -> ok.
 cache_device_for_hash(PHash, Device) ->
-    ok = e2qc_nif:put(
+    _ = e2qc:cache(
         ?PHASH_TO_DEVICE_CACHE,
         PHash,
-        router_device:serialize(Device),
-        ?PHASH_TO_DEVICE_CACHE_MAXSIZE,
-        ?PHASH_TO_DEVICE_CACHE_MINSIZE,
-        ?PHASH_TO_DEVICE_CACHE_LIFETIME
+        ?PHASH_TO_DEVICE_CACHE_LIFETIME,
+        fun() -> Device end
     ),
     ok.
 
 -spec force_evict_packet_hash(PHash :: binary()) -> ok.
 force_evict_packet_hash(PHash) ->
-    _ = e2qc_nif:destroy(?PHASH_TO_DEVICE_CACHE, PHash),
+    _ = e2qc:evict(?PHASH_TO_DEVICE_CACHE, PHash),
     ok.
 
 -spec get_device_for_offer(
@@ -1013,8 +1009,9 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
                     ),
                     {ok, Device}
             end;
-        D ->
-            Device = router_device:deserialize(D),
+        BinDevice ->
+            %% Here we are using the e2qc bin function
+            Device = erlang:binary_to_term(BinDevice),
             lager:debug(
                 "cached device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
                 [PHash, router_device:id(Device), PubKeyBin]

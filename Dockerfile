@@ -1,5 +1,5 @@
 FROM erlang:22
-
+ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
 RUN apt-get install -y -q \
         build-essential \

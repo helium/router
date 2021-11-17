@@ -974,7 +974,7 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
 %% @doc
 %% If there are devaddr collisions, we don't know the correct device until we
 %% get the whole packet with the payload. Once we have that, the device can tell
-%% routing the a packet hash belongs to it. That reservation will only last 
+%% routing the a packet hash belongs to it. That reservation will only last a
 %% short while. But it might be enough to have subsequent offers lookup the
 %% correct device by the time they come through.
 %% @end

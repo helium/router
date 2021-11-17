@@ -981,7 +981,7 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
 %%%-------------------------------------------------------------------
 -spec cache_device_for_hash(PHash :: binary(), Device :: router_device:device()) -> ok.
 cache_device_for_hash(PHash, Device) ->
-    Device = e2qc:cache(
+    _ = e2qc:cache(
         ?PHASH_TO_DEVICE_CACHE,
         PHash,
         ?PHASH_TO_DEVICE_CACHE_LIFETIME,

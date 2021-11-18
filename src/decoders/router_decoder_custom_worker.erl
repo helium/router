@@ -105,13 +105,32 @@ handle_call(
         )
     of
         {error, invalid_context} ->
+            %% Execution reaching here implies V8 vm restarted recently
             {Delay, Backoff1} = backoff:fail(Backoff0),
+            %% Refresh their Context and JS definition:
             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
             {reply, {error, invalid_context}, State1#state{
                 context = undefined,
                 backoff = Backoff1
             }};
-        {error, _} = Error ->
+        {error, Reason0} = Error ->
+            %% Track repeat offenders of bad JS code via external monitoring
+            Reason1 =
+                case size(Reason0) of
+                    N when N =< 10 -> Reason0;
+                    _ -> binary:part(Reason0, 0, 10)
+                end,
+            lager:error(
+                "V8 call error=\"~p\" uuid=~p app_eui=~p dev_eui=~p",
+                [
+                    Reason1,
+                    maps:get(uuid, UplinkDetails, unknown),
+                    maps:get(app_eui, UplinkDetails, unknown),
+                    maps:get(dev_eui, UplinkDetails, unknown)
+                ]
+            ),
+            %% Due to limited error granularity from V8 Port, restart after any error:
+            erlang_v8:restart_vm(VM),
             {reply, Error, State1};
         {ok, _} = OK ->
             {reply, OK, State1}

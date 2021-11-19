@@ -121,10 +121,10 @@ handle_call(
                     _ -> binary:part(Reason0, 0, 10)
                 end,
             lager:error(
-                "V8 call error=\"~p\" uuid=~p app_eui=~p dev_eui=~p",
+                "V8 call error=\"~p\" device_id=~p app_eui=~p dev_eui=~p",
                 [
                     Reason1,
-                    maps:get(uuid, UplinkDetails, unknown),
+                    maps:get(device_id, UplinkDetails, unknown),
                     maps:get(app_eui, UplinkDetails, unknown),
                     maps:get(dev_eui, UplinkDetails, unknown)
                 ]

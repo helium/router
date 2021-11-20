@@ -925,6 +925,7 @@ send_to_device_worker(
                 {error, _Reason} = Error ->
                     Error;
                 {ok, WorkerPid} ->
+                    % TODO: I dont think we should be doing this? let the device worker decide
                     case
                         router_device_worker:accept_uplink(
                             WorkerPid,

@@ -352,7 +352,8 @@ handle_info(
     case router_console_api:get_channels(Device, self()) of
         {error, _Reason} ->
             _ = erlang:send_after(timer:seconds(1), self(), ?REFRESH_CHANNELS),
-            lager:warning("failed to get channels ~p, retrying in 1s", [_Reason]);
+            lager:warning("failed to get channels ~p, retrying in 1s", [_Reason]),
+            {noreply, State};
         {ok, APIChannels0} ->
             APIChannels1 = lists:foldl(
                 fun(Channel, Acc) ->

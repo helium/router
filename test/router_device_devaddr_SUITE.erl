@@ -89,7 +89,7 @@ allocate(Config) ->
         fun(_I, Acc) ->
             {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
             NetIDList = blockchain_ledger_v1:get_netids(Ledger),
-            SubnetAddr = blockchain_ledger_v1:get_subnet_addr(DevAddr, NetIDList),
+            SubnetAddr = blockchain_ledger_v1:subnet_addr(DevAddr, NetIDList),
             [SubnetAddr | Acc]
         end,
         [],

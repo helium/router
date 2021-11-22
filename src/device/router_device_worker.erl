@@ -1397,7 +1397,7 @@ validate_frame(
     Replay :: boolean()
 ) ->
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
-        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}, boolean()}
+        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}, Replay :: boolean()}
     | {error, any()}.
 validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchain, Replay) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,

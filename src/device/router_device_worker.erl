@@ -884,7 +884,6 @@ handle_cast(
                         HoldTime,
                         Replay
                     ),
-                    % TODO
                     ok = router_device_channels_worker:handle_frame(ChannelsWorker, Data);
                 false ->
                     ok

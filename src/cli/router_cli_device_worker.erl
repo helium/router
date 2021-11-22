@@ -115,7 +115,12 @@ prepend_device_id(Fn) ->
     end.
 
 device_list_all(["device", "all"], [], []) ->
-    c_table([format_device_for_table(Device) || Device <- lookup_all()]).
+    case router_console_api:get_devices() of
+        {ok, Devices} ->
+            c_table([format_device_for_table(Device) || Device <- Devices]);
+        _ ->
+            c_text("Failed to get devices from Console")
+    end.
 
 device_info(ID, ["device"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
@@ -223,11 +228,6 @@ device_prune(["device", "prune"], [], Flags) ->
 %%--------------------------------------------------------------------
 %% router_cnonsole_dc_tracker interface
 %%--------------------------------------------------------------------
-
--spec lookup_all() -> [router_device:device()].
-lookup_all() ->
-    {ok, DB, [_, CF]} = router_db:get(),
-    router_device:get(DB, CF).
 
 -spec lookup(binary()) -> {ok, router_device:device()}.
 lookup(DeviceID) ->

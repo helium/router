@@ -293,20 +293,13 @@ record_state_channels(Chain) ->
 -spec record_chain_blocks() -> ok.
 record_chain_blocks() ->
     Chain = blockchain_worker:blockchain(),
-    case blockchain:height(Chain) of
+    case blockchain:head_block(Chain) of
         {error, _} ->
             ok;
-        {ok, Height} ->
-            case hackney:get(<<"https://api.helium.io/v1/blocks/height">>, [], <<>>, [with_body]) of
-                {ok, 200, _, Body} ->
-                    CurHeight = kvc:path(
-                        [<<"data">>, <<"height">>],
-                        jsx:decode(Body, [return_maps])
-                    ),
-                    ok = notify(?METRICS_CHAIN_BLOCKS, CurHeight - Height);
-                _ ->
-                    ok
-            end
+        {ok, Block} ->
+            Now = erlang:system_time(seconds),
+            Time = blockchain_block:time(Block),
+            ok = notify(?METRICS_CHAIN_BLOCKS, Now - Time)
     end.
 
 -spec record_vm_stats() -> ok.

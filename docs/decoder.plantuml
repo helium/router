@@ -53,7 +53,7 @@ note right: Cache by UUID
 device -> device : handle_cast:\nframe_timeout
 device -> device : send_join_to_channel()\n or\nsend_data_to_channel()
 channels <- device -- : encode_payload()
-note right: Yes, it is called "encode_payload" despite imitating "decode"
+note right: Yes, it is called "encode_payload" despite initiating "decode"
 
 channels -> decoder ++ : decode()
 note left

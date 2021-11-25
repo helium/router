@@ -74,17 +74,45 @@ init(Args) ->
     ID = maps:get(id, Args),
     VM = maps:get(vm, Args),
     Function = maps:get(function, Args),
-    Context = init_context(VM, Function),
-    TimerRef = erlang:send_after(?TIMER, self(), timeout),
-    %% self() ! ?INIT_CONTEXT,
-    State = #state{
-        id = ID,
-        vm = VM,
-        context = Context,
-        function = Function,
-        timer = TimerRef,
-        backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
-    },
+    State =
+        case init_context(VM, Function) of
+            {ok, Context} ->
+                TimerRef = erlang:send_after(?TIMER, self(), timeout),
+                #state{
+                    id = ID,
+                    vm = VM,
+                    context = Context,
+                    function = Function,
+                    timer = TimerRef,
+                    backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
+                };
+            {context_error, Error} ->
+                %% Will try again upon first call to decode()
+                ShortSHA = binary:part(maps:get(hash, Args), 0, 7),
+                lager:error(
+                    "failed creating context for V8 decoder_id=~p hash=~p error=~p",
+                    [ID, ShortSHA, Error]
+                ),
+                TimerRef = erlang:send_after(?TIMER, self(), timeout),
+                #state{
+                    id = ID,
+                    vm = VM,
+                    context = undefined,
+                    function = Function,
+                    timer = TimerRef,
+                    backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
+                };
+            {js_error, Error} ->
+                %% When eval fails, avoid calls to that JavaScript function
+                %% but need this worker (erlang process) to accommodate that
+                ShortSHA = binary:part(maps:get(hash, Args), 0, 7),
+                lager:error(
+                    "V8 javascript eval failed decoder_id=~p hash=~p error=~p",
+                    [ID, ShortSHA, Error]
+                ),
+                TimerRef = erlang:send_after(?TIMER, self(), timeout),
+                #state{id = ID, function = <<>>, timer = TimerRef}
+        end,
     {ok, State}.
 
 %% handle_call({decode, _Payload, _Port, _UplinkDetails}, _From, #state{context = undefined} = State0) ->
@@ -107,13 +135,32 @@ init(Args) ->
 %%         )
 %%     of
 %%         {error, invalid_context} ->
+%%             %% Execution reaching here implies V8 vm restarted recently
 %%             {Delay, Backoff1} = backoff:fail(Backoff0),
+%%             %% Refresh their Context and JS definition:
 %%             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
 %%             {reply, {error, invalid_context}, State1#state{
 %%                 context = undefined,
 %%                 backoff = Backoff1
 %%             }};
-%%         {error, _} = Error ->
+%%         {error, Reason0} = Error ->
+%%             %% Track repeat offenders of bad JS code via external monitoring
+%%             Reason1 =
+%%                 case size(Reason0) of
+%%                     N when N =< 10 -> Reason0;
+%%                     _ -> binary:part(Reason0, 0, 10)
+%%                 end,
+%%             lager:error(
+%%                 "V8 call error=\"~p\" device_id=~p app_eui=~p dev_eui=~p",
+%%                 [
+%%                     Reason1,
+%%                     maps:get(device_id, UplinkDetails, unknown),
+%%                     maps:get(app_eui, UplinkDetails, unknown),
+%%                     maps:get(dev_eui, UplinkDetails, unknown)
+%%                 ]
+%%             ),
+%%             %% Due to limited error granularity from V8 Port, restart after any error:
+%%             erlang_v8:restart_vm(VM),
 %%             {reply, Error, State1};
 %%         {ok, _} = OK ->
 %%             {reply, OK, State1}
@@ -174,12 +221,13 @@ terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
 -spec init_context(VMPid :: pid(), Function :: binary()) -> {ok, context()} | {error, any()}.
 init_context(VM, Function) ->
     case erlang_v8:create_context(VM) of
-        {error, _} = Error0 ->
-            Error0;
+        {error, Error0} = Error0 ->
+            %% Failure creating a context should be transient/recoverable error
+            {context_error, Error0};
         {ok, Context} ->
             case erlang_v8:eval(VM, Context, Function) of
-                {error, _} = Error1 ->
-                    Error1;
+                {error, Error1} ->
+                    {js_error, Error1};
                 {ok, _} ->
                     {ok, Context}
             end
@@ -198,6 +246,8 @@ init_context(VM, Function) ->
 ) -> {any(), #state{}}.
 decode(_Payload, _Port, _UplinkDetails, State, 0) ->
     {{error, failed_too_many_times}, State};
+decode(_Payload, _Port, _UplinkDetails, #state{function = <<>>} = State, _Retry) ->
+    {{error, ignoring_invalid_javascript}, State};
 decode(
     Payload,
     Port,
@@ -205,9 +255,10 @@ decode(
     #state{context = Ctx, vm = VM, function = Function} = State,
     Retry
 ) when not erlang:is_number(Ctx) ->
+    %% Recover from earlier transient failure; see init() above for happy-path.
     case init_context(VM, Function) of
         {ok, Context} ->
-            decode(Payload, Port, UplinkDetails, State#state{context = Context}, Retry);
+            decode(Payload, Port, UplinkDetails, State#state{context = Context}, Retry - 1);
         Err ->
             {Err, State}
     end;
@@ -232,6 +283,12 @@ decode(
             %% TODO: use Ferd's `backoff' library.
             %% See stateful use: ../device/router_device_channels_worker.erl
             decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
+        {error, Err} ->
+            %% TODO this eliminates any tolerance for intermittent
+            %% errors such as an occasional payload crashing their
+            %% JavaScript code, so maybe add `js_error_count` in
+            %% State and a threshold test here.
+            {{js_error, Err}, State#state{function = <<>>}};
         Reply ->
             {Reply, State}
     end.

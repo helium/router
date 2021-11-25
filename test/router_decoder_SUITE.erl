@@ -10,7 +10,8 @@
     decode_test/1,
     template_test/1,
     timeout_test/1,
-    too_many_test/1
+    too_many_test/1,
+    v8_recovery_test/1
 ]).
 
 -include_lib("common_test/include/ct.hrl").
@@ -33,7 +34,13 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [decode_test, template_test, timeout_test, too_many_test].
+    [
+        decode_test,
+        template_test,
+        timeout_test,
+        too_many_test,
+        v8_recovery_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -346,6 +353,34 @@ too_many_test(Config) ->
     ?assertEqual({ok, undefined}, router_decoder:decode(DecoderID, <<>>, 1, #{})),
     ?assertEqual({ok, <<"ok">>}, router_decoder:decode(NewDecoderID, <<>>, 1, #{})),
     ?assertEqual(1, ets:info(router_decoder_custom_sup_ets, size)),
+    ok.
+
+v8_recovery_test(Config) ->
+    %% Set console to decoder channel mode
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, decoder}),
+
+    test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    ValidDecoder = <<"function Decoder(a,b,c) { return 42; }">>,
+    Result = 42,
+    BogusDecoder = <<"function Decoder(a,b,c) { crash @ here! }">>,
+    Port = 6,
+    Payload = erlang:binary_to_list(base64:decode(<<"H4Av/xACRU4=">>)),
+    UplinkDetails = #{},
+
+    %% One context sends a valid function definiton and another sends
+    %% bogus javascript, causing the V8 VM to be restarted.  The first
+    %% context should then recover.
+    {ok, Pid} = router_decoder_custom_sup:add(ValidDecoder),
+    {ok, Result} = router_decoder_custom_worker:decode(Pid, Payload, Port, UplinkDetails),
+    {eval_error, _} = router_decoder_custom_sup:add(BogusDecoder),
+    {ok, Result} = router_decoder_custom_worker:decode(Pid, Payload, Port, UplinkDetails),
+
+    %% FIXME: how can we force bad context?
     ok.
 
 %% ------------------------------------------------------------------

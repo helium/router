@@ -144,6 +144,41 @@ data_test_1(Config) ->
         ]
     }),
 
+    test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_unconfirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => ReportedAtCheck,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
+            <<"fcnt">> => 0,
+            <<"payload_size">> => erlang:byte_size(Body),
+            <<"payload">> => base64:encode(Body),
+            <<"raw_payload">> => base64:encode(
+                blockchain_helium_packet_v1:payload(
+                    blockchain_state_channel_packet_v1:packet(SCPacket)
+                )
+            ),
+            <<"port">> => Port,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => RSSI,
+                <<"snr">> => SNR,
+                <<"spreading">> => DataRate,
+                <<"frequency">> => 923.2999877929688,
+                <<"channel">> => 105,
+                <<"lat">> => 36.999918858583605,
+                <<"long">> => -120.80001353058655
+            },
+            <<"mac">> => [],
+            <<"hold_time">> => 100
+        }
+    }),
+
     ok.
 
 %%--------------------------------------------------------------------

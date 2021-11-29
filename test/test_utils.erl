@@ -221,7 +221,18 @@ join_device(Config, JoinOpts) ->
 
     %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
-    Stream ! {send, ?MODULE:join_packet(PubKeyBin, AppKey, DevNonce, JoinOpts)},
+    SCPacket = ?MODULE:join_packet(
+        PubKeyBin,
+        AppKey,
+        DevNonce,
+        maps:put(dont_encode, true, JoinOpts)
+    ),
+    Stream !
+        {send,
+            blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
+                msg = {packet, SCPacket}
+            })},
+
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
@@ -237,6 +248,11 @@ join_device(Config, JoinOpts) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
+            <<"raw_payload">> => base64:encode(
+                blockchain_helium_packet_v1:payload(
+                    blockchain_state_channel_packet_v1:packet(SCPacket)
+                )
+            ),
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -688,8 +704,13 @@ join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
         hotspot = PubKeyBin,
         region = Region
     },
-    Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
-    blockchain_state_channel_v1_pb:encode_msg(Msg).
+    case maps:get(dont_encode, Options, false) of
+        true ->
+            Packet;
+        false ->
+            Msg = #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}},
+            blockchain_state_channel_v1_pb:encode_msg(Msg)
+    end.
 
 join_payload(AppKey, DevNonce) ->
     MType = ?JOIN_REQ,

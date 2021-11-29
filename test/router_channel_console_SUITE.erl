@@ -188,6 +188,7 @@ inactive_test(Config) ->
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -335,6 +336,7 @@ inactive_test(Config) ->
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"downlink_url">> => fun erlang:is_binary/1,

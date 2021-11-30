@@ -86,21 +86,13 @@ v8_recovery_test(Config) ->
     %% Even though JS was bad, we still get a Pid for less BEAM runtime overhead overall
     {ok, Pid2} = router_decoder_custom_sup:add(BogusDecoder),
     ?assertNotMatch(Pid1, Pid2),
-    %% FIXME: starting 2nd proc kills 1st, but why?
-    %% something is calling router_decoder_custom_worker:terminate(), but what?
-    ?assert(erlang:is_process_alive(Pid1)),
     ?assertMatch({error, ignoring_invalid_javascript},
                  router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
-    ?assert(erlang:is_process_alive(Pid1)),
     ?assertMatch({error, ignoring_invalid_javascript},
                  router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
-    ?assert(erlang:is_process_alive(Pid1)),
     ?assertMatch({error, ignoring_invalid_javascript},
                  router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
-    ?assert(erlang:is_process_alive(Pid1)),
-    ?assert(erlang:is_process_alive(Pid2)),
 
-    %% FIXME: crashing due to noproc error from gen_server:
     ?assert(erlang:is_process_alive(Pid1)),
     ?assertMatch({ok, Result},
                  router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)),

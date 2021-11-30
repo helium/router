@@ -248,7 +248,7 @@ join_device(Config, JoinOpts) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
-            <<"raw_payload">> => base64:encode(
+            <<"raw_packet">> => base64:encode(
                 blockchain_helium_packet_v1:payload(
                     blockchain_state_channel_packet_v1:packet(SCPacket)
                 )

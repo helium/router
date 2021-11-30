@@ -104,7 +104,7 @@ decode_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_number/1,
-        <<"raw_payload">> => fun erlang:is_binary/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}
@@ -217,7 +217,7 @@ timeout_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_integer/1,
-        <<"raw_payload">> => fun erlang:is_binary/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}
@@ -308,7 +308,7 @@ too_many_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_number/1,
-        <<"raw_payload">> => fun erlang:is_binary/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}

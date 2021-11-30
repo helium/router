@@ -121,7 +121,7 @@ data_test_1(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
-        <<"raw_payload">> => base64:encode(
+        <<"raw_packet">> => base64:encode(
             blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
         ),
         <<"port">> => Port,
@@ -156,7 +156,7 @@ data_test_1(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => erlang:byte_size(Body),
             <<"payload">> => base64:encode(Body),
-            <<"raw_payload">> => base64:encode(
+            <<"raw_packet">> => base64:encode(
                 blockchain_helium_packet_v1:payload(
                     blockchain_state_channel_packet_v1:packet(SCPacket)
                 )
@@ -258,7 +258,7 @@ data_test_2(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
-        <<"raw_payload">> => base64:encode(
+        <<"raw_packet">> => base64:encode(
             blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
         ),
         <<"port">> => Port,
@@ -295,7 +295,7 @@ data_test_2(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
-            <<"raw_payload">> => fun erlang:is_binary/1,
+            <<"raw_packet">> => fun erlang:is_binary/1,
             <<"port">> => 0,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -395,7 +395,7 @@ data_test_3(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
-        <<"raw_payload">> => base64:encode(
+        <<"raw_packet">> => base64:encode(
             blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
         ),
         <<"port">> => Port,
@@ -432,7 +432,7 @@ data_test_3(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
-            <<"raw_payload">> => fun erlang:is_binary/1,
+            <<"raw_packet">> => fun erlang:is_binary/1,
             <<"port">> => 0,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{

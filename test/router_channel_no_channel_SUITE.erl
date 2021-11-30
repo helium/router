@@ -94,7 +94,7 @@ no_channel_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
-                <<"raw_payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -198,7 +198,7 @@ no_channel_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
-        <<"raw_payload">> => fun erlang:is_binary/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -234,7 +234,7 @@ no_channel_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
-                <<"raw_payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{

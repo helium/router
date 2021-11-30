@@ -594,7 +594,7 @@ send_join_to_channel(
         fcnt => 0,
         reported_at => PacketTime,
         hold_time => HoldTime,
-        raw_payload => base64:encode(blockchain_helium_packet_v1:payload(Packet0)),
+        raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet0)),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
@@ -633,7 +633,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         reported_at => Time,
         payload => Payload,
         payload_size => erlang:byte_size(Payload),
-        raw_payload => base64:encode(blockchain_helium_packet_v1:payload(Packet)),
+        raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet)),
         port =>
             case Port of
                 undefined -> 0;

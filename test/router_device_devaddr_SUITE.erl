@@ -189,7 +189,7 @@ route_packet(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
-        <<"raw_payload">> => fun erlang:is_binary/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => lorawan_utils:binary_to_hex(DevAddr),
         <<"hotspots">> => [

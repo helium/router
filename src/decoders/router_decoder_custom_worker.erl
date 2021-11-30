@@ -47,7 +47,7 @@
 
 -record(state, {
     id :: binary(),
-    vm :: pid(),
+    vm :: pid() | undefined,
     context :: context() | undefined,
     function :: binary(),
     timer :: reference(),
@@ -218,7 +218,7 @@ terminate(_Reason, #state{id = ID, vm = VM, context = Context} = _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec init_context(VMPid :: pid(), Function :: binary()) -> {ok, context()} | {error, any()}.
+-spec init_context(VMPid :: pid(), Function :: binary()) -> {ok, context()} | {error, any()} | {context_error, any()} | {js_error, any()}.
 init_context(VM, Function) ->
     case erlang_v8:create_context(VM) of
         {error, Error0} = Error0 ->
@@ -279,7 +279,7 @@ decode(
         )
     of
         {error, invalid_context} ->
-            Context1 = init_context(VM, Function),
+            {ok, Context1} = init_context(VM, Function),
             %% TODO: use Ferd's `backoff' library.
             %% See stateful use: ../device/router_device_channels_worker.erl
             decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);

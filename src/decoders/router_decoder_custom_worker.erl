@@ -105,7 +105,7 @@ init(Args) ->
             {js_error, Error} ->
                 %% When eval fails, avoid calls to that JavaScript function
                 %% but need this worker (erlang process) to accommodate that
-                ShortSHA = binary:part(maps:get(hash, Args), 0, 7),
+                ShortSHA = binary:part(maps:get(hash, Args, <<"unknown">>), 0, 7),
                 lager:error(
                     "V8 javascript eval failed decoder_id=~p hash=~p error=~p",
                     [ID, ShortSHA, Error]

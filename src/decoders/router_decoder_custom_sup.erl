@@ -91,18 +91,9 @@ add(Decoder) ->
     add(ID, Function).
 
 -spec delete(binary()) -> ok.
--ifdef(TEST).
-delete(ID) ->
-    case ets:info(?ETS, size) of
-        undefined -> ok;
-        _ -> ets:delete(?ETS, ID)
-    end,
-    ok.
--else.
 delete(ID) ->
     true = ets:delete(?ETS, ID),
     ok.
--endif.
 
 -spec decode(
     Decoder :: router_decoder:decoder(),

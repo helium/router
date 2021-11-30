@@ -110,7 +110,4 @@ v8_recovery_test(Config) ->
         {ok, Result},
         router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)
     ),
-
-    %% FIXME: how can we force bad context?
-
     ok.

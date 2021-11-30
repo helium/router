@@ -165,6 +165,7 @@ disovery_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body1),
         <<"payload_size">> => erlang:byte_size(Body1),
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -232,6 +233,7 @@ disovery_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body1),
         <<"payload_size">> => erlang:byte_size(Body1),
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -319,6 +321,7 @@ disovery_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body3),
         <<"payload_size">> => erlang:byte_size(Body3),
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -400,6 +403,7 @@ fail_to_connect_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body1),
         <<"payload_size">> => erlang:byte_size(Body1),
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [

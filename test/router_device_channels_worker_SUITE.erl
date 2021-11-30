@@ -446,6 +446,7 @@ late_packet_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -495,6 +496,7 @@ late_packet_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -575,6 +577,7 @@ late_packet_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -670,6 +673,7 @@ join_sent_to_integration_test(Config) ->
         <<"hold_time">> => fun erlang:is_integer/1,
         <<"port">> => 0,
         <<"devaddr">> => fun erlang:is_binary/1,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -778,6 +782,7 @@ join_sent_to_integration_with_decoder_test(Config) ->
         <<"port">> => 0,
         <<"devaddr">> => fun erlang:is_binary/1,
         <<"hold_time">> => 100,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),

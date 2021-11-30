@@ -304,6 +304,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => fun erlang:is_integer/1,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -339,6 +340,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{

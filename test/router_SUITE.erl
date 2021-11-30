@@ -127,6 +127,7 @@ mac_commands_test(Config) ->
                     <<"fcnt">> => Index,
                     <<"payload_size">> => fun erlang:is_integer/1,
                     <<"payload">> => fun erlang:is_binary/1,
+                    <<"raw_payload">> => fun erlang:is_binary/1,
                     <<"port">> => fun erlang:is_integer/1,
                     <<"devaddr">> => fun erlang:is_binary/1,
                     <<"hotspot">> => #{
@@ -246,6 +247,7 @@ dupes_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -362,6 +364,7 @@ dupes_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -395,6 +398,7 @@ dupes_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -548,6 +552,7 @@ dupes2_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -582,6 +587,7 @@ dupes2_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => 0,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -670,6 +676,7 @@ join_test(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -697,6 +704,7 @@ join_test(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -775,6 +783,7 @@ join_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -991,6 +1000,7 @@ us915_link_adr_req_timing_test(Config) ->
                 <<"fcnt">> => 0,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -1102,6 +1112,7 @@ us915_link_adr_req_timing_test(Config) ->
                 <<"fcnt">> => 1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -1195,6 +1206,7 @@ us915_link_adr_req_timing_test(Config) ->
                 <<"fcnt">> => 2,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -1315,6 +1327,7 @@ adr_downlink_timing_test(Config) ->
                     <<"fcnt">> => fun erlang:is_integer/1,
                     <<"payload_size">> => fun erlang:is_integer/1,
                     <<"payload">> => fun erlang:is_binary/1,
+                    <<"raw_payload">> => fun erlang:is_binary/1,
                     <<"port">> => fun erlang:is_integer/1,
                     <<"devaddr">> => fun erlang:is_binary/1,
                     <<"hotspot">> => #{
@@ -1370,6 +1383,7 @@ adr_downlink_timing_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -1573,6 +1587,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -1640,6 +1655,7 @@ adr_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -1760,6 +1776,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -1823,6 +1840,7 @@ adr_test(Config) ->
             <<"fcnt">> => 1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -1945,6 +1963,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
 
@@ -2014,6 +2033,7 @@ adr_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -2138,6 +2158,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -2171,6 +2192,7 @@ adr_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -2285,6 +2307,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -2318,6 +2341,7 @@ adr_test(Config) ->
             <<"fcnt">> => fun erlang:is_integer/1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{

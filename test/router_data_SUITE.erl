@@ -295,6 +295,7 @@ data_test_2(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => 0,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -431,6 +432,7 @@ data_test_3(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => 0,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{

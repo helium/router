@@ -217,6 +217,7 @@ multi_buy_test(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
+            <<"raw_payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -385,6 +386,7 @@ bad_fcnt_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
         <<"payload_size">> => 0,
+        <<"raw_payload">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
         <<"hotspots">> => [
@@ -420,6 +422,7 @@ bad_fcnt_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_payload">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{

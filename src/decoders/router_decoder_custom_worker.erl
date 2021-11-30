@@ -41,17 +41,13 @@
 -define(MAX_RETRIES, 3).
 % V8's JS timeout in milliseconds
 -define(MAX_EXECUTION_TIME, 500).
-%% -define(INIT_CONTEXT, init_context).
--define(BACKOFF_MIN, timer:seconds(15)).
--define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
     id :: binary(),
     vm :: pid() | undefined,
     context :: context() | undefined,
     function :: binary(),
-    timer :: reference(),
-    backoff :: any()
+    timer :: reference()
 }).
 
 -type context() :: integer() | {error, crashed | invalid_context}.
@@ -83,8 +79,7 @@ init(Args) ->
                     vm = VM,
                     context = Context,
                     function = Function,
-                    timer = TimerRef,
-                    backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
+                    timer = TimerRef
                 };
             {context_error, Error} ->
                 %% Will try again upon first call to decode()
@@ -99,8 +94,7 @@ init(Args) ->
                     vm = VM,
                     context = undefined,
                     function = Function,
-                    timer = TimerRef,
-                    backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal)
+                    timer = TimerRef
                 };
             {js_error, Error} ->
                 %% When eval fails, avoid calls to that JavaScript function
@@ -115,56 +109,6 @@ init(Args) ->
         end,
     {ok, State}.
 
-%% handle_call({decode, _Payload, _Port, _UplinkDetails}, _From, #state{context = undefined} = State0) ->
-%%     {reply, {error, no_context}, State0};
-%% handle_call(
-%%     {decode, Payload, Port, UplinkDetails},
-%%     _From,
-%%     #state{vm = VM, context = Context0, timer = TimerRef0, backoff = Backoff0} = State0
-%% ) ->
-%%     _ = erlang:cancel_timer(TimerRef0),
-%%     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
-%%     State1 = State0#state{timer = TimerRef1},
-%%     case
-%%         erlang_v8:call(
-%%             VM,
-%%             Context0,
-%%             <<"Decoder">>,
-%%             [Payload, Port, UplinkDetails],
-%%             ?MAX_EXECUTION_TIME
-%%         )
-%%     of
-%%         {error, invalid_context} ->
-%%             %% Execution reaching here implies V8 vm restarted recently
-%%             {Delay, Backoff1} = backoff:fail(Backoff0),
-%%             %% Refresh their Context and JS definition:
-%%             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
-%%             {reply, {error, invalid_context}, State1#state{
-%%                 context = undefined,
-%%                 backoff = Backoff1
-%%             }};
-%%         {error, Reason0} = Error ->
-%%             %% Track repeat offenders of bad JS code via external monitoring
-%%             Reason1 =
-%%                 case size(Reason0) of
-%%                     N when N =< 10 -> Reason0;
-%%                     _ -> binary:part(Reason0, 0, 10)
-%%                 end,
-%%             lager:error(
-%%                 "V8 call error=\"~p\" device_id=~p app_eui=~p dev_eui=~p",
-%%                 [
-%%                     Reason1,
-%%                     maps:get(device_id, UplinkDetails, unknown),
-%%                     maps:get(app_eui, UplinkDetails, unknown),
-%%                     maps:get(dev_eui, UplinkDetails, unknown)
-%%                 ]
-%%             ),
-%%             %% Due to limited error granularity from V8 Port, restart after any error:
-%%             erlang_v8:restart_vm(VM),
-%%             {reply, Error, State1};
-%%         {ok, _} = OK ->
-%%             {reply, OK, State1}
-%%     end;
 handle_call({decode, Payload, Port, UplinkDetails}, _From, #state{timer = TimerRef0} = State0) ->
     _ = erlang:cancel_timer(TimerRef0),
     TimerRef1 = erlang:send_after(?TIMER, self(), timeout),
@@ -178,20 +122,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-%% handle_info(
-%%     ?INIT_CONTEXT,
-%%     #state{id = ID, vm = VM, function = Function, backoff = Backoff0} = State
-%% ) ->
-%%     case init_context(VM, Function) of
-%%         {ok, Context} ->
-%%             {_Delay, Backoff1} = backoff:succeed(Backoff0),
-%%             {noreply, State#state{context = Context, backoff = Backoff1}};
-%%         {error, _Reason} ->
-%%             lager:warning("failed to init context for ~p with ~p error: ~p", [ID, Function, _Reason]),
-%%             {Delay, Backoff1} = backoff:fail(Backoff0),
-%%             _ = erlang:send_after(Delay, self(), ?INIT_CONTEXT),
-%%             {noreply, State#state{backoff = Backoff1}}
-%%     end;
 handle_info(timeout, #state{id = ID} = State) ->
     lager:info("context ~p has not been used for awhile, shutting down", [ID]),
     {stop, normal, State};
@@ -281,8 +211,6 @@ decode(
     of
         {error, invalid_context} ->
             {ok, Context1} = init_context(VM, Function),
-            %% TODO: use Ferd's `backoff' library.
-            %% See stateful use: ../device/router_device_channels_worker.erl
             decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
         {error, Err} ->
             %% TODO this eliminates any tolerance for intermittent

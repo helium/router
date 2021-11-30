@@ -56,16 +56,16 @@ v8_recovery_test(Config) ->
 
     ValidFunction = <<"function Decoder(a,b,c) { return 42; }">>,
     ValidDecoder = router_decoder:new(
-          <<"valid">>,
-          custom,
-          #{function => ValidFunction}
+        <<"valid">>,
+        custom,
+        #{function => ValidFunction}
     ),
     Result = 42,
     BogusFunction = <<"function Decoder(a,b,c) { crash @ here! }">>,
     BogusDecoder = router_decoder:new(
-          <<"bogus">>,
-          custom,
-          #{function => BogusFunction}
+        <<"bogus">>,
+        custom,
+        #{function => BogusFunction}
     ),
     Payload = erlang:binary_to_list(base64:decode(<<"H4Av/xACRU4=">>)),
     Port = 6,
@@ -75,27 +75,41 @@ v8_recovery_test(Config) ->
     %% bogus javascript, causing the V8 VM to be restarted.  The first
     %% context should then recover.
     {ok, Pid1} = router_decoder_custom_sup:add(ValidDecoder),
-    ?assertMatch({ok, Result},
-                 router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)),
-    ?assertMatch({ok, Result},
-                 router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)),
-    ?assertMatch({ok, Result},
-                 router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)),
+    ?assertMatch(
+        {ok, Result},
+        router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)
+    ),
+    ?assertMatch(
+        {ok, Result},
+        router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)
+    ),
+    ?assertMatch(
+        {ok, Result},
+        router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)
+    ),
     ?assert(erlang:is_process_alive(Pid1)),
 
     %% Even though JS was bad, we still get a Pid for less BEAM runtime overhead overall
     {ok, Pid2} = router_decoder_custom_sup:add(BogusDecoder),
     ?assertNotMatch(Pid1, Pid2),
-    ?assertMatch({error, ignoring_invalid_javascript},
-                 router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
-    ?assertMatch({error, ignoring_invalid_javascript},
-                 router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
-    ?assertMatch({error, ignoring_invalid_javascript},
-                 router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)),
+    ?assertMatch(
+        {error, ignoring_invalid_javascript},
+        router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)
+    ),
+    ?assertMatch(
+        {error, ignoring_invalid_javascript},
+        router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)
+    ),
+    ?assertMatch(
+        {error, ignoring_invalid_javascript},
+        router_decoder_custom_worker:decode(Pid2, Payload, Port, Uplink)
+    ),
 
     ?assert(erlang:is_process_alive(Pid1)),
-    ?assertMatch({ok, Result},
-                 router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)),
+    ?assertMatch(
+        {ok, Result},
+        router_decoder_custom_worker:decode(Pid1, Payload, Port, Uplink)
+    ),
 
     %% FIXME: how can we force bad context?
 

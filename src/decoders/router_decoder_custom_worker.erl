@@ -212,6 +212,13 @@ decode(
         {error, invalid_context} ->
             {ok, Context1} = init_context(VM, Function),
             decode(Payload, Port, UplinkDetails, State#state{context = Context1}, Retry - 1);
+        {error, Err} when is_binary(Err) ->
+            ShortReason =
+                case binary:match(Err, <<"\n">>) of
+                    {End, _} -> binary:part(Err, 0, End);
+                    nomatch -> Err
+                end,
+            {{js_error, ShortReason}, State#state{function = <<>>}};
         {error, Err} ->
             %% TODO this eliminates any tolerance for intermittent
             %% errors such as an occasional payload crashing their

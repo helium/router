@@ -58,10 +58,13 @@ avoid_call_to_bad_js_test(_Config) ->
     Port = 6,
     Uplink = #{},
     %% First time through decode() visits init_context()
-    ?assertMatch(
-        {js_error, <<"ReferenceError:", _/binary>>},
-        router_decoder_custom_worker:decode(Pid, Payload, Port, Uplink)
-    ),
+    Decoded = router_decoder_custom_worker:decode(Pid, Payload, Port, Uplink),
+    ?assertMatch({js_error, <<"ReferenceError:", _/binary>>}, Decoded),
+
+    %% While were here, confirm abbreviated message (which gets used in log entry)
+    {js_error, <<"ReferenceError:", OmitFullStackTrace/binary>>} = Decoded,
+    ?assertMatch(nomatch, binary:match(OmitFullStackTrace, <<"\n">>)),
+
     %% Subsequent trips through decode/4 should avoid calling V8
     ?assertMatch(
         {error, ignoring_invalid_javascript},

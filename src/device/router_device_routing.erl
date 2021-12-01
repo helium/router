@@ -1032,9 +1032,8 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
 ) -> [router_device:device()].
 get_and_sort_devices(DevAddr, PubKeyBin, Chain) ->
     {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
-    {Time2, Devices1} = timer:tc(router_device_devaddr, sort_devices, [Devices0, PubKeyBin, Chain]),
     router_metrics:function_observe('router_device_cache:get_by_devaddr', Time1),
-    router_metrics:function_observe('router_device_devaddr:sort_devices', Time2),
+    Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin, Chain),
     Devices1.
 
 -spec get_device_by_mic(binary(), binary(), binary(), [router_device:device()]) ->

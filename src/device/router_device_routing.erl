@@ -538,7 +538,7 @@ validate_packet_offer(Offer, _Pid, Chain) ->
 validate_devaddr(DevAddr, Chain) ->
     Ledger = blockchain:ledger(Chain),
     NetIDList = blockchain_ledger_v1:get_netids(Ledger),
-    AddrBase = blockchain_ledger_v1:subnet_from_devaddr(DevAddr, NetIDList),
+    AddrBase = lorawan:subnet_from_devaddr(DevAddr, NetIDList),
     OUI = router_utils:get_oui(),
     try blockchain_ledger_v1:find_routing(OUI, Ledger) of
         {ok, RoutingEntry} ->
@@ -785,7 +785,7 @@ packet(
     MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
     Ledger = blockchain:ledger(Chain),
     NetIDList = blockchain_ledger_v1:get_netids(Ledger),
-    AddrBase = blockchain_ledger_v1:subnet_from_devaddr(DevAddr, NetIDList),
+    AddrBase = lorawan:subnet_from_devaddr(DevAddr, NetIDList),
     OUI = router_utils:get_oui(),
     try blockchain_ledger_v1:find_routing(OUI, Ledger) of
         {ok, RoutingEntry} ->

@@ -78,16 +78,20 @@ data_test_1(Config) ->
     Port = 2,
     Body = <<"body">>,
     Payload = <<Port:8/integer, Body/binary>>,
+    SCPacket =
+        test_utils:frame_packet(
+            ?UNCONFIRMED_UP,
+            PubKeyBin,
+            router_device:nwk_s_key(Device),
+            router_device:app_s_key(Device),
+            0,
+            #{datarate => DataRate, rssi => RSSI, snr => SNR, body => Payload, dont_encode => true}
+        ),
     Stream !
         {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device),
-                router_device:app_s_key(Device),
-                0,
-                #{datarate => DataRate, rssi => RSSI, snr => SNR, body => Payload}
-            )},
+            blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
+                msg = {packet, SCPacket}
+            })},
 
     ReportedAtCheck = fun(ReportedAt) ->
         Now = erlang:system_time(millisecond),
@@ -117,6 +121,9 @@ data_test_1(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
+        <<"raw_packet">> => base64:encode(
+            blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
+        ),
         <<"port">> => Port,
         <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         <<"hotspots">> => [
@@ -135,6 +142,41 @@ data_test_1(Config) ->
                 <<"long">> => -120.80001353058655
             }
         ]
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_unconfirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => ReportedAtCheck,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
+            <<"fcnt">> => 0,
+            <<"payload_size">> => erlang:byte_size(Body),
+            <<"payload">> => base64:encode(Body),
+            <<"raw_packet">> => base64:encode(
+                blockchain_helium_packet_v1:payload(
+                    blockchain_state_channel_packet_v1:packet(SCPacket)
+                )
+            ),
+            <<"port">> => Port,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => RSSI,
+                <<"snr">> => SNR,
+                <<"spreading">> => DataRate,
+                <<"frequency">> => 923.2999877929688,
+                <<"channel">> => 105,
+                <<"lat">> => 36.999918858583605,
+                <<"long">> => -120.80001353058655
+            },
+            <<"mac">> => [],
+            <<"hold_time">> => 100
+        }
     }),
 
     ok.
@@ -167,16 +209,26 @@ data_test_2(Config) ->
     Body = <<"body">>,
     Payload = <<Port:8/integer, Body/binary>>,
     Region = 'EU868',
+    SCPacket = test_utils:frame_packet(
+        ?CONFIRMED_UP,
+        PubKeyBin,
+        router_device:nwk_s_key(Device),
+        router_device:app_s_key(Device),
+        0,
+        #{
+            region => Region,
+            datarate => DataRate,
+            rssi => RSSI,
+            snr => SNR,
+            body => Payload,
+            dont_encode => true
+        }
+    ),
     Stream !
         {send,
-            test_utils:frame_packet(
-                ?CONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device),
-                router_device:app_s_key(Device),
-                0,
-                #{region => Region, datarate => DataRate, rssi => RSSI, snr => SNR, body => Payload}
-            )},
+            blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
+                msg = {packet, SCPacket}
+            })},
 
     ReportedAtCheck = fun(ReportedAt) ->
         Now = erlang:system_time(millisecond),
@@ -206,6 +258,9 @@ data_test_2(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
+        <<"raw_packet">> => base64:encode(
+            blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
+        ),
         <<"port">> => Port,
         <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         <<"hotspots">> => [
@@ -290,16 +345,26 @@ data_test_3(Config) ->
     Body = <<"body">>,
     Payload = <<Port:8/integer, Body/binary>>,
     Region = 'EU868',
+    SCPacket = test_utils:frame_packet(
+        ?CONFIRMED_UP,
+        PubKeyBin,
+        router_device:nwk_s_key(Device),
+        router_device:app_s_key(Device),
+        0,
+        #{
+            region => Region,
+            datarate => DataRate,
+            rssi => RSSI,
+            snr => SNR,
+            body => Payload,
+            dont_encode => true
+        }
+    ),
     Stream !
         {send,
-            test_utils:frame_packet(
-                ?CONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device),
-                router_device:app_s_key(Device),
-                0,
-                #{region => Region, datarate => DataRate, rssi => RSSI, snr => SNR, body => Payload}
-            )},
+            blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
+                msg = {packet, SCPacket}
+            })},
 
     ReportedAtCheck = fun(ReportedAt) ->
         Now = erlang:system_time(millisecond),
@@ -329,6 +394,9 @@ data_test_3(Config) ->
         <<"reported_at">> => ReportedAtCheck,
         <<"payload">> => base64:encode(Body),
         <<"payload_size">> => erlang:byte_size(Body),
+        <<"raw_packet">> => base64:encode(
+            blockchain_helium_packet_v1:payload(blockchain_state_channel_packet_v1:packet(SCPacket))
+        ),
         <<"port">> => Port,
         <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         <<"hotspots">> => [

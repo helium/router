@@ -183,6 +183,7 @@ lw_join_test(Config) ->
             <<"fcnt">> => 0,
             <<"payload_size">> => 0,
             <<"payload">> => <<>>,
+            <<"raw_packet">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
@@ -266,9 +267,9 @@ lw_join_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(<<0>>),
         <<"payload_size">> => fun erlang:is_integer/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 2,
         <<"devaddr">> => '_',
-
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
@@ -336,6 +337,7 @@ lw_join_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
@@ -432,9 +434,9 @@ lw_join_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(<<0>>),
         <<"payload_size">> => fun erlang:is_integer/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 2,
         <<"devaddr">> => '_',
-
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
@@ -468,6 +470,7 @@ lw_join_test(Config) ->
                 <<"fcnt">> => fun erlang:is_integer/1,
                 <<"payload_size">> => fun erlang:is_integer/1,
                 <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{

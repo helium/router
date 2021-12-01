@@ -57,14 +57,16 @@ routing_offer_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         (Status == accepted orelse Status == rejected)
 ->
-    ok = notify(?METRICS_ROUTING_OFFER, Time, [Type, Status, Reason]).
+    _ = prometheus_histogram:observe(?METRICS_ROUTING_OFFER, [Type, Status, Reason], Time),
+    ok.
 
 -spec routing_packet_observe(join | packet, any(), rejected, non_neg_integer()) -> ok.
 routing_packet_observe(Type, Status, Reason, Time) when
     (Type == join orelse Type == packet) andalso
         Status == rejected
 ->
-    ok = notify(?METRICS_ROUTING_PACKET, Time, [Type, Status, Reason, false]).
+    _ = prometheus_histogram:observe(?METRICS_ROUTING_PACKET, [Type, Status, Reason, false], Time),
+    ok.
 
 -spec routing_packet_observe_start(binary(), binary(), non_neg_integer()) -> ok.
 routing_packet_observe_start(PacketHash, PubKeyBin, Time) ->
@@ -96,31 +98,38 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false) ->
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->
-    ok = notify(?METRICS_DECODED_TIME, Time, [Type, Status]).
+    _ = prometheus_histogram:observe(?METRICS_DECODED_TIME, [Type, Status], Time),
+    ok.
 
 -spec function_observe(atom(), non_neg_integer()) -> ok.
 function_observe(Fun, Time) ->
-    ok = notify(?METRICS_FUN_DURATION, Time, [Fun]).
+    _ = prometheus_histogram:observe(?METRICS_FUN_DURATION, [Fun], Time),
+    ok.
 
 -spec console_api_observe(atom(), atom(), non_neg_integer()) -> ok.
 console_api_observe(Type, Status, Time) ->
-    ok = notify(?METRICS_CONSOLE_API_TIME, Time, [Type, Status]).
+    _ = prometheus_histogram:observe(?METRICS_CONSOLE_API_TIME, [Type, Status], Time),
+    ok.
 
 -spec downlink_inc(atom(), ok | error) -> ok.
 downlink_inc(Type, Status) ->
-    ok = notify(?METRICS_DOWNLINK, undefined, [Type, Status]).
+    _ = prometheus_counter:inc(?METRICS_DOWNLINK, [Type, Status]),
+    ok.
 
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
-    ok = notify(?METRICS_WS, State).
+    _ = prometheus_boolean:set(?METRICS_WS, State),
+    ok.
 
 -spec network_id_inc(any()) -> ok.
 network_id_inc(NetID) ->
-    ok = notify(?METRICS_NETWORK_ID, undefined, [NetID]).
+    _ = prometheus_counter:inc(?METRICS_NETWORK_ID, [NetID]),
+    ok.
 
 -spec xor_filter_update(DC :: non_neg_integer()) -> ok.
 xor_filter_update(DC) ->
-    ok = notify(?METRICS_XOR_FILTER, DC).
+    _ = prometheus_gauge:set(?METRICS_XOR_FILTER, DC),
+    ok.
 
 -spec get_reporter_props(atom()) -> list().
 get_reporter_props(Reporter) ->
@@ -132,19 +141,17 @@ get_reporter_props(Reporter) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, EvtMgr} = gen_event:start_link({local, ?METRICS_EVT_MGR}),
-    MetricsEnv = application:get_env(router, metrics, []),
-    lists:foreach(
-        fun(Reporter) ->
-            ok = gen_event:add_sup_handler(EvtMgr, Reporter, #{
-                metrics => ?METRICS
-            })
-        end,
-        proplists:get_value(reporters, MetricsEnv, [])
-    ),
+    ok = blockchain_event:add_handler(self()),
     {ok, PubKey, _, _} = blockchain_swarm:keys(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    erlang:send_after(500, self(), post_init),
+    _ = erlang:send_after(500, self(), post_init),
+    ok = declare_metrics(),
+    ElliOpts = [
+        {callback, router_metrics_reporter},
+        {callback_args, #{}},
+        {port, 3000}
+    ],
+    {ok, _Pid} = elli:start_link(ElliOpts),
     {ok, #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
@@ -174,7 +181,11 @@ handle_cast(
             undefined ->
                 State0;
             Start0 ->
-                ok = notify(?METRICS_PACKET_TRIP, End - Start0, [Type, Downlink]),
+                _ = prometheus_histogram:observe(
+                    ?METRICS_PACKET_TRIP,
+                    [Type, Downlink],
+                    End - Start0
+                ),
                 State0#state{packet_duration = maps:remove({PacketHash, PubKeyBin}, PD)}
         end,
     State2 =
@@ -182,12 +193,16 @@ handle_cast(
             undefined ->
                 State1;
             Start1 ->
-                ok = notify(?METRICS_ROUTING_PACKET, End - Start1, [
-                    Type,
-                    accepted,
-                    accepted,
-                    Downlink
-                ]),
+                _ = prometheus_histogram:observe(
+                    ?METRICS_ROUTING_PACKET,
+                    [
+                        Type,
+                        accepted,
+                        accepted,
+                        Downlink
+                    ],
+                    End - Start1
+                ),
                 State1#state{routing_packet_duration = maps:remove({PacketHash, PubKeyBin}, RPD)}
         end,
     {noreply, State2};
@@ -204,6 +219,20 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             _ = schedule_next_tick(),
             {noreply, State#state{chain = Chain}}
     end;
+handle_info({blockchain_event, {new_chain, Chain}}, State) ->
+    {noreply, State#state{chain = Chain}};
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{chain = undefined} = State
+) ->
+    erlang:send_after(500, self(), post_init),
+    {noreply, State};
+handle_info(
+    {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
+    #state{chain = Chain, pubkey_bin = PubkeyBin} = State
+) ->
+    _ = erlang:spawn(fun() -> ok = record_sc_close_conflict(Chain, BlockHash, PubkeyBin) end),
+    {noreply, State};
 handle_info(
     ?METRICS_TICK,
     #state{
@@ -214,15 +243,19 @@ handle_info(
     } = State
 ) ->
     lager:info("running metrcis"),
-    erlang:spawn(
+    erlang:spawn_opt(
         fun() ->
-            ok = record_dc_balance(PubkeyBin),
+            ok = record_dc_balance(Chain, PubkeyBin),
             ok = record_state_channels(Chain),
-            ok = record_chain_blocks(),
+            ok = record_chain_blocks(Chain),
             ok = record_vm_stats(),
             ok = record_ets(),
             ok = record_queues()
-        end
+        end,
+        [
+            {fullsweep_after, 0},
+            {priority, high}
+        ]
     ),
     _ = schedule_next_tick(),
     {noreply, State#state{
@@ -243,32 +276,87 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec declare_metrics() -> ok.
+declare_metrics() ->
+    lists:foreach(
+        fun({Metric, Module, Meta, Description}) ->
+            case Module of
+                prometheus_histogram ->
+                    _ = prometheus_histogram:declare([
+                        {name, Metric},
+                        {help, Description},
+                        {labels, Meta},
+                        {buckets, [50, 100, 250, 500, 1000, 2000]}
+                    ]);
+                _ ->
+                    _ = prometheus_gauge:declare([
+                        {name, Metric},
+                        {help, Description},
+                        {labels, Meta}
+                    ])
+            end
+        end,
+        ?METRICS
+    ).
+
 -spec cleanup_pd(map()) -> map().
 cleanup_pd(PD) ->
     End = erlang:system_time(millisecond),
     maps:filter(fun(_K, Start) -> End - Start < timer:seconds(10) end, PD).
 
--spec record_dc_balance(PubkeyBin :: libp2p_crypto:pubkey_bin()) -> ok.
-record_dc_balance(PubkeyBin) ->
-    Ledger = blockchain:ledger(blockchain_worker:blockchain()),
+-spec record_sc_close_conflict(
+    Chain :: blockchain:blockchain(),
+    BlockHash :: binary(),
+    PubkeyBin :: libp2p_crypto:pubkey_bin()
+) -> ok.
+record_sc_close_conflict(Chain, BlockHash, PubkeyBin) ->
+    case blockchain:get_block(BlockHash, Chain) of
+        {error, _Reason} ->
+            lager:error("failed to get block:~p ~p", [BlockHash, _Reason]);
+        {ok, Block} ->
+            Txns = lists:filter(
+                fun(Txn) ->
+                    case blockchain_txn:type(Txn) of
+                        blockchain_txn_state_channel_close_v1 ->
+                            SC = blockchain_txn_state_channel_close_v1:state_channel(Txn),
+                            blockchain_state_channel_v1:owner(SC) == PubkeyBin andalso
+                                blockchain_txn_state_channel_close_v1:conflicts_with(Txn) =/=
+                                    undefined;
+                        _ ->
+                            false
+                    end
+                end,
+                blockchain_block:transactions(Block)
+            ),
+            _ = prometheus_gauge:set(?METRICS_SC_CLOSE_CONFLICT, erlang:length(Txns)),
+            ok
+    end.
+
+-spec record_dc_balance(
+    Chain :: blockchain:blockchain(),
+    PubkeyBin :: libp2p_crypto:pubkey_bin()
+) -> ok.
+record_dc_balance(Chain, PubkeyBin) ->
+    Ledger = blockchain:ledger(Chain),
     case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
         {error, _} ->
             ok;
         {ok, Entry} ->
             Balance = blockchain_ledger_data_credits_entry_v1:balance(Entry),
-            ok = notify(?METRICS_DC, Balance)
+            _ = prometheus_gauge:set(?METRICS_DC, Balance),
+            ok
     end.
 
 -spec record_state_channels(Chain :: blockchain:blockchain()) -> ok.
 record_state_channels(Chain) ->
     {ok, Height} = blockchain:height(Chain),
     {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Height),
-    ok = notify(?METRICS_SC_OPENED_COUNT, OpenedCount),
-    ok = notify(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
+    _ = prometheus_gauge:set(?METRICS_SC_OPENED_COUNT, OpenedCount),
+    _ = prometheus_gauge:set(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 
     ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
     ActiveCount = erlang:length(ActiveSCs),
-    ok = notify(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
+    _ = prometheus_gauge:set(?METRICS_SC_ACTIVE_COUNT, ActiveCount),
 
     {TotalDCLeft, TotalActors} = lists:foldl(
         fun({ActiveSC, _, _}, {DCs, Actors}) ->
@@ -286,20 +374,20 @@ record_state_channels(Chain) ->
         {0, 0},
         ActiveSCs
     ),
-    ok = notify(?METRICS_SC_ACTIVE_BALANCE, TotalDCLeft),
-    ok = notify(?METRICS_SC_ACTIVE_ACTORS, TotalActors),
+    _ = prometheus_gauge:set(?METRICS_SC_ACTIVE_BALANCE, TotalDCLeft),
+    _ = prometheus_gauge:set(?METRICS_SC_ACTIVE_ACTORS, TotalActors),
     ok.
 
--spec record_chain_blocks() -> ok.
-record_chain_blocks() ->
-    Chain = blockchain_worker:blockchain(),
+-spec record_chain_blocks(Chain :: blockchain:blockchain()) -> ok.
+record_chain_blocks(Chain) ->
     case blockchain:head_block(Chain) of
         {error, _} ->
             ok;
         {ok, Block} ->
             Now = erlang:system_time(seconds),
             Time = blockchain_block:time(Block),
-            ok = notify(?METRICS_CHAIN_BLOCKS, Now - Time)
+            _ = prometheus_gauge:set(?METRICS_CHAIN_BLOCKS, Now - Time),
+            ok
     end.
 
 -spec record_vm_stats() -> ok.
@@ -307,7 +395,7 @@ record_vm_stats() ->
     [{_Mem, CPU}] = recon:node_stats_list(1, 1),
     lists:foreach(
         fun({Num, Usage}) ->
-            ok = notify(?METRICS_VM_CPU, Usage, [Num])
+            _ = prometheus_gauge:set(?METRICS_VM_CPU, [Num], Usage)
         end,
         proplists:get_value(scheduler_usage, CPU, [])
     ),
@@ -325,7 +413,7 @@ record_ets() ->
                     Bytes = Memory * erlang:system_info(wordsize),
                     case Bytes > 1000000 of
                         false -> ok;
-                        true -> ok = notify(?METRICS_VM_ETS_MEMORY, Bytes, [Name])
+                        true -> _ = prometheus_gauge:set(?METRICS_VM_ETS_MEMORY, [Name], Bytes)
                     end
             end
         end,
@@ -348,22 +436,22 @@ record_queues() ->
             maps:put(Name, Length, Acc)
         end,
         #{},
-        prometheus_gauge:values(default, erlang:atom_to_list(?METRICS_VM_PROC_Q))
+        prometheus_gauge:values(default, ?METRICS_VM_PROC_Q)
     ),
     OldQs = maps:without(maps:keys(CurrentQs), RecorderQs),
     lists:foreach(
         fun({Name, _Length}) ->
             case name_to_pid(Name) of
                 undefined ->
-                    prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                    prometheus_gauge:remove(?METRICS_VM_PROC_Q, [Name]);
                 Pid ->
                     case recon:info(Pid, message_queue_len) of
                         undefined ->
-                            prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                            prometheus_gauge:remove(?METRICS_VM_PROC_Q, [Name]);
                         {message_queue_len, 0} ->
-                            prometheus_gauge:remove(erlang:atom_to_list(?METRICS_VM_PROC_Q), [Name]);
+                            prometheus_gauge:remove(?METRICS_VM_PROC_Q, [Name]);
                         {message_queue_len, Length} ->
-                            ok = notify(?METRICS_VM_PROC_Q, Length, [Name])
+                            prometheus_gauge:set(?METRICS_VM_PROC_Q, [Name], Length)
                     end
             end
         end,
@@ -376,7 +464,7 @@ record_queues() ->
         fun({Name, Length}) ->
             case Length > MinLength of
                 true ->
-                    ok = notify(?METRICS_VM_PROC_Q, Length, [Name]);
+                    _ = prometheus_gauge:set(?METRICS_VM_PROC_Q, [Name], Length);
                 false ->
                     ok
             end
@@ -401,15 +489,6 @@ name_to_pid(Name) ->
         false ->
             erlang:whereis(erlang:list_to_atom(Name))
     end.
-
--spec notify(atom(), any()) -> ok.
-
-notify(Key, Data) ->
-    ok = notify(Key, Data, []).
-
--spec notify(atom(), any(), list()) -> ok.
-notify(Key, Data, MetaData) ->
-    ok = gen_event:notify(?METRICS_EVT_MGR, {data, Key, Data, MetaData}).
 
 -spec schedule_next_tick() -> reference().
 schedule_next_tick() ->

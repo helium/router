@@ -14,6 +14,7 @@
     routing_packet_observe_start/3,
     packet_trip_observe_start/3,
     packet_trip_observe_end/5, packet_trip_observe_end/6,
+    packet_hold_time_observe/2,
     decoder_observe/3,
     function_observe/2,
     console_api_observe/3,
@@ -95,6 +96,11 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false) ->
         ?MODULE,
         {packet_trip_observe_end, PacketHash, PubKeyBin, Time, Type, Downlink}
     ).
+
+-spec packet_hold_time_observe(Type :: join | packet, HoldTime :: non_neg_integer()) -> ok.
+packet_hold_time_observe(Type, HoldTime) when Type == join orelse Type == packet ->
+    _ = prometheus_histogram:observe(?METRICS_DECODED_TIME, [Type], HoldTime),
+    ok.
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
 decoder_observe(Type, Status, Time) when Status == ok orelse Status == error ->

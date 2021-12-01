@@ -17,7 +17,6 @@
 -define(METRICS_CONSOLE_API_TIME, "router_console_api_duration").
 -define(METRICS_DOWNLINK, "router_device_downlink_packet").
 -define(METRICS_WS, "router_ws_state").
--define(METRICS_NETWORK_ID, "router_device_routing_offer_network_id").
 -define(METRICS_CHAIN_BLOCKS, "router_blockchain_blocks").
 -define(METRICS_VM_CPU, "router_vm_cpu").
 -define(METRICS_VM_PROC_Q, "router_vm_process_queue").
@@ -43,7 +42,6 @@
     {?METRICS_CONSOLE_API_TIME, prometheus_histogram, [type, status], "Console API duration"},
     {?METRICS_DOWNLINK, prometheus_counter, [type, status], "Downlink count"},
     {?METRICS_WS, prometheus_boolean, [], "Websocket State"},
-    {?METRICS_NETWORK_ID, prometheus_counter, [network_id], "Offer by network ID"},
     {?METRICS_CHAIN_BLOCKS, prometheus_gauge, [], "Router's blockchain blocks"},
     {?METRICS_VM_CPU, prometheus_gauge, [cpu], "Router CPU usage"},
     {?METRICS_VM_PROC_Q, prometheus_gauge, [name], "Router process queue"},

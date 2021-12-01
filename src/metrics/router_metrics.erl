@@ -20,7 +20,6 @@
     console_api_observe/3,
     downlink_inc/2,
     ws_state/1,
-    network_id_inc/1,
     xor_filter_update/1
 ]).
 
@@ -124,11 +123,6 @@ downlink_inc(Type, Status) ->
 -spec ws_state(boolean()) -> ok.
 ws_state(State) ->
     _ = prometheus_boolean:set(?METRICS_WS, State),
-    ok.
-
--spec network_id_inc(any()) -> ok.
-network_id_inc(NetID) ->
-    _ = prometheus_counter:inc(?METRICS_NETWORK_ID, [NetID]),
     ok.
 
 -spec xor_filter_update(DC :: non_neg_integer()) -> ok.

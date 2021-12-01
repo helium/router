@@ -21,8 +21,7 @@
     downlink_inc/2,
     ws_state/1,
     network_id_inc/1,
-    xor_filter_update/1,
-    get_reporter_props/1
+    xor_filter_update/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -99,7 +98,7 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false) ->
 
 -spec packet_hold_time_observe(Type :: join | packet, HoldTime :: non_neg_integer()) -> ok.
 packet_hold_time_observe(Type, HoldTime) when Type == join orelse Type == packet ->
-    _ = prometheus_histogram:observe(?METRICS_DECODED_TIME, [Type], HoldTime),
+    _ = prometheus_histogram:observe(?METRICS_PACKET_HOLD_TIME, [Type], HoldTime),
     ok.
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.
@@ -137,27 +136,23 @@ xor_filter_update(DC) ->
     _ = prometheus_gauge:set(?METRICS_XOR_FILTER, DC),
     ok.
 
--spec get_reporter_props(atom()) -> list().
-get_reporter_props(Reporter) ->
-    MetricsEnv = application:get_env(router, metrics, []),
-    proplists:get_value(Reporter, MetricsEnv, []).
-
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
+    ok = declare_metrics(),
+    MetricsEnv = application:get_env(router, metrics, []),
+    ElliOpts = [
+        {callback, router_metrics_reporter},
+        {callback_args, #{}},
+        {port, proplists:get_value(port, MetricsEnv, 3000)}
+    ],
+    {ok, _Pid} = elli:start_link(ElliOpts),
     ok = blockchain_event:add_handler(self()),
     {ok, PubKey, _, _} = blockchain_swarm:keys(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = erlang:send_after(500, self(), post_init),
-    ok = declare_metrics(),
-    ElliOpts = [
-        {callback, router_metrics_reporter},
-        {callback_args, #{}},
-        {port, 3000}
-    ],
-    {ok, _Pid} = elli:start_link(ElliOpts),
     {ok, #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
@@ -286,16 +281,17 @@ terminate(_Reason, _State) ->
 declare_metrics() ->
     lists:foreach(
         fun({Metric, Module, Meta, Description}) ->
+            lager:info("declaring metric ~p as ~p meta=~p", [Metric, Module, Meta]),
             case Module of
                 prometheus_histogram ->
-                    _ = prometheus_histogram:declare([
+                    _ = Module:declare([
                         {name, Metric},
                         {help, Description},
                         {labels, Meta},
                         {buckets, [50, 100, 250, 500, 1000, 2000]}
                     ]);
                 _ ->
-                    _ = prometheus_gauge:declare([
+                    _ = Module:declare([
                         {name, Metric},
                         {help, Description},
                         {labels, Meta}

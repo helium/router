@@ -318,7 +318,7 @@ handle_call(
     Costs = estimate_cost_for_groups(MigratedFilters, State),
 
     lager:info(
-        "migrating: porposed group size: ~p, cost: ~p",
+        "migrating: proposed group size: ~p, cost: ~p",
         [maps:map(fun(_, V) -> length(V) end, MigratedFilters), Costs]
     ),
 

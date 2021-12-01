@@ -76,29 +76,28 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
                         }
                     ],
                     undefined};
-            [{devices, {Qs, []}}] ->
-                true = ets:delete(Tab, devices),
+            [{devices, {Qs, [], Refill}}] ->
+                true = ets:insert(Tab, {devices, Refill}),
                 {[], undefined};
-            [{devices, {Qs, Ds}}] ->
+            [{devices, {Qs, Ds, Refill}}] ->
                 UUID = router_utils:uuid_v4(),
                 {PickedDevices, LeftOverDevices} = split_list(Ds),
-                true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
-                {PickedDevices, UUID};
+                true = ets:insert(
+                    Tab,
+                    {devices, {<<"after=", UUID/binary>>, LeftOverDevices, Refill}}
+                ),
+                {lists:map(fun device_to_json/1, PickedDevices), UUID};
             [{devices, Ds}] ->
                 UUID = router_utils:uuid_v4(),
                 {PickedDevices, LeftOverDevices} = split_list(Ds),
-                true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices}}),
-                {PickedDevices, UUID}
+                true = ets:insert(Tab, {devices, {<<"after=", UUID/binary>>, LeftOverDevices, Ds}}),
+                {lists:map(fun device_to_json/1, PickedDevices), UUID}
         end,
     case ResourceID of
         undefined ->
-            {200, [], jsx:encode(#{data => lists:map(fun device_to_json/1, Devices)})};
+            {200, [], jsx:encode(#{data => Devices})};
         ResourceID when is_binary(ResourceID) ->
-            {200, [],
-                jsx:encode(#{
-                    data => lists:map(fun device_to_json/1, Devices),
-                    'after' => ResourceID
-                })}
+            {200, [], jsx:encode(#{data => Devices, 'after' => ResourceID})}
     end;
 %% Get All Orgs
 handle('GET', [<<"api">>, <<"router">>, <<"organizations">>], Req, Args) ->

@@ -177,6 +177,8 @@ Data payload example sent to integrations
 
 ```
 {
+    "type": "uplink",
+    "replay": false,
     "id": "device_uuid",
     "name": "device_name",
     "dev_eui": "dev_eui",

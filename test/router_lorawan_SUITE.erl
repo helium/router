@@ -249,6 +249,7 @@ lw_join_test(Config) ->
     %% Waiting for data from HTTP channel
     {ok, #{<<"hotspots">> := [#{<<"frequency">> := Frequency}]}} = test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -414,6 +415,7 @@ lw_join_test(Config) ->
     %% Waiting for data from HTTP channel
     test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
         <<"id">> => ?CONSOLE_DEVICE_ID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,

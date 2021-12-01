@@ -23,7 +23,7 @@
     report_response/4,
     handle_downlink/3,
     handle_console_downlink/4,
-    new_data_cache/7,
+    new_data_cache/8,
     refresh_channels/1,
     frame_timeout/2
 ]).
@@ -56,7 +56,8 @@
     frame :: #frame{},
     region :: atom(),
     time :: non_neg_integer(),
-    hold_time :: non_neg_integer()
+    hold_time :: non_neg_integer(),
+    replay :: boolean()
 }).
 
 -record(state, {
@@ -156,9 +157,10 @@ handle_downlink(Pid, BinaryPayload, Channel) ->
     Frame :: #frame{},
     Region :: atom(),
     Time :: non_neg_integer(),
-    HoldTime :: non_neg_integer()
+    HoldTime :: non_neg_integer(),
+    Replay :: boolean()
 ) -> #data_cache{}.
-new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time, HoldTime) ->
+new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time, HoldTime, Replay) ->
     #data_cache{
         pubkey_bin = PubKeyBin,
         uuid = UUID,
@@ -166,7 +168,8 @@ new_data_cache(PubKeyBin, UUID, Packet, Frame, Region, Time, HoldTime) ->
         frame = Frame,
         region = Region,
         time = Time,
-        hold_time = HoldTime
+        hold_time = HoldTime,
+        replay = Replay
     }.
 
 -spec refresh_channels(Pid :: pid()) -> ok.
@@ -612,11 +615,12 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         fun(A, B) -> A#data_cache.time < B#data_cache.time end,
         maps:values(CachedData0)
     ),
-    [#data_cache{frame = Frame, time = Time, uuid = UUID} | _] = CachedData1,
+    [#data_cache{frame = Frame, time = Time, uuid = UUID, replay = Replay} | _] = CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     %% No touchy, this is set in STONE
     Map = #{
         type => uplink,
+        replay => Replay,
         uuid => UUID,
         id => router_device:id(Device),
         name => router_device:name(Device),

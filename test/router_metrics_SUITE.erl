@@ -67,7 +67,12 @@ metrics_test(Config) ->
     ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_ACTIVE_ACTORS)),
     ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_CLOSE_CONFLICT)),
 
-    {_, RoutingPacketTime} = prometheus_histogram:value(?METRICS_ROUTING_PACKET, [join, accepted, accepted, true]),
+    {_, RoutingPacketTime} = prometheus_histogram:value(?METRICS_ROUTING_PACKET, [
+        join,
+        accepted,
+        accepted,
+        true
+    ]),
     %% Minimum of 2s per but it should not take more than 25ms
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, RoutingPacketTime]),
     ?assert(RoutingPacketTime > 1999 andalso RoutingPacketTime < 2025),
@@ -82,7 +87,12 @@ metrics_test(Config) ->
     ?assertEqual(true, prometheus_boolean:value(?METRICS_WS)),
 
     BlockAge = prometheus_gauge:value(?METRICS_CHAIN_BLOCKS),
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, {StartTime, BlockAge, erlang:system_time(seconds)}]),
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [
+        ?MODULE,
+        ?FUNCTION_NAME,
+        ?LINE,
+        {StartTime, BlockAge, erlang:system_time(seconds)}
+    ]),
     ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds)),
 
     ?assert(prometheus_gauge:value(?METRICS_VM_CPU, [1]) > 0),

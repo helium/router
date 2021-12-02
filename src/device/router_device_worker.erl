@@ -480,6 +480,7 @@ handle_cast(
 ) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet0),
     lager:debug("got join packet (~p) ~p", [PHash, lager:pr(Packet0, blockchain_helium_packet_v1)]),
+    ok = router_metrics:packet_hold_time_observe(join, HoldTime),
     %% TODO we should really just call this once per join nonce
     %% and have a seperate function for getting the join nonce so we can check
     %% the cache
@@ -614,14 +615,14 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, Packet, PacketTime, HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         is_active = false
     } = State
 ) ->
+    ok = router_metrics:packet_hold_time_observe(packet, HoldTime),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-
     _ = router_device_routing:deny_more(PHash),
     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
@@ -649,6 +650,7 @@ handle_cast(
         adr_engine = ADREngine
     } = State
 ) ->
+    ok = router_metrics:packet_hold_time_observe(packet, HoldTime),
     MetricPacketType =
         case Disco of
             true -> discovery_packet;

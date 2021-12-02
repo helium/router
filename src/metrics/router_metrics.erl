@@ -134,6 +134,7 @@ xor_filter_update(DC) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
+    erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = declare_metrics(),
     MetricsEnv = application:get_env(router, metrics, []),
@@ -265,7 +266,14 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
-    ok.
+    lager:warning("going down ~p", [_Reason]),
+    lists:foreach(
+        fun({Metric, Module, _Meta, _Description}) ->
+            lager:info("removing metric ~p as ~p", [Metric, Module]),
+            Module:deregister(Metric)
+        end,
+        ?METRICS
+    ).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

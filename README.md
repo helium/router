@@ -177,7 +177,7 @@ Data payload example sent to integrations
 
 ```
 {
-    "type": "uplink",
+    "type": "uplink / join",
     "replay": false,
     "id": "device_uuid",
     "name": "device_name",
@@ -188,6 +188,7 @@ Data payload example sent to integrations
     "reported_at": 1619562788361,
     "payload": "base64 encoded payload",
     "payload_size": 22,
+    "raw_packet": "base64 encoded (full) lora packet",
      // ONLY if payload is decoded
     "decoded": {
         "status": "success | error",

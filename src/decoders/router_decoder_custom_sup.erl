@@ -130,7 +130,7 @@ init([]) ->
 
 -spec add(DecoderID :: binary(), Function :: binary()) -> {ok, pid()} | {error, any()}.
 add(ID, Function) ->
-    case is_valid_decoder_function(Function) of
+    case contains_decoder_function(Function) of
         false ->
             {error, no_decoder_fun_found};
         true ->
@@ -152,7 +152,7 @@ add(ID, Function) ->
     {ok, pid()} | {error, any()}.
 start_worker(ID, Hash, Function) ->
     {ok, VM} = router_v8:get(),
-    Args = #{id => ID, vm => VM, function => Function},
+    Args = #{id => ID, vm => VM, function => Function, hash => Hash},
     case supervisor:start_child(?MODULE, [Args]) of
         {error, _Err} = Err ->
             Err;
@@ -220,8 +220,8 @@ get_oldest_decoder() ->
             end
     end.
 
--spec is_valid_decoder_function(binary()) -> boolean().
-is_valid_decoder_function(Function) ->
+-spec contains_decoder_function(binary()) -> boolean().
+contains_decoder_function(Function) ->
     case re:run(Function, ?DECODER_FUNCTION_REGEX) of
         nomatch ->
             false;
@@ -277,59 +277,59 @@ get_oldest_decoder_test() ->
     ?assertEqual(CustomDecoder0, get_oldest_decoder()),
     true = ets:delete(?ETS).
 
-is_valid_decoder_function_test_() ->
+contains_decoder_function_test_() ->
     [
         %%% VALID FUNCTIONS
         %% normal, original style
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder(bytes, port) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder(bytes, port) {}">>)),
         %% normal, with arg for #439
         ?_assertMatch(
             true,
-            is_valid_decoder_function(<<"function Decoder(bytes, port, uplink_details) {}">>)
+            contains_decoder_function(<<"function Decoder(bytes, port, uplink_details) {}">>)
         ),
         %% single spaces
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (bytes, port) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (bytes, port) {}">>)),
         %% multiple spaces right side
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder    (bytes, port) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder    (bytes, port) {}">>)),
         %% tabs
-        ?_assertMatch(true, is_valid_decoder_function(<<"function\tDecoder\t(bytes, port) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function\tDecoder\t(bytes, port) {}">>)),
         %% newlines
-        ?_assertMatch(true, is_valid_decoder_function(<<"function\nDecoder\n(bytes, port) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function\nDecoder\n(bytes, port) {}">>)),
         %% multiple spaces both sides
         ?_assertMatch(
             true,
-            is_valid_decoder_function(<<"function    Decoder    (bytes, port) {}">>)
+            contains_decoder_function(<<"function    Decoder    (bytes, port) {}">>)
         ),
         %% different argument names
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (one, two) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (one, two) {}">>)),
         %% single letter arguments
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (a,b) {}">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (a,b) {}">>)),
         %% Leading parenthesis allergic whitespace
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a, b)">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (  a, b)">>)),
         %% Closing parenthesis allergic  whitespace
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (a, b  )">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (a, b  )">>)),
         %% Paren alergic whitespace
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a, b    )">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (  a, b    )">>)),
         %% Parent allergic whitesapce with optional 3rd arg
-        ?_assertMatch(true, is_valid_decoder_function(<<"function Decoder (  a,  b,  c  )">>)),
+        ?_assertMatch(true, contains_decoder_function(<<"function Decoder (  a,  b,  c  )">>)),
 
         %%% INVALID FUNCTIONS
         %% lowercase function name
-        ?_assertMatch(false, is_valid_decoder_function(<<"function decoder (bytes, port) {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"function decoder (bytes, port) {}">>)),
         %% single argument
-        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder (bytes) {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"function Decoder (bytes) {}">>)),
         %% no arguments
-        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder () {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"function Decoder () {}">>)),
         %% mispelled function name
-        ?_assertMatch(false, is_valid_decoder_function(<<"function Decodre (bytes, port) {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"function Decodre (bytes, port) {}">>)),
         %% missing space after function
-        ?_assertMatch(false, is_valid_decoder_function(<<"functionDecoder (bytes, port) {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"functionDecoder (bytes, port) {}">>)),
         %% trailing command within arg list
-        ?_assertMatch(false, is_valid_decoder_function(<<"function Decoder(bytes, port,) {}">>)),
+        ?_assertMatch(false, contains_decoder_function(<<"function Decoder(bytes, port,) {}">>)),
         %% illegal space within variadic arg syntax
         ?_assertMatch(
             false,
-            is_valid_decoder_function(<<"function Decoder(bytes, port, ... rest) {}">>)
+            contains_decoder_function(<<"function Decoder(bytes, port, ... rest) {}">>)
         )
     ].
 

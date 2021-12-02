@@ -236,7 +236,7 @@ You can also get a basic configuration for prometheus in `prometheus-template.ym
 
 ### Available metrics
 
-See `include/metrcis.hlr`
+See `include/metrics.hrl`
 
 Note that any [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) will include `_count`, `_sum` and `_bucket`.
 ### Displaying metrics

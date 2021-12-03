@@ -33,7 +33,12 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [decode_test, template_test, timeout_test, too_many_test].
+    [
+        decode_test,
+        template_test,
+        timeout_test,
+        too_many_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -104,6 +109,7 @@ decode_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_number/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}
@@ -216,6 +222,7 @@ timeout_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_integer/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}
@@ -254,6 +261,9 @@ timeout_test(Config) ->
     ok.
 
 too_many_test(Config) ->
+    MaxV8Context = application:get_env(router, max_v8_context, 10),
+    ok = application:set_env(router, max_v8_context, 1),
+
     %% Set console to decoder channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, decoder}),
@@ -306,6 +316,7 @@ too_many_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => fun erlang:is_binary/1,
         <<"payload_size">> => fun erlang:is_number/1,
+        <<"raw_packet">> => fun erlang:is_binary/1,
         <<"decoded">> => #{
             <<"status">> => <<"success">>,
             <<"payload">> => #{<<"vSys">> => -0.5}
@@ -341,6 +352,8 @@ too_many_test(Config) ->
     }),
     ok = router_decoder:add(NewDecoder),
 
+    %% This assumes max_v8_context = 1 within ../config/test.config or equivalent,
+    %% so see application:set_env() above and original value restored below.
     ?assertNot(erlang:is_process_alive(DecoderPid)),
 
     NewDecoderID = router_decoder:id(NewDecoder),
@@ -349,7 +362,8 @@ too_many_test(Config) ->
     ?assertEqual({ok, undefined}, router_decoder:decode(DecoderID, <<>>, 1, #{})),
     ?assertEqual({ok, <<"ok">>}, router_decoder:decode(NewDecoderID, <<>>, 1, #{})),
     ?assertEqual(1, ets:info(router_decoder_custom_sup_ets, size)),
-    ok.
+
+    ok = application:set_env(router, max_v8_context, MaxV8Context).
 
 %% ------------------------------------------------------------------
 %% Helper functions

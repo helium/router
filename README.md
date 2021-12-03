@@ -177,7 +177,7 @@ Data payload example sent to integrations
 
 ```
 {
-    "type": "uplink",
+    "type": "uplink / join",
     "replay": false,
     "id": "device_uuid",
     "name": "device_name",
@@ -188,6 +188,7 @@ Data payload example sent to integrations
     "reported_at": 1619562788361,
     "payload": "base64 encoded payload",
     "payload_size": 22,
+    "raw_packet": "base64 encoded (full) lora packet",
      // ONLY if payload is decoded
     "decoded": {
         "status": "success | error",
@@ -236,25 +237,9 @@ You can also get a basic configuration for prometheus in `prometheus-template.ym
 
 ### Available metrics
 
-- `router_blockchain_blocks` Gauge, difference between Router's local blockchain and Helium's main API (a negative number means Router is ahead).
-- `router_console_api_duration` Histogram,  caculate time for API calls made to console.
-- `router_dc_balance` Gauge, how many DC are left in Router's account.
-- `router_decoder_decoded_duration` Histogram, calculate decoders running time (with status).
-- `router_device_downlink_packet` Counter, count number of downlinks (with their origin).
-- `router_device_packet_trip_duration` Histogram, time taken by an uplink (or join) from offer to packet handling (potentially including downlink).
-- `router_device_routing_offer_duration` Histogram, time to handle any type of offer (include reason for success or failure).
-- `router_device_routing_packet_duration` Histogram, time to handle any type of packet (include reason for success or failure).
-- `router_function_duration` Histogram, time for some specific function to run.
-- `router_state_channel_active` Gauge, active state channel balance.
-- `router_state_channel_active_count` Gauge, number of open state channels.
-- `router_vm_cpu` Gauge, individual CPU usage
-- `router_ws_state` Gauge, websocket connection to Console (1 connected, 0 disconnected).
-- `erlang_vm_memory_*` Gauge, Erlang internal memory usage.
-- `erlang_vm_process_count` Gauge, number of processes running in the Erlang VM.
+See `include/metrics.hrl`
 
 Note that any [histogram](https://prometheus.io/docs/concepts/metric_types/#histogram) will include `_count`, `_sum` and `_bucket`.
-
-
 ### Displaying metrics
 
 ##### Grafana

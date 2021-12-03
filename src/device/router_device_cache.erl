@@ -5,10 +5,6 @@
 %%%-------------------------------------------------------------------
 -module(router_device_cache).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 -include_lib("stdlib/include/ms_transform.hrl").
 
 -include("router_device.hrl").
@@ -32,7 +28,14 @@
 
 -spec init() -> ok.
 init() ->
-    ets:new(?ETS, [public, named_table, set]),
+    Opts = [
+        public,
+        named_table,
+        set,
+        {write_concurrency, true},
+        {read_concurrency, true}
+    ],
+    _ = ets:new(?ETS, Opts),
     ok = init_from_db(),
     ok.
 
@@ -49,7 +52,7 @@ get(DeviceID) ->
 
 -spec get_by_devaddr(binary()) -> [router_device:device()].
 get_by_devaddr(DevAddr) ->
-    MS = ets:fun2ms(fun({_, D}) when D#device_v5.devaddr == DevAddr -> D end),
+    MS = ets:fun2ms(fun({_, D}) when D#device_v6.devaddr == DevAddr -> D end),
     ets:select(?ETS, MS).
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.
@@ -77,6 +80,8 @@ init_from_db() ->
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
+
+-include_lib("eunit/include/eunit.hrl").
 
 init_from_db_test() ->
     Dir = test_utils:tmp_dir("init_from_db_test"),

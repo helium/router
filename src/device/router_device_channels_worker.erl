@@ -352,7 +352,8 @@ handle_info(
     case router_console_api:get_channels(Device, self()) of
         {error, _Reason} ->
             _ = erlang:send_after(timer:seconds(1), self(), ?REFRESH_CHANNELS),
-            lager:warning("failed to get channels ~p, retrying in 1s", [_Reason]);
+            lager:warning("failed to get channels ~p, retrying in 1s", [_Reason]),
+            {noreply, State};
         {ok, APIChannels0} ->
             APIChannels1 = lists:foldl(
                 fun(Channel, Acc) ->
@@ -571,7 +572,7 @@ downlink_decode(Payload) ->
 send_join_to_channel(
     #join_cache{
         uuid = UUID,
-        packet_selected = {_Packet0, _PubKeyBin, _Region, PacketTime, HoldTime} = SelectedPacket,
+        packet_selected = {Packet0, _PubKeyBin, _Region, PacketTime, HoldTime} = SelectedPacket,
         packets = CollectedPackets
     },
     Device,
@@ -594,6 +595,7 @@ send_join_to_channel(
         fcnt => 0,
         reported_at => PacketTime,
         hold_time => HoldTime,
+        raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet0)),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspots => lists:map(FormatHotspot, [SelectedPacket | CollectedPackets])
@@ -615,7 +617,8 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         fun(A, B) -> A#data_cache.time < B#data_cache.time end,
         maps:values(CachedData0)
     ),
-    [#data_cache{frame = Frame, time = Time, uuid = UUID, replay = Replay} | _] = CachedData1,
+    [#data_cache{frame = Frame, time = Time, uuid = UUID, replay = Replay, packet = Packet} | _] =
+        CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     %% No touchy, this is set in STONE
     Map = #{
@@ -631,6 +634,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
         reported_at => Time,
         payload => Payload,
         payload_size => erlang:byte_size(Payload),
+        raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet)),
         port =>
             case Port of
                 undefined -> 0;

@@ -919,6 +919,7 @@ send_to_device_worker(
                 {error, _Reason} = Error ->
                     Error;
                 {ok, WorkerPid} ->
+                    % TODO: I dont think we should be doing this? let the device worker decide
                     case
                         router_device_worker:accept_uplink(
                             WorkerPid,
@@ -1026,9 +1027,8 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
 ) -> [router_device:device()].
 get_and_sort_devices(DevAddr, PubKeyBin, Chain) ->
     {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
-    {Time2, Devices1} = timer:tc(router_device_devaddr, sort_devices, [Devices0, PubKeyBin, Chain]),
     router_metrics:function_observe('router_device_cache:get_by_devaddr', Time1),
-    router_metrics:function_observe('router_device_devaddr:sort_devices', Time2),
+    Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin, Chain),
     Devices1.
 
 -spec get_device_by_mic(binary(), binary(), binary(), [router_device:device()]) ->
@@ -1166,27 +1166,13 @@ handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {ok, _}, Time) ->
     ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
 handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
-handle_offer_metrics(#routing_information_pb{data = {devaddr, DevAddr}}, {ok, _}, Time) ->
-    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time),
-    ok =
-        case router_device_devaddr:net_id(DevAddr) of
-            {ok, NetID} ->
-                router_metrics:network_id_inc(erlang:integer_to_list(NetID));
-            {error, _} ->
-                router_metrics:network_id_inc("invalid_net_id")
-        end;
+handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {ok, _}, Time) ->
+    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
 handle_offer_metrics(
-    #routing_information_pb{data = {devaddr, DevAddr}},
+    #routing_information_pb{data = {devaddr, _}},
     {error, ?DEVADDR_NOT_IN_SUBNET},
     Time
 ) ->
-    ok =
-        case router_device_devaddr:net_id(DevAddr) of
-            {ok, NetID} ->
-                router_metrics:network_id_inc(erlang:integer_to_list(NetID));
-            {error, _} ->
-                router_metrics:network_id_inc("invalid_net_id")
-        end,
     ok = router_metrics:routing_offer_observe(packet, rejected, ?DEVADDR_NOT_IN_SUBNET, Time);
 handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {error, Reason}, Time) ->
     ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).

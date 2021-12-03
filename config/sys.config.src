@@ -22,7 +22,8 @@
         {max_inbound_connections, 12},
         {outbound_gossip_connections, 4},
         {sc_packet_handler, router_device_routing},
-        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"}
+        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
+        {sc_sup_type, server}
     ]},
     {router, [
         {max_v8_context, 1000},
@@ -119,7 +120,11 @@
             {{lager_file_backend, "router.log"}, [{module, router_device_routing}], info},
             {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], info},
             {{lager_file_backend, "state_channel.log"},
-                [{module, blockchain_state_channels_worker}], info},
+                [{module, blockchain_state_channels_db_owner}], info},
+            {{lager_file_backend, "state_channel.log"}, [{module, blockchain_state_channels_cache}],
+                info},
+            {{lager_file_backend, "state_channel.log"},
+                [{module, blockchain_state_channels_server}], info},
             {{lager_file_backend, "state_channel.log"},
                 [{module, blockchain_state_channels_worker}], info},
             {{lager_file_backend, "blockchain.log"}, [{module, blockchain_txn}], debug}

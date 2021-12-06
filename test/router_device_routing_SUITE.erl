@@ -9,7 +9,8 @@
 -export([
     bad_fcnt_test/1,
     multi_buy_test/1,
-    packet_hash_cache_test/1
+    packet_hash_cache_test/1,
+    false_positive_bloom_filter_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -39,7 +40,8 @@ all() ->
     [
         bad_fcnt_test,
         multi_buy_test,
-        packet_hash_cache_test
+        packet_hash_cache_test,
+        false_positive_bloom_filter_test
     ].
 
 %%--------------------------------------------------------------------
@@ -507,6 +509,58 @@ bad_fcnt_test(Config) ->
     end),
 
     ok.
+
+%% See original definitions of macros in ../src/device/router_device_routing.erl
+%% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
+-define(BF_UNIQ_CLIENTS_MAX, 10000).
+-define(BF_FALSE_POS_RATE, 1.0e-6).
+-define(BF_BITMAP_SIZE, 300000).
+-define(BF_FILTERS_MAX, 14).
+-define(BF_ROTATE_AFTER, 1000).
+false_positive_bloom_filter_test(_Config) ->
+    Filename = filename:join([filename:dirname(?FILE), "payloads.txt"]),
+    case file:read_file(Filename) of
+        {error, enoent} ->
+            %% This test should use real data from Staging or Prod for
+            %% an *occasional* sanity-check; however, we don't want
+            %% real payloads committed into the code repo.
+
+            %% Instead, sample and create the data file as needed:
+            %% $( grep multi.buy router.log > multi-buy.log )
+            %% $( sed 's/^.*[:] [{]/{/' < multi-buy.log |
+            %%    grep '\\"payload\\":\\"[^\\]' |
+            %%    sed 's/^.*\\"payload\\":\\"\([^"]*\)\\".*$/\1/' >
+            %%    payloads.txt )
+            {skip, optional_payloads_file_not_created};
+        {error, _} = Error ->
+            {failed, Error};
+        {ok, Blob} ->
+            Payloads = binary:split(Blob, [<<"\n">>, <<"\r\n">>], [global]),
+            TotalCount = length(Payloads),
+            ?assert(TotalCount > 1500),
+            Threshold = TotalCount * ?BF_FALSE_POS_RATE,
+            {ok, BFRef} = bloom:new_forgetful(
+                ?BF_BITMAP_SIZE,
+                ?BF_UNIQ_CLIENTS_MAX,
+                ?BF_FILTERS_MAX,
+                ?BF_ROTATE_AFTER
+            ),
+            L = lists:foldl(
+                fun(I, Acc) ->
+                    Packet = blockchain_helium_packet_v1:new({devaddr, 1}, I),
+                    K = blockchain_helium_packet_v1:packet_hash(Packet),
+                    case bloom:set(BFRef, K) of
+                        true -> [I | Acc];
+                        false -> Acc
+                    end
+                end,
+                [],
+                Payloads
+            ),
+            Failures = length(L),
+            ?assert(Failures < Threshold, {Failures, "Less Than", Threshold}),
+            ok
+    end.
 
 %% ------------------------------------------------------------------
 %% Helper functions

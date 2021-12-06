@@ -17,6 +17,7 @@ Steps to reproduce the behavior.
 A clear and concise description of what you expected to happen.
 
 **Device Info (please complete the following information):**
+ - Environment (Production, Staging) 
  - Console Device ID
  - Device dev eui / app eui
  - How often is device sending data

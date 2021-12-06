@@ -109,8 +109,8 @@
     4 => 222,
     5 => 222,
     6 => 222,
-    7 => 222,
-    %% 8..15 => undefined,
+    7 => 222
+    %% 8..15 => undefined
 }).
 
 %% ------------------------------------------------------------------
@@ -226,7 +226,7 @@ max_payload_size(Region, DR) ->
         'AS923' -> maps:get(DR, ?AS923_PAYLOAD_SIZE_MAP, ?AS923_MAX_DOWNLINK_SIZE);
         'CN470' -> maps:get(DR, ?CN470_PAYLOAD_SIZE_MAP, ?CN470_MAX_DOWNLINK_SIZE);
         'AU915' -> maps:get(DR, ?AU915_PAYLOAD_SIZE_MAP, ?AU915_MAX_DOWNLINK_SIZE);
-	'EU868' -> maps:get(DR, ?EU868_PAYLOAD_SIZE_MAP, ?EU868_MAX_DOWNLINK_SIZE);
+        'EU868' -> maps:get(DR, ?EU868_PAYLOAD_SIZE_MAP, ?EU868_MAX_DOWNLINK_SIZE);
         _ -> maps:get(DR, ?US915_PAYLOAD_SIZE_MAP, ?US915_MAX_DOWNLINK_SIZE)
     end.
 

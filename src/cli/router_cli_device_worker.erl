@@ -45,7 +45,7 @@ device_usage() ->
         [
             "Device Commands\n\n",
             "  device                                       - this message\n",
-            "  device all                                   - All devices in rocksdb\n",
+            "  device all                                   - All devices in Console\n",
             "  device --id=<id>                             - Info for a device\n",
             "  device trace --id=<id> [--stop]              - Tracing device's log\n",
             "  device trace stop --id=<id>                  - Stop tracing device's log\n",

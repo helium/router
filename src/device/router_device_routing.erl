@@ -88,7 +88,13 @@
 
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
--define(RX2_WINDOW, timer:seconds(2)).
+%% From LoRaWAN Link Layer 1.0.4 Spec, §5.7 Setting Delay between TX and RX:
+%% "RX2 always opens 1s after RX1," and
+%% from §3.3.3 Second Receive Window Channel, Data Rate, And Start:
+%% "and SHALL be open no longer than RECEIVE_DELAY2 seconds" (aka RX2_DELAY).
+%% But see also §6.2.6 Join-Accept Frame
+%% for using JOIN_ACCEPT_DELAY1 and JOIN_ACCEPT_DELAY2 instead.
+-define(RX2_WINDOW, lorawan_mac_region:rx2_window()).
 
 %% Devaddr validate
 -define(DEVADDR_MALFORMED, devaddr_malformed).
@@ -467,8 +473,8 @@ packet_offer_(Offer, Pid, Chain) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, DeviceID, PackeTime} ->
-                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                        {ok, DeviceID, PacketTime} ->
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(

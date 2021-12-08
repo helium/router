@@ -14,6 +14,7 @@
     join1_window/3,
     join2_window/2,
     rx1_window/4,
+    rx2_window/0,
     rx2_window/2,
     rx1_or_rx2_window/4,
     set_channels/3,
@@ -145,6 +146,10 @@ rx1_window(Region, _Delay, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
     tx_window(?FUNCTION_NAME, RxQ, TxQ).
+
+-spec rx2_window() -> non_neg_integer().
+rx2_window() ->
+    get_window(rx2_window).
 
 -spec rx2_window(atom(), #rxq{}) -> #txq{}.
 rx2_window(Region, RxQ) ->
@@ -457,11 +462,20 @@ tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
--spec get_window(atom()) -> number().
+%% Within router code, "window" implies "DELAY" from LoRaWAN Spec.
+%% See LoRaWAN 1.0.3 Regional Params, section 2.3 Default Settings for:
+%% JOIN_ACCEPT_DELAY1, JOIN_ACCEPT_DELAY2, RECEIVE_DELAY1, RECEIVE_DELAY2
+-spec get_window(atom()) -> non_neg_integer().
 get_window(join1_window) -> 5000000;
 get_window(join2_window) -> 6000000;
-get_window(rx1_window) -> 1000000;
-get_window(rx2_window) -> 2000000.
+%% See also LoRaWAN 1.0.4 Link Layer Spec, §3.3 Receive Windows for RX1, RX2.
+%% See LoRaWAN Regional Parameters 1.0.3, §1.3 Regional Params for ranges
+%% and §2.3 Default Settings.
+%% Defaults may be sufficient when router deployed within same Region, but
+%% since router is regionless, add 1 second for internet latency tolerance;
+%% e.g., AU->US.
+get_window(rx1_window) -> 2000000;
+get_window(rx2_window) -> 3000000.
 
 -spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
 tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->

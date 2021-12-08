@@ -88,7 +88,7 @@ allocate(Config) ->
     SubnetAddrs = lists:foldl(
         fun(_I, Acc) ->
             {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
-            NetIDList = blockchain_ledger_v1:get_netids(Ledger),
+            {ok, NetIDList} = blockchain_ledger_v1:get_netids(Ledger),
             SubnetAddr = lorawan:subnet_from_devaddr(DevAddr, NetIDList),
             [SubnetAddr | Acc]
         end,

@@ -163,7 +163,7 @@ handle_call(
                 end
         end,
     Ledger = blockchain:ledger(Chain),
-    NetIDList = blockchain_ledger_v1:get_netids(Ledger),
+    {ok, NetIDList} = blockchain_ledger_v1:get_netids(Ledger),
     DevAddr = lorawan:devaddr_from_subnet(DevaddrBase, NetIDList),
     Reply = {ok, DevAddr},
     {reply, Reply, State#state{devaddr_used = maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};

@@ -1,6 +1,6 @@
 # Device CLI Commands
 
-Router maintains a databse in Rocks of Devices, but the paired Console instance should always be viewed as the source of truth for a Device.
+Router maintains a database in RocksDB of Devices, but the paired Console instance should always be viewed as the source of truth for a Device.
 
 > XOR Filter commands have been relocated under `router filter`.
 

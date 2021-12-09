@@ -1877,7 +1877,9 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             false ->
                 FOpts1
         end,
-    {ChannelsCorrected orelse ChannelCorrection, FOpts2}.
+    Rx2Delay = lorawan_mac_region:rx2_window(),
+    FOpts3 = [{rx_timing_setup_req, Rx2Delay} | FOpts2],
+    {ChannelsCorrected orelse ChannelCorrection, FOpts3}.
 
 %% TODO: with ADR implemented, this function, or at least its name,
 %%       doesn't make much sense anymore; it may return true for any

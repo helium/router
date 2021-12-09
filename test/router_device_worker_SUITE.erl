@@ -286,6 +286,10 @@ device_worker_late_packet_double_charge_test(Config) ->
                     <<"data_rate">> => 2,
                     <<"number_of_transmissions">> => 0,
                     <<"tx_power">> => 0
+                },
+                #{
+                    <<"command">> => <<"rx_timing_setup_req">>,
+                    <<"delay">> => fun erlang:is_integer/1
                 }
             ]
         }

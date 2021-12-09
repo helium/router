@@ -1067,6 +1067,10 @@ us915_link_adr_req_timing_test(Config) ->
                         <<"channel_mask">> => fun erlang:is_integer/1,
                         <<"channel_mask_control">> => fun erlang:is_integer/1,
                         <<"number_of_transmissions">> => fun erlang:is_integer/1
+                    },
+                    #{
+                        <<"command">> => <<"rx_timing_setup_req">>,
+                        <<"delay">> => fun erlang:is_integer/1
                     }
                 ]
             }
@@ -1452,6 +1456,10 @@ adr_downlink_timing_test(Config) ->
                         <<"data_rate">> => 3,
                         <<"number_of_transmissions">> => 0,
                         <<"tx_power">> => 7
+                    },
+                    #{
+                        <<"command">> => <<"rx_timing_setup_req">>,
+                        <<"delay">> => fun erlang:is_integer/1
                     }
                 ]
             }

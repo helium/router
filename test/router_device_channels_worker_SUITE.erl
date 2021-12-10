@@ -12,7 +12,9 @@
     late_packet_test/1,
     join_sent_to_integration_test/1,
     join_sent_to_integration_with_decoder_test/1,
-    downlink_clear_queue_test/1
+    downlink_clear_queue_test/1,
+    remove_channel_backoff_when_channel_changed_test/1,
+    remove_channel_backoff_when_all_channels_removed_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -60,7 +62,9 @@ all() ->
         late_packet_test,
         join_sent_to_integration_test,
         join_sent_to_integration_with_decoder_test,
-        downlink_clear_queue_test
+        downlink_clear_queue_test,
+        remove_channel_backoff_when_channel_changed_test,
+        remove_channel_backoff_when_all_channels_removed_test
     ].
 
 %%--------------------------------------------------------------------
@@ -197,6 +201,178 @@ refresh_channels_test(Config) ->
             )
         },
         State3#state.channels
+    ),
+
+    gen_server:stop(DeviceWorkerPid),
+    ok.
+
+remove_channel_backoff_when_channel_changed_test(Config) ->
+    BackoffMin = 2000,
+    BackoffMax = 5000,
+    application:set_env(router, channels_backoff_min, BackoffMin),
+    application:set_env(router, channels_backoff_max, BackoffMax),
+
+    %% NOTE: MQTT harness is not setup in this test because we want to work with
+    %% an channel that fails to start.
+    Channel = ?CONSOLE_AZURE_CHANNEL,
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {no_channel, false}),
+    ets:insert(Tab, {channels, [Channel]}),
+
+    %% Starting worker with 1 Azure channel
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
+
+    %% Check that HTTP 1 is in there
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    ChannelName = maps:get(<<"id">>, Channel),
+    {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
+    ?assertEqual(BackoffMin * 2, backoff:get(Backoff0)),
+
+    %% Console gets a message about the first failure
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => fun erlang:is_binary/1,
+
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => DeviceID,
+        <<"data">> => #{
+            <<"integration">> => #{
+                <<"id">> => maps:get(<<"id">>, Channel),
+                <<"name">> => maps:get(<<"name">>, Channel),
+                <<"status">> => <<"error">>
+            }
+        }
+    }),
+
+    %% NOTE: We get this second message because a device worker refreshes
+    %% channels _and_ a channels worker refreshes its own channels.
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => fun erlang:is_binary/1,
+
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => DeviceID,
+        <<"data">> => #{
+            <<"integration">> => #{
+                <<"id">> => maps:get(<<"id">>, Channel),
+                <<"name">> => maps:get(<<"name">>, Channel),
+                <<"status">> => <<"error">>
+            }
+        }
+    }),
+
+    %% ===================================================================
+    %% Change the channels for the device.
+    ets:insert(Tab, {channels, [?CONSOLE_HTTP_CHANNEL]}),
+    test_utils:force_refresh_channels(DeviceID),
+
+    %% The bad channel should not try to connect again.
+    ?assertException(
+        exit,
+        {test_case_failed, _Bin},
+        test_utils:wait_for_console_event(<<"misc">>, #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"misc">>,
+            <<"sub_category">> => <<"misc_integration_error">>,
+            <<"description">> => fun erlang:is_binary/1,
+
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => DeviceID,
+            <<"data">> => fun erlang:is_map/1
+        })
+    ),
+
+    gen_server:stop(DeviceWorkerPid),
+    ok.
+
+remove_channel_backoff_when_all_channels_removed_test(Config) ->
+    BackoffMin = 2000,
+    BackoffMax = 5000,
+    application:set_env(router, channels_backoff_min, BackoffMin),
+    application:set_env(router, channels_backoff_max, BackoffMax),
+
+    %% NOTE: MQTT harness is not setup in this test because we want to work with
+    %% an channel that fails to start.
+    Channel = ?CONSOLE_AZURE_CHANNEL,
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {no_channel, false}),
+    ets:insert(Tab, {channels, [Channel]}),
+
+    %% Starting worker with 1 Azure channel
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
+
+    %% Check that HTTP 1 is in there
+    State0 = sys:get_state(DeviceChannelsWorkerPid),
+    ChannelName = maps:get(<<"id">>, Channel),
+    {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
+    ?assertEqual(BackoffMin * 2, backoff:get(Backoff0)),
+
+    %% Console gets a message about the first failure
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => fun erlang:is_binary/1,
+
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => DeviceID,
+        <<"data">> => #{
+            <<"integration">> => #{
+                <<"id">> => maps:get(<<"id">>, Channel),
+                <<"name">> => maps:get(<<"name">>, Channel),
+                <<"status">> => <<"error">>
+            }
+        }
+    }),
+
+    %% NOTE: We get this second message because a device worker refreshes
+    %% channels _and_ a channels worker refreshes its own channels.
+    test_utils:wait_for_console_event(<<"misc">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"misc">>,
+        <<"sub_category">> => <<"misc_integration_error">>,
+        <<"description">> => fun erlang:is_binary/1,
+
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => DeviceID,
+        <<"data">> => #{
+            <<"integration">> => #{
+                <<"id">> => maps:get(<<"id">>, Channel),
+                <<"name">> => maps:get(<<"name">>, Channel),
+                <<"status">> => <<"error">>
+            }
+        }
+    }),
+
+    %% ===================================================================
+    %% Remove all channels for this device
+    ets:insert(Tab, {channels, []}),
+    test_utils:force_refresh_channels(DeviceID),
+
+    %% The bad channel should not try to connect again.
+    ?assertException(
+        exit,
+        {test_case_failed, _Bin},
+        test_utils:wait_for_console_event(<<"misc">>, #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"misc">>,
+            <<"sub_category">> => <<"misc_integration_error">>,
+            <<"description">> => fun erlang:is_binary/1,
+
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => DeviceID,
+            <<"data">> => fun erlang:is_map/1
+        })
     ),
 
     gen_server:stop(DeviceWorkerPid),

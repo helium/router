@@ -2,7 +2,7 @@
 
 Router only cares about organizations from Console insofar as it can use DC for a device.
 
-Similar to Devices, Console is the source of truth for Organizations DC balance.
+Similar to Devices, Console is the source of truth for an organization's DC balance.
 
 > **NOTE: Commands in these docs assume an alias for `router`.**
 
@@ -34,4 +34,4 @@ Single listing of `dc_balance` and `nonce` for `<org_id>`.
 router organization update <org_id> -b <balance> [--commit]
 ```
 
-A way to update an organizations DC balance in Console from Router.
+A way to update an organization's DC balance in Console from Router.

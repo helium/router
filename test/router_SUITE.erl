@@ -2267,6 +2267,26 @@ adr_test(Config) ->
         }
     }),
 
+    %% Receive response containing RXTimingSetupAns
+    receive
+        {client_data, _, DataRX2} ->
+            DecodedRX2 =
+                {response, ResponseRX2} = blockchain_state_channel_message_v1:decode(DataRX2),
+            {blockchain_state_channel_response_v1_pb, true, ContainsRX2} = ResponseRX2,
+            case blockchain_helium_packet_v1:rx2_window(ContainsRX2) of
+                Window when is_record(Window, window_pb) ->
+                    case blockchain_helium_packet_v1:timestamp(Window) of
+                        N when is_integer(N) andalso (N > 2000000) ->
+                            ok;
+                        _ ->
+                            ct:fail("expected_window ~p", [Window])
+                    end;
+                _ ->
+                    ct:fail("unexpected_reply ~p", [DecodedRX2])
+            end
+    after 2000 -> ok
+    end,
+
     receive
         {client_data, _, _Data3} ->
             Decoded = {response, Response} = blockchain_state_channel_message_v1:decode(_Data3),
@@ -2426,7 +2446,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
-            <<"fcnt">> => 2,
+            <<"fcnt">> => 3,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
@@ -2454,7 +2474,7 @@ adr_test(Config) ->
         0,
         1,
         undefined,
-        2
+        3
     ),
 
     %% Router requests device to set ADR parameters.
@@ -2487,6 +2507,13 @@ parse_fopts(FOpts) ->
                         <<"rx1_offset_ack">> => RX1DROffsetACK,
                         <<"rx2_data_rate_ack">> => RX2DataRateACK,
                         <<"channel_ack">> => ChannelACK
+                    };
+                {rx_timing_setup_ans} ->
+                    #{
+                        %% LoRaWAN Link Layer 1.0.4, §5.7 Setting delay between TX and RX
+                        %% An end-device SHALL answer RXTimingSetupReq
+                        %% with RXTimingSetupAns, which has no payload.
+                        <<"command">> => <<"rx_timing_setup_ans">>
                     };
                 {dev_status_ans, Battery, Margin} ->
                     #{

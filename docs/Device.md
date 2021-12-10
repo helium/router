@@ -23,12 +23,16 @@ Queries Console to report all devices.
 ### Info
 
 ```sh
-router device --id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx [--stop]
+router device --id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
 Simple information for a device. `<id>` is the device ID from Console, not the `app_eui` or `dev_eui`.
 
 ### Tracing
+
+```sh
+router device trace --id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx [--stop]
+```
 
 Tracing a device will set all logs related to a device to debug level for `240 minutes`, writing to the file `{BASE_DIR}/traces/{first-5-chars-of-device-id}.log`.
 
@@ -40,7 +44,7 @@ Information about the device considered for logging
 
 > **NOTE:** `devaddr` may result in some logs from other devices in places where the device cannot be accurately determined.
 
-To stop the trace before the `240 minutes` is over, pass the `--stop` option.
+Pass the `--stop` option to stop the trace before the `240 minutes` is over.
 
 Traces will not survive through restart.
 

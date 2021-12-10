@@ -260,11 +260,11 @@ c_text(F, Args) -> c_text(io_lib:format(F, Args)).
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].
 
--spec is_device_running(router_device:device()) -> boolean().
+-spec is_device_running(router_device:device()) -> false | pid().
 is_device_running(D) ->
     case router_devices_sup:lookup_device_worker(router_device:id(D)) of
         {error, not_found} -> false;
-        {ok, _} -> true
+        {ok, P} -> P
     end.
 
 -spec format_device_for_table(router_device:device()) -> proplists:proplist().
@@ -281,14 +281,41 @@ format_device_for_table(D) ->
 
 -spec format_device_for_list(router_device:device()) -> [string()].
 format_device_for_list(D) ->
-    Fields = [id, name, app_eui, dev_eui, devaddr, fcnt, fcntdown, queue, metadata, is_active],
-    Longest = lists:max([length(atom_to_list(X)) || X <- Fields, is_atom(X)]),
+    Fields = [
+        id,
+        name,
+        {app_eui, lorawan_utils:binary_to_hex(router_device:app_eui(D))},
+        {dev_eui, lorawan_utils:binary_to_hex(router_device:dev_eui(D))},
+        {devaddr, lorawan_utils:binary_to_hex(router_device:devaddr(D))},
+        fcnt,
+        fcntdown,
+        queue,
+        metadata,
+        is_active,
+        {is_running, is_device_running(D)}
+    ],
+    Longest = lists:max(
+        lists:map(
+            fun
+                ({X, _}) -> length(atom_to_list(X));
+                (X) -> length(atom_to_list(X))
+            end,
+            Fields
+        )
+    ),
+
     lists:map(
-        fun(Field) ->
-            io_lib:format("~s :: ~p~n", [
-                string:pad(atom_to_list(Field), Longest, trailing),
-                erlang:apply(router_device, Field, [D])
-            ])
+        fun
+            ({Field, Value}) ->
+                io_lib:format("~s :: ~p~n", [
+                    string:pad(atom_to_list(Field), Longest, trailing),
+                    Value
+                ]);
+            (Field) ->
+                io_lib:format("~s :: ~p~n", [
+                    string:pad(atom_to_list(Field), Longest, trailing),
+                    erlang:apply(router_device, Field, [D])
+                ])
         end,
         Fields
     ).

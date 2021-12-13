@@ -5,6 +5,7 @@
 -export([register_cli/0]).
 
 -define(USAGE, fun(_, _, _) -> usage end).
+-define(ID_FLAG, {id, [{longname, "id"}]}).
 
 -include("router_device_worker.hrl").
 
@@ -15,13 +16,23 @@ register_cli() ->
 register_all_usage() ->
     lists:foreach(
         fun(Args) -> apply(clique, register_usage, Args) end,
-        [device_usage()]
+        [
+            device_usage(),
+            device_trace_usage(),
+            device_queue_usage(),
+            device_prune_usage()
+        ]
     ).
 
 register_all_cmds() ->
     lists:foreach(
         fun(Cmds) -> [apply(clique, register_command, Cmd) || Cmd <- Cmds] end,
-        [device_cmd()]
+        [
+            device_cmd(),
+            device_trace_cmd(),
+            device_queue_cmd(),
+            device_prune_cmd()
+        ]
     ).
 
 %%--------------------------------------------------------------------
@@ -32,60 +43,120 @@ device_usage() ->
     [
         ["device"],
         [
-            "\n\n",
-            "  device                                        - this message\n",
-            "  device all                                    - All devices in rocksdb\n",
-            "  device --id=<id>                              - Info for a device\n",
-            "  device trace --id=<id> [--stop]               - Tracing device's log\n",
-            "  device trace stop --id=<id>                   - Stop tracing device's log\n",
-            "  device queue --id=<id>                        - Queue of messages for device\n",
-            "  device queue clear --id=<id>                  - Empties the devices queue\n",
-            "  device queue add --id=<id> [see Msg Options]  - Adds Msg to end of device queue\n\n",
-            "  device prune --commit                         - Removes Devices from Rocks that don't exist in Console",
-            "Msg Options:\n\n",
+            "Device Commands\n\n",
+            "  device                                       - this message\n",
+            "  device all                                   - All devices in Console\n",
+            "  device --id=<id>                             - Info for a device\n",
+            "  device trace --id=<id> [--stop]              - Tracing device's log\n",
+            "  device trace stop --id=<id>                  - Stop tracing device's log\n",
+            "  device queue --id=<id>                       - Queue of messages for device\n",
+            "  device queue clear --id=<id>                 - Empties the devices queue\n",
+            "  device queue add --id=<id> [see Msg Options] - Adds Msg to end of device queue\n",
+            "  device prune --commit                        - Removes Devices from Rocks that don't exist in Console\n",
+            "\nNotes\n",
+            "  device xor                                   - Moved to 'filter' command"
+        ]
+    ].
+
+device_cmd() ->
+    [
+        [["device"], [], [], prepend_device_id(fun device_info/4)],
+        [["device", "all"], [], [], fun device_list_all/3]
+    ].
+
+%%--------------------------------------------------------------------
+%% device trace
+%%--------------------------------------------------------------------
+
+device_trace_usage() ->
+    [
+        ["device", "trace"],
+        [
+            "Device Trace Commands\n\n",
+            "  trace                    - this message",
+            "  trace --id=<id> [--stop] - Start/Stop tracing device to log file (default: start)\n",
+            "\nNotes\n",
+            "  Trace will deactivate after 240 minutes\n",
+            "  <id> of device will be converted to binary, DO NOT wrap <<>>\n",
+            "  Logs will be stored under BASE_DIR/traces/{first 5 of <id>}.log\n"
+        ]
+    ].
+
+device_trace_cmd() ->
+    [
+        [
+            ["trace"],
+            [],
+            [?ID_FLAG, {stop, [{longname, "stop"}, {datatype, boolean}]}],
+            prepend_device_id(fun trace/4)
+        ]
+    ].
+
+%%--------------------------------------------------------------------
+%% device queue
+%%--------------------------------------------------------------------
+
+device_queue_usage() ->
+    [
+        ["device", "queue"],
+        [
+            "Device Queue Commands\n\n",
+            "  queue                                 - this message\n",
+            "  queue --id=<id>                       - List Devices queue\n",
+            "  queue clear --id=<id>                 - Empty Device queue\n",
+            "  queue add --id=<id> [see Msg Options] - Queue downlink for device\n",
+            "\nMsg Options:\n",
             "  --id=<id>              - ID of Device, do not wrap, will be converted to binary\n",
-            "  --payload=<content>    - Content for message " ++
-                "[default: \"Test cli downlink message\"]\n",
+            "  --payload=<content>    - Content for message [default: \"Test cli downlink message\"]\n",
             "  --ack                  - Require confirmation from the device [default: false]\n",
-            "  --channel-name=<name>  - Channel name to show up in console " ++
-                "[default: \"CLI custom channel\"]\n",
+            "  --channel-name=<name>  - Channel name to show up in console [default: \"CLI custom channel\"]\n",
             "  --port                 - Port for frame [default: 1]\n\n"
         ]
     ].
 
-id_flag() ->
-    {id, [{longname, "id"}]}.
-
-device_cmd() ->
+device_queue_cmd() ->
     [
-        [["device"], [], [id_flag()], prepend_device_id(fun device_info/4)],
-        [["device", "all"], [], [], fun device_list_all/3],
         [
-            ["device", "trace"],
+            ["device", "queue"],
             [],
-            [id_flag(), {stop, [{longname, "stop"}, {datatype, boolean}]}],
-            prepend_device_id(fun trace/4)
+            [?ID_FLAG],
+            prepend_device_id(fun device_queue/4)
         ],
-        [["device", "trace", "stop"], [], [id_flag()], prepend_device_id(fun stop_trace/4)],
-        [["device", "queue"], [], [id_flag()], prepend_device_id(fun device_queue/4)],
         [
             ["device", "queue", "clear"],
             [],
-            [id_flag()],
+            [?ID_FLAG],
             prepend_device_id(fun device_queue_clear/4)
         ],
         [
             ["device", "queue", "add"],
             [],
             [
-                id_flag(),
+                ?ID_FLAG,
                 {confirmed, [{longname, "ack"}, {datatype, boolean}]},
                 {port, [{longname, "port"}, {datatype, integer}]},
                 {channel_name, [{longname, "channel-name"}, {datatype, string}]},
                 {payload, [{longname, "payload"}, {datatype, string}]}
             ],
             prepend_device_id(fun device_queue_add_front/4)
-        ],
+        ]
+    ].
+
+%%--------------------------------------------------------------------
+%% device prune
+%%--------------------------------------------------------------------
+
+device_prune_usage() ->
+    [
+        ["device", "prune"],
+        [
+            "Device Prune Commands\n\n",
+            "  prune --commit     - Removes Devices from RocksDB that don't exist in Console\n"
+        ]
+    ].
+
+device_prune_cmd() ->
+    [
         [
             ["device", "prune"],
             [],
@@ -94,14 +165,15 @@ device_cmd() ->
         ]
     ].
 
+%%--------------------------------------------------------------------
+%% Internal Function Definitions
+%%--------------------------------------------------------------------
+
 trace(ID, ["device", "trace"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     erlang:spawn(router_utils, trace, [DeviceID]),
     c_text("Tracing device " ++ ID);
 trace(ID, ["device", "trace"], [], [{id, ID}, {stop, _}]) ->
-    stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]).
-
-stop_trace(ID, ["device", "trace", "stop"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     erlang:spawn(router_utils, stop_trace, [DeviceID]),
     c_text("Stop tracing device " ++ ID).
@@ -226,7 +298,7 @@ device_prune(["device", "prune"], [], Flags) ->
     c_table(Output1).
 
 %%--------------------------------------------------------------------
-%% router_cnonsole_dc_tracker interface
+%% router_console_dc_tracker interface
 %%--------------------------------------------------------------------
 
 -spec lookup(binary()) -> {ok, router_device:device()}.

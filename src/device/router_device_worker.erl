@@ -929,7 +929,7 @@ handle_info(
         freq = TxFreq
     } = lorawan_mac_region:join1_window(
         Region,
-        0,
+        maps:get(rx_delay, router_device:metadata(Device0), 0),
         packet_to_rxq(Packet)
     ),
     Rx2 = join2_from_packet(Region, Packet),
@@ -1282,9 +1282,15 @@ craft_join_reply(
             {'US915', false} -> <<>>;
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
+    Metadata = router_device:metadata(Device),
+    RxDelaySeconds =
+        case maps:get(rx_delay, Metadata, default) of
+            default -> <<?RX_DELAY:8/integer-unsigned>>;
+            Seconds -> <<0:4, Seconds:4/integer-unsigned>>
+        end,
     ReplyPayload =
-        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
-            ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
+        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary, RxDelaySeconds/binary,
+            CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(
         aes_ecb,
@@ -1650,7 +1656,7 @@ handle_frame_timeout(
                 freq = TxFreq
             } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
-                0,
+                maps:get(rx_delay, router_device:metadata(Device0), 0),
                 0,
                 packet_to_rxq(Packet0)
             ),
@@ -1749,7 +1755,7 @@ handle_frame_timeout(
         freq = TxFreq
     } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
-        0,
+        maps:get(rx_delay, router_device:metadata(Device0), 0),
         0,
         packet_to_rxq(Packet0)
     ),

@@ -141,11 +141,11 @@
 %% Region Wrapped Receive Window Functions
 %% ------------------------------------------------------------------
 
--spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
-join1_window(Region, _Delay, RxQ) ->
+-spec join1_window(atom(), non_neg_integer(), #rxq{}) -> #txq{}.
+join1_window(Region, DelaySeconds, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, 0),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?FUNCTION_NAME, RxQ, TxQ, DelaySeconds).
 
 -spec join2_window(atom(), #rxq{}) -> #txq{}.
 join2_window(Region, RxQ) ->
@@ -154,10 +154,10 @@ join2_window(Region, RxQ) ->
     tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
-rx1_window(Region, _Delay, Offset, RxQ) ->
+rx1_window(Region, DelaySeconds, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?FUNCTION_NAME, RxQ, TxQ, DelaySeconds).
 
 -spec rx2_window(atom(), #rxq{}) -> #txq{}.
 rx2_window(Region, RxQ) ->
@@ -165,7 +165,7 @@ rx2_window(Region, RxQ) ->
     TxQ = rx2_rf(TopLevelRegion, RxQ),
     tx_window(?FUNCTION_NAME, RxQ, TxQ).
 
--spec rx1_or_rx2_window(atom(), number(), number(), #rxq{}) -> #txq{}.
+-spec rx1_or_rx2_window(atom(), non_neg_integer(), number(), #rxq{}) -> #txq{}.
 rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     case TopLevelRegion of
@@ -471,7 +471,7 @@ tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
--spec get_window(atom()) -> number().
+-spec get_window(atom()) -> non_neg_integer().
 get_window(join1_window) -> 5000000;
 get_window(join2_window) -> 6000000;
 get_window(rx1_window) -> 1000000;
@@ -479,9 +479,20 @@ get_window(rx2_window) -> 2000000.
 
 -spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
 tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
+    tx_window(Window, #rxq{tmms = Stamp}, TxQ, 0).
+
+-spec tx_window(atom(), #rxq{}, #txq{}, non_neg_integer()) -> #txq{}.
+tx_window(Window, #rxq{tmms = Stamp}, TxQ, RxDelaySeconds) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
-    %% TODO handle rx delay here
-    Delay = get_window(Window),
+    Delay =
+        case RxDelaySeconds of
+            %% LoRaWAN Link Layer v1.0.4 spec,
+            %% Section 5.7 Setting Delay between TX and RX, Table 45.
+            N when N < 2 ->
+                get_window(Window);
+            N ->
+                get_window(Window) + N * 1000000
+        end,
     TxQ#txq{time = Stamp + Delay}.
 
 %% ------------------------------------------------------------------

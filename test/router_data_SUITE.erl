@@ -115,7 +115,8 @@ data_test_1(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,
@@ -252,7 +253,8 @@ data_test_2(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,
@@ -388,7 +390,8 @@ data_test_3(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,

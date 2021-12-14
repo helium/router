@@ -260,7 +260,8 @@ lw_join_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
         <<"downlink_url">> => fun erlang:is_binary/1,
@@ -427,7 +428,8 @@ lw_join_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
         <<"downlink_url">> => fun erlang:is_binary/1,

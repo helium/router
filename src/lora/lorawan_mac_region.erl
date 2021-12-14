@@ -484,6 +484,12 @@ tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
 %% LoRaWAN Link Layer v1.0.4 spec, Section 5.7 Setting Delay between TX and RX,
 %% Table 45 and "RX2 always opens 1s after RX1."
 -spec tx_window(atom(), #rxq{}, #txq{}, number()) -> #txq{}.
+tx_window(join1_window, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(join1_window),
+    TxQ#txq{time = Stamp + Delay};
+tx_window(join2_window, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(join2_window),
+    TxQ#txq{time = Stamp + Delay};
 tx_window(Window, #rxq{tmms = Stamp}, TxQ, RxDelaySeconds) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
     Delay =
@@ -492,8 +498,6 @@ tx_window(Window, #rxq{tmms = Stamp}, TxQ, RxDelaySeconds) when is_integer(Stamp
                 get_window(Window);
             N ->
                 case Window of
-                    join2_window ->
-                        N * 1000000 + 1000000;
                     rx2_window ->
                         N * 1000000 + 1000000;
                     _ ->

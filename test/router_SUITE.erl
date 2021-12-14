@@ -15,7 +15,8 @@
     us915_join_disabled_cf_list_test/1,
     us915_link_adr_req_timing_test/1,
     adr_test/1,
-    adr_downlink_timing_test/1
+    adr_downlink_timing_test/1,
+    rx_delay_join_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -49,7 +50,8 @@ all() ->
         us915_join_disabled_cf_list_test,
         us915_link_adr_req_timing_test,
         adr_test,
-        adr_downlink_timing_test
+        adr_downlink_timing_test,
+        rx_delay_join_test
     ].
 
 %%--------------------------------------------------------------------
@@ -241,7 +243,8 @@ dupes_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -546,7 +549,8 @@ dupes2_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1581,7 +1585,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1770,7 +1775,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1957,7 +1963,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2152,7 +2159,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 3,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2301,7 +2309,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 4,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2454,6 +2463,99 @@ adr_test(Config) ->
     %% NOTE: this will fail in the future when we implement the
     %%       ability to set `should_adr' in `#router_device.metadata'
     false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
+    ok.
+
+rx_delay_join_test(Config) ->
+    ExpectedRxDelay = 5,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    AppKey = proplists:get_value(app_key, Config),
+    BaseDir = proplists:get_value(base_dir, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {Swarm, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self(), PubKeyBin]
+    ),
+    {ok, _HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packets
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{})},
+    timer:sleep(router_utils:join_timeout()),
+
+    %% Waiting for console repor status sent
+    {ok, _} = test_utils:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"raw_packet">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"name">> => fun erlang:is_binary/1,
+                <<"rssi">> => fun erlang:is_number/1,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => <<"unknown">>,
+                <<"long">> => <<"unknown">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event(<<"join_accept">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_accept">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"name">> => fun erlang:is_binary/1,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => <<"unknown">>,
+                <<"long">> => <<"unknown">>
+            }
+        }
+    }),
+
+    %% Waiting for reply resp form router
+    {_NetID, _DevAddr, _DLSettings, RxDelay, _NwkSKey, _AppSKey, _CFList} = test_utils:wait_for_join_resp(
+        PubKeyBin,
+        AppKey,
+        DevNonce
+    ),
+    ?assertEqual(RxDelay, ExpectedRxDelay),
+
+    libp2p_swarm:stop(Swarm),
     ok.
 
 %% ------------------------------------------------------------------

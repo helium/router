@@ -124,7 +124,7 @@
     % requested after join
     adr_set :: adr_config(),
     max_datr :: 'undefined' | number(),
-    dcycle_set :: integer(),
+    dcycle_set :: undefined | integer(),
     % requested
     rxwin_set :: rxwin_config(),
     request_devstat :: boolean()
@@ -172,7 +172,7 @@
     adr_use :: adr_config(),
     % last request failed
     adr_failed = [] :: [binary()],
-    dcycle_use :: integer(),
+    dcycle_use :: undefined | integer(),
     % used
     rxwin_use :: rxwin_config(),
     % last request failed

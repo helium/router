@@ -929,7 +929,7 @@ handle_info(
         freq = TxFreq
     } = lorawan_mac_region:join1_window(
         Region,
-        maps:get(rx_delay, router_device:metadata(Device0), 0),
+        0,
         packet_to_rxq(Packet)
     ),
     Rx2 = join2_from_packet(Region, Packet),
@@ -1650,13 +1650,20 @@ handle_frame_timeout(
                 },
                 Device0
             ),
+            Delay =
+                case lists:member(rx_timing_setup_ans, Frame#frame.fopts) of
+                    true ->
+                        maps:get(rx_delay, router_device:metadata(Device0), 0);
+                    false ->
+                        0
+                end,
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
             } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
-                maps:get(rx_delay, router_device:metadata(Device0), 0),
+                Delay,
                 0,
                 packet_to_rxq(Packet0)
             ),
@@ -1749,13 +1756,20 @@ handle_frame_timeout(
         },
         Device0
     ),
+    Delay =
+        case lists:member(rx_timing_setup_ans, Frame#frame.fopts) of
+            true ->
+                maps:get(rx_delay, router_device:metadata(Device0), 0);
+            false ->
+                0
+        end,
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
     } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
-        maps:get(rx_delay, router_device:metadata(Device0), 0),
+        Delay,
         0,
         packet_to_rxq(Packet0)
     ),

@@ -22,6 +22,7 @@
     wait_state_channel_message/3,
     wait_state_channel_message/8,
     wait_organizations_burned/1,
+    wait_state_channel_packet/2,
     join_payload/2,
     join_packet/3, join_packet/4,
     join_device/1, join_device/2,
@@ -661,6 +662,44 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
             ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
+
+wait_state_channel_packet(Timeout, _PubKeyBin) ->
+    try
+        receive
+            {client_data, _, Data} ->
+                try
+                    blockchain_state_channel_v1_pb:decode_msg(
+                        Data,
+                        blockchain_state_channel_message_v1_pb
+                    )
+                of
+                    #blockchain_state_channel_message_v1_pb{msg = {response, Resp}} ->
+                        case Resp of
+                            #blockchain_state_channel_response_v1_pb{
+                                accepted = true,
+                                downlink = Packet
+                            } ->
+                                {ok, Packet};
+                            _ ->
+                                {error, Resp}
+                        end;
+                    _Else ->
+                        ct:fail("wait_state_channel_packet with frame wrong message ~p ", [_Else])
+                catch
+                    _E:_R ->
+                        ct:fail("wait_state_channel_packet with frame failed to decode ~p ~p", [
+                            Data,
+                            {_E, _R}
+                        ])
+                end
+        after Timeout -> ct:fail("wait_state_channel_packet with frame timeout")
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            ct:pal("wait_state_channel_packet with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:fail("wait_state_channel_packet with frame failed")
+    end.
+
 
 wait_organizations_burned(Expected) ->
     try

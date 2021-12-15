@@ -16,7 +16,10 @@
     us915_link_adr_req_timing_test/1,
     adr_test/1,
     adr_downlink_timing_test/1,
-    rx_delay_join_test/1
+    rx_delay_join_test/1,
+    rx_delay_downlink_default_test/1,
+    rx_delay_ignored_by_device_downlink_test/1,
+    rx_delay_accepted_by_device_downlink_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -51,7 +54,10 @@ all() ->
         us915_link_adr_req_timing_test,
         adr_test,
         adr_downlink_timing_test,
-        rx_delay_join_test
+        rx_delay_join_test,
+        rx_delay_downlink_default_test,
+        rx_delay_ignored_by_device_downlink_test,
+        rx_delay_accepted_by_device_downlink_test
     ].
 
 %%--------------------------------------------------------------------
@@ -2490,7 +2496,7 @@ rx_delay_join_test(Config) ->
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{})},
     timer:sleep(router_utils:join_timeout()),
 
-    %% Waiting for console repor status sent
+    %% Waiting for console report status sent
     {ok, _} = test_utils:wait_for_console_event(<<"join_request">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"join_request">>,
@@ -2553,9 +2559,176 @@ rx_delay_join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ?assertEqual(RxDelay, ExpectedRxDelay),
+    ?assertEqual(ExpectedRxDelay, RxDelay),
 
     libp2p_swarm:stop(Swarm),
+    ok.
+
+rx_delay_downlink_default_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(DeviceID),
+                router_device:app_s_key(DeviceID),
+                0
+            )},
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp = Got#packet_pb.timestamp,
+    ?assertEqual(1000000, Timestamp),
+    ok.
+
+rx_delay_ignored_by_device_downlink_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(DeviceID),
+                router_device:app_s_key(DeviceID),
+                0,
+                #{}
+                %% Test case should fail if this is uncommented
+                %% #{
+                %%     fopts => [
+                %%         #{
+                %%           <<"command">> => <<"rx_timing_setup_ans">>
+                %%         }
+                %%     ]
+                %% }
+            )},
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp = Got#packet_pb.timestamp,
+    ?assertNotEqual(ExpectedRxDelay * 1000000, Timestamp),
+    ?assertEqual(1000000, Timestamp),
+    ok.
+
+rx_delay_accepted_by_device_downlink_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(DeviceID),
+                router_device:app_s_key(DeviceID),
+                0,
+                #{
+                    fopts => [
+                          rx_timing_setup_ans
+                        %%#{
+                          %% <<"command">> => <<"rx_timing_setup_ans">>
+                        %%}
+                    ]
+                }
+            )},
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp = Got#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp),
     ok.
 
 %% ------------------------------------------------------------------

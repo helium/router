@@ -41,9 +41,9 @@ org_usage() ->
         ["organization"],
         [
             "Organization commands\n\n",
-            "  info all [--less 42] [--more 42]    - Display DC for all Orgs\n",
-            "  info <org_id>                       - Display info for single Org\n",
-            "  update <org_id> -b <balance>        - Refill Org\n\n"
+            "  info all [--less 42] [--more 42]         - Display DC for all Orgs\n",
+            "  info <org_id>                            - Display info for single Org\n",
+            "  update <org_id> -b <balance> [--commit]  - Refill Org\n\n"
         ]
     ].
 

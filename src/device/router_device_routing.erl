@@ -109,10 +109,17 @@
 
 -spec init() -> ok.
 init() ->
-    ets:new(?ETS, [public, named_table, set]),
-    ets:new(?MB_ETS, [public, named_table, set]),
-    ets:new(?BF_ETS, [public, named_table, set]),
-    ets:new(?REPLAY_ETS, [public, named_table, set]),
+    Options = [
+        public,
+        named_table,
+        set,
+        {write_concurrency, true},
+        {read_concurrency, true}
+    ],
+    ets:new(?ETS, Options),
+    ets:new(?MB_ETS, Options),
+    ets:new(?BF_ETS, Options),
+    ets:new(?REPLAY_ETS, Options),
     {ok, BloomJoinRef} = bloom:new_forgetful(
         ?BF_BITMAP_SIZE,
         ?BF_UNIQ_CLIENTS_MAX,

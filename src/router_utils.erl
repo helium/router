@@ -30,7 +30,8 @@
     maybe_update_trace/1,
     mtype_to_ack/1,
     frame_timeout/0,
-    join_timeout/0
+    join_timeout/0,
+    get_env_int/2
 ]).
 
 -type uuid_v4() :: binary().
@@ -636,16 +637,16 @@ mtype_to_ack(_) -> 0.
 
 -spec frame_timeout() -> non_neg_integer().
 frame_timeout() ->
-    case application:get_env(router, frame_timeout, ?FRAME_TIMEOUT) of
-        [] -> ?FRAME_TIMEOUT;
-        Str when is_list(Str) -> erlang:list_to_integer(Str);
-        I -> I
-    end.
+    get_env_int(frame_timeout, ?FRAME_TIMEOUT).
 
 -spec join_timeout() -> non_neg_integer().
 join_timeout() ->
-    case application:get_env(router, join_timeout, ?JOIN_TIMEOUT) of
-        [] -> ?JOIN_TIMEOUT;
+    get_env_int(join_timeout, ?JOIN_TIMEOUT).
+
+-spec get_env_int(atom(), integer()) -> integer().
+get_env_int(Key, Default) ->
+    case application:get_env(router, Key, Default) of
+        [] -> Default;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.

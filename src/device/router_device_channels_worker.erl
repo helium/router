@@ -44,9 +44,8 @@
 -define(REFRESH_CHANNELS, refresh_channels).
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
--define(BACKOFF_INIT,
-    {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
-).
+-define(BACKOFF_TYPE, normal).
+
 -define(CLEAR_QUEUE_PAYLOAD, <<"__clear_downlink_queue__">>).
 
 -record(data_cache, {
@@ -60,13 +59,16 @@
     replay :: boolean()
 }).
 
+-type channel_map() :: #{ChannelID :: binary() := router_channel:channel()}.
+-type backoff_map() :: #{ChannelID :: binary() := {backoff:backoff(), reference()}}.
+
 -record(state, {
     chain = blockchain:blockchain(),
     event_mgr :: pid(),
     device_worker :: pid(),
     device :: router_device:device(),
-    channels = #{} :: map(),
-    channels_backoffs = #{} :: map(),
+    channels = #{} :: channel_map(),
+    channels_backoffs = #{} :: backoff_map(),
     data_cache = #{} :: #{router_utils:uuid_v4() => #{libp2p_crypto:pubkey_bin() => #data_cache{}}}
 }).
 
@@ -347,7 +349,12 @@ handle_cast(_Msg, State) ->
 %% ------------------------------------------------------------------
 handle_info(
     ?REFRESH_CHANNELS,
-    #state{event_mgr = EventMgrRef, device = Device, channels = Channels0} = State
+    #state{
+        event_mgr = EventMgrRef,
+        device = Device,
+        channels = Channels0,
+        channels_backoffs = Backoffs0
+    } = State
 ) ->
     case router_console_api:get_channels(Device, self()) of
         {error, _Reason} ->
@@ -363,7 +370,7 @@ handle_info(
                 #{},
                 APIChannels0
             ),
-            Channels1 =
+            {Channels1, Backoffs1} =
                 case maps:size(APIChannels1) == 0 of
                     true ->
                         %% API returned no channels removing all of them and adding the "no channel"
@@ -375,17 +382,23 @@ handle_info(
                             gen_event:which_handlers(EventMgrRef)
                         ),
                         NoChannel = maybe_start_no_channel(Device, EventMgrRef),
-                        #{router_channel:unique_id(NoChannel) => NoChannel};
+                        {
+                            #{router_channel:unique_id(NoChannel) => NoChannel},
+                            remove_old_backoffs(#{}, Backoffs0)
+                        };
                     false ->
                         %% Start channels asynchronously
                         lists:foreach(
                             fun(Channel) -> self() ! {start_channel, Channel} end,
                             maps:values(APIChannels1)
                         ),
-                        %% Removing old channels left in cache but not in API call
-                        remove_old_channels(EventMgrRef, APIChannels1, Channels0)
+                        %% Removing old channels and backoffs left in cache but not in API call
+                        {
+                            remove_old_channels(EventMgrRef, APIChannels1, Channels0),
+                            remove_old_backoffs(APIChannels1, Backoffs0)
+                        }
                 end,
-            {noreply, State#state{channels = Channels1}}
+            {noreply, State#state{channels = Channels1, channels_backoffs = Backoffs1}}
     end;
 handle_info(
     {start_channel, Channel},
@@ -646,8 +659,8 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     ok = router_channel:handle_uplink(EventMgrRef, Map, UUID),
     {ok, Map}.
 
--spec start_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
-    {ok, map()} | {error, any(), map()}.
+-spec start_channel(pid(), router_channel:channel(), router_device:device(), backoff_map()) ->
+    {ok, backoff_map()} | {error, any(), backoff_map()}.
 start_channel(EventMgrRef, Channel, Device, Backoffs0) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -669,8 +682,8 @@ start_channel(EventMgrRef, Channel, Device, Backoffs0) ->
             {error, Reason, Backoffs1}
     end.
 
--spec update_channel(pid(), router_channel:channel(), router_device:device(), map()) ->
-    {ok, map()} | {error, any(), map()}.
+-spec update_channel(pid(), router_channel:channel(), router_device:device(), backoff_map()) ->
+    {ok, backoff_map()} | {error, any(), backoff_map()}.
 update_channel(EventMgrRef, Channel, Device, Backoffs0) ->
     ChannelID = router_channel:unique_id(Channel),
     ChannelName = router_channel:name(Channel),
@@ -712,7 +725,7 @@ maybe_start_decoder(Channel) ->
             end
     end.
 
--spec remove_old_channels(pid(), map(), map()) -> map().
+-spec remove_old_channels(pid(), channel_map(), channel_map()) -> channel_map().
 remove_old_channels(EventMgrRef, APIChannels, Channels) ->
     maps:filter(
         fun(ChannelID, Channel) ->
@@ -725,6 +738,21 @@ remove_old_channels(EventMgrRef, APIChannels, Channels) ->
             end
         end,
         Channels
+    ).
+
+-spec remove_old_backoffs(channel_map(), backoff_map()) -> backoff_map().
+remove_old_backoffs(APIChannels, Backoffs) ->
+    maps:filter(
+        fun(ChannelID, {_Backoff, TimerRef}) ->
+            case maps:get(ChannelID, APIChannels, undefined) of
+                undefined ->
+                    _ = erlang:cancel_timer(TimerRef),
+                    false;
+                _ ->
+                    true
+            end
+        end,
+        Backoffs
     ).
 
 -spec maybe_start_no_channel(router_device:device(), pid()) -> router_channel:channel().
@@ -757,20 +785,28 @@ report_integration_error(Device, Description, Channel) ->
         ChannelInfo
     ).
 
--spec backoff_succeed(binary(), map()) -> map().
+-spec backoff_succeed(binary(), backoff_map()) -> backoff_map().
 backoff_succeed(ChannelID, Backoffs0) ->
-    {Backoff, TimerRef} = maps:get(ChannelID, Backoffs0, ?BACKOFF_INIT),
+    {Backoff, TimerRef} = maps:get(ChannelID, Backoffs0, default_backoff()),
     _ = erlang:cancel_timer(TimerRef),
     {_Delay, NewBackoff} = backoff:succeed(Backoff),
     maps:put(ChannelID, {NewBackoff, erlang:make_ref()}, Backoffs0).
 
--spec backoff_fail(binary(), map(), tuple()) -> {integer(), map()}.
+-spec backoff_fail(binary(), backoff_map(), tuple()) -> {integer(), backoff_map()}.
 backoff_fail(ChannelID, Backoffs0, ScheduleMessage) ->
-    {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs0, ?BACKOFF_INIT),
+    {Backoff0, TimerRef0} = maps:get(ChannelID, Backoffs0, default_backoff()),
     _ = erlang:cancel_timer(TimerRef0),
     {Delay, NewBackoff} = backoff:fail(Backoff0),
     TimerRef = erlang:send_after(Delay, self(), ScheduleMessage),
     {Delay, maps:put(ChannelID, {NewBackoff, TimerRef}, Backoffs0)}.
+
+-spec default_backoff() -> {backoff:backoff(), reference()}.
+default_backoff() ->
+    Min = router_utils:get_env_int(channels_backoff_min, ?BACKOFF_MIN),
+    Max = router_utils:get_env_int(channels_backoff_max, ?BACKOFF_MAX),
+    Backoff = backoff:init(Min, Max),
+
+    {backoff:type(Backoff, ?BACKOFF_TYPE), erlang:make_ref()}.
 
 -spec format_hotspot(
     DataCache :: #data_cache{},

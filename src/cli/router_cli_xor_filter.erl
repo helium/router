@@ -39,7 +39,7 @@ filter_usage() ->
             "  filter report --id=<id>                          - Filter info for a device\n"
             "  filter reset_db  --commit                        - Reset rocksdb from Console api\n"
             "  filter migrate --from=<from> --to=<to> --commit  - Migrate devices, emptying filter <from> (Remember: filters are 0-indexed)\n"
-            "  filter move_to_front <NumGroups>                 - Migrate devices to <NumGroups> filters, emptying the rest\n"
+            "  filter move_to_front <NumGroups> --commit        - Migrate devices to <NumGroups> filters, emptying the rest\n"
             "\n"
         ]
     ].

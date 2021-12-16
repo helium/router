@@ -49,6 +49,7 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
+-define(RX_DELAY_TIMING_ANS_DEVICE_ACK, rx_delay_timing_ans_device_ack).
 
 -define(NET_ID, <<"He2">>).
 
@@ -1277,12 +1278,12 @@ craft_join_reply(
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
+    Metadata = router_device:metadata(Device),
     CFList =
-        case {Region, maps:get(cf_list_enabled, router_device:metadata(Device), false)} of
+        case {Region, maps:get(cf_list_enabled, Metadata, false)} of
             {'US915', false} -> <<>>;
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
-    Metadata = router_device:metadata(Device),
     RxDelaySeconds =
         case maps:get(rx_delay, Metadata, default) of
             default -> <<?RX_DELAY:8/integer-unsigned>>;
@@ -1650,12 +1651,19 @@ handle_frame_timeout(
                 },
                 Device0
             ),
-            Delay =
-                case lists:member(rx_timing_setup_ans, Frame#frame.fopts) of
+            {RXTimingSetupAns, Delay} =
+                case
+                    lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
+                        maps:get(
+                            rx_delay_timing_ans_device_ack,
+                            router_device:metadata(Device0),
+                            false
+                        )
+                of
                     true ->
-                        maps:get(rx_delay, router_device:metadata(Device0), 0);
+                        {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
                     false ->
-                        0
+                        {false, 0}
                 end,
             #txq{
                 time = TxTime,
@@ -1678,7 +1686,13 @@ handle_frame_timeout(
             ),
             DeviceUpdates = [
                 {channel_correction, ChannelsCorrected},
-                {fcntdown, (FCntDown + 1)}
+                {fcntdown, (FCntDown + 1)},
+                {metadata,
+                    maps:put(
+                        rx_delay_timing_ans_device_ack,
+                        RXTimingSetupAns,
+                        router_device:metadata(Device0)
+                    )}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             EventTuple =
@@ -1756,12 +1770,19 @@ handle_frame_timeout(
         },
         Device0
     ),
-    Delay =
-        case lists:member(rx_timing_setup_ans, Frame#frame.fopts) of
+    {RXTimingSetupAns, Delay} =
+        case
+            lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
+                maps:get(
+                    rx_delay_timing_ans_device_ack,
+                    router_device:metadata(Device0),
+                    false
+                )
+        of
             true ->
-                maps:get(rx_delay, router_device:metadata(Device0), 0);
+                {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
             false ->
-                0
+                {false, 0}
         end,
     #txq{
         time = TxTime,
@@ -1783,12 +1804,22 @@ handle_frame_timeout(
         Rx2
     ),
     EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts1},
+    DeviceUpdateMetadata =
+        {metadata,
+            maps:put(
+                rx_delay_timing_ans_device_ack,
+                RXTimingSetupAns,
+                router_device:metadata(Device0)
+            )},
+
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            {send, Device1, Packet1, EventTuple};
+            Device2 = router_device:update([DeviceUpdateMetadata], Device1),
+            {send, Device2, Packet1, EventTuple};
         false ->
             DeviceUpdates = [
+                DeviceUpdateMetadata,
                 {queue, T},
                 {channel_correction, ChannelsCorrected},
                 {fcntdown, (FCntDown + 1)}

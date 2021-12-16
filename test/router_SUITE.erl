@@ -19,7 +19,8 @@
     rx_delay_join_test/1,
     rx_delay_downlink_default_test/1,
     rx_delay_ignored_by_device_downlink_test/1,
-    rx_delay_accepted_by_device_downlink_test/1
+    rx_delay_accepted_by_device_downlink_test/1,
+    rx_delay_continue_session_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -57,7 +58,8 @@ all() ->
         rx_delay_join_test,
         rx_delay_downlink_default_test,
         rx_delay_ignored_by_device_downlink_test,
-        rx_delay_accepted_by_device_downlink_test
+        rx_delay_accepted_by_device_downlink_test,
+        rx_delay_continue_session_test
     ].
 
 %%--------------------------------------------------------------------
@@ -2604,7 +2606,7 @@ rx_delay_downlink_default_test(Config) ->
             )},
     timer:sleep(router_utils:frame_timeout()),
 
-    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+    {ok, Got} = test_utils:wait_state_channel_packet(1000),
 
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
     Timestamp = Got#packet_pb.timestamp,
@@ -2656,15 +2658,13 @@ rx_delay_ignored_by_device_downlink_test(Config) ->
                 %% Test case should fail if this is uncommented
                 %% #{
                 %%     fopts => [
-                %%         #{
-                %%           <<"command">> => <<"rx_timing_setup_ans">>
-                %%         }
+                %%        rx_timing_setup_ans
                 %%     ]
                 %% }
             )},
     timer:sleep(router_utils:frame_timeout()),
 
-    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+    {ok, Got} = test_utils:wait_state_channel_packet(1000),
 
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
     Timestamp = Got#packet_pb.timestamp,
@@ -2715,20 +2715,138 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
                 0,
                 #{
                     fopts => [
-                          rx_timing_setup_ans
-                        %%#{
-                          %% <<"command">> => <<"rx_timing_setup_ans">>
-                        %%}
+                        rx_timing_setup_ans
                     ]
                 }
             )},
     timer:sleep(router_utils:frame_timeout()),
 
-    {ok, Got} = test_utils:wait_state_channel_packet(1000, PubKeyBin),
+    {ok, Got} = test_utils:wait_state_channel_packet(1000),
 
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
     Timestamp = Got#packet_pb.timestamp,
     ?assertEqual(ExpectedRxDelay * 1000000, Timestamp),
+    ok.
+
+rx_delay_continue_session_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, WorkerPid0} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid0, Msg),
+
+    test_utils:ignore_messages(),
+    Send = fun(Fcnt, FOpts) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(DeviceID),
+                    router_device:app_s_key(DeviceID),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+    Send(0, [rx_timing_setup_ans]),
+    {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp0 = Packet0#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp0),
+
+    gen_server:stop(WorkerPid0),
+
+    Send(1, []),
+    {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
+
+    {ok, WorkerPid1} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% We haven't ack'd channel correction
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp1 = Packet1#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp1),
+
+    Channel = router_channel:new(
+        <<"fake">>,
+        websocket,
+        <<"fake">>,
+        #{},
+        0,
+        self()
+    ),
+    Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    router_device_worker:queue_message(WorkerPid1, Msg),
+
+    Send(2, []),
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    Timestamp2 = Packet2#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp2),
+
+    %% Re-join device and change its RX_DELAY:
+    %% 1. change the rx_delay so we can have a different delay to tests against
+    %% 2. rejoin the device
+    %% 3. send an uplink _not_ acknowledging the rx_timing_setup
+    %% 4. and our delay should default 1 second
+
+    #{
+        pubkey_bin := _PubKeyBin1,
+        stream := Stream1,
+        hotspot_name := _HotspotName1
+    } = test_utils:join_device(Config),
+
+    timer:sleep(router_utils:join_timeout()),
+    Send1 = fun(Fcnt, FOpts) ->
+        Stream1 !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(DeviceID),
+                    router_device:app_s_key(DeviceID),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+
+    %% TODO there is a join response but comes from PubKeyBin==undefined, why?
+    %% test_utils:wait_for_join_resp(PubKeyBin, AppKey, DevNonce),
+    test_utils:ignore_messages(),
+
+    Send1(0, []),
+    {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
+    Timestamp3 = Packet3#packet_pb.timestamp,
+    %% FIXME: assert fails but should pass
+    ?assertNotEqual(ExpectedRxDelay * 1000000, Timestamp3),
+    ?assertEqual(1000000, Timestamp3),
     ok.
 
 %% ------------------------------------------------------------------

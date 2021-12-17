@@ -155,7 +155,12 @@ make_http_req(Method, URL, Headers, Payload) ->
         {error, _Reason} = Error ->
             Error;
         ok ->
-            try hackney:request(Method, URL, Headers, Payload, [with_body, {timeout, timer:seconds(2)}]) of
+            try
+                hackney:request(Method, URL, Headers, Payload, [
+                    with_body,
+                    {timeout, timer:seconds(2)}
+                ])
+            of
                 Res -> {ok, Res}
             catch
                 _What:_Why:_Stacktrace ->

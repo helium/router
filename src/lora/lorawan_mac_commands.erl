@@ -7,8 +7,6 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_commands).
 
--dialyzer([no_match, no_return]).
-
 -export([
     handle_fopts/4,
     build_fopts/2,
@@ -80,8 +78,6 @@ handle_fopts0({Network, Profile, Node0}, Gateways, FOptsIn) ->
     Node2 = auto_adr(Network, Profile, Node1#node{last_qs = LastQs, average_qs = AverageQs}),
     {MacConfirm, Node2#node{last_rx = calendar:universal_time(), gateways = Gateways}}.
 
-append_qs(SNR, undefined, _Required) ->
-    {[SNR], undefined};
 append_qs(SNR, LastQs, Required) when length(LastQs) < Required ->
     {[SNR | LastQs], undefined};
 append_qs(SNR, LastQs, Required) ->
@@ -414,11 +410,6 @@ handle_status(FOptsIn, #network{region = Region}, Node) ->
             Node
     end.
 
-append_status(Status, undefined) ->
-    [Status];
-% backward compatibility
-append_status(Status, {Battery, Margin}) ->
-    [Status, {calendar:universal_time(), Battery, Margin}];
 append_status(Status, List) ->
     lists:sublist([Status | List], 50).
 
@@ -438,16 +429,17 @@ send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
     {link_check_ans, Margin, length(Gateways)}.
 
-send_device_time([{_MAC, #rxq{time = undefined}} | _]) ->
-    MsSinceEpoch = lorawan_utils:time_to_gps(),
-    lager:debug("DeviceTimeAns: time: ~B (from local)", [MsSinceEpoch]),
-    % no time provided by the gateway, we do our best
-    {device_time_ans, MsSinceEpoch};
-send_device_time([{_MAC, #rxq{time = Time, tmms = undefined}} | _]) ->
-    MsSinceEpoch = lorawan_utils:time_to_gps(Time),
-    lager:debug("DeviceTimeAns: time: ~B (from gateway)", [MsSinceEpoch]),
-    % we got GPS time, but not milliseconds
-    {device_time_ans, MsSinceEpoch};
+%% Not possible for times to be undefined per definition
+% send_device_time([{_MAC, #rxq{time = undefined}} | _]) ->
+%     MsSinceEpoch = lorawan_utils:time_to_gps(),
+%     lager:debug("DeviceTimeAns: time: ~B (from local)", [MsSinceEpoch]),
+%     % no time provided by the gateway, we do our best
+%     {device_time_ans, MsSinceEpoch};
+% send_device_time([{_MAC, #rxq{time = Time, tmms = undefined}} | _]) ->
+%     MsSinceEpoch = lorawan_utils:time_to_gps(Time),
+%     lager:debug("DeviceTimeAns: time: ~B (from gateway)", [MsSinceEpoch]),
+%     % we got GPS time, but not milliseconds
+%     {device_time_ans, MsSinceEpoch};
 send_device_time([{_MAC, #rxq{tmms = MsSinceEpoch}} | _]) ->
     lager:debug("DeviceTimeAns: time: ~B", [MsSinceEpoch]),
     % this is the easiest
@@ -678,16 +670,3 @@ request_status(
 
 add_when_zero(Error, 0, List) -> [Error | List];
 add_when_zero(_Error, 1, List) -> List.
-
--include_lib("eunit/include/eunit.hrl").
-
-command_test_() ->
-    [
-        % from the LoRaWAN Specification 1.0.3, Section 5.9
-        ?_assertEqual(
-            {device_time_ans, 1139322288000},
-            send_device_time([{<<>>, #rxq{time = {{2016, 2, 12}, {14, 24, 31}}, tmms = undefined}}])
-        )
-    ].
-
-% end of file

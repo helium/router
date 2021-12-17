@@ -474,8 +474,8 @@ packet_offer_(Offer, Pid, Chain) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, DeviceID, PackeTime} ->
-                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                        {ok, DeviceID, PacketTime} ->
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(

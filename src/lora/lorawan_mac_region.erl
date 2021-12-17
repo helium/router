@@ -7,8 +7,6 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_region).
 
--dialyzer([no_return, no_unused, no_match]).
-
 %% Functions that map Region -> Top Level Region
 -export([
     join1_window/3,
@@ -137,33 +135,40 @@
 -type freq_whole() :: non_neg_integer().
 -type channel() :: non_neg_integer().
 
+-define(JOIN1_WINDOW, join1_window).
+-define(JOIN2_WINDOW, join2_window).
+-define(RX1_WINDOW, rx1_window).
+-define(RX2_WINDOW, rx2_window).
+
+-type window() :: ?JOIN1_WINDOW | ?JOIN2_WINDOW | ?RX1_WINDOW | ?RX2_WINDOW.
+
 %% ------------------------------------------------------------------
 %% Region Wrapped Receive Window Functions
 %% ------------------------------------------------------------------
 
 -spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
-join1_window(Region, _Delay, RxQ) ->
+join1_window(Region, DelaySeconds, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, 0),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?JOIN1_WINDOW, RxQ, TxQ, DelaySeconds).
 
 -spec join2_window(atom(), #rxq{}) -> #txq{}.
 join2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?JOIN2_WINDOW, RxQ, TxQ).
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
-rx1_window(Region, _Delay, Offset, RxQ) ->
+rx1_window(Region, DelaySeconds, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?RX1_WINDOW, RxQ, TxQ, DelaySeconds).
 
 -spec rx2_window(atom(), #rxq{}) -> #txq{}.
 rx2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?RX2_WINDOW, RxQ, TxQ).
 
 -spec rx1_or_rx2_window(atom(), number(), number(), #rxq{}) -> #txq{}.
 rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
@@ -471,17 +476,39 @@ tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
--spec get_window(atom()) -> number().
-get_window(join1_window) -> 5000000;
-get_window(join2_window) -> 6000000;
-get_window(rx1_window) -> 1000000;
-get_window(rx2_window) -> 2000000.
+-spec get_window(window()) -> number().
+get_window(?JOIN1_WINDOW) -> 5000000;
+get_window(?JOIN2_WINDOW) -> 6000000;
+get_window(?RX1_WINDOW) -> 1000000;
+get_window(?RX2_WINDOW) -> 2000000.
 
--spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
-tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
+-spec tx_window(window(), #rxq{}, #txq{}) -> #txq{}.
+tx_window(Window, #rxq{tmms = Stamp} = Rxq, TxQ) when is_integer(Stamp) ->
+    tx_window(Window, Rxq, TxQ, 0).
+
+%% LoRaWAN Link Layer v1.0.4 spec, Section 5.7 Setting Delay between TX and RX,
+%% Table 45 and "RX2 always opens 1s after RX1."
+-spec tx_window(atom(), #rxq{}, #txq{}, number()) -> #txq{}.
+tx_window(?JOIN1_WINDOW, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(?JOIN1_WINDOW),
+    TxQ#txq{time = Stamp + Delay};
+tx_window(?JOIN2_WINDOW, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(?JOIN2_WINDOW),
+    TxQ#txq{time = Stamp + Delay};
+tx_window(Window, #rxq{tmms = Stamp}, TxQ, RxDelaySeconds) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
-    %% TODO handle rx delay here
-    Delay = get_window(Window),
+    Delay =
+        case RxDelaySeconds of
+            N when N < 2 ->
+                get_window(Window);
+            N ->
+                case Window of
+                    ?RX2_WINDOW ->
+                        N * 1000000 + 1000000;
+                    _ ->
+                        N * 1000000
+                end
+        end,
     TxQ#txq{time = Stamp + Delay}.
 
 %% ------------------------------------------------------------------
@@ -647,12 +674,9 @@ datar_to_dr_(Region, DataRate) ->
 %% NOTE: FSK is a special case.
 %% @end
 %% ------------------------------------------------------------------
--spec tuple_to_datar(datarate() | non_neg_integer()) -> datar().
+-spec tuple_to_datar(datarate()) -> datar().
 tuple_to_datar({SF, BW}) ->
-    <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>;
-tuple_to_datar(DataRate) ->
-    %% FSK
-    DataRate.
+    <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>.
 
 %% ------------------------------------------------------------------
 %% @doc Datarate Binary to Datarate Tuple
@@ -660,6 +684,7 @@ tuple_to_datar(DataRate) ->
 %% @end
 %% ------------------------------------------------------------------
 -spec datar_to_tuple(datar()) -> datarate() | non_neg_integer().
+
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),
     {binary_to_integer(SF), binary_to_integer(BW)};

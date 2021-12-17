@@ -1784,6 +1784,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
@@ -1972,6 +1973,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
@@ -2168,6 +2170,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 3,
@@ -2318,6 +2321,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 4,
@@ -2579,7 +2583,7 @@ rx_delay_downlink_default_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
     {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
@@ -2600,8 +2604,8 @@ rx_delay_downlink_default_test(Config) ->
             test_utils:frame_packet(
                 ?CONFIRMED_UP,
                 PubKeyBin,
-                router_device:nwk_s_key(DeviceID),
-                router_device:app_s_key(DeviceID),
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
                 0
             )},
     timer:sleep(router_utils:frame_timeout()),
@@ -2630,7 +2634,7 @@ rx_delay_ignored_by_device_downlink_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
     {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
@@ -2651,11 +2655,11 @@ rx_delay_ignored_by_device_downlink_test(Config) ->
             test_utils:frame_packet(
                 ?CONFIRMED_UP,
                 PubKeyBin,
-                router_device:nwk_s_key(DeviceID),
-                router_device:app_s_key(DeviceID),
-                0,
-                #{}
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
                 %% Test case should fail if this is uncommented
+                %% ,
                 %% #{
                 %%     fopts => [
                 %%        rx_timing_setup_ans

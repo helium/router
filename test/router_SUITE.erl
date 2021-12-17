@@ -2689,7 +2689,7 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
     {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
@@ -2710,8 +2710,8 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
             test_utils:frame_packet(
                 ?CONFIRMED_UP,
                 PubKeyBin,
-                router_device:nwk_s_key(DeviceID),
-                router_device:app_s_key(DeviceID),
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
                 0,
                 #{
                     fopts => [
@@ -2726,6 +2726,13 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
     Timestamp = Got#packet_pb.timestamp,
     ?assertEqual(ExpectedRxDelay * 1000000, Timestamp),
+
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata = router_device:metadata(Device1),
+
+    ?assertEqual(ExpectedRxDelay, maps:get(rx_delay, Metadata)),
+    ?assertEqual(true, maps:get(rx_delay_timing_ans_device_ack, Metadata)),
+
     ok.
 
 rx_delay_continue_session_test(Config) ->
@@ -2745,7 +2752,7 @@ rx_delay_continue_session_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, DeviceID} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
     {ok, WorkerPid0} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
@@ -2767,8 +2774,8 @@ rx_delay_continue_session_test(Config) ->
                 test_utils:frame_packet(
                     ?CONFIRMED_UP,
                     PubKeyBin,
-                    router_device:nwk_s_key(DeviceID),
-                    router_device:app_s_key(DeviceID),
+                    router_device:nwk_s_key(Device0),
+                    router_device:app_s_key(Device0),
                     Fcnt,
                     #{fopts => FOpts}
                 )},
@@ -2811,10 +2818,9 @@ rx_delay_continue_session_test(Config) ->
     ?assertEqual(ExpectedRxDelay * 1000000, Timestamp2),
 
     %% Re-join device and change its RX_DELAY:
-    %% 1. change the rx_delay so we can have a different delay to tests against
-    %% 2. rejoin the device
-    %% 3. send an uplink _not_ acknowledging the rx_timing_setup
-    %% 4. and our delay should default 1 second
+    %% 1. rejoin the device
+    %% 2. send an uplink _not_ acknowledging the rx_timing_setup
+    %% 3. and our delay should be 15 seconds (ExpectedRxDelay)
 
     #{
         pubkey_bin := _PubKeyBin1,
@@ -2823,14 +2829,17 @@ rx_delay_continue_session_test(Config) ->
     } = test_utils:join_device(Config),
 
     timer:sleep(router_utils:join_timeout()),
+
+    {ok, Device1} = router_device:get_by_id(DB, CF, WorkerID),
+
     Send1 = fun(Fcnt, FOpts) ->
         Stream1 !
             {send,
                 test_utils:frame_packet(
                     ?CONFIRMED_UP,
                     PubKeyBin,
-                    router_device:nwk_s_key(DeviceID),
-                    router_device:app_s_key(DeviceID),
+                    router_device:nwk_s_key(Device1),
+                    router_device:app_s_key(Device1),
                     Fcnt,
                     #{fopts => FOpts}
                 )},
@@ -2844,9 +2853,8 @@ rx_delay_continue_session_test(Config) ->
     Send1(0, []),
     {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
     Timestamp3 = Packet3#packet_pb.timestamp,
-    %% FIXME: assert fails but should pass
-    ?assertNotEqual(ExpectedRxDelay * 1000000, Timestamp3),
-    ?assertEqual(1000000, Timestamp3),
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp3),
+    ?assertNotEqual(1000000, Timestamp3),
     ok.
 
 %% ------------------------------------------------------------------

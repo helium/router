@@ -229,6 +229,7 @@ disovery_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
@@ -318,6 +319,7 @@ disovery_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,

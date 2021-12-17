@@ -121,14 +121,8 @@ mqtt_test(Config) ->
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false,
-            <<"rx_delay">> => 0
-        },
+        %% Not all metadata is populated here:
+        <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
@@ -277,6 +271,7 @@ mqtt_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
@@ -498,14 +493,8 @@ mqtt_update_test(Config) ->
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false,
-            <<"rx_delay">> => 0
-        },
+        %% Not all metadata is populated here, but see next "metadata" below.
+        <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
@@ -668,6 +657,7 @@ mqtt_update_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
@@ -828,6 +818,7 @@ mqtt_update_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,

@@ -1295,7 +1295,7 @@ bits_test_() ->
         ),
         ?_assertEqual(
             [
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 2, 7, 0},
+                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 512, 7, 0},
                 {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])

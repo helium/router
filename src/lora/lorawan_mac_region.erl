@@ -853,11 +853,11 @@ mk_join_accept_cf_list('US915') ->
     %% Page 33
     Chans = [{8, 15}],
     ChMaskTable = [
-        {2, mask, build_bin(Chans, {0, 15})},
-        {2, mask, build_bin(Chans, {16, 31})},
-        {2, mask, build_bin(Chans, {32, 47})},
-        {2, mask, build_bin(Chans, {48, 63})},
-        {2, mask, build_bin(Chans, {64, 71})},
+        {2, mask, build_chmask(Chans, {0, 15})},
+        {2, mask, build_chmask(Chans, {16, 31})},
+        {2, mask, build_chmask(Chans, {32, 47})},
+        {2, mask, build_chmask(Chans, {48, 63})},
+        {2, mask, build_chmask(Chans, {64, 71})},
         {2, rfu, 0},
         {3, rfu, 0},
         {1, cf_list_type, 1}
@@ -907,14 +907,14 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
     case all_bit({0, 63}, Chans) of
         true ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}),
-                    6, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 6, 0}
                 | FOptsOut
             ];
         false ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}),
-                    7, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 7, 0}
                 | append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)
             ]
     end;
@@ -927,7 +927,7 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when Region == 'CN47
     end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
     [
-        {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {0, 15}), 0, 0}
+        {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_chmask(Chans, {0, 15}), 0, 0}
         | FOptsOut
     ].
 
@@ -947,23 +947,29 @@ expand_intervals([{A, B} | Rest]) ->
 expand_intervals([]) ->
     [].
 
-build_bin(Chans, {Min, Max}) ->
+-spec build_chmask(
+    list({non_neg_integer(), non_neg_integer()}),
+    {non_neg_integer(), non_neg_integer()}
+) -> non_neg_integer().
+build_chmask(Chans, {Min, Max}) ->
     Bits = Max - Min + 1,
-    lists:foldl(
+    Sum = lists:foldl(
         fun(Tuple, Acc) ->
-            <<Num:Bits>> = build_bin0({Min, Max}, Tuple),
+            <<Num:Bits>> = build_chmask0({Min, Max}, Tuple),
             Num bor Acc
         end,
         0,
         Chans
-    ).
+    ),
+    %% per LoRaWAN spec a multi-octet is encoded little endian
+    binary:decode_unsigned(<<Sum:16>>, little).
 
-build_bin0(MinMax, {A, B}) when B < A ->
-    build_bin0(MinMax, {B, A});
-build_bin0({Min, Max}, {A, B}) when B < Min; Max < A ->
+build_chmask0(MinMax, {A, B}) when B < A ->
+    build_chmask0(MinMax, {B, A});
+build_chmask0({Min, Max}, {A, B}) when B < Min; Max < A ->
     %% out of range
     <<0:(Max - Min + 1)>>;
-build_bin0({Min, Max}, {A, B}) ->
+build_chmask0({Min, Max}, {A, B}) ->
     C = max(Min, A),
     D = min(Max, B),
     Bits = Max - Min + 1,
@@ -981,7 +987,7 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
         Region,
         Idx - 1,
         {TXPower, DataRate, Chans},
-        case build_bin(Chans, {16 * Idx, 16 * (Idx + 1) - 1}) of
+        case build_chmask(Chans, {16 * Idx, 16 * (Idx + 1) - 1}) of
             0 ->
                 FOptsOut;
             ChMask ->
@@ -1256,9 +1262,20 @@ test_tx_time(Packet, DataRate, CodingRate) ->
 bits_test_() ->
     [
         ?_assertEqual([0, 1, 2, 5, 6, 7, 8, 9], expand_intervals([{0, 2}, {5, 9}])),
-        ?_assertEqual(7, build_bin([{0, 2}], {0, 15})),
-        ?_assertEqual(0, build_bin([{0, 2}], {16, 31})),
-        ?_assertEqual(65535, build_bin([{0, 71}], {0, 15})),
+        ?_assertEqual(16#700, build_chmask([{0, 2}], {0, 15})),
+        ?_assertEqual(0, build_chmask([{0, 2}], {16, 31})),
+        ?_assertEqual(65535, build_chmask([{0, 71}], {0, 15})),
+        ?_assertEqual(16#FF, build_chmask([{8, 15}], {0, 15})),
+        ?_assertEqual(16#F8, build_chmask([{11, 15}], {0, 15})),
+        ?_assertEqual(16#F0, build_chmask([{12, 15}], {0, 15})),
+        ?_assertEqual(16#0F, build_chmask([{8, 11}], {0, 15})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {16, 31})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {32, 47})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {48, 63})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {64, 71})),
+        ?_assertEqual(16#100, build_chmask([{64, 64}], {64, 71})),
+        ?_assertEqual(16#200, build_chmask([{65, 65}], {64, 71})),
+        ?_assertEqual(16#700, build_chmask([{64, 66}], {64, 71})),
         ?_assertEqual(true, some_bit({0, 71}, [{0, 71}])),
         ?_assertEqual(true, all_bit({0, 71}, [{0, 71}])),
         ?_assertEqual(false, none_bit({0, 71}, [{0, 71}])),
@@ -1266,20 +1283,20 @@ bits_test_() ->
         ?_assertEqual(false, all_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(false, none_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(
-            [{link_adr_req, datar_to_dr('EU868', <<"SF12BW125">>), 14, 7, 0, 0}],
+            [{link_adr_req, datar_to_dr('EU868', <<"SF12BW125">>), 14, 1792, 0, 0}],
             set_channels('EU868', {14, <<"SF12BW125">>, [{0, 2}]}, [])
         ),
         ?_assertEqual(
             [
                 {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 0, 7, 0},
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
+                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{0, 7}]}, [])
         ),
         ?_assertEqual(
             [
                 {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 2, 7, 0},
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
+                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])
         )
@@ -1300,7 +1317,7 @@ mk_join_accept_cf_list_test_() ->
     [
         ?_assertEqual(
             %% Active Channels 8-15
-            <<255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
+            <<0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
             mk_join_accept_cf_list('US915')
         ),
         ?_assertEqual(

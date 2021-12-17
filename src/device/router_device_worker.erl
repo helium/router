@@ -1655,7 +1655,7 @@ handle_frame_timeout(
                 case
                     lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
                         maps:get(
-                            rx_delay_timing_ans_device_ack,
+                            ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
                             router_device:metadata(Device0),
                             false
                         )
@@ -1689,7 +1689,7 @@ handle_frame_timeout(
                 {fcntdown, (FCntDown + 1)},
                 {metadata,
                     maps:put(
-                        rx_delay_timing_ans_device_ack,
+                        ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
                         RXTimingSetupAns,
                         router_device:metadata(Device0)
                     )}
@@ -1774,7 +1774,7 @@ handle_frame_timeout(
         case
             lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
                 maps:get(
-                    rx_delay_timing_ans_device_ack,
+                    ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
                     router_device:metadata(Device0),
                     false
                 )
@@ -1807,7 +1807,7 @@ handle_frame_timeout(
     DeviceUpdateMetadata =
         {metadata,
             maps:put(
-                rx_delay_timing_ans_device_ack,
+                ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
                 RXTimingSetupAns,
                 router_device:metadata(Device0)
             )},

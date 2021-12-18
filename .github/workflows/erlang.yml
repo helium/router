@@ -24,6 +24,13 @@ jobs:
       - name: checkout
         uses: actions/checkout@v2
 
+      # For some reason the toolchain is no installed properly so lets add it...
+      - name: rustup default stable
+        run: rustup default stable
+
+      - name: Pre cleanup
+        run: rm -rf /opt/router
+
       - name: Build
         run: make
 

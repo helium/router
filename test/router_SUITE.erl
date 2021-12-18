@@ -1458,7 +1458,7 @@ adr_downlink_timing_test(Config) ->
                         <<"tx_power">> => 7
                     },
                     #{
-                        <<"channel_mask">> => 65280,
+                        <<"channel_mask">> => 255,
                         <<"channel_mask_control">> => 0,
                         <<"command">> => <<"link_adr_req">>,
                         <<"data_rate">> => 3,

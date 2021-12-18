@@ -14,44 +14,18 @@ jobs:
   CI:
     runs-on: ubuntu-latest
     container:
-      image: heliumsystems/builder-erlang:1
+      image: quay.io/team-helium/router:latest
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.5.0
         with:
           access_token: ${{ github.token }}
 
-      # For some reason the toolchain is no installed properly so lets add it...
-      - name: rustup default stable
-        run: rustup default stable
-
       - name: checkout
         uses: actions/checkout@v2
 
       - name: Build
-        run: |
-          ./rebar3 get-deps
-          REBAR_CONFIG="config/grpc_server_gen.config" ./rebar3 grpc gen
-          REBAR_CONFIG="config/grpc_client_gen.config" ./rebar3 grpc gen
-          ./rebar3 compile
+        run: make
 
-      - name: Check formatting
-        run: |
-          ./rebar3 fmt --verbose --check rebar.config
-          ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" --exclude-files "src/grpc/autogen/**/*"
-          ./rebar3 fmt --verbose --check "config/sys.{config,config.src}"
-
-      - name: Run xref
-        run: ./rebar3 xref
-
-      - name: Run EUnit tests
-        run: ./rebar3 eunit
-
-      - name: Run CT tests
-        run: ./rebar3 ct
-
-      - name: Run Dialyzer
-        run: ./rebar3 dialyzer
-
-      - name: Check Documentation
-        run: ./rebar3 edoc
+      - name: Run test
+        run: make test

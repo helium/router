@@ -568,8 +568,8 @@ lw_join_test(Config) ->
         {channel_mask, Mask} ->
             case Region of
                 'US915' ->
-                    ExpectedMask = lists:seq(0, 7),
-                    ?assertEqual(ExpectedMask, Mask);
+                    ExpectedMask = lists:seq(8, 15),
+                    Mask = ExpectedMask;
                 _ ->
                     ct:pal("Mask is ~p", [Mask]),
                     ok

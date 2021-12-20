@@ -569,7 +569,7 @@ lw_join_test(Config) ->
             case Region of
                 'US915' ->
                     ExpectedMask = lists:seq(0, 7),
-                    Mask = ExpectedMask;
+                    ?assertEqual(ExpectedMask, Mask);
                 _ ->
                     ct:pal("Mask is ~p", [Mask]),
                     ok

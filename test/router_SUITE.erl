@@ -826,11 +826,11 @@ join_test(Config) ->
 
 us915_join_enabled_cf_list_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_test",
+    Swarm = proplists:get_value(swarm, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_enabled_cf_list_test",
     filelib:ensure_dir(HotspotDir),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
     %% Tell the device to enable join-accept cflist when it starts up
@@ -927,11 +927,12 @@ us915_join_disabled_cf_list_test(Config) ->
     %% NOTE: Disabled is default for cflist per device
 
     AppKey = proplists:get_value(app_key, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
+    Swarm = proplists:get_value(swarm, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_disabled_cf_list_test",
     filelib:ensure_dir(HotspotDir),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
+
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
     {ok, Stream} = libp2p_swarm:dial_framed_stream(

@@ -140,7 +140,7 @@ parse_fopts(Unknown) ->
     [].
 
 parse_fdownopts(
-    <<16#03, DataRate:4, TXPower:4, ChMask:16/unsigned-integer, 0:1, ChMaskCntl:3, NbTrans:4,
+    <<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbTrans:4,
         Rest/binary>>
 ) ->
     [{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbTrans} | parse_fdownopts(Rest)];
@@ -177,7 +177,7 @@ parse_fdownopts(Unknown) ->
 encode_fopts([{link_check_ans, Margin, GwCnt} | Rest]) ->
     <<16#02, Margin, GwCnt, (encode_fopts(Rest))/binary>>;
 encode_fopts([{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep} | Rest]) ->
-    <<16#03, DataRate:4, TXPower:4, ChMask:16/unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4,
+    <<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4,
         (encode_fopts(Rest))/binary>>;
 encode_fopts([{duty_cycle_req, MaxDCycle} | Rest]) ->
     <<16#04, 0:4, MaxDCycle:4, (encode_fopts(Rest))/binary>>;

@@ -922,7 +922,7 @@ cflist_for_frequencies(Frequencies) ->
     {ByteSize :: pos_integer(), Type :: atom(), Value :: non_neg_integer()}
 ]) -> binary().
 cf_list_for_channel_mask_table(ChMaskTable) ->
-    <<<<Val:Size/unit:8>> || {Size, _, Val} <- ChMaskTable>>.
+    <<<<Val:Size/little-unit:8>> || {Size, _, Val} <- ChMaskTable>>.
 
 %% link_adr_req command
 

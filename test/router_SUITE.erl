@@ -908,7 +908,7 @@ us915_join_enabled_cf_list_test(Config) ->
         AppSKey3
     ),
 
-    <<CFListChannelMask:16/integer, _/binary>> = CFList3,
+    <<CFListChannelMask:16/little-integer, _/binary>> = CFList3,
     ?assertMatch(
         [
             %% LinkADRReq shape:
@@ -919,8 +919,6 @@ us915_join_enabled_cf_list_test(Config) ->
         proplists:lookup_all(link_adr_req, Reply#frame.fopts),
         "Downlink turns on same channels as join cflist"
     ),
-
-    libp2p_swarm:stop(Swarm),
     ok.
 
 us915_join_disabled_cf_list_test(Config) ->
@@ -962,8 +960,6 @@ us915_join_disabled_cf_list_test(Config) ->
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
-
-    libp2p_swarm:stop(Swarm),
 
     ok.
 

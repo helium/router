@@ -12,7 +12,7 @@
     join1_window/3,
     join2_window/2,
     rx1_window/4,
-    rx2_window/2,
+    rx2_window/3,
     rx1_or_rx2_window/4,
     set_channels/3,
     max_uplink_snr/2,
@@ -164,11 +164,11 @@ rx1_window(Region, DelaySeconds, Offset, RxQ) ->
     TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
     tx_window(?RX1_WINDOW, RxQ, TxQ, DelaySeconds).
 
--spec rx2_window(atom(), #rxq{}) -> #txq{}.
-rx2_window(Region, RxQ) ->
+-spec rx2_window(atom(), number(), #rxq{}) -> #txq{}.
+rx2_window(Region, DelaySeconds, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
-    tx_window(?RX2_WINDOW, RxQ, TxQ).
+    tx_window(?RX2_WINDOW, RxQ, TxQ, DelaySeconds).
 
 -spec rx1_or_rx2_window(atom(), number(), number(), #rxq{}) -> #txq{}.
 rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
@@ -178,7 +178,7 @@ rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
             if
                 % In Europe the RX Windows uses different frequencies, TX power rules and Duty cycle rules.
                 % If the signal is poor then prefer window 2 where TX power is higher.  See - https://github.com/helium/router/issues/423
-                RxQ#rxq.rssi < -80 -> rx2_window(Region, RxQ);
+                RxQ#rxq.rssi < -80 -> rx2_window(Region, Delay, RxQ);
                 true -> rx1_window(Region, Delay, Offset, RxQ)
             end;
         _ ->
@@ -476,6 +476,7 @@ tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
+%% These only specify LoRaWAN default values; see also tx_window()
 -spec get_window(window()) -> number().
 get_window(?JOIN1_WINDOW) -> 5000000;
 get_window(?JOIN2_WINDOW) -> 6000000;
@@ -1098,7 +1099,7 @@ us_window_2_test() ->
             ?assertEqual(datar_to_dr('US915', TxQ#txq.datr), 8),
             ?assertEqual(TxQ#txq.freq, 923.3)
         end,
-        [rx2_window('US915', RxQ), join2_window('US915', RxQ)]
+        [rx2_window('US915', 0, RxQ), join2_window('US915', RxQ)]
     ),
 
     ok.
@@ -1164,7 +1165,7 @@ cn470_window_2_test() ->
         end,
         [
             {join2_window, join2_window('CN470', RxQ)},
-            {rx2_window, rx2_window('CN470', RxQ)}
+            {rx2_window, rx2_window('CN470', 0, RxQ)}
         ]
     ),
     ok.
@@ -1236,7 +1237,7 @@ as923_window_2_test() ->
         end,
         [
             {join2_window, join2_window('AS923', RxQ)},
-            {rx2_window, rx2_window('AS923', RxQ)}
+            {rx2_window, rx2_window('AS923', 0, RxQ)}
         ]
     ),
     ok.

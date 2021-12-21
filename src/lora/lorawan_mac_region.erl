@@ -1340,7 +1340,7 @@ mk_join_accept_cf_list_test_() ->
     [
         ?_assertEqual(
             %% Active Channels 8-15
-            <<255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
+            <<0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
             mk_join_accept_cf_list('US915')
         ),
         ?_assertEqual(

@@ -932,14 +932,14 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
     case all_bit({0, 63}, Chans) of
         true ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_chmask(Chans, {64, 71}),
-                    6, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 6, 0}
                 | FOptsOut
             ];
         false ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_chmask(Chans, {64, 71}),
-                    7, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 7, 0}
                 | append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)
             ]
     end;

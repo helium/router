@@ -29,7 +29,8 @@
         {outbound_gossip_connections, 4},
         {sc_packet_handler, router_device_routing},
         {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
-        {sc_sup_type, server}
+        {sc_sup_type, server},
+        {sc_hook_close_submit, router_sc_worker}
     ]},
     {router, [
         {max_v8_context, 1000},

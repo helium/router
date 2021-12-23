@@ -23,6 +23,7 @@
 -define(METRICS_VM_ETS_MEMORY, "router_vm_ets_memory").
 -define(METRICS_XOR_FILTER, "router_xor_filter").
 -define(METRICS_GRPC_CONNECTION_COUNT, "router_grpc_connection_count").
+-define(METRICS_SC_CLOSE_SUBMIT, "router_sc_close_submit_count").
 
 -define(METRICS, [
     {?METRICS_DC, prometheus_gauge, [], "Active State Channel balance"},
@@ -47,6 +48,8 @@
     {?METRICS_VM_CPU, prometheus_gauge, [cpu], "Router CPU usage"},
     {?METRICS_VM_PROC_Q, prometheus_gauge, [name], "Router process queue"},
     {?METRICS_VM_ETS_MEMORY, prometheus_gauge, [name], "Router ets memory"},
-    {?METRICS_XOR_FILTER, prometheus_gauge, [], "Router XOR Filter udpates"},
-    {?METRICS_GRPC_CONNECTION_COUNT, prometheus_gauge, [], "Number of active GRPC Connections"}
+    {?METRICS_XOR_FILTER, prometheus_counter, [], "Router XOR Filter udpates"},
+    {?METRICS_GRPC_CONNECTION_COUNT, prometheus_gauge, [], "Number of active GRPC Connections"},
+    {?METRICS_SC_CLOSE_SUBMIT, prometheus_counter, [status],
+        "Router state channels close txn status"}
 ]).

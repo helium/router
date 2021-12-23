@@ -99,4 +99,10 @@ metrics_test(Config) ->
 
     %% Nothing was sent over grpc, make sure we can get a blank value
     ?assertEqual(0, prometheus_gauge:value(?METRICS_GRPC_CONNECTION_COUNT)),
+
+    ok = router_sc_worker:sc_hook_close_submit(ok, txn),
+    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [ok]) > 0),
+
+    ok = router_sc_worker:sc_hook_close_submit(error, txn),
+    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [error]) > 0),
     ok.

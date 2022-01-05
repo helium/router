@@ -32,6 +32,7 @@
     deframe_join_packet/3,
     tmp_dir/0, tmp_dir/1,
     wait_until/1, wait_until/3,
+    wait_until_no_messages/1,
     is_jsx_encoded_map/1
 ]).
 
@@ -854,6 +855,16 @@ wait_until(Fun, Retry, Delay) when Retry > 0 ->
             timer:sleep(Delay),
             wait_until(Fun, Retry - 1, Delay)
     end.
+
+wait_until_no_messages(Pid) ->
+    wait_until(fun() ->
+        case erlang:process_info(Pid, message_queue_len) of
+            {message_queue_len, 0} ->
+                true;
+            {message_queue_len, N} ->
+                {messages_still_in_queue, N}
+        end
+    end).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

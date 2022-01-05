@@ -96,4 +96,7 @@ metrics_test(Config) ->
     ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds)),
 
     ?assert(prometheus_gauge:value(?METRICS_VM_CPU, [1]) > 0),
+
+    %% Nothing was sent over grpc, make sure we can get a blank value
+    ?assertEqual(0, prometheus_gauge:value(?METRICS_GRPC_CONNECTION_COUNT)),
     ok.

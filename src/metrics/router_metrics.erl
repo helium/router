@@ -246,7 +246,8 @@ handle_info(
             ok = record_chain_blocks(Chain),
             ok = record_vm_stats(),
             ok = record_ets(),
-            ok = record_queues()
+            ok = record_queues(),
+            ok = record_grpc_connections()
         end,
         [
             {fullsweep_after, 0},
@@ -423,6 +424,23 @@ record_ets() ->
         end,
         ets:all()
     ),
+    ok.
+
+-spec record_grpc_connections() -> ok.
+record_grpc_connections() ->
+    {ok, Opts} = application:get_env(grpcbox, listen_opts, #{}),
+    PoolName = grpcbox_services_sup:pool_name(Opts),
+    try
+        Counts = acceptor_pool:count_children(PoolName),
+        proplists:get_value(active, Counts)
+    of
+        Count ->
+            _ = prometheus_gauge:set(?METRICS_GRPC_CONNECTION_COUNT, Count)
+    catch
+        _:_ ->
+            lager:warning("no grpcbox acceptor named ~p", [PoolName]),
+            _ = prometheus_gauge:set(?METRICS_GRPC_CONNECTION_COUNT, 0)
+    end,
     ok.
 
 -spec record_queues() -> ok.

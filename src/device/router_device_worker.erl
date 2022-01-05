@@ -1662,7 +1662,7 @@ handle_frame_timeout(
             ),
             %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
             RxDelay = maps:get(rx_delay, router_device:metadata(Device0), 0),
-            {RXTimingSetupAns, Delay} =
+            {RXTimingSetupAns, RxDelay} =
                 case
                     lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
                         maps:get(
@@ -1685,11 +1685,11 @@ handle_frame_timeout(
                 freq = TxFreq
             } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
-                Delay,
+                RxDelay,
                 0,
                 packet_to_rxq(Packet0)
             ),
-            Rx2Window = rx2_from_packet(Region, Packet0),
+            Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
                 lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
@@ -1786,7 +1786,7 @@ handle_frame_timeout(
     ),
     %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
     RxDelay = maps:get(rx_delay, router_device:metadata(Device0), 0),
-    {RXTimingSetupAns, Delay} =
+    {RXTimingSetupAns, RxDelay} =
         case
             lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
                 maps:get(
@@ -1809,11 +1809,11 @@ handle_frame_timeout(
         freq = TxFreq
     } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
-        Delay,
+        RxDelay,
         0,
         packet_to_rxq(Packet0)
     ),
-    Rx2Window = rx2_from_packet(Region, Packet0),
+    Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
@@ -2038,15 +2038,15 @@ join2_from_packet(Region, Packet) ->
     } = lorawan_mac_region:join2_window(Region, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
--spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet()) ->
+-spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet(), number()) ->
     blockchain_helium_packet_v1:window().
-rx2_from_packet(Region, Packet) ->
+rx2_from_packet(Region, Packet, RxDelay) ->
     Rxq = packet_to_rxq(Packet),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx2_window(Region, Rxq),
+    } = lorawan_mac_region:rx2_window(Region, RxDelay, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().

@@ -60,7 +60,7 @@ device_usage() ->
 
 device_cmd() ->
     [
-        [["device"], [], [], prepend_device_id(fun device_info/4)],
+        [["device"], [], [?ID_FLAG], prepend_device_id(fun device_info/4)],
         [["device", "all"], [], [], fun device_list_all/3]
     ].
 
@@ -73,7 +73,7 @@ device_trace_usage() ->
         ["device", "trace"],
         [
             "Device Trace Commands\n\n",
-            "  trace                    - this message",
+            "  trace                    - this message\n",
             "  trace --id=<id> [--stop] - Start/Stop tracing device to log file (default: start)\n",
             "\nNotes\n",
             "  Trace will deactivate after 240 minutes\n",
@@ -85,7 +85,7 @@ device_trace_usage() ->
 device_trace_cmd() ->
     [
         [
-            ["trace"],
+            ["device", "trace"],
             [],
             [?ID_FLAG, {stop, [{longname, "stop"}, {datatype, boolean}]}],
             prepend_device_id(fun trace/4)

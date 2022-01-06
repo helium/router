@@ -1670,8 +1670,10 @@ handle_frame_timeout(
                             false
                         )
                 of
-                    true -> {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
-                    false -> {false, 0}
+                    true ->
+                        {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
+                    false ->
+                        {false, 0}
                 end,
             FOpts2 =
                 case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of
@@ -1784,7 +1786,6 @@ handle_frame_timeout(
         Device0
     ),
     %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
-    RxDelay = maps:get(rx_delay, router_device:metadata(Device0), 0),
     {RXTimingSetupAns, RxDelay} =
         case
             lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
@@ -1794,8 +1795,10 @@ handle_frame_timeout(
                     false
                 )
         of
-            true -> {true, RxDelay};
-            false -> {false, 0}
+            true ->
+                {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
+            false ->
+                {false, 0}
         end,
     FOpts2 =
         case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of

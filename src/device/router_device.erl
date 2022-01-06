@@ -269,6 +269,8 @@ serialize(Device) ->
 -spec deserialize(binary()) -> device().
 deserialize(Binary) ->
     case erlang:binary_to_term(Binary) of
+        %% TODO promote `rx_delay' out of `metadata', so metadata can
+        %% then merely signal when Console changed that value.
         #device_v6{} = V6 ->
             V6;
         #device_v5{} = V5 ->

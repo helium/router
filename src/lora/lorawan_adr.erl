@@ -892,6 +892,201 @@ device_history_len(#device{packet_history = History}) ->
 device_offers_len(Device) ->
     length(Device#device.offer_history).
 
+spread_and_bandwidth(State, DataRate) ->
+    {DataRate, {Spread, Bandwidth}} = lorawan_adr:datarate_entry(
+        State,
+        DataRate
+    ),
+    {Spread, Bandwidth}.
+
+gen_adr_packet(DRConfig, Snr, Rssi) ->
+    RandNum = rand:uniform(4294967296),
+    Packet0 = #adr_packet{
+        packet_hash = <<RandNum>>,
+        wants_adr = true,
+        wants_adr_ack = false,
+        datarate_config = DRConfig,
+        snr = Snr,
+        rssi = Rssi
+    },
+    Packet0.
+
+gen_adr_ack(DRConfig, Snr, Rssi) ->
+    RandNum = rand:uniform(4294967296),
+    Packet0 = #adr_packet{
+        packet_hash = <<RandNum>>,
+        wants_adr = true,
+        wants_adr_ack = true,
+        datarate_config = DRConfig,
+        snr = Snr,
+        rssi = Rssi
+    },
+    Packet0.
+
+post_packet_track(State, DRIdx, Snr, Rssi) ->
+    DRConfig = spread_and_bandwidth(State, DRIdx),
+    Packet0 = gen_adr_packet(DRConfig, Snr, Rssi),
+    {State1, _} = track_packet(State, Packet0),
+    State1.
+
+get_packet_adr(State, DRIdx, Snr, Rssi) ->
+    DRConfig = spread_and_bandwidth(State, DRIdx),
+    Packet0 = gen_adr_ack(DRConfig, Snr, Rssi),
+    {State1, {AdjDataRate, AdjPower}} = track_packet(State, Packet0),
+    {AdjDataRate, AdjPower}.
+
+adr_jitter(Range) ->
+    Range * rand:uniform().
+
+exercise_packet_track(State, DRIdx, Count, Snr, Rssi) when Count == 0 ->
+    State;
+exercise_packet_track(State, DRIdx, Count, Snr0, Rssi0) ->
+    Snr = Snr0 - adr_jitter(0.1),
+    Rssi = Rssi0 - adr_jitter(0.1),
+    State1 = post_packet_track(State, DRIdx, Snr, Rssi),
+    exercise_packet_track(State1, DRIdx, Count - 1, Snr, Rssi).
+
+valid_exercise(DR, AdjustedDR, AdjustedPower) ->
+    ?assert(AdjustedDR >= DR),
+    ?assert(AdjustedPower >= 0),
+    fin.
+
+exercise_adr_state(State0, DRIdx, Count, Snr, Rssi) ->
+    % io:format("exercise_adr_state count=~w snr=~w, rssi=~w~n", [Count, Snr, Rssi]),
+    State1 = exercise_packet_track(State0, DRIdx, Count, Snr, Rssi),
+    %% ?assertEqual(Count, device_history_len(State1)),
+    ?assert(device_history_len(State1) < 21),
+    {AdjDR, AdjPower} = get_packet_adr(State1, DRIdx, Snr, Rssi),
+    ?assert(AdjDR >= 0),
+    ?assert(AdjPower >= 0),
+    % io:format("DR = ~w Power = ~w~n", [AdjDR, AdjPower]),
+    {AdjDR, AdjPower}.
+
+valid_exercise(State0, DRIdx, Count, Snr, Rssi, ExpectedDR, ExpectedPower) ->
+    {DR, Power} = exercise_adr_state(State0, DRIdx, Count, Snr, Rssi),
+    ?assertEqual(ExpectedDR, DR),
+    ?assertEqual(ExpectedPower, Power),
+    fin.
+
+gen_range(Start, Step, Length) when is_number(Length) ->
+    [Start + (Step * X) || X <- lists:seq(0, Length)].
+
+gen_startend_range(Start, Step, End) ->
+    Length = round((End - Start) / Step),
+    [Start + (Step * X) || X <- lists:seq(0, Length)].
+
+adr_harness_test() ->
+    DataRate0 = 0,
+    State0 = new('US915'),
+    [
+        valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
+        || X <- gen_startend_range(-120.0, 0.1, 0.0)
+    ],
+    fin.
+
+adr_exercise_test() ->
+    %% DataRate 0 in US915 regional parameters.
+    DataRate0 = 0,
+    Spreading0 = 10,
+    Bandwidth0 = 125,
+    %% Snr ranges from 10 to -20
+    Snr = 10.0,
+    %% Rssi ranges from 0 to -120
+    Rssi = 0.0,
+    DRConfig0 = {Spreading0, Bandwidth0},
+
+    State0 = new('US915'),
+    ?assertEqual(0, device_offers_len(State0)),
+    ?assertEqual(0, device_history_len(State0)),
+
+    State1 = post_packet_track(State0, DataRate0, Snr, Rssi),
+    State2 = post_packet_track(State1, DataRate0, Snr, Rssi),
+    ?assertEqual(2, device_history_len(State2)),
+    {AdjDataRate2, AdjPower2} = get_packet_adr(State2, DataRate0, Snr, Rssi),
+    %% io:format("NewSpreading2 ~8.16.0B~n", [NewSpreading2]),
+    io:format("AdjDataRate2 ~w~n", [AdjDataRate2]),
+    io:format("AdjPower2 ~w~n", [AdjPower2]),
+
+    PacketLimit = 19,
+    State3 = exercise_packet_track(State0, DataRate0, PacketLimit, Snr, Rssi),
+    % ?assertEqual(19, device_history_len(State3)),
+    ?assert(device_history_len(State3) < 21),
+    {AdjDataRate3, AdjPower3} = get_packet_adr(State3, DataRate0, Snr, Rssi),
+    io:format("AdjDataRate3 ~w~n", [AdjDataRate3]),
+    io:format("AdjPower3 ~w~n", [AdjPower3]),
+
+    valid_exercise(State0, DataRate0, 1, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 3, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 7, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 17, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 19, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 20, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 21, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 22, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 100, Snr, Rssi, 3, 3),
+    valid_exercise(State0, DataRate0, 200, Snr, Rssi, 3, 3),
+
+    valid_exercise(State0, 0, 22, -20.0, -120.0, 0, 0),
+    valid_exercise(State0, 1, 22, -20.0, -120.0, 1, 0),
+    valid_exercise(State0, 2, 22, -20.0, -120.0, 2, 0),
+    valid_exercise(State0, 3, 22, -20.0, -120.0, 3, 0),
+
+    [
+        valid_exercise(StateX, 0, 22, -20.0, -120.0, 0, 0)
+        || StateX <- [new('US915'), new('EU868'), new('CN470'), new('AS923'), new('AU915')]
+    ],
+    [valid_exercise(State0, 0, X, -20.0, -120.0, 0, 0) || X <- lists:seq(1, 200)],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 0, 0)
+        || X <- gen_startend_range(-20.0, 0.1, -2.5)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 1, 0)
+        || X <- gen_startend_range(-1.0, 0.1, 0.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 2, 0)
+        || X <- gen_startend_range(1.0, 0.1, 3.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 0)
+        || X <- gen_startend_range(4.0, 0.1, 6.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 1)
+        || X <- gen_startend_range(7.0, 0.1, 9.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 3)
+        || X <- gen_startend_range(10.0, 0.1, 12.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 4)
+        || X <- gen_startend_range(13.0, 0.1, 15.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 6)
+        || X <- gen_startend_range(16.0, 0.1, 18.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 7)
+        || X <- gen_startend_range(19.0, 0.1, 21.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 9)
+        || X <- gen_startend_range(22.0, 0.1, 24.9)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, 6.9, X, 3, 0)
+        || X <- gen_startend_range(-120.0, 0.1, 0.0)
+    ],
+    [
+        valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
+        || X <- gen_startend_range(-120.0, 0.1, 0.0)
+    ],
+
+    fin.
+
 adr_history_test() ->
     State0 = new('US915'),
     ?assertEqual(0, device_offers_len(State0)),
@@ -957,6 +1152,66 @@ adr_history_test() ->
     ?assertEqual(0, device_offers_len(State7)),
     ?assertEqual(0, device_history_len(State7)),
 
+    fin.
+
+adr_happy_path(State0, DRConfig) ->
+    Packet0 = #adr_packet{
+        rssi = 0,
+        snr = 10,
+        datarate_config = DRConfig,
+        wants_adr = true,
+        wants_adr_ack = false,
+        packet_hash = <<0>>
+    },
+    %% Up to MIN_HISTORY_LEN - 1 packets, track_packet should still
+    %% return 'hold'.
+    {State1, {AdjustedDataRate, AdjustedPowerIdx}} = lists:foldl(
+        fun
+            (N, {ADRn, Action}) ->
+                %% ?assertEqual(hold, Action),
+                lorawan_adr:track_packet(ADRn, Packet0#adr_packet{
+                    packet_hash = <<N>>
+                });
+            (N, State0) ->
+                io:format("State0 ~w~n", [N]),
+                lorawan_adr:track_packet(State0, Packet0#adr_packet{
+                    packet_hash = <<N>>
+                })
+        end,
+        State0,
+        lists:seq(1, ?DEFAULT_ADR_HISTORY_LEN)
+    ),
+    {State1, {AdjustedDataRate, AdjustedPowerIdx}}.
+
+valid_happy_path(State0, DRConfig) ->
+    {Spreading0, Bandwidth0} = DRConfig,
+    {State1, {AdjustedDataRate, AdjustedPowerIdx}} = adr_happy_path(State0, DRConfig),
+    {AdjustedSpread, AdjustedBandwidth} = spread_and_bandwidth(State1, AdjustedDataRate),
+    ?assert(AdjustedDataRate >= 0),
+    ?assert(AdjustedSpread =< Spreading0),
+    ?assertEqual(AdjustedBandwidth, Bandwidth0),
+    ?assertEqual(0, State1#device.max_txpower_idx),
+    ?assert(AdjustedPowerIdx >= State1#device.max_txpower_idx),
+    ?assert(AdjustedPowerIdx =< State1#device.min_txpower_idx),
+    % io:format("AdjustedDataRate ~w~n", [AdjustedDataRate]),
+    % io:format("AdjustedSpreading ~w~n", [AdjustedSpread]),
+    % io:format("AdjustedBandwidth ~w~n", [AdjustedBandwidth]),
+    % io:format("AdjustedPowerIdx ~w~n", [AdjustedPowerIdx]),
+    % io:format("Min PowerIdx ~w~n", [State1#device.min_txpower_idx]),
+    fin.
+
+adr_happy_path_test() ->
+    valid_happy_path(lorawan_adr:new('US915'), {10, 125}),
+    valid_happy_path(lorawan_adr:new('US915'), {9, 125}),
+    valid_happy_path(lorawan_adr:new('US915'), {8, 125}),
+    valid_happy_path(lorawan_adr:new('US915'), {7, 125}),
+
+    valid_happy_path(lorawan_adr:new('EU868'), {12, 125}),
+    valid_happy_path(lorawan_adr:new('EU868'), {11, 125}),
+    valid_happy_path(lorawan_adr:new('EU868'), {10, 125}),
+    valid_happy_path(lorawan_adr:new('EU868'), {9, 125}),
+    valid_happy_path(lorawan_adr:new('EU868'), {8, 125}),
+    valid_happy_path(lorawan_adr:new('EU868'), {7, 125}),
     fin.
 
 adr_ack_req_test() ->

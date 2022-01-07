@@ -932,13 +932,13 @@ post_packet_track(State, DRIdx, Snr, Rssi) ->
 get_packet_adr(State, DRIdx, Snr, Rssi) ->
     DRConfig = spread_and_bandwidth(State, DRIdx),
     Packet0 = gen_adr_ack(DRConfig, Snr, Rssi),
-    {State1, {AdjDataRate, AdjPower}} = track_packet(State, Packet0),
+    {_State1, {AdjDataRate, AdjPower}} = track_packet(State, Packet0),
     {AdjDataRate, AdjPower}.
 
 adr_jitter(Range) ->
     Range * rand:uniform().
 
-exercise_packet_track(State, DRIdx, Count, Snr, Rssi) when Count == 0 ->
+exercise_packet_track(_State, _DRIdx, Count, _Snr, _Rssi) when Count == 0 ->
     State;
 exercise_packet_track(State, DRIdx, Count, Snr0, Rssi0) ->
     Snr = Snr0 - adr_jitter(0.1),
@@ -946,10 +946,10 @@ exercise_packet_track(State, DRIdx, Count, Snr0, Rssi0) ->
     State1 = post_packet_track(State, DRIdx, Snr, Rssi),
     exercise_packet_track(State1, DRIdx, Count - 1, Snr, Rssi).
 
-valid_exercise(DR, AdjustedDR, AdjustedPower) ->
-    ?assert(AdjustedDR >= DR),
-    ?assert(AdjustedPower >= 0),
-    fin.
+% valid_exercise(DR, AdjustedDR, AdjustedPower) ->
+%     ?assert(AdjustedDR >= DR),
+%     ?assert(AdjustedPower >= 0),
+%     fin.
 
 exercise_adr_state(State0, DRIdx, Count, Snr, Rssi) ->
     % io:format("exercise_adr_state count=~w snr=~w, rssi=~w~n", [Count, Snr, Rssi]),
@@ -968,8 +968,8 @@ valid_exercise(State0, DRIdx, Count, Snr, Rssi, ExpectedDR, ExpectedPower) ->
     ?assertEqual(ExpectedPower, Power),
     fin.
 
-gen_range(Start, Step, Length) when is_number(Length) ->
-    [Start + (Step * X) || X <- lists:seq(0, Length)].
+% gen_range(Start, Step, Length) when is_number(Length) ->
+%     [Start + (Step * X) || X <- lists:seq(0, Length)].
 
 gen_startend_range(Start, Step, End) ->
     Length = round((End - Start) / Step),
@@ -993,7 +993,7 @@ adr_exercise_test() ->
     Snr = 10.0,
     %% Rssi ranges from 0 to -120
     Rssi = 0.0,
-    DRConfig0 = {Spreading0, Bandwidth0},
+    % DRConfig0 = {Spreading0, Bandwidth0},
 
     State0 = new('US915'),
     ?assertEqual(0, device_offers_len(State0)),
@@ -1167,14 +1167,14 @@ adr_happy_path(State0, DRConfig) ->
     %% return 'hold'.
     {State1, {AdjustedDataRate, AdjustedPowerIdx}} = lists:foldl(
         fun
-            (N, {ADRn, Action}) ->
+            (N, {ADRn, _Action}) ->
                 %% ?assertEqual(hold, Action),
                 lorawan_adr:track_packet(ADRn, Packet0#adr_packet{
                     packet_hash = <<N>>
                 });
-            (N, State0) ->
+            (N, State2) ->
                 io:format("State0 ~w~n", [N]),
-                lorawan_adr:track_packet(State0, Packet0#adr_packet{
+                lorawan_adr:track_packet(State2, Packet0#adr_packet{
                     packet_hash = <<N>>
                 })
         end,

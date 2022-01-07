@@ -938,7 +938,7 @@ get_packet_adr(State, DRIdx, Snr, Rssi) ->
 adr_jitter(Range) ->
     Range * rand:uniform().
 
-exercise_packet_track(_State, _DRIdx, Count, _Snr, _Rssi) when Count == 0 ->
+exercise_packet_track(State, _DRIdx, Count, _Snr, _Rssi) when Count == 0 ->
     State;
 exercise_packet_track(State, DRIdx, Count, Snr0, Rssi0) ->
     Snr = Snr0 - adr_jitter(0.1),
@@ -987,8 +987,8 @@ adr_harness_test() ->
 adr_exercise_test() ->
     %% DataRate 0 in US915 regional parameters.
     DataRate0 = 0,
-    Spreading0 = 10,
-    Bandwidth0 = 125,
+    % Spreading0 = 10,
+    % Bandwidth0 = 125,
     %% Snr ranges from 10 to -20
     Snr = 10.0,
     %% Rssi ranges from 0 to -120

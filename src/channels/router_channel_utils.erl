@@ -93,6 +93,9 @@ mk_data_fun(Data, FunStack) ->
                         error;
                     Val when is_map(Val) ->
                         {ok, mk_data_fun(Val, NewFunStack)};
+                    [First | _] = Val when is_map(First) andalso is_list(Val) ->
+                        NewVal = index_list_of_maps(Val),
+                        {ok, mk_data_fun(NewVal, NewFunStack)};
                     Val ->
                         Res = lists:foldl(
                             fun(Fun, Acc) ->
@@ -144,6 +147,13 @@ epoch_to_iso8601(Val) ->
 
 bytes_to_list(Val) ->
     list_to_binary(io_lib:format("~w", [Val])).
+
+-spec index_list_of_maps(list(map())) -> map().
+index_list_of_maps(LofM) ->
+    [
+        {integer_to_binary(Idx), V}
+        || {Idx, V} <- lists:zip(lists:seq(0, length(LofM) - 1), LofM)
+    ].
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -269,4 +279,20 @@ template_test() ->
     ),
     ok.
 
+dot_syntax_test_() ->
+    Map1 = #{data => [#{value => "name_one"}, #{value => "name_two"}]},
+    Map2 = #{data => [#{nested_values => [#{value => "hello"}, #{value => "lists"}]}]},
+
+    [
+        ?_assertEqual(<<"name_one">>, maybe_apply_template(<<"{{data.0.value}}">>, Map1)),
+        ?_assertEqual(<<"name_two">>, maybe_apply_template(<<"{{data.1.value}}">>, Map1)),
+        ?_assertEqual(
+            <<"hello">>,
+            maybe_apply_template(<<"{{data.0.nested_values.0.value}}">>, Map2)
+        ),
+        ?_assertEqual(
+            <<"lists">>,
+            maybe_apply_template(<<"{{data.0.nested_values.1.value}}">>, Map2)
+        )
+    ].
 -endif.

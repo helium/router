@@ -11,6 +11,7 @@
 
 -include_lib("hackney/include/hackney_lib.hrl").
 
+-define(MUSTACHE_INDEX_LOOKUP, "__indexed__").
 %% ------------------------------------------------------------------
 %% API Exports
 %% ------------------------------------------------------------------
@@ -53,17 +54,18 @@ make_url(Base, DynamicParams0, Data) ->
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
 maybe_apply_template(undefined, Data) ->
     jsx:encode(Data);
-maybe_apply_template(Template, TemplateArgs) ->
+maybe_apply_template(Template0, TemplateArgs) ->
     NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
     Data = mk_data_fun(NormalMap, []),
-    try bbmustache:render(Template, Data, [{key_type, binary}]) of
+    Template1 = replace_index_lookup_with_special_key(Template0),
+    try bbmustache:render(Template1, Data, [{key_type, binary}]) of
         Res -> Res
     catch
         _E:_R ->
             lager:warning("mustache template render failed ~p:~p, Template: ~p Data: ~p", [
                 _E,
                 _R,
-                Template,
+                Template1,
                 Data
             ]),
             <<"mustache template render failed">>
@@ -87,15 +89,19 @@ mk_data_fun(Data, FunStack) ->
         case parse_key(Key0, FunStack) of
             error ->
                 error;
+            {NewFunStack, <<?MUSTACHE_INDEX_LOOKUP, Key/binary>>} ->
+                case kvc:path(Key, Data) of
+                    [F | _] = Val when is_map(F) ->
+                        {ok, mk_data_fun(index_list_of_maps(Val), NewFunStack)};
+                    _ ->
+                        error
+                end;
             {NewFunStack, Key} ->
                 case kvc:path(Key, Data) of
                     [] ->
                         error;
                     Val when is_map(Val) ->
                         {ok, mk_data_fun(Val, NewFunStack)};
-                    [First | _] = Val when is_map(First) andalso is_list(Val) ->
-                        NewVal = index_list_of_maps(Val),
-                        {ok, mk_data_fun(NewVal, NewFunStack)};
                     Val ->
                         Res = lists:foldl(
                             fun(Fun, Acc) ->
@@ -147,6 +153,24 @@ epoch_to_iso8601(Val) ->
 
 bytes_to_list(Val) ->
     list_to_binary(io_lib:format("~w", [Val])).
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% Replace keys that will attempt to do array style indexing
+%% (e.g. foo.0.bar) with a special key that we can intercept
+%% in mustache.
+%% @end
+%%%-------------------------------------------------------------------
+-spec replace_index_lookup_with_special_key(binary()) -> binary().
+replace_index_lookup_with_special_key(Template) ->
+    re:replace(
+        Template,
+        %% (key )(followed by ".[:number:]")
+        <<"(\\w+)(?=\\.\\d+)">>,
+        %% __indexed__            (key)
+        <<?MUSTACHE_INDEX_LOOKUP, "&">>,
+        [{return, binary}, global]
+    ).
 
 -spec index_list_of_maps(list(map())) -> map().
 index_list_of_maps(LofM) ->
@@ -246,6 +270,19 @@ url_test_() ->
         )
     ].
 
+replace_index_lookup_with_special_key_test() ->
+    ?assertEqual(<<>>, replace_index_lookup_with_special_key(<<>>)),
+    ?assertEqual(<<"untouched">>, replace_index_lookup_with_special_key(<<"untouched">>)),
+    ?assertEqual(
+        <<"__indexed__foo.0.bar">>,
+        replace_index_lookup_with_special_key(<<"foo.0.bar">>)
+    ),
+    ?assertEqual(
+        <<"untouched_base64">>,
+        replace_index_lookup_with_special_key(<<"untouched_base64">>)
+    ),
+    ok.
+
 template_test() ->
     Template1 = <<"{{base64_to_hex(foo)}}">>,
     Map1 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
@@ -282,6 +319,7 @@ template_test() ->
 dot_syntax_test_() ->
     Map1 = #{data => [#{value => "name_one"}, #{value => "name_two"}]},
     Map2 = #{data => [#{nested_values => [#{value => "hello"}, #{value => "lists"}]}]},
+    BasicMap = #{data => [#{value => 1}, #{value => 2}, #{value => 3}]},
 
     [
         ?_assertEqual(<<"name_one">>, maybe_apply_template(<<"{{data.0.value}}">>, Map1)),
@@ -290,9 +328,15 @@ dot_syntax_test_() ->
             <<"hello">>,
             maybe_apply_template(<<"{{data.0.nested_values.0.value}}">>, Map2)
         ),
+
         ?_assertEqual(
             <<"lists">>,
             maybe_apply_template(<<"{{data.0.nested_values.1.value}}">>, Map2)
+        ),
+
+        ?_assertEqual(
+            <<"[1,2,3,]">>,
+            maybe_apply_template(<<"[{{#data}}{{value}},{{/data}}]">>, BasicMap)
         )
     ].
 -endif.

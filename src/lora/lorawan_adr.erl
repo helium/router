@@ -664,7 +664,7 @@ track_adr_answer(Device0, Answer) ->
         ]
     ),
     case {ChannelMaskAck, DataRateAck, PowerAck} of
-        {true, true, true} ->
+        {_, true, true} ->
             Device0#device{
                 pending_adjustments = [],
                 accepted_adjustments = [PendingHead | AcceptedAdjustments0]
@@ -1226,7 +1226,7 @@ adr_ack_req_test() ->
     State0 = lorawan_adr:new('US915'),
     %% We must always respond with new uplink parameters when a device
     %% requests ADR acknowledgement, even on first packet.
-    {State1, {_NewSpreading, _NewPower}} = lorawan_adr:track_packet(
+    {State1, {_AdjustedDataRate, _AdjustedPowerIdx}} = lorawan_adr:track_packet(
         State0,
         Packet0
     ),
@@ -1285,6 +1285,17 @@ adr_does_adr_test() ->
         power_ack = true
     },
     State2 = lorawan_adr:track_adr_answer(State1, Answer0),
+    ?assertEqual([], State2#device.pending_adjustments),
+
+    Answer1 = #adr_answer{
+        channel_mask_ack = false,
+        datarate_ack = true,
+        power_ack = true
+    },
+    State3 = lorawan_adr:track_adr_answer(State1, Answer1),
+    ?assertEqual([], State3#device.pending_adjustments),
+
+    State4 = lorawan_adr:track_adr_answer(State2, Answer1),
     ?assertEqual([], State2#device.pending_adjustments),
 
     fin.

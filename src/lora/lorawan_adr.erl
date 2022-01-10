@@ -1201,17 +1201,17 @@ valid_happy_path(State0, DRConfig) ->
     fin.
 
 adr_happy_path_test() ->
-    _test(valid_happy_path(lorawan_adr:new('US915'), {10, 125})),
-    _test(valid_happy_path(lorawan_adr:new('US915'), {9, 125})),
-    _test(valid_happy_path(lorawan_adr:new('US915'), {8, 125})),
-    _test(valid_happy_path(lorawan_adr:new('US915'), {7, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('US915'), {10, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('US915'), {9, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('US915'), {8, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('US915'), {7, 125})),
 
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {12, 125})),
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {11, 125})),
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {10, 125})),
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {9, 125})),
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {8, 125})),
-    _test(valid_happy_path(lorawan_adr:new('EU868'), {7, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {12, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {11, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {10, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {9, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {8, 125})),
+    ?_test(valid_happy_path(lorawan_adr:new('EU868'), {7, 125})),
     fin.
 
 adr_ack_req_test() ->

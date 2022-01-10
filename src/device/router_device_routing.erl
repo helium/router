@@ -667,7 +667,7 @@ maybe_multi_buy(Offer, Attempts, Device) ->
     end.
 
 -spec lookup_mb(binary()) ->
-    {ok, binary(), non_neg_integer(), non_neg_integer()} | {error, not_found}.
+    {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
 lookup_mb(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of
         [{PHash, Max, Curr, _Time}] ->

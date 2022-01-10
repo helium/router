@@ -75,9 +75,9 @@
 -define(MB_ETS, router_device_routing_mb_ets).
 -define(MB_FUN(Hash), [
     {
-        {Hash, '$1', '$2', '_'},
+        {Hash, '$1', '$2', '$3'},
         [{'=<', '$2', '$1'}],
-        [{{Hash, '$1', {'+', '$2', 1}}}]
+        [{{Hash, '$1', {'+', '$2', 1}, '$3'}}]
     }
 ]).
 

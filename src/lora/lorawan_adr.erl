@@ -966,7 +966,7 @@ valid_exercise(State0, DRIdx, Count, Snr, Rssi, ExpectedDR, ExpectedPower) ->
     {DR, Power} = exercise_adr_state(State0, DRIdx, Count, Snr, Rssi),
     ?assertEqual(ExpectedDR, DR),
     ?assertEqual(ExpectedPower, Power),
-    fin.
+    [].
 
 % gen_range(Start, Step, Length) when is_number(Length) ->
 %     [Start + (Step * X) || X <- lists:seq(0, Length)].
@@ -1212,7 +1212,7 @@ adr_happy_path_test() ->
     ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {9, 125}) end),
     ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {8, 125}) end),
     ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {7, 125}) end),
-    fin.
+    [].
 
 adr_ack_req_test() ->
     Packet0 = #adr_packet{

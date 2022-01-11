@@ -965,8 +965,7 @@ exercise_adr_state(State0, DRIdx, Count, Snr, Rssi) ->
 valid_exercise(State0, DRIdx, Count, Snr, Rssi, ExpectedDR, ExpectedPower) ->
     {DR, Power} = exercise_adr_state(State0, DRIdx, Count, Snr, Rssi),
     ?assertEqual(ExpectedDR, DR),
-    ?assertEqual(ExpectedPower, Power),
-    [].
+    ?_assertEqual(ExpectedPower, Power).
 
 % gen_range(Start, Step, Length) when is_number(Length) ->
 %     [Start + (Step * X) || X <- lists:seq(0, Length)].
@@ -1192,13 +1191,12 @@ valid_happy_path(State0, DRConfig) ->
     ?assertEqual(AdjustedBandwidth, Bandwidth0),
     ?assertEqual(0, State1#device.max_txpower_idx),
     ?assert(AdjustedPowerIdx >= State1#device.max_txpower_idx),
-    ?assert(AdjustedPowerIdx =< State1#device.min_txpower_idx),
+    ?_assert(AdjustedPowerIdx =< State1#device.min_txpower_idx).
     % io:format("AdjustedDataRate ~w~n", [AdjustedDataRate]),
     % io:format("AdjustedSpreading ~w~n", [AdjustedSpread]),
     % io:format("AdjustedBandwidth ~w~n", [AdjustedBandwidth]),
     % io:format("AdjustedPowerIdx ~w~n", [AdjustedPowerIdx]),
     % io:format("Min PowerIdx ~w~n", [State1#device.min_txpower_idx]),
-    fin.
 
 adr_happy_path_test() ->
     ?_test( begin valid_happy_path(lorawan_adr:new('US915'), {10, 125}) end),

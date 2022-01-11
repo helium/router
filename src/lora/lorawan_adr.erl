@@ -965,7 +965,7 @@ exercise_adr_state(State0, DRIdx, Count, Snr, Rssi) ->
 valid_exercise(State0, DRIdx, Count, Snr, Rssi, ExpectedDR, ExpectedPower) ->
     {DR, Power} = exercise_adr_state(State0, DRIdx, Count, Snr, Rssi),
     ?assertEqual(ExpectedDR, DR),
-    ?_assertEqual(ExpectedPower, Power).
+    ?assertEqual(ExpectedPower, Power).
 
 % gen_range(Start, Step, Length) when is_number(Length) ->
 %     [Start + (Step * X) || X <- lists:seq(0, Length)].
@@ -1001,7 +1001,7 @@ adr_exercise_test() ->
     State1 = post_packet_track(State0, DataRate0, Snr, Rssi),
     State2 = post_packet_track(State1, DataRate0, Snr, Rssi),
     ?_assertEqual(2, device_history_len(State2)),
-    {AdjDataRate2, AdjPower2} = get_packet_adr(State2, DataRate0, Snr, Rssi),
+    {_AdjDataRate2, _AdjPower2} = get_packet_adr(State2, DataRate0, Snr, Rssi),
     %% io:format("NewSpreading2 ~8.16.0B~n", [NewSpreading2]),
     % io:format("AdjDataRate2 ~w~n", [AdjDataRate2]),
     % io:format("AdjPower2 ~w~n", [AdjPower2]),
@@ -1010,7 +1010,7 @@ adr_exercise_test() ->
     State3 = exercise_packet_track(State0, DataRate0, PacketLimit, Snr, Rssi),
     % ?assertEqual(19, device_history_len(State3)),
     ?_assert(device_history_len(State3) < 21),
-    {AdjDataRate3, AdjPower3} = get_packet_adr(State3, DataRate0, Snr, Rssi),
+    {_AdjDataRate3, _AdjPower3} = get_packet_adr(State3, DataRate0, Snr, Rssi),
     % io:format("AdjDataRate3 ~w~n", [AdjDataRate3]),
     % io:format("AdjPower3 ~w~n", [AdjPower3]),
 
@@ -1191,7 +1191,7 @@ valid_happy_path(State0, DRConfig) ->
     ?assertEqual(AdjustedBandwidth, Bandwidth0),
     ?assertEqual(0, State1#device.max_txpower_idx),
     ?assert(AdjustedPowerIdx >= State1#device.max_txpower_idx),
-    ?_assert(AdjustedPowerIdx =< State1#device.min_txpower_idx).
+    ?assert(AdjustedPowerIdx =< State1#device.min_txpower_idx).
     % io:format("AdjustedDataRate ~w~n", [AdjustedDataRate]),
     % io:format("AdjustedSpreading ~w~n", [AdjustedSpread]),
     % io:format("AdjustedBandwidth ~w~n", [AdjustedBandwidth]),

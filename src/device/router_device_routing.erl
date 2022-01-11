@@ -75,9 +75,9 @@
 -define(MB_ETS, router_device_routing_mb_ets).
 -define(MB_FUN(Hash), [
     {
-        {Hash, '$1', '$2', '_'},
+        {Hash, '$1', '$2', '$3'},
         [{'=<', '$2', '$1'}],
-        [{{Hash, '$1', {'+', '$2', 1}}}]
+        [{{Hash, '$1', {'+', '$2', 1}, '$3'}}]
     }
 ]).
 
@@ -667,7 +667,8 @@ maybe_multi_buy(Offer, Attempts, Device) ->
     end.
 
 -spec lookup_mb(binary()) ->
-    {ok, binary(), non_neg_integer(), non_neg_integer()} | {error, not_found}.
+    {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
+%% use -1 to mean deny more
 lookup_mb(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of
         [{PHash, Max, Curr, _Time}] ->

@@ -172,7 +172,7 @@ replace_index_lookup_with_special_key(Template) ->
         [{return, binary}, global]
     ).
 
--spec index_list_of_maps(list(map())) -> map().
+-spec index_list_of_maps(list(map())) -> propslist:proplist().
 index_list_of_maps(LofM) ->
     [
         {integer_to_binary(Idx), V}

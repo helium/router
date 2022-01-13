@@ -39,8 +39,7 @@ ADD scripts/ scripts/
 RUN make
 
 ADD config/ config/
-ADD priv/ priv/
-RUN ln -s priv/genesis.${BUILD_NET} priv/genesis
+ADD priv/genesis.${BUILD_NET} priv/genesis
 
 RUN ./rebar3 as ${BUILD_NET} release
 # add router to path for easy interactions

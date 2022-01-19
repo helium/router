@@ -1,4 +1,4 @@
-FROM erlang:22
+FROM erlang:24
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
 RUN apt-get install -y -q \

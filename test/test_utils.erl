@@ -758,7 +758,7 @@ join_payload(AppKey, DevNonce) ->
     AppEUI = lorawan_utils:reverse(?APPEUI),
     DevEUI = lorawan_utils:reverse(?DEVEUI),
     Payload0 = <<MType:3, MHDRRFU:3, Major:2, AppEUI:8/binary, DevEUI:8/binary, DevNonce:2/binary>>,
-    MIC = crypto:cmac(aes_cbc128, AppKey, Payload0, 4),
+    MIC = crypto:macN(cmac, aes_128_cbc, AppKey, Payload0, 4),
     <<Payload0/binary, MIC:4/binary>>.
 
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
@@ -822,7 +822,7 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
             FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, FOptsBin:FOptsLen/binary,
             Port:8/integer, Data/binary>>,
     B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
-    MIC = crypto:cmac(aes_cbc128, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
+    MIC = crypto:macN(cmac, aes_128_cbc, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),
     <<Payload0/binary, MIC:4/binary>>.
 
 %%--------------------------------------------------------------------
@@ -954,7 +954,7 @@ deframe_join_packet(
     AppKey
 ) when MType == ?JOIN_ACCEPT ->
     ct:pal("Enc join ~w", [EncPayload]),
-    Payload = crypto:block_encrypt(aes_ecb, AppKey, EncPayload),
+    Payload = crypto:crypto_one_time(aes_128_ecb, AppKey, EncPayload, false),
     {AppNonce, NetID, DevAddr, DLSettings, RxDelay, MIC, CFList} =
         case Payload of
             <<AN:3/binary, NID:3/binary, DA:4/binary, DL:8/integer-unsigned, RxD:8/integer-unsigned,
@@ -968,17 +968,19 @@ deframe_join_packet(
     ct:pal("Dec join ~w", [Payload]),
     %{?APPEUI, ?DEVEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
-    MIC = crypto:cmac(aes_cbc128, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
+    MIC = crypto:macN(cmac, aes_128_cbc, AppKey, <<MType:3, _MHDRRFU:3, _Major:2, Msg/binary>>, 4),
     NetID = <<"He2">>,
-    NwkSKey = crypto:block_encrypt(
-        aes_ecb,
+    NwkSKey = crypto:crypto_one_time(
+        aes_128_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#01, AppNonce/binary, NetID/binary, DevNonce/binary>>),
+        true
     ),
-    AppSKey = crypto:block_encrypt(
-        aes_ecb,
+    AppSKey = crypto:crypto_one_time(
+        aes_128_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#02, AppNonce/binary, NetID/binary, DevNonce/binary>>),
+        true
     ),
     {NetID, DevAddr, DLSettings, RxDelay, NwkSKey, AppSKey, CFList}.
 

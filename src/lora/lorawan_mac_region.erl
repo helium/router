@@ -791,7 +791,7 @@ uplink_power_table_('EU868') ->
 %% NOTE: We may want to reduce to default tx_power
 %% @end
 %% ------------------------------------------------------------------
--spec downlink_signal_strength(atom(), freq_whole()) -> non_neg_integer().
+-spec downlink_signal_strength(atom(), freq_whole() | freq_float()) -> non_neg_integer().
 downlink_signal_strength('CN470', _Freq) -> 16;
 downlink_signal_strength('EU868', Freq) when 869.4 =< Freq andalso Freq < 869.65 -> 27;
 downlink_signal_strength('EU868', _Freq) -> 14;
@@ -1194,8 +1194,8 @@ as923_window_1_test() ->
             ?assertEqual(TxQ#txq.time, RxQ#rxq.tmms + get_window(Window))
         end,
         [
-            {join1_window, join1_window('AS923', _Delay = 0, RxQ)},
-            {rx1_window, rx1_window('AS923', _Delay = 0, _Offset0 = 0, RxQ)}
+            {join1_window, join1_window('AS923', 0, RxQ)},
+            {rx1_window, rx1_window('AS923', 0, 0, RxQ)}
         ]
     ),
 

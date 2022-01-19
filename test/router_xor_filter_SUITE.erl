@@ -373,7 +373,7 @@ migrate_filter_test(Config) ->
     %%        Two   - 5 devices
     %%        Three - 5 devices
     %%        Four  - 0 devices
-    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit = true),
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit0 = true),
     %% migration should be two blocks, 1 (block 8) for new big filter, 1 (block 9) for empty filter
     ok = expect_block(9, Chain),
     State1 = sys:get_state(router_xor_filter_worker),
@@ -389,7 +389,7 @@ migrate_filter_test(Config) ->
     %%        Two   - 5 devices
     %%        Three - 0 devices
     %%        Four  - 0 devices
-    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit = true),
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit1 = true),
     %% migration should be two blocks, 1 (block 10) for new big filter, 1 (block 11) for empty filter
     ok = expect_block(11, Chain),
 

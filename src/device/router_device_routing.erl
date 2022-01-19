@@ -666,8 +666,7 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             end
     end.
 
--spec lookup_mb(binary()) ->
-    {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
+-spec lookup_mb(binary()) -> {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
 %% use -1 to mean deny more
 lookup_mb(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of
@@ -909,7 +908,7 @@ get_device(DevEUI, AppEUI, Msg, MIC, Chain) ->
 find_device(_Msg, _MIC, [], _Chain) ->
     {error, not_found};
 find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
-    case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
+    case crypto:macN(cmac, aes_128_cbc, AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
@@ -1120,7 +1119,7 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
 brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
     DeviceID = router_device:id(Device),
     try
-        case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
+        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4) of
             MIC ->
                 true;
             _ ->
@@ -1128,7 +1127,7 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
                 case router_device:fcnt(Device) > ?MAX_16_BITS - 100 of
                     true ->
                         B0_32 = b0_from_payload(Payload, 32),
-                        case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
+                        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0_32, 4) of
                             MIC ->
                                 lager:warning(
                                     [{device_id, DeviceID}],

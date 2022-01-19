@@ -1,4 +1,4 @@
-FROM erlang:22
+FROM erlang:24
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt update
 RUN apt-get install -y -q \
@@ -27,6 +27,11 @@ ADD config/grpc_client_gen.config config/grpc_client_gen.config
 ADD config/grpc_server_gen.config config/grpc_server_gen.config
 RUN ./rebar3 get-deps
 RUN ./rebar3 compile
+# EXTRA from main Dockerfile
+# This is only to fetch / compile tests dependencies
+RUN ./rebar3 as test compile
+# END EXTRA
+
 
 ADD Makefile Makefile
 ADD c_src/ c_src/
@@ -38,9 +43,12 @@ RUN make
 ADD config/ config/
 ADD priv/ priv/
 RUN make rel
+# add router to path for easy interactions
+ENV PATH=$PATH:_build/default/rel/router/bin
 
+# EXTRA from main Dockerfile
 ADD test/ test/
-# This is only to fetch tests dependencies
 RUN ./rebar3 as test compile
+# END EXTRA
 
 CMD ["make", "run"]

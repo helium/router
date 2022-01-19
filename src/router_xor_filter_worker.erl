@@ -1231,7 +1231,7 @@ deveui_appeui_test() ->
     ).
 
 should_update_filters_test() ->
-    {timeout, 15, fun test_for_should_update_filters_test/0}.
+    {timeout, 30, fun test_for_should_update_filters_test/0}.
 test_for_should_update_filters_test() ->
     OUI = 1,
 

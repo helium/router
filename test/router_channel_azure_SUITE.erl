@@ -444,14 +444,15 @@ azure_test(Config) ->
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
-    Opts = [
-        {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URI, Opts) of
-        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when
-            Scheme == mqtt orelse
-                Scheme == mqtts
+    case uri_string:parse(URI) of
+        #{
+            host := Host,
+            port := Port,
+            scheme := Scheme,
+            userinfo := UserInfo
+        } when
+            Scheme == <<"mqtt">> orelse
+                Scheme == <<"mqtts">>
         ->
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of

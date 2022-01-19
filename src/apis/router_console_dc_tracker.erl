@@ -396,7 +396,7 @@ lookup_nonce_test() ->
     ?assertEqual(ok, refill(<<"TWO">>, 2, 2)),
     ?assertEqual(ok, refill(<<"THREE">>, 1, 2)),
 
-    ?assertEqual([{<<"THREE">>, {2, 1}}, {<<"ONE">>, {1, 1}}], lookup_nonce(1)),
+    ?assertEqual([{<<"ONE">>, {1, 1}}, {<<"THREE">>, {2, 1}}], lookup_nonce(1)),
     ?assertEqual([{<<"TWO">>, {2, 2}}], lookup_nonce(2)),
 
     ets:delete(?ETS),
@@ -410,7 +410,7 @@ lookup_balance_test() ->
     ?assertEqual(ok, refill(<<"THREE">>, 1, 2)),
 
     ?assertEqual([{<<"ONE">>, {1, 1}}], lookup_balance(1)),
-    ?assertEqual([{<<"THREE">>, {2, 1}}, {<<"TWO">>, {2, 2}}], lookup_balance(2)),
+    ?assertEqual([{<<"TWO">>, {2, 2}}, {<<"THREE">>, {2, 1}}], lookup_balance(2)),
 
     ets:delete(?ETS),
     ok.

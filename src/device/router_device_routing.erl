@@ -666,8 +666,7 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             end
     end.
 
--spec lookup_mb(binary()) ->
-    {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
+-spec lookup_mb(binary()) -> {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
 %% use -1 to mean deny more
 lookup_mb(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of

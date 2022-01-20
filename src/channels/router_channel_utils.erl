@@ -325,23 +325,42 @@ dot_syntax_test_() ->
     Map1 = #{data => [#{value => "name_one"}, #{value => "name_two"}]},
     Map2 = #{data => [#{nested_values => [#{value => "hello"}, #{value => "lists"}]}]},
     BasicMap = #{data => [#{value => 1}, #{value => 2}, #{value => 3}]},
+    BigMap = #{data => lists:map(fun(Idx) -> #{value => Idx} end, lists:seq(0, 999))},
+    ListData = #{data => ["start", "middle", "end"]},
 
     [
         ?_assertEqual(<<"name_one">>, maybe_apply_template(<<"{{data.0.value}}">>, Map1)),
         ?_assertEqual(<<"name_two">>, maybe_apply_template(<<"{{data.1.value}}">>, Map1)),
-        ?_assertEqual(
-            <<"hello">>,
-            maybe_apply_template(<<"{{data.0.nested_values.0.value}}">>, Map2)
-        ),
+        {"Multiple nested lists of maps 1",
+            ?_assertEqual(
+                <<"hello">>,
+                maybe_apply_template(<<"{{data.0.nested_values.0.value}}">>, Map2)
+            )},
+        {"Multiple nested lists of maps 2",
+            ?_assertEqual(
+                <<"lists">>,
+                maybe_apply_template(<<"{{data.0.nested_values.1.value}}">>, Map2)
+            )},
+        {"Mustache Sections still work",
+            ?_assertEqual(
+                <<"[1,2,3,]">>,
+                maybe_apply_template(<<"[{{#data}}{{value}},{{/data}}]">>, BasicMap)
+            )},
+        {"Access arbitrarily large lists",
+            ?_assertEqual(
+                <<"577">>,
+                maybe_apply_template(<<"{{data.577.value}}">>, BigMap)
+            )},
+        {"Out of bound access",
+            ?_assertEqual(
+                <<"mustache template render failed">>,
+                maybe_apply_template(<<"{{data.9999.value}}">>, BasicMap)
+            )},
 
-        ?_assertEqual(
-            <<"lists">>,
-            maybe_apply_template(<<"{{data.0.nested_values.1.value}}">>, Map2)
-        ),
-
-        ?_assertEqual(
-            <<"[1,2,3,]">>,
-            maybe_apply_template(<<"[{{#data}}{{value}},{{/data}}]">>, BasicMap)
-        )
+        {"Basic List Data by index",
+            ?_assertEqual(
+                <<"middle">>,
+                maybe_apply_template(<<"{{data.1}}">>, ListData)
+            )}
     ].
 -endif.

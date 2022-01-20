@@ -11,6 +11,7 @@
 
 -include_lib("hackney/include/hackney_lib.hrl").
 
+-define(MUSTACHE_INDEX_LOOKUP, "__indexed__").
 %% ------------------------------------------------------------------
 %% API Exports
 %% ------------------------------------------------------------------
@@ -53,18 +54,19 @@ make_url(Base, DynamicParams0, Data) ->
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
 maybe_apply_template(undefined, Data) ->
     jsx:encode(Data);
-maybe_apply_template(Template, TemplateArgs) ->
+maybe_apply_template(Template0, TemplateArgs) ->
     NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
-    Data = mk_data_fun(NormalMap, []),
-    try bbmustache:render(Template, Data, [{key_type, binary}]) of
+    DataFun = mk_data_fun(NormalMap, []),
+    Template1 = replace_index_lookup_with_special_key(Template0),
+    try bbmustache:render(Template1, DataFun, [{key_type, binary}, raise_on_context_miss]) of
         Res -> Res
     catch
         _E:_R ->
             lager:warning("mustache template render failed ~p:~p, Template: ~p Data: ~p", [
                 _E,
                 _R,
-                Template,
-                Data
+                Template1,
+                NormalMap
             ]),
             <<"mustache template render failed">>
     end.
@@ -87,6 +89,18 @@ mk_data_fun(Data, FunStack) ->
         case parse_key(Key0, FunStack) of
             error ->
                 error;
+            {NewFunStack, <<?MUSTACHE_INDEX_LOOKUP, Key/binary>>} ->
+                case kvc:path(Key, Data) of
+                    Val when is_list(Val) ->
+                        case io_lib:printable_unicode_list(Val) of
+                            true ->
+                                error;
+                            false ->
+                                {ok, mk_data_fun(index_list_of_maps(Val), NewFunStack)}
+                        end;
+                    _ ->
+                        error
+                end;
             {NewFunStack, Key} ->
                 case kvc:path(Key, Data) of
                     [] ->
@@ -144,6 +158,31 @@ epoch_to_iso8601(Val) ->
 
 bytes_to_list(Val) ->
     list_to_binary(io_lib:format("~w", [Val])).
+
+%%%-------------------------------------------------------------------
+%% @doc
+%% Replace keys that will attempt to do array style indexing
+%% (e.g. foo.0.bar) with a special key that we can intercept
+%% in mustache.
+%% @end
+%%%-------------------------------------------------------------------
+-spec replace_index_lookup_with_special_key(binary()) -> binary().
+replace_index_lookup_with_special_key(Template) ->
+    re:replace(
+        Template,
+        %% (key )(followed by ".[:number:]")
+        <<"(\\w+)(?=\\.\\d+)">>,
+        %% __indexed__            (key)
+        <<?MUSTACHE_INDEX_LOOKUP, "&">>,
+        [{return, binary}, global]
+    ).
+
+-spec index_list_of_maps(list(map())) -> propslist:proplist().
+index_list_of_maps(LofM) ->
+    [
+        {integer_to_binary(Idx), V}
+        || {Idx, V} <- lists:zip(lists:seq(0, length(LofM) - 1), LofM)
+    ].
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -236,6 +275,19 @@ url_test_() ->
         )
     ].
 
+replace_index_lookup_with_special_key_test() ->
+    ?assertEqual(<<>>, replace_index_lookup_with_special_key(<<>>)),
+    ?assertEqual(<<"untouched">>, replace_index_lookup_with_special_key(<<"untouched">>)),
+    ?assertEqual(
+        <<"__indexed__foo.0.bar">>,
+        replace_index_lookup_with_special_key(<<"foo.0.bar">>)
+    ),
+    ?assertEqual(
+        <<"untouched_base64">>,
+        replace_index_lookup_with_special_key(<<"untouched_base64">>)
+    ),
+    ok.
+
 template_test() ->
     Template1 = <<"{{base64_to_hex(foo)}}">>,
     Map1 = #{foo => base64:encode(<<16#deadbeef:32/integer>>)},
@@ -269,4 +321,46 @@ template_test() ->
     ),
     ok.
 
+dot_syntax_test_() ->
+    Map1 = #{data => [#{value => "name_one"}, #{value => "name_two"}]},
+    Map2 = #{data => [#{nested_values => [#{value => "hello"}, #{value => "lists"}]}]},
+    BasicMap = #{data => [#{value => 1}, #{value => 2}, #{value => 3}]},
+    BigMap = #{data => lists:map(fun(Idx) -> #{value => Idx} end, lists:seq(0, 999))},
+    ListData = #{data => ["start", "middle", "end"]},
+
+    [
+        ?_assertEqual(<<"name_one">>, maybe_apply_template(<<"{{data.0.value}}">>, Map1)),
+        ?_assertEqual(<<"name_two">>, maybe_apply_template(<<"{{data.1.value}}">>, Map1)),
+        {"Multiple nested lists of maps 1",
+            ?_assertEqual(
+                <<"hello">>,
+                maybe_apply_template(<<"{{data.0.nested_values.0.value}}">>, Map2)
+            )},
+        {"Multiple nested lists of maps 2",
+            ?_assertEqual(
+                <<"lists">>,
+                maybe_apply_template(<<"{{data.0.nested_values.1.value}}">>, Map2)
+            )},
+        {"Mustache Sections still work",
+            ?_assertEqual(
+                <<"[1,2,3,]">>,
+                maybe_apply_template(<<"[{{#data}}{{value}},{{/data}}]">>, BasicMap)
+            )},
+        {"Access arbitrarily large lists",
+            ?_assertEqual(
+                <<"577">>,
+                maybe_apply_template(<<"{{data.577.value}}">>, BigMap)
+            )},
+        {"Out of bound access",
+            ?_assertEqual(
+                <<"mustache template render failed">>,
+                maybe_apply_template(<<"{{data.9999.value}}">>, BasicMap)
+            )},
+
+        {"Basic List Data by index",
+            ?_assertEqual(
+                <<"middle">>,
+                maybe_apply_template(<<"{{data.1}}">>, ListData)
+            )}
+    ].
 -endif.

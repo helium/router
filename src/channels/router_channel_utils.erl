@@ -58,7 +58,7 @@ maybe_apply_template(Template0, TemplateArgs) ->
     NormalMap = jsx:decode(jsx:encode(TemplateArgs), [return_maps]),
     DataFun = mk_data_fun(NormalMap, []),
     Template1 = replace_index_lookup_with_special_key(Template0),
-    try bbmustache:render(Template1, DataFun, [{key_type, binary}]) of
+    try bbmustache:render(Template1, DataFun, [{key_type, binary}, raise_on_context_miss]) of
         Res -> Res
     catch
         _E:_R ->

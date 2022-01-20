@@ -66,7 +66,7 @@ maybe_apply_template(Template0, TemplateArgs) ->
                 _E,
                 _R,
                 Template1,
-                Data
+                NormalMap
             ]),
             <<"mustache template render failed">>
     end.

@@ -91,8 +91,13 @@ mk_data_fun(Data, FunStack) ->
                 error;
             {NewFunStack, <<?MUSTACHE_INDEX_LOOKUP, Key/binary>>} ->
                 case kvc:path(Key, Data) of
-                    [F | _] = Val when is_map(F) ->
-                        {ok, mk_data_fun(index_list_of_maps(Val), NewFunStack)};
+                    Val when is_list(Val) ->
+                        case io_lib:printable_unicode_list(Val) of
+                            true ->
+                                error;
+                            false ->
+                                {ok, mk_data_fun(index_list_of_maps(Val), NewFunStack)}
+                        end;
                     _ ->
                         error
                 end;

@@ -37,6 +37,7 @@ RUN make
 
 ADD config/ config/
 ADD priv/ priv/
+RUN ln -s priv/genesis.mainnet priv/genesis
 RUN make rel
 
 ADD test/ test/

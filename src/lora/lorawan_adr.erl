@@ -978,12 +978,14 @@ adr_harness_test() ->
     DataRate0 = 0,
     State0 = new('US915'),
     [
-        ?_test(begin valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
+        end)
         || X <- gen_startend_range(-120.0, 0.1, 0.0)
     ],
     fin.
 
-adr_exercise_test() ->
+adr_exercise_test_() ->
     %% DataRate 0 in US915 regional parameters.
     DataRate0 = 0,
     % Spreading0 = 10,
@@ -1014,73 +1016,132 @@ adr_exercise_test() ->
     % io:format("AdjDataRate3 ~w~n", [AdjDataRate3]),
     % io:format("AdjPower3 ~w~n", [AdjPower3]),
 
-    ?_test( begin valid_exercise(State0, DataRate0, 1, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 3, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 7, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 17, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 19, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 20, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 21, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 22, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 100, Snr, Rssi, 3, 3) end),
-    ?_test( begin valid_exercise(State0, DataRate0, 200, Snr, Rssi, 3, 3) end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 1, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 3, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 7, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 17, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 19, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 20, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 21, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 22, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 100, Snr, Rssi, 3, 3)
+    end),
+    ?_test(begin
+        valid_exercise(State0, DataRate0, 200, Snr, Rssi, 3, 3)
+    end),
 
-    ?_test( begin valid_exercise(State0, 0, 22, -20.0, -120.0, 0, 0) end),
-    ?_test( begin valid_exercise(State0, 1, 22, -20.0, -120.0, 1, 0) end),
-    ?_test( begin valid_exercise(State0, 2, 22, -20.0, -120.0, 2, 0) end),
-    ?_test( begin valid_exercise(State0, 3, 22, -20.0, -120.0, 3, 0) end),
+    ?_test(begin
+        valid_exercise(State0, 0, 22, -20.0, -120.0, 0, 0)
+    end),
+    ?_test(begin
+        valid_exercise(State0, 1, 22, -20.0, -120.0, 1, 0)
+    end),
+    ?_test(begin
+        valid_exercise(State0, 2, 22, -20.0, -120.0, 2, 0)
+    end),
+    ?_test(begin
+        valid_exercise(State0, 3, 22, -20.0, -120.0, 3, 0)
+    end),
 
     [
-        ?_test( begin valid_exercise(StateX, 0, 22, -20.0, -120.0, 0, 0) end)
+        ?_test(begin
+            valid_exercise(StateX, 0, 22, -20.0, -120.0, 0, 0)
+        end)
         || StateX <- [new('US915'), new('EU868'), new('CN470'), new('AS923'), new('AU915')]
     ],
-    [?_test( begin valid_exercise(State0, 0, X, -20.0, -120.0, 0, 0) end) || X <- lists:seq(1, 200)],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 0, 0) end)
+        ?_test(begin
+            valid_exercise(State0, 0, X, -20.0, -120.0, 0, 0)
+        end)
+        || X <- lists:seq(1, 200)
+    ],
+    [
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 0, 0)
+        end)
         || X <- gen_startend_range(-20.0, 0.1, -2.5)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 1, 0) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 1, 0)
+        end)
         || X <- gen_startend_range(-1.0, 0.1, 0.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 2, 0) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 2, 0)
+        end)
         || X <- gen_startend_range(1.0, 0.1, 3.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 0) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 0)
+        end)
         || X <- gen_startend_range(4.0, 0.1, 6.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 1) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 1)
+        end)
         || X <- gen_startend_range(7.0, 0.1, 9.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 3) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 3)
+        end)
         || X <- gen_startend_range(10.0, 0.1, 12.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 4) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 4)
+        end)
         || X <- gen_startend_range(13.0, 0.1, 15.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 6) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 6)
+        end)
         || X <- gen_startend_range(16.0, 0.1, 18.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 7) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 7)
+        end)
         || X <- gen_startend_range(19.0, 0.1, 21.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 9) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 9)
+        end)
         || X <- gen_startend_range(22.0, 0.1, 24.9)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, 6.9, X, 3, 0) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, 6.9, X, 3, 0)
+        end)
         || X <- gen_startend_range(-120.0, 0.1, 0.0)
     ],
     [
-        ?_test( begin valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1) end)
+        ?_test(begin
+            valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
+        end)
         || X <- gen_startend_range(-120.0, 0.1, 0.0)
     ],
 
@@ -1192,24 +1253,44 @@ valid_happy_path(State0, DRConfig) ->
     ?assertEqual(0, State1#device.max_txpower_idx),
     ?assert(AdjustedPowerIdx >= State1#device.max_txpower_idx),
     ?assert(AdjustedPowerIdx =< State1#device.min_txpower_idx).
-    % io:format("AdjustedDataRate ~w~n", [AdjustedDataRate]),
-    % io:format("AdjustedSpreading ~w~n", [AdjustedSpread]),
-    % io:format("AdjustedBandwidth ~w~n", [AdjustedBandwidth]),
-    % io:format("AdjustedPowerIdx ~w~n", [AdjustedPowerIdx]),
-    % io:format("Min PowerIdx ~w~n", [State1#device.min_txpower_idx]),
+% io:format("AdjustedDataRate ~w~n", [AdjustedDataRate]),
+% io:format("AdjustedSpreading ~w~n", [AdjustedSpread]),
+% io:format("AdjustedBandwidth ~w~n", [AdjustedBandwidth]),
+% io:format("AdjustedPowerIdx ~w~n", [AdjustedPowerIdx]),
+% io:format("Min PowerIdx ~w~n", [State1#device.min_txpower_idx]),
 
-adr_happy_path_test() ->
-    ?_test( begin valid_happy_path(lorawan_adr:new('US915'), {10, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('US915'), {9, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('US915'), {8, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('US915'), {7, 125}) end),
+adr_happy_path_test_() ->
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('US915'), {10, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('US915'), {9, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('US915'), {8, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('US915'), {7, 125})
+    end),
 
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {12, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {11, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {10, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {9, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {8, 125}) end),
-    ?_test( begin valid_happy_path(lorawan_adr:new('EU868'), {7, 125}) end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {12, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {11, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {10, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {9, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {8, 125})
+    end),
+    ?_test(begin
+        valid_happy_path(lorawan_adr:new('EU868'), {7, 125})
+    end),
     [].
 
 adr_ack_req_test() ->

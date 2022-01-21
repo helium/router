@@ -38,18 +38,35 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
+    % ok = file:write_file("/etc/acl.conf", <<"{allow, all}.">>),
+    % application:set_env(emqx, acl_file, "/etc/acl.conf"),
     application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
+    application:set_env(emqx, zones, [{zone, [{enable_acl, false}]}]),
+    application:set_env(emqx, enable_acl_cache, true),
+    application:set_env(emqx, listeners, [
+        #{name => erlang:atom_to_list(?MODULE), proto => tcp, listen_on => 1883, opts => []}
+    ]),
+    application:set_env(emqx, alarm, [{validity_period, 60}]),
+    application:set_env(emqx, os_mon, [
+        {mem_check_interval, 60},
+        {sysmem_high_watermark, 50.0},
+        {procmem_high_watermark, 50.0},
+        {cpu_check_interval, 60}
+    ]),
+    application:set_env(emqx, vm_mon, [{check_interval, 60}]),
+
     {ok, _} = application:ensure_all_started(emqx),
+
+    emqx_zone:set_env(zone, allow_anonymous, true),
+    emqx_zone:set_env(zone, acl_nomatch, allow),
+
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
-    application:stop(emqx),
+    catch application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -79,7 +96,7 @@ mqtt_test(Config) ->
     UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
     DownlinkTopic = render_topic(DownlinkTemplate, DeviceForTemplate),
     {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
-
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, UplinkTopic]),
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,
@@ -951,12 +968,12 @@ connect(URI, DeviceID, Name) ->
         #{
             host := Host,
             port := Port,
-            scheme := Scheme,
-            userinfo := UserInfo
-        } when
+            scheme := Scheme
+        } = Map when
             Scheme == <<"mqtt">> orelse
                 Scheme == <<"mqtts">>
         ->
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};

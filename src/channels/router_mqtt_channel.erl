@@ -317,7 +317,7 @@ publish(
     Body = router_channel:encode_data(Channel, Data),
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
-            lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
+            lager:debug("[~s] published: ~p to ~p result: ~p", [ChannelID, Data, Topic, Resp]),
             {ok, Resp}
     catch
         _:_ ->
@@ -430,9 +430,8 @@ connect(URI, DeviceID, Name) ->
         #{
             host := Host,
             port := Port,
-            scheme := Scheme,
-            userinfo := UserInfo
-        } when
+            scheme := Scheme
+        } = Map when
             Scheme == <<"mqtt">> orelse
                 Scheme == <<"mqtts">>
         ->
@@ -443,6 +442,7 @@ connect(URI, DeviceID, Name) ->
             %% should not render as clear text any data after the first colon
             %% (:) found within a userinfo subcomponent unless the data after
             %% the colon is the empty string (indicating no password).
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};
@@ -487,6 +487,7 @@ connect(URI, DeviceID, Name) ->
 render_topic(undefined, _Device) ->
     undefined;
 render_topic(Template, Device) ->
+    lager:notice("~p ~p", [Template, Device]),
     Metadata = router_device:metadata(Device),
     Map = #{
         "device_id" => router_device:id(Device),

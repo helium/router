@@ -996,12 +996,12 @@ adr_exercise_test_() ->
     % DRConfig0 = {Spreading0, Bandwidth0},
 
     State0 = new('US915'),
-    ?_assertEqual(0, device_offers_len(State0)),
-    ?_assertEqual(0, device_history_len(State0)),
+    ?assertEqual(0, device_offers_len(State0)),
+    ?assertEqual(0, device_history_len(State0)),
 
     State1 = post_packet_track(State0, DataRate0, Snr, Rssi),
     State2 = post_packet_track(State1, DataRate0, Snr, Rssi),
-    ?_assertEqual(2, device_history_len(State2)),
+    ?assertEqual(2, device_history_len(State2)),
     {_AdjDataRate2, _AdjPower2} = get_packet_adr(State2, DataRate0, Snr, Rssi),
     %% io:format("NewSpreading2 ~8.16.0B~n", [NewSpreading2]),
     % io:format("AdjDataRate2 ~w~n", [AdjDataRate2]),
@@ -1010,7 +1010,7 @@ adr_exercise_test_() ->
     PacketLimit = 19,
     State3 = exercise_packet_track(State0, DataRate0, PacketLimit, Snr, Rssi),
     % ?assertEqual(19, device_history_len(State3)),
-    ?_assert(device_history_len(State3) < 21),
+    ?assert(device_history_len(State3) < 21),
     {_AdjDataRate3, _AdjPower3} = get_packet_adr(State3, DataRate0, Snr, Rssi),
     % io:format("AdjDataRate3 ~w~n", [AdjDataRate3]),
     % io:format("AdjPower3 ~w~n", [AdjPower3]),
@@ -1377,7 +1377,7 @@ adr_does_adr_test() ->
     ?assertEqual([], State3#device.pending_adjustments),
 
     State4 = lorawan_adr:track_adr_answer(State2, Answer1),
-    ?assertEqual([], State2#device.pending_adjustments),
+    ?assertEqual([], State4#device.pending_adjustments),
 
     fin.
 

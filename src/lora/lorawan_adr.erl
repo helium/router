@@ -1261,38 +1261,39 @@ valid_happy_path(State0, DRConfig) ->
 % io:format("Min PowerIdx ~w~n", [State1#device.min_txpower_idx]),
 
 adr_happy_path_test_() ->
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('US915'), {10, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('US915'), {9, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('US915'), {8, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('US915'), {7, 125})
-    end),
+    [
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('US915'), {10, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('US915'), {9, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('US915'), {8, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('US915'), {7, 125})
+        end),
 
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {12, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {11, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {10, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {9, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {8, 125})
-    end),
-    ?_test(begin
-        valid_happy_path(lorawan_adr:new('EU868'), {7, 125})
-    end),
-    [].
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {12, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {11, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {10, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {9, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {8, 125})
+        end),
+        ?_test(begin
+            valid_happy_path(lorawan_adr:new('EU868'), {7, 125})
+        end)
+    ].
 
 adr_ack_req_test() ->
     Packet0 = #adr_packet{

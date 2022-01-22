@@ -18,7 +18,7 @@
     adr_downlink_timing_test/1,
     rx_delay_join_test/1,
     rx_delay_downlink_default_test/1,
-    rx_delay_ignored_by_device_downlink_test/1,
+    rx_delay_change_ignored_by_device_downlink_test/1,
     rx_delay_accepted_by_device_downlink_test/1,
     rx_delay_continue_session_test/1,
     rx_delay_change_during_session_test/1
@@ -58,7 +58,7 @@ all() ->
         adr_downlink_timing_test,
         rx_delay_join_test,
         rx_delay_downlink_default_test,
-        rx_delay_ignored_by_device_downlink_test,
+        rx_delay_change_ignored_by_device_downlink_test,
         rx_delay_accepted_by_device_downlink_test,
         rx_delay_continue_session_test,
         rx_delay_change_during_session_test
@@ -1783,7 +1783,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
-            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay_state">> => <<"rx_delay_established">>,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
@@ -1972,7 +1972,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
-            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
@@ -2169,7 +2169,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
-            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 3,
@@ -2320,7 +2320,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
-            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 4,
@@ -2645,11 +2645,7 @@ rx_delay_downlink_default_test(Config) ->
     ?assertEqual(ExpectedRxDelay * 1000000, Packet2#packet_pb.timestamp),
     ok.
 
-rx_delay_ignored_by_device_downlink_test(Config) ->
-    ExpectedRxDelay = 15,
-    Tab = proplists:get_value(ets, Config),
-    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
-
+rx_delay_change_ignored_by_device_downlink_test(Config) ->
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,
@@ -2678,29 +2674,53 @@ rx_delay_ignored_by_device_downlink_test(Config) ->
     %% router_device_worker:queue_message(WorkerPid, Msg),
 
     test_utils:ignore_messages(),
-    Stream !
-        {send,
-            test_utils:frame_packet(
-                ?CONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device),
-                router_device:app_s_key(Device),
-                0
-                %% Test case should fail if this is uncommented
-                %% ,
-                %% #{
-                %%     fopts => [
-                %%        rx_timing_setup_ans
-                %%     ]
-                %% }
-            )},
+    Send = fun(Fcnt, FOpts) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device),
+                    router_device:app_s_key(Device),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+    Send(0, []),
     timer:sleep(router_utils:frame_timeout()),
 
-    {ok, Packet} = test_utils:wait_state_channel_packet(1000),
+    {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
-    %% check that the timestamp of the packet_pb is our default (1 second in the future)
-    ?assertNotEqual(ExpectedRxDelay * 1000000, Packet#packet_pb.timestamp),
-    ?assertEqual(1000000, Packet#packet_pb.timestamp),
+    %% Check that the timestamp of the packet_pb is our default (1 second in the future)
+    ?assertEqual(1000000, Packet0#packet_pb.timestamp),
+
+    %% Simulate the Console setting `rx_delay` to non-default value
+    %% during same session / without device joining again:
+
+    ExpectedRxDelay = 10,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    %% Must wait for device to Send again, but device won't know about new rx_delay
+    %% until response/downlink
+    Send(1, []),
+    timer:sleep(router_utils:frame_timeout()),
+    {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(1000000, Packet1#packet_pb.timestamp),
+
+    %% Uncommenting this will cause test case to fail:
+    %% %% Get `new_rx_delay` in Metadata:
+    %%router_device_worker:device_update(WorkerPid),
+
+    %% Device omits ACK of new RxDelay, thus no `rx_timing_setup_ans` in FOpts.
+    Send(2, []),
+    timer:sleep(router_utils:frame_timeout()),
+
+    %% Downlink after ACK would use new RxDelay, but there was no ACK.
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    ?assertNotEqual(ExpectedRxDelay * 1000000, Packet2#packet_pb.timestamp),
+    ?assertEqual(1000000, Packet2#packet_pb.timestamp),
     ok.
 
 rx_delay_accepted_by_device_downlink_test(Config) ->
@@ -2745,8 +2765,9 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
                 router_device:app_s_key(Device0),
                 0,
                 #{
+                    %% No rx_timing_setup_ans necessary upon Join, as join-accept flow is the ACK.
                     fopts => [
-                        rx_timing_setup_ans
+                        %% rx_timing_setup_ans
                     ]
                 }
             )},
@@ -2761,7 +2782,7 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     Metadata = router_device:metadata(Device1),
 
     ?assertEqual(ExpectedRxDelay, maps:get(rx_delay, Metadata)),
-    ?assertEqual(true, maps:get(rx_delay_timing_ans_device_ack, Metadata)),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata)),
 
     ok.
 
@@ -2811,7 +2832,8 @@ rx_delay_continue_session_test(Config) ->
                 )},
         timer:sleep(router_utils:frame_timeout())
     end,
-    Send(0, [rx_timing_setup_ans]),
+    %% No rx_timing_setup_ans necessary upon Join, as join-accept flow is the ACK.
+    Send(0, []),
     {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
@@ -2933,7 +2955,8 @@ rx_delay_change_during_session_test(Config) ->
                 )},
         timer:sleep(router_utils:frame_timeout())
     end,
-    Send(0, [rx_timing_setup_ans]),
+    %% No rx_timing_setup_ans necessary upon Join, as join-accept flow is the ACK.
+    Send(0, []),
     {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
@@ -2950,6 +2973,12 @@ rx_delay_change_during_session_test(Config) ->
 
     %% Get `new_rx_delay` in Metadata:
     router_device_worker:device_update(WorkerPid),
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata1 = router_device:metadata(Device1),
+    ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata1)),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata1)),
+    %% State machine has cleaned-up after itself:
+    ?assert(maps:is_key(new_rx_delay, Metadata1), false),
 
     %% Device ACK
     Send(2, [rx_timing_setup_ans]),
@@ -2958,6 +2987,13 @@ rx_delay_change_during_session_test(Config) ->
     %% Downlink after ACK uses new RxDelay
     {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(ExpectedRxDelay2 * 1000000, Packet2#packet_pb.timestamp),
+
+    {ok, Device2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata2 = router_device:metadata(Device2),
+    ?assertEqual(ExpectedRxDelay2, maps:get(rx_delay, Metadata2)),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata2)),
+    %% State machine has cleaned-up after itself:
+    ?assert(maps:is_key(new_rx_delay, Metadata2), false),
     ok.
 
 %% ------------------------------------------------------------------

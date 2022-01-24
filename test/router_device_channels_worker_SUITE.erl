@@ -623,6 +623,7 @@ late_packet_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,

@@ -254,6 +254,7 @@ dupes_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
@@ -1299,6 +1300,7 @@ adr_downlink_timing_test(Config) ->
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Send up to min-adr-history-len # of packets to get off 'hold'.
+    FrameCount = 20,
     ok = lists:foreach(
         fun(_Idx) ->
             FrameOptions =
@@ -1357,7 +1359,7 @@ adr_downlink_timing_test(Config) ->
                 }
             })
         end,
-        lists:seq(0, 20)
+        lists:seq(0, FrameCount)
     ),
 
     %% Clear old messages to ensure we're not picking up any other type of downlink.
@@ -1372,7 +1374,7 @@ adr_downlink_timing_test(Config) ->
                 PubKeyBin,
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
-                21,
+                FrameCount + 1,
                 #{
                     wants_adr => true,
                     snr => 20.0
@@ -1593,6 +1595,7 @@ adr_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
@@ -2629,7 +2632,7 @@ rx_delay_downlink_default_test(Config) ->
     %% Must wait for device to Send again, but device won't know about new rx_delay
     %% until response/downlink
     Send(1, []),
-    timer:sleep(router_utils:frame_timeout()),
+
     {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(1000000, Packet1#packet_pb.timestamp),
 
@@ -2741,7 +2744,7 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
-    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
     %% Channel = router_channel:new(
@@ -2778,6 +2781,9 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     %% check that the timestamp of the packet_pb is our default (1 second in the future)
     ?assertEqual(ExpectedRxDelay * 1000000, Packet#packet_pb.timestamp),
 
+    %% Get `new_rx_delay` into Metadata:
+    router_device_worker:device_update(WorkerPid),
+    timer:sleep(1000),
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata = router_device:metadata(Device1),
 
@@ -2971,14 +2977,16 @@ rx_delay_change_during_session_test(Config) ->
     {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(ExpectedRxDelay1 * 1000000, Packet1#packet_pb.timestamp),
 
-    %% Get `new_rx_delay` in Metadata:
+    %% Get `new_rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
+    timer:sleep(1000),
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata1 = router_device:metadata(Device1),
-    ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata1)),
+    %% FIXME: key `rx_delay_established' not found, yet `new_rx_delay' is.
     ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata1)),
+    ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata1)),
     %% State machine has cleaned-up after itself:
-    ?assert(maps:is_key(new_rx_delay, Metadata1), false),
+    ?assertEqual(false, maps:is_key(new_rx_delay, Metadata1)),
 
     %% Device ACK
     Send(2, [rx_timing_setup_ans]),
@@ -2993,7 +3001,7 @@ rx_delay_change_during_session_test(Config) ->
     ?assertEqual(ExpectedRxDelay2, maps:get(rx_delay, Metadata2)),
     ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata2)),
     %% State machine has cleaned-up after itself:
-    ?assert(maps:is_key(new_rx_delay, Metadata2), false),
+    ?assertEqual(false, maps:is_key(new_rx_delay, Metadata2)),
     ok.
 
 %% ------------------------------------------------------------------

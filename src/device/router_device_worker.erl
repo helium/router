@@ -1834,8 +1834,8 @@ maybe_update_rx_delay(APIDevice, Device) ->
                 maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
             false ->
                 %% Track requested value for new `rx_delay` without changing to it.
-                maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata0),
-                maps:put(new_rx_delay, NewRxDelay, Metadata0)
+                Map = #{rx_delay_state => ?RX_DELAY_CHANGE, new_rx_delay => NewRxDelay},
+                maps:merge(Metadata0, Map)
         end,
     Metadata1.
 

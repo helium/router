@@ -937,7 +937,7 @@ handle_info(
         packet_to_rxq(Packet)
     ),
     Rx2Window = join2_from_packet(Region, Packet),
-    {_, Metadata, _} = adjust_rx_delay(Device, []),
+    Metadata = adjust_rx_delay(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),
@@ -1656,7 +1656,7 @@ handle_frame_timeout(
                 },
                 Device0
             ),
-            {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, Frame#frame.fopts),
+            {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, FOpts1),
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
@@ -1757,7 +1757,7 @@ handle_frame_timeout(
         },
         Device0
     ),
-    {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, Frame#frame.fopts),
+    {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, FOpts1),
     #txq{
         time = TxTime,
         datr = TxDataRate,
@@ -1828,9 +1828,10 @@ maybe_update_rx_delay(APIDevice, Device) ->
     OldRxDelay = maps:get(rx_delay, router_device:metadata(Device), 0),
     NewRxDelay = maps:get(rx_delay, Metadata0, OldRxDelay),
     Metadata1 =
+        %% `rx_delay_state' gets bootstapped here:
         case NewRxDelay == OldRxDelay of
             true ->
-                Metadata0;
+                maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
             false ->
                 %% Track requested value for new `rx_delay` without changing to it.
                 maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata0),
@@ -1838,22 +1839,29 @@ maybe_update_rx_delay(APIDevice, Device) ->
         end,
     Metadata1.
 
+-spec adjust_rx_delay(Device :: router_device:device()) -> {Metadata :: map()}.
+adjust_rx_delay(Device) ->
+    {_, Metadata, _} = adjust_rx_delay(Device, []),
+    Metadata.
+
 -spec adjust_rx_delay(Device :: router_device:device(), FOpts0 :: list()) ->
     {RxDelay :: non_neg_integer(), Metadata1 :: map(), FOpts1 :: list()}.
 adjust_rx_delay(Device, FOpts0) ->
     Metadata0 = router_device:metadata(Device),
-    RxDelayState = maps:get(rx_delay_state, Metadata0, unknown_state),
+    %% When state is undefined, it's probably a test omitting device_update:
+    RxDelayState = maps:get(rx_delay_state, Metadata0, ?RX_DELAY_ESTABLISHED),
     OldRxDelay = maps:get(rx_delay, Metadata0, 0),
     NewRxDelay = maps:get(new_rx_delay, Metadata0, OldRxDelay),
     Answered = lists:member(rx_timing_setup_ans, FOpts0),
     %% Handle sequential changes to rx_delay; e.g, a previous change
-    %% was ack'd, and now there's potentially a new RxDelay.
+    %% was ack'd, and now there's potentially another new RxDelay value.
     {RxDelay, Metadata1, FOpts1} =
         case {RxDelayState, Answered} of
             %% Entering RX_DELAY_CHANGE state occurs in maybe_update_rx_delay().
             {?RX_DELAY_ESTABLISHED, _} ->
                 {OldRxDelay, Metadata0, FOpts0};
             {?RX_DELAY_CHANGE, _} ->
+                %% Console changed `rx_delay' value.
                 Map = #{rx_delay_state => ?RX_DELAY_REQUESTED},
                 FOpts = [{rx_timing_setup_req, NewRxDelay} | FOpts0],
                 {OldRxDelay, maps:merge(Metadata0, Map), FOpts};
@@ -1869,35 +1877,8 @@ adjust_rx_delay(Device, FOpts0) ->
                         true -> maps:remove(new_rx_delay, Metadata0);
                         false -> Metadata0
                     end,
-                Map = #{
-                    rx_delay => NewRxDelay,
-                    rx_delay_state => ?RX_DELAY_ESTABLISHED
-                },
-                {NewRxDelay, maps:merge(Metadata, Map), FOpts0};
-            %% Match on `unknown_state` should be redundant because of maybe_update_rx_delay()
-            %% which gets called via device_update(), but simple tests need it.
-            {unknown_state, false} when NewRxDelay == OldRxDelay ->
-                %% rx_delay set via Console, and then device joined.
-                Metadata =
-                    case maps:is_key(new_rx_delay, Metadata0) of
-                        true -> maps:remove(new_rx_delay, Metadata0);
-                        false -> Metadata0
-                    end,
-                Map = #{rx_delay => OldRxDelay, rx_delay_state => ?RX_DELAY_ESTABLISHED},
-                {OldRxDelay, maps:merge(Metadata, Map), FOpts0};
-            {unknown_state, false} ->
-                %% rx_delay changed via Console after device joined.
-                Map = #{
-                    rx_delay => OldRxDelay,
-                    new_rx_delay => NewRxDelay,
-                    rx_delay_state => ?RX_DELAY_REQUESTED
-                },
-                FOpts = [{rx_timing_setup_req, NewRxDelay} | FOpts0],
-                {OldRxDelay, maps:merge(Metadata0, Map), FOpts};
-            _ ->
-                %% No change.
-                Map = #{rx_delay => OldRxDelay, rx_delay_state => ?RX_DELAY_ESTABLISHED},
-                {OldRxDelay, maps:merge(Metadata0, Map), FOpts0}
+                Map = #{rx_delay => NewRxDelay, rx_delay_state => ?RX_DELAY_ESTABLISHED},
+                {NewRxDelay, maps:merge(Metadata, Map), FOpts0}
         end,
     {RxDelay, Metadata1, FOpts1}.
 

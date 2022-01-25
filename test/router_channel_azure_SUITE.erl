@@ -42,18 +42,12 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
-    {ok, _} = application:ensure_all_started(emqx),
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
-    application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -448,12 +442,12 @@ connect(URI, DeviceID, Name) ->
         #{
             host := Host,
             port := Port,
-            scheme := Scheme,
-            userinfo := UserInfo
-        } when
+            scheme := Scheme
+        } = Map when
             Scheme == <<"mqtt">> orelse
                 Scheme == <<"mqtts">>
         ->
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};

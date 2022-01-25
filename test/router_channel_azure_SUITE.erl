@@ -72,7 +72,7 @@ azure_test(Config) ->
             http_sas_uri => <<"unused">>,
             http_url => <<"unused">>,
             mqtt_sas_uri => <<"unused">>,
-            mqtt_host => <<"127.0.0.1">>,
+            mqtt_host => <<"test.mosquitto.org">>,
             mqtt_port => 1883,
             mqtt_username => DeviceID
         }
@@ -81,7 +81,7 @@ azure_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, azure}),
 
-    {ok, Conn} = connect(<<"mqtt://127.0.0.1:1883">>, <<"azure-test">>, undefined),
+    {ok, Conn} = connect(<<"mqtt://test.mosquitto.org:1883">>, <<"azure-test">>, undefined),
 
     DownlinkPayload = <<"azure_mqtt_payload">>,
     SendDownlink = fun() ->

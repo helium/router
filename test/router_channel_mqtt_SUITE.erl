@@ -38,35 +38,12 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    % ok = file:write_file("/etc/acl.conf", <<"{allow, all}.">>),
-    % application:set_env(emqx, acl_file, "/etc/acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, zones, [{zone, [{enable_acl, false}]}]),
-    application:set_env(emqx, enable_acl_cache, true),
-    application:set_env(emqx, listeners, [
-        #{name => erlang:atom_to_list(?MODULE), proto => tcp, listen_on => 1883, opts => []}
-    ]),
-    application:set_env(emqx, alarm, [{validity_period, 60}]),
-    application:set_env(emqx, os_mon, [
-        {mem_check_interval, 60},
-        {sysmem_high_watermark, 50.0},
-        {procmem_high_watermark, 50.0},
-        {cpu_check_interval, 60}
-    ]),
-    application:set_env(emqx, vm_mon, [{check_interval, 60}]),
-
-    {ok, _} = application:ensure_all_started(emqx),
-
-    emqx_zone:set_env(zone, allow_anonymous, true),
-    emqx_zone:set_env(zone, acl_nomatch, allow),
-
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
-    catch application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -626,7 +603,7 @@ mqtt_update_test(Config) ->
     MQTTChannel0 = #{
         <<"type">> => <<"mqtt">>,
         <<"credentials">> => #{
-            <<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
+            <<"endpoint">> => <<"mqtt://test.mosquitto.org:1883">>,
             <<"uplink">> => #{<<"topic">> => UplinkTemplate1},
             <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}
         },

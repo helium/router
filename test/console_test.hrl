@@ -26,7 +26,7 @@
 -define(CONSOLE_MQTT_CHANNEL, #{
     <<"type">> => <<"mqtt">>,
     <<"credentials">> => #{
-        <<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
+        <<"endpoint">> => <<"mqtt://test.mosquitto.org:1883">>,
         <<"uplink">> => #{<<"topic">> => <<"uplink/{{organization_id}}/{{device_id}}">>},
         <<"downlink">> => #{<<"topic">> => <<"downlink/{{organization_id}}/{{device_id}}">>}
     },

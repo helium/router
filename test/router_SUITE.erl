@@ -561,6 +561,7 @@ dupes2_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
@@ -2585,7 +2586,7 @@ rx_delay_downlink_default_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
 
     %% TODO uncomment if testing against other regions.
@@ -2600,6 +2601,11 @@ rx_delay_downlink_default_test(Config) ->
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     %% router_device_worker:queue_message(WorkerPid, Msg),
 
+    Metadata0 = router_device:metadata(Device0),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata0)),
+    ?assertEqual(0, maps:get(rx_delay, Metadata0)),
+    ?assertEqual(false, maps:is_key(new_rx_delay, Metadata0)),
+
     test_utils:ignore_messages(),
     Send = fun(Fcnt, FOpts) ->
         Stream !
@@ -2607,15 +2613,14 @@ rx_delay_downlink_default_test(Config) ->
                 test_utils:frame_packet(
                     ?CONFIRMED_UP,
                     PubKeyBin,
-                    router_device:nwk_s_key(Device),
-                    router_device:app_s_key(Device),
+                    router_device:nwk_s_key(Device0),
+                    router_device:app_s_key(Device0),
                     Fcnt,
                     #{fopts => FOpts}
                 )},
         timer:sleep(router_utils:frame_timeout())
     end,
     Send(0, []),
-    timer:sleep(router_utils:frame_timeout()),
 
     {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
@@ -2625,27 +2630,52 @@ rx_delay_downlink_default_test(Config) ->
     %% Simulate the Console setting `rx_delay` to non-default value
     %% during same session / without device joining again:
 
-    ExpectedRxDelay = 10,
+    ExpectedRxDelay = 9,
     Tab = proplists:get_value(ets, Config),
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
 
     %% Must wait for device to Send again, but device won't know about new rx_delay
-    %% until response/downlink
-    Send(1, []),
+    %% until response/downlink.
 
+    Send(1, []),
     {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(1000000, Packet1#packet_pb.timestamp),
 
-    %% Get `new_rx_delay` in Metadata:
+    %% Get `new_rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
+    %% Wait for async/cast to complete:
+    timer:sleep(1000),
+
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata1 = router_device:metadata(Device1),
+    ?assertEqual(rx_delay_change, maps:get(rx_delay_state, Metadata1)),
+    ?assertEqual(0, maps:get(rx_delay, Metadata1)),
+    ?assertEqual(ExpectedRxDelay, maps:get(new_rx_delay, Metadata1)),
+
+    Send(2, []),
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(1000000, Packet2#packet_pb.timestamp),
+
+    {ok, Device2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata2 = router_device:metadata(Device2),
+    ?assertEqual(rx_delay_requested, maps:get(rx_delay_state, Metadata2)),
+    ?assertEqual(0, maps:get(rx_delay, Metadata2)),
+    ?assertEqual(ExpectedRxDelay, maps:get(new_rx_delay, Metadata2)),
 
     %% Device ACK
     Send(2, [rx_timing_setup_ans]),
-    timer:sleep(router_utils:frame_timeout()),
+
+    %% Handling `frame_timeout` calls adjust_rx_delay(), so state has been updated.
 
     %% Downlink after ACK uses new RxDelay
-    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
-    ?assertEqual(ExpectedRxDelay * 1000000, Packet2#packet_pb.timestamp),
+    %% FIXME: times-out
+    {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet3#packet_pb.timestamp),
+
+    {ok, Device3} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata3 = router_device:metadata(Device3),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata3)),
+    ?assertEqual(ExpectedRxDelay, maps:get(rx_delay, Metadata3)),
     ok.
 
 rx_delay_change_ignored_by_device_downlink_test(Config) ->
@@ -2701,7 +2731,7 @@ rx_delay_change_ignored_by_device_downlink_test(Config) ->
     %% Simulate the Console setting `rx_delay` to non-default value
     %% during same session / without device joining again:
 
-    ExpectedRxDelay = 10,
+    ExpectedRxDelay = 9,
     Tab = proplists:get_value(ets, Config),
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
 
@@ -2916,7 +2946,7 @@ rx_delay_continue_session_test(Config) ->
     ok.
 
 rx_delay_change_during_session_test(Config) ->
-    ExpectedRxDelay1 = 10,
+    ExpectedRxDelay1 = 9,
     Tab = proplists:get_value(ets, Config),
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay1}),
 
@@ -2947,6 +2977,11 @@ rx_delay_change_during_session_test(Config) ->
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     %% router_device_worker:queue_message(WorkerPid, Msg),
 
+    Metadata0 = router_device:metadata(Device0),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata0)),
+    ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata0)),
+    ?assertEqual(ExpectedRxDelay1, maps:get(new_rx_delay, Metadata0)),
+
     test_utils:ignore_messages(),
     Send = fun(Fcnt, FOpts) ->
         Stream !
@@ -2973,35 +3008,55 @@ rx_delay_change_during_session_test(Config) ->
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay2}),
 
     Send(1, []),
-    timer:sleep(router_utils:frame_timeout()),
     {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(ExpectedRxDelay1 * 1000000, Packet1#packet_pb.timestamp),
 
     %% Get `new_rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
+    %% Wait for async/cast to complete:
     timer:sleep(1000),
+
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata1 = router_device:metadata(Device1),
-    %% FIXME: key `rx_delay_established' not found, yet `new_rx_delay' is.
-    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata1)),
+    ?assertEqual(rx_delay_change, maps:get(rx_delay_state, Metadata1)),
     ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata1)),
-    %% State machine has cleaned-up after itself:
-    ?assertEqual(false, maps:is_key(new_rx_delay, Metadata1)),
+    ?assertEqual(ExpectedRxDelay2, maps:get(new_rx_delay, Metadata1)),
 
-    %% Device ACK
-    Send(2, [rx_timing_setup_ans]),
-    timer:sleep(router_utils:frame_timeout()),
+    %% Another frame without ACK so that we can see intermediate state,
+    %% because state only gets updated during `frame_timeout`:
+    Send(2, []),
 
-    %% Downlink after ACK uses new RxDelay
     {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
-    ?assertEqual(ExpectedRxDelay2 * 1000000, Packet2#packet_pb.timestamp),
+    ?assertEqual(ExpectedRxDelay1 * 1000000, Packet2#packet_pb.timestamp),
 
     {ok, Device2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata2 = router_device:metadata(Device2),
-    ?assertEqual(ExpectedRxDelay2, maps:get(rx_delay, Metadata2)),
-    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata2)),
-    %% State machine has cleaned-up after itself:
-    ?assertEqual(false, maps:is_key(new_rx_delay, Metadata2)),
+    ?assertEqual(rx_delay_requested, maps:get(rx_delay_state, Metadata2)),
+    ?assertEqual(ExpectedRxDelay2, maps:get(new_rx_delay, Metadata2)),
+    ?assertEqual(ExpectedRxDelay1, maps:get(rx_delay, Metadata2)),
+
+    %% Device ACK
+    Send(3, [rx_timing_setup_ans]),
+
+    %% Handling `frame_timeout` calls adjust_rx_delay(), so state has been updated.
+
+    %% Downlink after ACK uses new RxDelay
+    {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay2 * 1000000, Packet3#packet_pb.timestamp),
+
+    {ok, Device3} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata3 = router_device:metadata(Device3),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata3)),
+    ?assertEqual(ExpectedRxDelay2, maps:get(rx_delay, Metadata3)),
+
+    %% Subsequent uplink after ACK continues using newer rx_delay.
+    Send(4, []),
+    {ok, Packet4} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay2 * 1000000, Packet4#packet_pb.timestamp),
+    {ok, Device4} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata4 = router_device:metadata(Device4),
+    ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata4)),
+    ?assertEqual(ExpectedRxDelay2, maps:get(rx_delay, Metadata4)),
     ok.
 
 %% ------------------------------------------------------------------

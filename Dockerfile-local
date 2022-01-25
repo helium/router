@@ -12,7 +12,8 @@ RUN apt-get install -y -q \
         libtool \
         pkg-config \
         cmake \
-        libsodium-dev
+        libsodium-dev \
+        iproute2
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"

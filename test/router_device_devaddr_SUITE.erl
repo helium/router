@@ -61,7 +61,7 @@ allocate(Config) ->
     Ledger = blockchain:ledger(Chain),
 
     OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
     OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
     OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
@@ -115,7 +115,7 @@ route_packet(Config) ->
     Ledger = blockchain:ledger(Chain),
 
     OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
     OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
     OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),

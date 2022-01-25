@@ -2086,10 +2086,30 @@ save_and_update(DB, CF, Pid, Device) ->
     ok = router_device_channels_worker:handle_device_update(Pid, Device).
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
-get_device(DB, CF, ID) ->
-    case router_device:get_by_id(DB, CF, ID) of
-        {ok, D} -> D;
-        _ -> router_device:new(ID)
+get_device(DB, CF, DeviceID) ->
+    Device =
+        case router_device:get_by_id(DB, CF, DeviceID) of
+            {ok, D} -> D;
+            _ -> router_device:new(DeviceID)
+        end,
+    case router_console_api:get_device(DeviceID) of
+        {error, not_found} ->
+            lager:info("device not found"),
+            Device;
+        {error, _Reason} ->
+            lager:error("failed to get device ~p", [_Reason]),
+            Device;
+        {ok, APIDevice} ->
+            lager:info("got device: ~p", [APIDevice]),
+            IsActive = router_device:is_active(APIDevice),
+            DeviceUpdates = [
+                {name, router_device:name(APIDevice)},
+                {dev_eui, router_device:dev_eui(APIDevice)},
+                {app_eui, router_device:app_eui(APIDevice)},
+                {metadata, maybe_update_rx_delay(APIDevice, Device)},
+                {is_active, IsActive}
+            ],
+            router_device:update(DeviceUpdates, Device)
     end.
 
 -spec maybe_construct_adr_engine(undefined | lorawan_adr:handle(), atom()) -> lorawan_adr:handle().

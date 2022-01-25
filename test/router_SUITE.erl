@@ -2663,12 +2663,11 @@ rx_delay_downlink_default_test(Config) ->
     ?assertEqual(ExpectedRxDelay, maps:get(new_rx_delay, Metadata2)),
 
     %% Device ACK
-    Send(2, [rx_timing_setup_ans]),
+    Send(3, [rx_timing_setup_ans]),
 
     %% Handling `frame_timeout` calls adjust_rx_delay(), so state has been updated.
 
     %% Downlink after ACK uses new RxDelay
-    %% FIXME: times-out
     {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
     ?assertEqual(ExpectedRxDelay * 1000000, Packet3#packet_pb.timestamp),
 

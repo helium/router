@@ -140,7 +140,7 @@ data_test_1(Config) ->
                 <<"frequency">> => 923.2999877929688,
                 <<"channel">> => 105,
                 <<"lat">> => 36.999918858583605,
-                <<"long">> => -120.80001353058655
+                <<"long">> => fun check_long/1
             }
         ]
     }),
@@ -173,7 +173,7 @@ data_test_1(Config) ->
                 <<"frequency">> => 923.2999877929688,
                 <<"channel">> => 105,
                 <<"lat">> => 36.999918858583605,
-                <<"long">> => -120.80001353058655
+                <<"long">> => fun check_long/1
             },
             <<"mac">> => [],
             <<"hold_time">> => 100
@@ -278,7 +278,7 @@ data_test_2(Config) ->
                 <<"frequency">> => 923.2999877929688,
                 <<"channel">> => 276,
                 <<"lat">> => 36.999918858583605,
-                <<"long">> => -120.80001353058655
+                <<"long">> => fun check_long/1
             }
         ]
     }),
@@ -415,7 +415,7 @@ data_test_3(Config) ->
                 <<"frequency">> => 923.2999877929688,
                 <<"channel">> => 276,
                 <<"lat">> => 36.999918858583605,
-                <<"long">> => -120.80001353058655
+                <<"long">> => fun check_long/1
             }
         ]
     }),
@@ -456,3 +456,9 @@ data_test_3(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+%% this is due to floating points...
+-spec check_long(float()) -> boolean().
+check_long(-120.80001353058655) -> true;
+check_long(-120.80001353058657) -> true;
+check_long(_) -> false.

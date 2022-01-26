@@ -85,6 +85,7 @@ azure_test(Config) ->
             jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}),
             0
         ),
+        timer:sleep(1000),
         ok
     end,
 

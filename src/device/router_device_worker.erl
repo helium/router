@@ -367,7 +367,11 @@ handle_cast(
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, maybe_update_rx_delay(APIDevice, Device0)},
+                {metadata,
+                    maps:merge(
+                        maybe_update_rx_delay(APIDevice, Device0),
+                        router_device:metadata(APIDevice)
+                    )},
                 {is_active, IsActive}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -1253,7 +1257,7 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, router_device:metadata(APIDevice)},
+        {metadata, bootstrap_rx_delay(APIDevice)},
         {last_known_datarate, DR},
         {region, Region}
     ],
@@ -1290,7 +1294,7 @@ craft_join_reply(
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     RxDelaySeconds =
-        case maps:get(rx_delay, Metadata, default) of
+        case maps:get(rx_delay_actual, Metadata, default) of
             default -> <<?RX_DELAY:8/integer-unsigned>>;
             Seconds -> <<0:4, Seconds:4/integer-unsigned>>
         end,
@@ -1818,30 +1822,42 @@ handle_frame_timeout(
         T
     ).
 
+-spec bootstrap_rx_delay(APIDevice :: router_device:device()) -> Metadata :: map().
+bootstrap_rx_delay(APIDevice) ->
+    %% Metadata here is ostensibly "settings" from Console/API:
+    Metadata = router_device:metadata(APIDevice),
+    %% The key `rx_delay' comes from Console/API for changing to that
+    %% value.  `rx_delay_actual' represents the value set in LoRaWAN
+    %% header during device Join and must go through request/answer
+    %% negotiation to be changed.
+    case maps:get(rx_delay, Metadata, 0) of
+        0 ->
+            %% Console always sends rx_delay via API, so default arm rarely gets used.
+            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata);
+        Del ->
+            Map = #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => Del},
+            maps:merge(Metadata, Map)
+    end.
+
 -spec maybe_update_rx_delay(
     APIDevice :: router_device:device(),
     Device :: router_device:device()
-) -> map().
+) -> Metadata :: map().
 maybe_update_rx_delay(APIDevice, Device) ->
+    %% Run after the value for `rx_delay` gets changed via Console.
     %% Accommodate net-nil changes via Console as no-op; e.g., A -> B -> A.
     Metadata0 = router_device:metadata(Device),
-    OldRxDelay = maps:get(rx_delay, Metadata0, 0),
-    ApiMetadata = router_device:metadata(APIDevice),
-    NewRxDelay = maps:get(rx_delay, ApiMetadata, OldRxDelay),
-    Metadata1 =
-        %% `rx_delay_state' gets bootstapped here, but this also runs
-        %% after the value for `rx_delay` gets changed via Console.
-        case NewRxDelay == OldRxDelay of
-            true ->
-                maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
-            false ->
-                %% Track requested value for new `rx_delay` without actually changing to it.
-                Map = #{rx_delay_state => ?RX_DELAY_CHANGE, new_rx_delay => NewRxDelay},
-                maps:merge(Metadata0, Map)
-        end,
-    Metadata1.
+    Actual = maps:get(rx_delay_actual, Metadata0, 0),
+    Requested = maps:get(rx_delay, router_device:metadata(APIDevice), Actual),
+    case Requested == Actual of
+        true ->
+            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
+        false ->
+            %% Track requested value for new `rx_delay` without actually changing to it.
+            maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata0)
+    end.
 
--spec adjust_rx_delay(Device :: router_device:device()) -> {Metadata :: map()}.
+-spec adjust_rx_delay(Device :: router_device:device()) -> Metadata :: map().
 adjust_rx_delay(Device) ->
     {_, Metadata, _} = adjust_rx_delay(Device, [], []),
     Metadata.
@@ -1850,36 +1866,33 @@ adjust_rx_delay(Device) ->
     {RxDelay :: non_neg_integer(), Metadata1 :: map(), FOpts1 :: list()}.
 adjust_rx_delay(Device, UplinkFOpts, FOpts0) ->
     Metadata0 = router_device:metadata(Device),
-    %% When state is undefined, it's probably a test omitting device_update:
-    RxDelayState = maps:get(rx_delay_state, Metadata0, ?RX_DELAY_ESTABLISHED),
-    OldRxDelay = maps:get(rx_delay, Metadata0, 0),
+    %% When state is undefined, it's probably a test that omits device_update():
+    State = maps:get(rx_delay_state, Metadata0, ?RX_DELAY_ESTABLISHED),
+    Actual = maps:get(rx_delay_actual, Metadata0, 0),
     Answered = lists:member(rx_timing_setup_ans, UplinkFOpts),
     %% Handle sequential changes to rx_delay; e.g, a previous change
     %% was ack'd, and now there's potentially another new RxDelay value.
     {RxDelay, Metadata1, FOpts1} =
-        case {RxDelayState, Answered} of
+        case {State, Answered} of
             %% Entering RX_DELAY_CHANGE state occurs in maybe_update_rx_delay().
             {?RX_DELAY_ESTABLISHED, _} ->
-                {OldRxDelay, Metadata0, FOpts0};
+                {Actual, Metadata0, FOpts0};
             {?RX_DELAY_CHANGE, _} ->
                 %% Console changed `rx_delay' value.
-                NewRxDelay = maps:get(new_rx_delay, Metadata0),
-                Map = #{rx_delay_state => ?RX_DELAY_REQUESTED},
-                FOpts = [{rx_timing_setup_req, NewRxDelay} | FOpts0],
-                {OldRxDelay, maps:merge(Metadata0, Map), FOpts};
+                Requested = maps:get(rx_delay, Metadata0),
+                FOpts = [{rx_timing_setup_req, Requested} | FOpts0],
+                Metadata = maps:put(rx_delay_state, ?RX_DELAY_REQUESTED, Metadata0),
+                {Actual, Metadata, FOpts};
             {?RX_DELAY_REQUESTED, false} ->
                 %% Router sent downlink request, Device has yet to ACK.
-                NewRxDelay = maps:get(new_rx_delay, Metadata0),
-                Map = #{rx_delay => OldRxDelay, new_rx_delay => NewRxDelay},
-                FOpts = [{rx_timing_setup_req, NewRxDelay} | FOpts0],
-                {OldRxDelay, maps:merge(Metadata0, Map), FOpts};
+                Requested = maps:get(rx_delay, Metadata0),
+                FOpts = [{rx_timing_setup_req, Requested} | FOpts0],
+                {Actual, Metadata0, FOpts};
             {?RX_DELAY_REQUESTED, true} ->
-                %% Device responded with ACK, so Router can apply new rx_delay.
-                %% TODO metadata gets stored in ETS, thus cumbersome to prune keys.
-                %%{NewRxDelay, Metadata} = maps:take(new_rx_delay, Metadata0),
-                NewRxDelay = maps:get(new_rx_delay, Metadata0),
-                Map = #{rx_delay => NewRxDelay, rx_delay_state => ?RX_DELAY_ESTABLISHED},
-                {NewRxDelay, maps:merge(Metadata0, Map), FOpts0}
+                %% Device responded with ACK, so Router can apply the requested rx_delay.
+                Requested = maps:get(rx_delay, Metadata0),
+                Map = #{rx_delay_actual => Requested, rx_delay_state => ?RX_DELAY_ESTABLISHED},
+                {Requested, maps:merge(Metadata0, Map), FOpts0}
         end,
     {RxDelay, Metadata1, FOpts1}.
 
@@ -2106,7 +2119,11 @@ get_device(DB, CF, DeviceID) ->
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, maybe_update_rx_delay(APIDevice, Device)},
+                {metadata,
+                    maps:merge(
+                        maybe_update_rx_delay(APIDevice, Device),
+                        router_device:metadata(APIDevice)
+                    )},
                 {is_active, IsActive}
             ],
             router_device:update(DeviceUpdates, Device)

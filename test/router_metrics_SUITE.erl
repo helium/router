@@ -96,4 +96,15 @@ metrics_test(Config) ->
     ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds)),
 
     ?assert(prometheus_gauge:value(?METRICS_VM_CPU, [1]) > 0),
+
+    %% When run with the grpc suite this value will be 1. When running tests
+    %% without that suite, it will be 0.
+    GRPCCount = prometheus_gauge:value(?METRICS_GRPC_CONNECTION_COUNT),
+    ?assert(GRPCCount == 0 orelse GRPCCount == 1),
+
+    ok = router_sc_worker:sc_hook_close_submit(ok, txn),
+    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [ok]) > 0),
+
+    ok = router_sc_worker:sc_hook_close_submit(error, txn),
+    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [error]) > 0),
     ok.

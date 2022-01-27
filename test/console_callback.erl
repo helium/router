@@ -195,6 +195,11 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> false;
             [{adr_allowed, IS3}] -> IS3
         end,
+    RxDelay =
+        case ets:lookup(Tab, rx_delay) of
+            [] -> 0;
+            [{rx_delay, DelaySeconds}] -> DelaySeconds
+        end,
 
     Body = #{
         <<"id">> => DeviceID,
@@ -208,7 +213,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"active">> => IsActive,
         <<"multi_buy">> => 1,
         <<"adr_allowed">> => ADRAllowed,
-        <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled
+        <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled,
+        <<"rx_delay">> => RxDelay
     },
     case NotFound of
         true ->

@@ -20,7 +20,8 @@
     console_api_observe/3,
     downlink_inc/2,
     ws_state/1,
-    xor_filter_update/1
+    xor_filter_update/1,
+    sc_close_submit_inc/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -127,7 +128,12 @@ ws_state(State) ->
 
 -spec xor_filter_update(DC :: non_neg_integer()) -> ok.
 xor_filter_update(DC) ->
-    _ = prometheus_gauge:set(?METRICS_XOR_FILTER, DC),
+    _ = prometheus_counter:inc(?METRICS_XOR_FILTER, DC),
+    ok.
+
+-spec sc_close_submit_inc(ok | error) -> ok.
+sc_close_submit_inc(Status) ->
+    _ = prometheus_counter:inc(?METRICS_SC_CLOSE_SUBMIT, [Status]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -246,7 +252,8 @@ handle_info(
             ok = record_chain_blocks(Chain),
             ok = record_vm_stats(),
             ok = record_ets(),
-            ok = record_queues()
+            ok = record_queues(),
+            ok = record_grpc_connections()
         end,
         [
             {fullsweep_after, 0},
@@ -423,6 +430,23 @@ record_ets() ->
         end,
         ets:all()
     ),
+    ok.
+
+-spec record_grpc_connections() -> ok.
+record_grpc_connections() ->
+    Opts = application:get_env(grpcbox, listen_opts, #{}),
+    PoolName = grpcbox_services_sup:pool_name(Opts),
+    try
+        Counts = acceptor_pool:count_children(PoolName),
+        proplists:get_value(active, Counts)
+    of
+        Count ->
+            _ = prometheus_gauge:set(?METRICS_GRPC_CONNECTION_COUNT, Count)
+    catch
+        _:_ ->
+            lager:warning("no grpcbox acceptor named ~p", [PoolName]),
+            _ = prometheus_gauge:set(?METRICS_GRPC_CONNECTION_COUNT, 0)
+    end,
     ok.
 
 -spec record_queues() -> ok.

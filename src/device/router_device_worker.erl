@@ -49,6 +49,7 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
+-define(RX_DELAY_TIMING_ANS_DEVICE_ACK, rx_delay_timing_ans_device_ack).
 
 -define(NET_ID, <<"He2">>).
 
@@ -358,12 +359,21 @@ handle_cast(
         {ok, APIDevice} ->
             lager:info("device updated: ~p", [APIDevice]),
             router_device_channels_worker:refresh_channels(ChannelsWorker),
+            RxDelayOld = maps:get(rx_delay, router_device:metadata(Device0), 0),
+            RxDelayNew = maps:get(rx_delay, router_device:metadata(APIDevice), RxDelayOld),
+            Metadata =
+                case RxDelayOld == RxDelayNew of
+                    true ->
+                        router_device:metadata(APIDevice);
+                    false ->
+                        maps:put(new_rx_delay, RxDelayNew, router_device:metadata(APIDevice))
+                end,
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, router_device:metadata(APIDevice)},
+                {metadata, Metadata},
                 {is_active, IsActive}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -932,14 +942,14 @@ handle_info(
         0,
         packet_to_rxq(Packet)
     ),
-    Rx2 = join2_from_packet(Region, Packet),
+    Rx2Window = join2_from_packet(Region, Packet),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device, JoinAcceptArgs, JoinAttemptCount),
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
         TxTime,
         TxFreq,
         binary_to_list(TxDataRate),
-        Rx2
+        Rx2Window
     ),
     lager:debug("sending join response ~p", [DownlinkPacket]),
     catch blockchain_state_channel_common:send_response(
@@ -1277,14 +1287,20 @@ craft_join_reply(
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
+    Metadata = router_device:metadata(Device),
     CFList =
-        case {Region, maps:get(cf_list_enabled, router_device:metadata(Device), false)} of
+        case {Region, maps:get(cf_list_enabled, Metadata, false)} of
             {'US915', false} -> <<>>;
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
+    RxDelaySeconds =
+        case maps:get(rx_delay, Metadata, default) of
+            default -> <<?RX_DELAY:8/integer-unsigned>>;
+            Seconds -> <<0:4, Seconds:4/integer-unsigned>>
+        end,
     ReplyPayload =
-        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary,
-            ?RX_DELAY:8/integer-unsigned, CFList/binary>>,
+        <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary, RxDelaySeconds/binary,
+            CFList/binary>>,
     ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
     EncryptedReply = crypto:block_decrypt(
         aes_ecb,
@@ -1644,32 +1660,58 @@ handle_frame_timeout(
                 },
                 Device0
             ),
+            %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
+            {RXTimingSetupAns, RxDelay} =
+                case
+                    lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
+                        maps:get(
+                            ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
+                            router_device:metadata(Device0),
+                            false
+                        )
+                of
+                    true ->
+                        {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
+                    false ->
+                        {false, 0}
+                end,
+            FOpts2 =
+                case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of
+                    unchanged -> FOpts1;
+                    NewRxDelay -> [{rx_timing_setup_req, NewRxDelay} | FOpts1]
+                end,
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
             } = lorawan_mac_region:rx1_or_rx2_window(
                 Region,
-                0,
+                RxDelay,
                 0,
                 packet_to_rxq(Packet0)
             ),
-            Rx2 = rx2_from_packet(Region, Packet0),
+            Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
                 lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
                 adjust_rx_time(TxTime),
                 TxFreq,
                 binary_to_list(TxDataRate),
-                Rx2
+                Rx2Window
             ),
             DeviceUpdates = [
                 {channel_correction, ChannelsCorrected},
-                {fcntdown, (FCntDown + 1)}
+                {fcntdown, (FCntDown + 1)},
+                {metadata,
+                    maps:put(
+                        ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
+                        RXTimingSetupAns,
+                        router_device:metadata(Device0)
+                    )}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             EventTuple =
-                {ACK, ConfirmedDown, Port, #{id => undefined, name => <<"router">>}, FOpts1},
+                {ACK, ConfirmedDown, Port, #{id => undefined, name => <<"router">>}, FOpts2},
             case ChannelCorrection == false andalso WereChannelsCorrected == true of
                 true ->
                     {send, router_device:channel_correction(true, Device1), Packet1, EventTuple};
@@ -1743,32 +1785,62 @@ handle_frame_timeout(
         },
         Device0
     ),
+    %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
+    {RXTimingSetupAns, RxDelay} =
+        case
+            lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
+                maps:get(
+                    ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
+                    router_device:metadata(Device0),
+                    false
+                )
+        of
+            true ->
+                {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
+            false ->
+                {false, 0}
+        end,
+    FOpts2 =
+        case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of
+            unchanged -> FOpts1;
+            NewRxDelay -> [{rx_timing_setup_req, NewRxDelay} | FOpts1]
+        end,
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
     } = lorawan_mac_region:rx1_or_rx2_window(
         Region,
-        0,
+        RxDelay,
         0,
         packet_to_rxq(Packet0)
     ),
-    Rx2 = rx2_from_packet(Region, Packet0),
+    Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
         adjust_rx_time(TxTime),
         TxFreq,
         binary_to_list(TxDataRate),
-        Rx2
+        Rx2Window
     ),
-    EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts1},
+    EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts2},
+    DeviceUpdateMetadata =
+        {metadata,
+            maps:put(
+                ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
+                RXTimingSetupAns,
+                router_device:metadata(Device0)
+            )},
+
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
-            {send, Device1, Packet1, EventTuple};
+            Device2 = router_device:update([DeviceUpdateMetadata], Device1),
+            {send, Device2, Packet1, EventTuple};
         false ->
             DeviceUpdates = [
+                DeviceUpdateMetadata,
                 {queue, T},
                 {channel_correction, ChannelsCorrected},
                 {fcntdown, (FCntDown + 1)}
@@ -1968,15 +2040,15 @@ join2_from_packet(Region, Packet) ->
     } = lorawan_mac_region:join2_window(Region, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
--spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet()) ->
+-spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet(), number()) ->
     blockchain_helium_packet_v1:window().
-rx2_from_packet(Region, Packet) ->
+rx2_from_packet(Region, Packet, RxDelay) ->
     Rxq = packet_to_rxq(Packet),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx2_window(Region, Rxq),
+    } = lorawan_mac_region:rx2_window(Region, RxDelay, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().

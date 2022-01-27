@@ -75,9 +75,9 @@
 -define(MB_ETS, router_device_routing_mb_ets).
 -define(MB_FUN(Hash), [
     {
-        {Hash, '$1', '$2'},
+        {Hash, '$1', '$2', '$3'},
         [{'=<', '$2', '$1'}],
-        [{{Hash, '$1', {'+', '$2', 1}}}]
+        [{{Hash, '$1', {'+', '$2', 1}, '$3'}}]
     }
 ]).
 
@@ -88,6 +88,7 @@
 
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
+-define(REPLAY_MS(DeviceID), [{{'_', '$1', '_'}, [{'==', '$1', {const, DeviceID}}], [true]}]).
 -define(RX2_WINDOW, timer:seconds(2)).
 
 %% Devaddr validate
@@ -127,6 +128,7 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
+    ok = cleanup(timer:hours(24), timer:hours(1)),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -210,11 +212,11 @@ handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
 
 -spec deny_more(binary()) -> ok.
 deny_more(PHash) ->
-    case ets:lookup(?MB_ETS, PHash) of
-        [{PHash, 0, -1}] ->
+    case lookup_mb(PHash) of
+        {ok, PHash, 0, -1} ->
             ok;
         _ ->
-            true = ets:insert(?MB_ETS, {PHash, 0, -1}),
+            true = ets:insert(?MB_ETS, {PHash, 0, -1, erlang:system_time(millisecond)}),
             ok
     end.
 
@@ -224,13 +226,13 @@ accept_more(PHash) ->
 
 -spec accept_more(binary(), non_neg_integer()) -> ok.
 accept_more(PHash, Max) ->
-    case ets:lookup(?MB_ETS, PHash) of
-        [{PHash, Max, _}] ->
+    case lookup_mb(PHash) of
+        {ok, PHash, Max, _} ->
             ok;
-        _ ->
+        {error, _} ->
             %% NOTE: Only called for packets. When this is called the first
             %% time, we've already purchased a packet.
-            true = ets:insert(?MB_ETS, {PHash, Max, 2}),
+            true = ets:insert(?MB_ETS, {PHash, Max, 2, erlang:system_time(millisecond)}),
             ok
     end.
 
@@ -250,8 +252,8 @@ allow_replay(Packet, DeviceID, PacketTime) ->
 
 -spec clear_replay(binary()) -> ok.
 clear_replay(DeviceID) ->
-    true = ets:match_delete(?REPLAY_ETS, {'_', DeviceID, '_'}),
-    lager:debug([{device_id, DeviceID}], "cleared replay"),
+    X = ets:select_delete(?REPLAY_ETS, ?REPLAY_MS(DeviceID)),
+    lager:debug([{device_id, DeviceID}], "cleared ~p replay", [X]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -430,7 +432,10 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                         true ->
                             maybe_multi_buy(Offer, 10, Device);
                         false ->
-                            true = ets:insert(?MB_ETS, {PHash, ?JOIN_MAX, 1}),
+                            true = ets:insert(
+                                ?MB_ETS,
+                                {PHash, ?JOIN_MAX, 1, erlang:system_time(millisecond)}
+                            ),
                             DeviceID = router_device:id(Device),
                             lager:debug(
                                 [{device_id, DeviceID}],
@@ -474,8 +479,8 @@ packet_offer_(Offer, Pid, Chain) ->
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
-                        {ok, DeviceID, PackeTime} ->
-                            case erlang:system_time(millisecond) - PackeTime > ?RX2_WINDOW of
+                        {ok, DeviceID, PacketTime} ->
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(
@@ -593,8 +598,8 @@ maybe_multi_buy(_Offer, 0, _Device) ->
 maybe_multi_buy(Offer, Attempts, Device) ->
     DeviceID = router_device:id(Device),
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    case ets:lookup(?MB_ETS, PHash) of
-        [] ->
+    case lookup_mb(PHash) of
+        {error, not_found} ->
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
             case MultiBuyValue > 1 of
                 true ->
@@ -625,28 +630,28 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                             ?MODULE:accept_more(PHash)
                     end
             end;
-        [{PHash, ?MB_UNLIMITED, _Curr}] ->
+        {ok, PHash, ?MB_UNLIMITED, _Curr} ->
             lager:debug(
                 [{device_id, DeviceID}],
                 "accepting more packets [multi_buy: ~p] for ~p",
                 [?MB_UNLIMITED, PHash]
             ),
             ok;
-        [{PHash, 0, -1}] ->
+        {ok, PHash, 0, -1} ->
             lager:debug(
                 [{device_id, DeviceID}],
                 "denying more packets for ~p",
                 [PHash]
             ),
             {error, ?MB_DENY_MORE};
-        [{PHash, Max, Curr}] when Max == Curr ->
+        {ok, PHash, Max, Curr} when Max == Curr ->
             lager:debug(
                 [{device_id, DeviceID}],
                 "denying more packets max reached ~p for ~p",
                 [Max, PHash]
             ),
             {error, ?MB_MAX_PACKET};
-        [{PHash, _Max, _Curr}] ->
+        {ok, PHash, _Max, _Curr} ->
             lager:debug(
                 [{device_id, DeviceID}],
                 "accepting more packets max: ~p current: ~p for ~p",
@@ -656,6 +661,16 @@ maybe_multi_buy(Offer, Attempts, Device) ->
                 0 -> {error, ?MB_MAX_PACKET};
                 1 -> ok
             end
+    end.
+
+-spec lookup_mb(binary()) -> {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
+%% use -1 to mean deny more
+lookup_mb(PHash) ->
+    case ets:lookup(?MB_ETS, PHash) of
+        [{PHash, Max, Curr, _Time}] ->
+            {ok, PHash, Max, Curr};
+        _ ->
+            {error, not_found}
     end.
 
 -spec check_device_is_active(router_device:device(), libp2p_crypto:pubkey_bin()) ->
@@ -1208,6 +1223,24 @@ handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End - Start).
 
+-spec cleanup(non_neg_integer(), non_neg_integer()) -> ok.
+cleanup(MaxReplayDuration, MaxMBDuration) ->
+    erlang:spawn(
+        fun() ->
+            Now = erlang:system_time(millisecond),
+            ets:select_delete(?REPLAY_ETS, [
+                {{'_', '_', '$1'}, [{'<', '$1', Now - MaxReplayDuration}], [true]}
+            ]),
+            ets:select_delete(?MB_ETS, [
+                {{'_', '_', '_', '$1'}, [{'<', '$1', Now - MaxMBDuration}], [true]}
+            ]),
+
+            timer:sleep(timer:hours(1)),
+            cleanup(MaxReplayDuration, MaxMBDuration)
+        end
+    ),
+    ok.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -1218,32 +1251,81 @@ multi_buy_test() ->
     Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
 
-    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual({error, not_found}, lookup_mb(PHash)),
     ?assertEqual(ok, deny_more(PHash)),
-    ?assertEqual([{PHash, 0, -1}], ets:lookup(?MB_ETS, PHash)),
+    ?assertMatch({ok, PHash, 0, -1}, lookup_mb(PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
-    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual({error, not_found}, lookup_mb(PHash)),
     ?assertEqual(ok, accept_more(PHash)),
-    ?assertEqual([{PHash, ?PACKET_MAX, 2}], ets:lookup(?MB_ETS, PHash)),
+    ?assertMatch({ok, PHash, ?PACKET_MAX, 2}, lookup_mb(PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
-    ?assertEqual([], ets:lookup(?MB_ETS, PHash)),
+    ?assertEqual({error, not_found}, lookup_mb(PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
+
+    ets:delete(?MB_ETS),
+    ok.
+
+multi_buy_deny_more_test() ->
+    ets:new(?MB_ETS, [public, named_table, set]),
+    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
+    ?assertEqual({error, not_found}, lookup_mb(PHash), "never before seen"),
+    ?assertEqual(ok, accept_more(PHash), "let's buy a few copies"),
+    ?assertEqual(ok, deny_more(PHash), "changed our mind"),
+    ?assertMatch({ok, PHash, 0, -1}, lookup_mb(PHash), "making sure"),
 
     ets:delete(?MB_ETS),
     ok.
 
 replay_test() ->
     ets:new(?REPLAY_ETS, [public, named_table, set]),
-    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    Packet0 = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
+    PHash0 = blockchain_helium_packet_v1:packet_hash(Packet0),
     DeviceID = <<"device_id">>,
     PacketTime = 0,
 
-    ?assertEqual(ok, allow_replay(Packet, DeviceID, PacketTime)),
-    ?assertEqual({ok, DeviceID, PacketTime}, lookup_replay(PHash)),
+    ?assertEqual(ok, allow_replay(Packet0, DeviceID, PacketTime)),
+    ?assertEqual({ok, DeviceID, PacketTime}, lookup_replay(PHash0)),
     ?assertEqual(ok, clear_replay(DeviceID)),
-    ?assertEqual({error, not_found}, lookup_replay(PHash)),
+    ?assertEqual({error, not_found}, lookup_replay(PHash0)),
 
+    lists:foreach(
+        fun(X) ->
+            Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<X>>),
+            ?MODULE:allow_replay(Packet, DeviceID, X)
+        end,
+        lists:seq(1, 100)
+    ),
+    ?assertEqual(100, ets:select_count(?REPLAY_ETS, ?REPLAY_MS(DeviceID))),
+    ?assertEqual(ok, clear_replay(DeviceID)),
+    ?assertEqual(0, ets:select_count(?REPLAY_ETS, ?REPLAY_MS(DeviceID))),
+
+    ets:delete(?REPLAY_ETS),
+    ok.
+
+cleanup_test() ->
+    ets:new(?MB_ETS, [public, named_table, set]),
+    ets:new(?REPLAY_ETS, [public, named_table, set]),
+
+    DeviceID = <<"device_id">>,
+    lists:foreach(
+        fun(X) ->
+            Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<X>>),
+            PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+            ok = allow_replay(Packet, DeviceID, erlang:system_time(millisecond)),
+            ok = accept_more(PHash)
+        end,
+        lists:seq(1, 100)
+    ),
+
+    timer:sleep(100),
+    ?assertEqual(ok, cleanup(10, 10)),
+    timer:sleep(100),
+    ?assertEqual(0, ets:select_count(?REPLAY_ETS, ?REPLAY_MS(DeviceID))),
+    ?assertEqual(0, ets:select_count(?MB_ETS, [{{'_', '_', '_', '_'}, [], [true]}])),
+
+    ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
     ok.
 

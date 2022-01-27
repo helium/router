@@ -1,5 +1,6 @@
 FROM erlang:22
 ENV DEBIAN_FRONTEND noninteractive
+
 RUN apt update
 RUN apt-get install -y -q \
         build-essential \
@@ -20,13 +21,15 @@ RUN rustup update
 
 WORKDIR /opt/router
 
+ARG BUILD_NET=mainnet
+
 ADD rebar3 rebar3
 ADD rebar.config rebar.config
 ADD rebar.lock rebar.lock
 ADD config/grpc_client_gen.config config/grpc_client_gen.config
 ADD config/grpc_server_gen.config config/grpc_server_gen.config
 RUN ./rebar3 get-deps
-RUN ./rebar3 compile
+RUN ./rebar3 as ${BUILD_NET} compile
 
 ADD Makefile Makefile
 ADD c_src/ c_src/
@@ -36,10 +39,12 @@ ADD scripts/ scripts/
 RUN make
 
 ADD config/ config/
-ADD priv/ priv/
+ADD priv/genesis.${BUILD_NET} priv/genesis
 
-RUN make rel
+RUN ./rebar3 as ${BUILD_NET} release
 # add router to path for easy interactions
-ENV PATH=$PATH:_build/default/rel/router/bin
+ENV PATH=$PATH:_build/${BUILD_NET}/rel/router
+RUN ln -s /opt/router/_build/${BUILD_NET}/rel /opt/router/_build/default/rel
+RUN ln -s /opt/router/_build/default/rel/router/bin/router /opt/router-exec
 
 CMD ["make", "run"]

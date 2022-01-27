@@ -101,13 +101,8 @@ http_test(Config) ->
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
-        },
+        %% Not all metadata is populated here:
+        <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
@@ -240,13 +235,8 @@ http_test(Config) ->
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
-        },
+        %% Not all metadata is populated here:
+        <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,
@@ -442,13 +432,8 @@ http_update_test(Config) ->
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
         <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
-        },
+        %% Not all metadata is populated here:
+        <<"metadata">> => fun erlang:is_map/1,
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => <<>>,

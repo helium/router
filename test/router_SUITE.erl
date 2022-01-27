@@ -15,7 +15,13 @@
     us915_join_disabled_cf_list_test/1,
     us915_link_adr_req_timing_test/1,
     adr_test/1,
-    adr_downlink_timing_test/1
+    adr_downlink_timing_test/1,
+    rx_delay_join_test/1,
+    rx_delay_downlink_default_test/1,
+    rx_delay_ignored_by_device_downlink_test/1,
+    rx_delay_accepted_by_device_downlink_test/1,
+    rx_delay_continue_session_test/1,
+    rx_delay_change_during_session_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -49,7 +55,13 @@ all() ->
         us915_join_disabled_cf_list_test,
         us915_link_adr_req_timing_test,
         adr_test,
-        adr_downlink_timing_test
+        adr_downlink_timing_test,
+        rx_delay_join_test,
+        rx_delay_downlink_default_test,
+        rx_delay_ignored_by_device_downlink_test,
+        rx_delay_accepted_by_device_downlink_test,
+        rx_delay_continue_session_test,
+        rx_delay_change_during_session_test
     ].
 
 %%--------------------------------------------------------------------
@@ -241,7 +253,8 @@ dupes_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -546,7 +559,8 @@ dupes2_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -814,11 +828,11 @@ join_test(Config) ->
 
 us915_join_enabled_cf_list_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_test",
+    Swarm = proplists:get_value(swarm, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_enabled_cf_list_test",
     filelib:ensure_dir(HotspotDir),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
     %% Tell the device to enable join-accept cflist when it starts up
@@ -896,7 +910,7 @@ us915_join_enabled_cf_list_test(Config) ->
         AppSKey3
     ),
 
-    <<CFListChannelMask:16/integer, _/binary>> = CFList3,
+    <<CFListChannelMask:16/little-integer, _/binary>> = CFList3,
     ?assertMatch(
         [
             %% LinkADRReq shape:
@@ -907,19 +921,18 @@ us915_join_enabled_cf_list_test(Config) ->
         proplists:lookup_all(link_adr_req, Reply#frame.fopts),
         "Downlink turns on same channels as join cflist"
     ),
-
-    libp2p_swarm:stop(Swarm),
     ok.
 
 us915_join_disabled_cf_list_test(Config) ->
     %% NOTE: Disabled is default for cflist per device
 
     AppKey = proplists:get_value(app_key, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/join_cf_list_force_empty_test",
+    Swarm = proplists:get_value(swarm, Config),
+    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_disabled_cf_list_test",
     filelib:ensure_dir(HotspotDir),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm, _} = test_utils:start_swarm(HotspotDir, no_this_is_patrick, 0),
+
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
     {ok, Stream} = libp2p_swarm:dial_framed_stream(
@@ -949,8 +962,6 @@ us915_join_disabled_cf_list_test(Config) ->
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
     ?assertEqual(<<>>, SendJoinWaitForCFListFun()),
-
-    libp2p_swarm:stop(Swarm),
 
     ok.
 
@@ -1581,7 +1592,8 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1770,7 +1782,9 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -1957,7 +1971,9 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 2,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2152,7 +2168,9 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 3,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2301,7 +2319,9 @@ adr_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 4,
         <<"reported_at">> => fun erlang:is_integer/1,
@@ -2454,6 +2474,490 @@ adr_test(Config) ->
     %% NOTE: this will fail in the future when we implement the
     %%       ability to set `should_adr' in `#router_device.metadata'
     false = lists:keymember(link_adr_req, 1, Reply4#frame.fopts),
+    ok.
+
+rx_delay_join_test(Config) ->
+    ExpectedRxDelay = 5,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    AppKey = proplists:get_value(app_key, Config),
+    BaseDir = proplists:get_value(base_dir, Config),
+    RouterSwarm = blockchain_swarm:swarm(),
+    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {Swarm, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, Stream} = libp2p_swarm:dial_framed_stream(
+        Swarm,
+        Address,
+        router_handler_test:version(),
+        router_handler_test,
+        [self(), PubKeyBin]
+    ),
+    {ok, _HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
+
+    %% Send join packets
+    DevNonce = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{})},
+    timer:sleep(router_utils:join_timeout()),
+
+    %% Waiting for console report status sent
+    {ok, _} = test_utils:wait_for_console_event(<<"join_request">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_request">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
+            <<"fcnt">> => 0,
+            <<"payload_size">> => 0,
+            <<"payload">> => <<>>,
+            <<"raw_packet">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"name">> => fun erlang:is_binary/1,
+                <<"rssi">> => fun erlang:is_number/1,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => <<"unknown">>,
+                <<"long">> => <<"unknown">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event(<<"join_accept">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"join_accept">>,
+        <<"sub_category">> => <<"undefined">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => fun erlang:is_binary/1,
+                <<"name">> => fun erlang:is_binary/1,
+                <<"rssi">> => 27,
+                <<"snr">> => 0.0,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => <<"unknown">>,
+                <<"long">> => <<"unknown">>
+            }
+        }
+    }),
+
+    %% Waiting for reply resp form router
+    {_NetID, _DevAddr, _DLSettings, RxDelay, _NwkSKey, _AppSKey, _CFList} = test_utils:wait_for_join_resp(
+        PubKeyBin,
+        AppKey,
+        DevNonce
+    ),
+    ?assertEqual(ExpectedRxDelay, RxDelay),
+
+    libp2p_swarm:stop(Swarm),
+    ok.
+
+rx_delay_downlink_default_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Send = fun(Fcnt, FOpts) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device),
+                    router_device:app_s_key(Device),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+    Send(0, []),
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    ?assertEqual(1000000, Packet0#packet_pb.timestamp),
+
+    %% Simulate the Console setting `rx_delay` to non-default value
+    %% during same session / without device joining again:
+
+    ExpectedRxDelay = 10,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    %% Must wait for device to Send again, but device won't know about new rx_delay
+    %% until response/downlink
+    Send(1, []),
+    timer:sleep(router_utils:frame_timeout()),
+    {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(1000000, Packet1#packet_pb.timestamp),
+
+    %% Get `new_rx_delay` in Metadata:
+    router_device_worker:device_update(WorkerPid),
+
+    %% Device ACK
+    Send(2, [rx_timing_setup_ans]),
+    timer:sleep(router_utils:frame_timeout()),
+
+    %% Downlink after ACK uses new RxDelay
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet2#packet_pb.timestamp),
+    ok.
+
+rx_delay_ignored_by_device_downlink_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
+                %% Test case should fail if this is uncommented
+                %% ,
+                %% #{
+                %%     fopts => [
+                %%        rx_timing_setup_ans
+                %%     ]
+                %% }
+            )},
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Packet} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    ?assertNotEqual(ExpectedRxDelay * 1000000, Packet#packet_pb.timestamp),
+    ?assertEqual(1000000, Packet#packet_pb.timestamp),
+    ok.
+
+rx_delay_accepted_by_device_downlink_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, _WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{
+                    fopts => [
+                        rx_timing_setup_ans
+                    ]
+                }
+            )},
+    timer:sleep(router_utils:frame_timeout()),
+
+    {ok, Packet} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet#packet_pb.timestamp),
+
+    {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Metadata = router_device:metadata(Device1),
+
+    ?assertEqual(ExpectedRxDelay, maps:get(rx_delay, Metadata)),
+    ?assertEqual(true, maps:get(rx_delay_timing_ans_device_ack, Metadata)),
+
+    ok.
+
+rx_delay_continue_session_test(Config) ->
+    ExpectedRxDelay = 15,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, WorkerPid0} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid0, Msg),
+
+    test_utils:ignore_messages(),
+    Send = fun(Fcnt, FOpts) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device0),
+                    router_device:app_s_key(Device0),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+    Send(0, [rx_timing_setup_ans]),
+    {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp0 = Packet0#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp0),
+
+    gen_server:stop(WorkerPid0),
+
+    Send(1, []),
+    {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
+
+    {ok, WorkerPid1} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% We haven't ack'd channel correction
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    Timestamp1 = Packet1#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp1),
+
+    Channel = router_channel:new(
+        <<"fake">>,
+        websocket,
+        <<"fake">>,
+        #{},
+        0,
+        self()
+    ),
+    Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    router_device_worker:queue_message(WorkerPid1, Msg),
+
+    Send(2, []),
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    Timestamp2 = Packet2#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp2),
+
+    %% Re-join device and change its RX_DELAY:
+    %% 1. rejoin the device
+    %% 2. send an uplink _not_ acknowledging the rx_timing_setup
+    %% 3. and our delay should be 15 seconds (ExpectedRxDelay)
+
+    #{
+        pubkey_bin := _PubKeyBin1,
+        stream := Stream1,
+        hotspot_name := _HotspotName1
+    } = test_utils:join_device(Config),
+
+    timer:sleep(router_utils:join_timeout()),
+
+    {ok, Device1} = router_device:get_by_id(DB, CF, WorkerID),
+
+    Send1 = fun(Fcnt, FOpts) ->
+        Stream1 !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device1),
+                    router_device:app_s_key(Device1),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+
+    %% TODO there is a join response but comes from PubKeyBin==undefined, why?
+    %% test_utils:wait_for_join_resp(PubKeyBin, AppKey, DevNonce),
+    test_utils:ignore_messages(),
+
+    Send1(0, []),
+    {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
+    Timestamp3 = Packet3#packet_pb.timestamp,
+    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp3),
+    ?assertNotEqual(1000000, Timestamp3),
+    ok.
+
+rx_delay_change_during_session_test(Config) ->
+    ExpectedRxDelay1 = 10,
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay1}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, WorkerPid} = router_devices_sup:lookup_device_worker(WorkerID),
+
+    %% TODO uncomment if testing against other regions.
+    %% Channel = router_channel:new(
+    %%     <<"fake">>,
+    %%     websocket,
+    %%     <<"fake">>,
+    %%     #{},
+    %%     0,
+    %%     self()
+    %% ),
+    %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
+    %% router_device_worker:queue_message(WorkerPid, Msg),
+
+    test_utils:ignore_messages(),
+    Send = fun(Fcnt, FOpts) ->
+        Stream !
+            {send,
+                test_utils:frame_packet(
+                    ?CONFIRMED_UP,
+                    PubKeyBin,
+                    router_device:nwk_s_key(Device0),
+                    router_device:app_s_key(Device0),
+                    Fcnt,
+                    #{fopts => FOpts}
+                )},
+        timer:sleep(router_utils:frame_timeout())
+    end,
+    Send(0, [rx_timing_setup_ans]),
+    {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
+
+    %% check that the timestamp of the packet_pb is our default (1 second in the future)
+    ?assertEqual(ExpectedRxDelay1 * 1000000, Packet0#packet_pb.timestamp),
+
+    %% Simulate a change in `rx_delay` value from Console:
+    ExpectedRxDelay2 = 5,
+    _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay2}),
+
+    Send(1, []),
+    timer:sleep(router_utils:frame_timeout()),
+    {ok, Packet1} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay1 * 1000000, Packet1#packet_pb.timestamp),
+
+    %% Get `new_rx_delay` in Metadata:
+    router_device_worker:device_update(WorkerPid),
+
+    %% Device ACK
+    Send(2, [rx_timing_setup_ans]),
+    timer:sleep(router_utils:frame_timeout()),
+
+    %% Downlink after ACK uses new RxDelay
+    {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
+    ?assertEqual(ExpectedRxDelay2 * 1000000, Packet2#packet_pb.timestamp),
     ok.
 
 %% ------------------------------------------------------------------

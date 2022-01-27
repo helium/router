@@ -7,14 +7,12 @@
 %%%-------------------------------------------------------------------
 -module(lorawan_mac_region).
 
--dialyzer([no_return, no_unused, no_match]).
-
 %% Functions that map Region -> Top Level Region
 -export([
     join1_window/3,
     join2_window/2,
     rx1_window/4,
-    rx2_window/2,
+    rx2_window/3,
     rx1_or_rx2_window/4,
     set_channels/3,
     max_uplink_snr/2,
@@ -137,33 +135,40 @@
 -type freq_whole() :: non_neg_integer().
 -type channel() :: non_neg_integer().
 
+-define(JOIN1_WINDOW, join1_window).
+-define(JOIN2_WINDOW, join2_window).
+-define(RX1_WINDOW, rx1_window).
+-define(RX2_WINDOW, rx2_window).
+
+-type window() :: ?JOIN1_WINDOW | ?JOIN2_WINDOW | ?RX1_WINDOW | ?RX2_WINDOW.
+
 %% ------------------------------------------------------------------
 %% Region Wrapped Receive Window Functions
 %% ------------------------------------------------------------------
 
 -spec join1_window(atom(), integer(), #rxq{}) -> #txq{}.
-join1_window(Region, _Delay, RxQ) ->
+join1_window(Region, DelaySeconds, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, 0),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?JOIN1_WINDOW, RxQ, TxQ, DelaySeconds).
 
 -spec join2_window(atom(), #rxq{}) -> #txq{}.
 join2_window(Region, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?JOIN2_WINDOW, RxQ, TxQ).
 
 -spec rx1_window(atom(), number(), number(), #rxq{}) -> #txq{}.
-rx1_window(Region, _Delay, Offset, RxQ) ->
+rx1_window(Region, DelaySeconds, Offset, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx1_rf(TopLevelRegion, RxQ, Offset),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?RX1_WINDOW, RxQ, TxQ, DelaySeconds).
 
--spec rx2_window(atom(), #rxq{}) -> #txq{}.
-rx2_window(Region, RxQ) ->
+-spec rx2_window(atom(), number(), #rxq{}) -> #txq{}.
+rx2_window(Region, DelaySeconds, RxQ) ->
     TopLevelRegion = top_level_region(Region),
     TxQ = rx2_rf(TopLevelRegion, RxQ),
-    tx_window(?FUNCTION_NAME, RxQ, TxQ).
+    tx_window(?RX2_WINDOW, RxQ, TxQ, DelaySeconds).
 
 -spec rx1_or_rx2_window(atom(), number(), number(), #rxq{}) -> #txq{}.
 rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
@@ -173,7 +178,7 @@ rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
             if
                 % In Europe the RX Windows uses different frequencies, TX power rules and Duty cycle rules.
                 % If the signal is poor then prefer window 2 where TX power is higher.  See - https://github.com/helium/router/issues/423
-                RxQ#rxq.rssi < -80 -> rx2_window(Region, RxQ);
+                RxQ#rxq.rssi < -80 -> rx2_window(Region, Delay, RxQ);
                 true -> rx1_window(Region, Delay, Offset, RxQ)
             end;
         _ ->
@@ -471,17 +476,40 @@ tx_offset(Region, RxQ, Freq, Offset) ->
     DataRate = datar_to_down(Region, RxQ#rxq.datr, Offset),
     #txq{freq = Freq, datr = DataRate, codr = RxQ#rxq.codr, time = RxQ#rxq.time}.
 
--spec get_window(atom()) -> number().
-get_window(join1_window) -> 5000000;
-get_window(join2_window) -> 6000000;
-get_window(rx1_window) -> 1000000;
-get_window(rx2_window) -> 2000000.
+%% These only specify LoRaWAN default values; see also tx_window()
+-spec get_window(window()) -> number().
+get_window(?JOIN1_WINDOW) -> 5000000;
+get_window(?JOIN2_WINDOW) -> 6000000;
+get_window(?RX1_WINDOW) -> 1000000;
+get_window(?RX2_WINDOW) -> 2000000.
 
--spec tx_window(atom(), #rxq{}, #txq{}) -> #txq{}.
-tx_window(Window, #rxq{tmms = Stamp}, TxQ) when is_integer(Stamp) ->
+-spec tx_window(window(), #rxq{}, #txq{}) -> #txq{}.
+tx_window(Window, #rxq{tmms = Stamp} = Rxq, TxQ) when is_integer(Stamp) ->
+    tx_window(Window, Rxq, TxQ, 0).
+
+%% LoRaWAN Link Layer v1.0.4 spec, Section 5.7 Setting Delay between TX and RX,
+%% Table 45 and "RX2 always opens 1s after RX1."
+-spec tx_window(atom(), #rxq{}, #txq{}, number()) -> #txq{}.
+tx_window(?JOIN1_WINDOW, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(?JOIN1_WINDOW),
+    TxQ#txq{time = Stamp + Delay};
+tx_window(?JOIN2_WINDOW, #rxq{tmms = Stamp}, TxQ, _RxDelaySeconds) when is_integer(Stamp) ->
+    Delay = get_window(?JOIN2_WINDOW),
+    TxQ#txq{time = Stamp + Delay};
+tx_window(Window, #rxq{tmms = Stamp}, TxQ, RxDelaySeconds) when is_integer(Stamp) ->
     %% TODO check if the time is a datetime, which would imply gps timebase
-    %% TODO handle rx delay here
-    Delay = get_window(Window),
+    Delay =
+        case RxDelaySeconds of
+            N when N < 2 ->
+                get_window(Window);
+            N ->
+                case Window of
+                    ?RX2_WINDOW ->
+                        N * 1000000 + 1000000;
+                    _ ->
+                        N * 1000000
+                end
+        end,
     TxQ#txq{time = Stamp + Delay}.
 
 %% ------------------------------------------------------------------
@@ -647,12 +675,9 @@ datar_to_dr_(Region, DataRate) ->
 %% NOTE: FSK is a special case.
 %% @end
 %% ------------------------------------------------------------------
--spec tuple_to_datar(datarate() | non_neg_integer()) -> datar().
+-spec tuple_to_datar(datarate()) -> datar().
 tuple_to_datar({SF, BW}) ->
-    <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>;
-tuple_to_datar(DataRate) ->
-    %% FSK
-    DataRate.
+    <<"SF", (integer_to_binary(SF))/binary, "BW", (integer_to_binary(BW))/binary>>.
 
 %% ------------------------------------------------------------------
 %% @doc Datarate Binary to Datarate Tuple
@@ -660,6 +685,7 @@ tuple_to_datar(DataRate) ->
 %% @end
 %% ------------------------------------------------------------------
 -spec datar_to_tuple(datar()) -> datarate() | non_neg_integer().
+
 datar_to_tuple(DataRate) when is_binary(DataRate) ->
     [SF, BW] = binary:split(DataRate, [<<"SF">>, <<"BW">>], [global, trim_all]),
     {binary_to_integer(SF), binary_to_integer(BW)};
@@ -853,11 +879,11 @@ mk_join_accept_cf_list('US915') ->
     %% Page 33
     Chans = [{8, 15}],
     ChMaskTable = [
-        {2, mask, build_bin(Chans, {0, 15})},
-        {2, mask, build_bin(Chans, {16, 31})},
-        {2, mask, build_bin(Chans, {32, 47})},
-        {2, mask, build_bin(Chans, {48, 63})},
-        {2, mask, build_bin(Chans, {64, 71})},
+        {2, mask, build_chmask(Chans, {0, 15})},
+        {2, mask, build_chmask(Chans, {16, 31})},
+        {2, mask, build_chmask(Chans, {32, 47})},
+        {2, mask, build_chmask(Chans, {48, 63})},
+        {2, mask, build_chmask(Chans, {64, 71})},
         {2, rfu, 0},
         {3, rfu, 0},
         {1, cf_list_type, 1}
@@ -897,7 +923,7 @@ cflist_for_frequencies(Frequencies) ->
     {ByteSize :: pos_integer(), Type :: atom(), Value :: non_neg_integer()}
 ]) -> binary().
 cf_list_for_channel_mask_table(ChMaskTable) ->
-    <<<<Val:Size/unit:8>> || {Size, _, Val} <- ChMaskTable>>.
+    <<<<Val:Size/little-unit:8>> || {Size, _, Val} <- ChMaskTable>>.
 
 %% link_adr_req command
 
@@ -907,14 +933,14 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
     case all_bit({0, 63}, Chans) of
         true ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}),
-                    6, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 6, 0}
                 | FOptsOut
             ];
         false ->
             [
-                {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {64, 71}),
-                    7, 0}
+                {link_adr_req, datar_to_dr(Region, DataRate), TXPower,
+                    build_chmask(Chans, {64, 71}), 7, 0}
                 | append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)
             ]
     end;
@@ -927,7 +953,7 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when Region == 'CN47
     end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
     [
-        {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_bin(Chans, {0, 15}), 0, 0}
+        {link_adr_req, datar_to_dr(Region, DataRate), TXPower, build_chmask(Chans, {0, 15}), 0, 0}
         | FOptsOut
     ].
 
@@ -947,23 +973,27 @@ expand_intervals([{A, B} | Rest]) ->
 expand_intervals([]) ->
     [].
 
-build_bin(Chans, {Min, Max}) ->
+-spec build_chmask(
+    list({non_neg_integer(), non_neg_integer()}),
+    {non_neg_integer(), non_neg_integer()}
+) -> non_neg_integer().
+build_chmask(Chans, {Min, Max}) ->
     Bits = Max - Min + 1,
     lists:foldl(
         fun(Tuple, Acc) ->
-            <<Num:Bits>> = build_bin0({Min, Max}, Tuple),
+            <<Num:Bits>> = build_chmask0({Min, Max}, Tuple),
             Num bor Acc
         end,
         0,
         Chans
     ).
 
-build_bin0(MinMax, {A, B}) when B < A ->
-    build_bin0(MinMax, {B, A});
-build_bin0({Min, Max}, {A, B}) when B < Min; Max < A ->
+build_chmask0(MinMax, {A, B}) when B < A ->
+    build_chmask0(MinMax, {B, A});
+build_chmask0({Min, Max}, {A, B}) when B < Min; Max < A ->
     %% out of range
     <<0:(Max - Min + 1)>>;
-build_bin0({Min, Max}, {A, B}) ->
+build_chmask0({Min, Max}, {A, B}) ->
     C = max(Min, A),
     D = min(Max, B),
     Bits = Max - Min + 1,
@@ -981,7 +1011,7 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
         Region,
         Idx - 1,
         {TXPower, DataRate, Chans},
-        case build_bin(Chans, {16 * Idx, 16 * (Idx + 1) - 1}) of
+        case build_chmask(Chans, {16 * Idx, 16 * (Idx + 1) - 1}) of
             0 ->
                 FOptsOut;
             ChMask ->
@@ -1073,7 +1103,7 @@ us_window_2_test() ->
             ?assertEqual(datar_to_dr('US915', TxQ#txq.datr), 8),
             ?assertEqual(TxQ#txq.freq, 923.3)
         end,
-        [rx2_window('US915', RxQ), join2_window('US915', RxQ)]
+        [rx2_window('US915', 0, RxQ), join2_window('US915', RxQ)]
     ),
 
     ok.
@@ -1139,7 +1169,7 @@ cn470_window_2_test() ->
         end,
         [
             {join2_window, join2_window('CN470', RxQ)},
-            {rx2_window, rx2_window('CN470', RxQ)}
+            {rx2_window, rx2_window('CN470', 0, RxQ)}
         ]
     ),
     ok.
@@ -1211,7 +1241,7 @@ as923_window_2_test() ->
         end,
         [
             {join2_window, join2_window('AS923', RxQ)},
-            {rx2_window, rx2_window('AS923', RxQ)}
+            {rx2_window, rx2_window('AS923', 0, RxQ)}
         ]
     ),
     ok.
@@ -1256,9 +1286,20 @@ test_tx_time(Packet, DataRate, CodingRate) ->
 bits_test_() ->
     [
         ?_assertEqual([0, 1, 2, 5, 6, 7, 8, 9], expand_intervals([{0, 2}, {5, 9}])),
-        ?_assertEqual(7, build_bin([{0, 2}], {0, 15})),
-        ?_assertEqual(0, build_bin([{0, 2}], {16, 31})),
-        ?_assertEqual(65535, build_bin([{0, 71}], {0, 15})),
+        ?_assertEqual(7, build_chmask([{0, 2}], {0, 15})),
+        ?_assertEqual(0, build_chmask([{0, 2}], {16, 31})),
+        ?_assertEqual(65535, build_chmask([{0, 71}], {0, 15})),
+        ?_assertEqual(16#FF00, build_chmask([{8, 15}], {0, 15})),
+        ?_assertEqual(16#F800, build_chmask([{11, 15}], {0, 15})),
+        ?_assertEqual(16#F000, build_chmask([{12, 15}], {0, 15})),
+        ?_assertEqual(16#0F00, build_chmask([{8, 11}], {0, 15})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {16, 31})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {32, 47})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {48, 63})),
+        ?_assertEqual(0, build_chmask([{8, 15}], {64, 71})),
+        ?_assertEqual(16#1, build_chmask([{64, 64}], {64, 71})),
+        ?_assertEqual(16#2, build_chmask([{65, 65}], {64, 71})),
+        ?_assertEqual(16#7, build_chmask([{64, 66}], {64, 71})),
         ?_assertEqual(true, some_bit({0, 71}, [{0, 71}])),
         ?_assertEqual(true, all_bit({0, 71}, [{0, 71}])),
         ?_assertEqual(false, none_bit({0, 71}, [{0, 71}])),
@@ -1300,7 +1341,7 @@ mk_join_accept_cf_list_test_() ->
     [
         ?_assertEqual(
             %% Active Channels 8-15
-            <<255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
+            <<0, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>,
             mk_join_accept_cf_list('US915')
         ),
         ?_assertEqual(

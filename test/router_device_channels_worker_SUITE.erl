@@ -225,11 +225,14 @@ remove_channel_backoff_when_channel_changed_test(Config) ->
     {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
     DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
 
+    %% Wait until Channels Worker is done processing channels
+    ok = test_utils:wait_until_no_messages(DeviceChannelsWorkerPid),
+
     %% Check that HTTP 1 is in there
     State0 = sys:get_state(DeviceChannelsWorkerPid),
     ChannelName = maps:get(<<"id">>, Channel),
     {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
-    ?assertEqual(BackoffMin * 2, backoff:get(Backoff0)),
+    ?assertMatch(BackoffTime when BackoffTime >= (BackoffMin * 2), backoff:get(Backoff0)),
 
     %% Console gets a message about the first failure
     test_utils:wait_for_console_event(<<"misc">>, #{
@@ -311,11 +314,14 @@ remove_channel_backoff_when_all_channels_removed_test(Config) ->
     {ok, DeviceWorkerPid} = router_devices_sup:maybe_start_worker(DeviceID, #{}),
     DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(DeviceID),
 
+    %% Wait until Channels Worker is done processing channels
+    ok = test_utils:wait_until_no_messages(DeviceChannelsWorkerPid),
+
     %% Check that HTTP 1 is in there
     State0 = sys:get_state(DeviceChannelsWorkerPid),
     ChannelName = maps:get(<<"id">>, Channel),
     {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
-    ?assertEqual(BackoffMin * 2, backoff:get(Backoff0)),
+    ?assertMatch(BackoffTime when BackoffTime >= (BackoffMin * 2), backoff:get(Backoff0)),
 
     %% Console gets a message about the first failure
     test_utils:wait_for_console_event(<<"misc">>, #{
@@ -616,7 +622,8 @@ late_packet_test(Config) ->
             <<"organization_id">> => ?CONSOLE_ORG_ID,
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false
+            <<"cf_list_enabled">> => false,
+            <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,

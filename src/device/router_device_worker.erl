@@ -50,10 +50,6 @@
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
 
--define(RX_DELAY_ESTABLISHED, rx_delay_established).
--define(RX_DELAY_CHANGE, rx_delay_change).
--define(RX_DELAY_REQUESTED, rx_delay_requested).
-
 -define(NET_ID, <<"He2">>).
 
 %% This is only used when NO downlink must be sent to the device.
@@ -369,7 +365,7 @@ handle_cast(
                 {app_eui, router_device:app_eui(APIDevice)},
                 {metadata,
                     maps:merge(
-                        maybe_update_rx_delay(APIDevice, Device0),
+                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
                         router_device:metadata(APIDevice)
                     )},
                 {is_active, IsActive}
@@ -941,7 +937,7 @@ handle_info(
         packet_to_rxq(Packet)
     ),
     Rx2Window = join2_from_packet(Region, Packet),
-    Metadata = adjust_rx_delay(Device),
+    Metadata = lorawan_rxdelay:adjust(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),
@@ -1257,7 +1253,7 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, bootstrap_rx_delay(APIDevice)},
+        {metadata, lorawan_rxdelay:bootstrap(APIDevice)},
         {last_known_datarate, DR},
         {region, Region}
     ],
@@ -1294,7 +1290,7 @@ craft_join_reply(
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     RxDelaySeconds =
-        case maps:get(rx_delay_actual, Metadata, default) of
+        case lorawan_rxdelay:get(Metadata, default) of
             default -> <<?RX_DELAY:8/integer-unsigned>>;
             Seconds -> <<0:4, Seconds:4/integer-unsigned>>
         end,
@@ -1647,7 +1643,8 @@ handle_frame_timeout(
             Port = 0,
             FCntDown = router_device:fcntdown(Device0),
             MType = ack_to_mtype(ConfirmedDown),
-            {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, Frame#frame.fopts, FOpts1),
+            {RxDelay, Metadata, FOpts2} =
+                lorawan_rxdelay:adjust(Device0, Frame#frame.fopts, FOpts1),
             Reply = frame_to_packet_payload(
                 #frame{
                     mtype = MType,
@@ -1747,7 +1744,8 @@ handle_frame_timeout(
                 %% more pending downlinks
                 1
         end,
-    {RxDelay, Metadata, FOpts2} = adjust_rx_delay(Device0, Frame#frame.fopts, FOpts1),
+    {RxDelay, Metadata, FOpts2} =
+        lorawan_rxdelay:adjust(Device0, Frame#frame.fopts, FOpts1),
     Reply = frame_to_packet_payload(
         #frame{
             mtype = MType,
@@ -1821,80 +1819,6 @@ handle_frame_timeout(
         ADRAdjustment,
         T
     ).
-
--spec bootstrap_rx_delay(APIDevice :: router_device:device()) -> Metadata :: map().
-bootstrap_rx_delay(APIDevice) ->
-    %% Metadata here is ostensibly "settings" from Console/API:
-    Metadata = router_device:metadata(APIDevice),
-    %% The key `rx_delay' comes from Console/API for changing to that
-    %% value.  `rx_delay_actual' represents the value set in LoRaWAN
-    %% header during device Join and must go through request/answer
-    %% negotiation to be changed.
-    case maps:get(rx_delay, Metadata, 0) of
-        0 ->
-            %% Console always sends rx_delay via API, so default arm rarely gets used.
-            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata);
-        Del ->
-            Map = #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => Del},
-            maps:merge(Metadata, Map)
-    end.
-
--spec maybe_update_rx_delay(
-    APIDevice :: router_device:device(),
-    Device :: router_device:device()
-) -> Metadata :: map().
-maybe_update_rx_delay(APIDevice, Device) ->
-    %% Run after the value for `rx_delay` gets changed via Console.
-    %% Accommodate net-nil changes via Console as no-op; e.g., A -> B -> A.
-    Metadata0 = router_device:metadata(Device),
-    Actual = maps:get(rx_delay_actual, Metadata0, 0),
-    Requested = maps:get(rx_delay, router_device:metadata(APIDevice), Actual),
-    case Requested == Actual of
-        true ->
-            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
-        false ->
-            %% Track requested value for new `rx_delay` without actually changing to it.
-            maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata0)
-    end.
-
--spec adjust_rx_delay(Device :: router_device:device()) -> Metadata :: map().
-adjust_rx_delay(Device) ->
-    {_, Metadata, _} = adjust_rx_delay(Device, [], []),
-    Metadata.
-
--spec adjust_rx_delay(Device :: router_device:device(), UplinkFOpts :: list(), FOpts0 :: list()) ->
-    {RxDelay :: non_neg_integer(), Metadata1 :: map(), FOpts1 :: list()}.
-adjust_rx_delay(Device, UplinkFOpts, FOpts0) ->
-    Metadata0 = router_device:metadata(Device),
-    %% When state is undefined, it's probably a test that omits device_update():
-    State = maps:get(rx_delay_state, Metadata0, ?RX_DELAY_ESTABLISHED),
-    Actual = maps:get(rx_delay_actual, Metadata0, 0),
-    Answered = lists:member(rx_timing_setup_ans, UplinkFOpts),
-    %% Handle sequential changes to rx_delay; e.g, a previous change
-    %% was ack'd, and now there's potentially another new RxDelay value.
-    {RxDelay, Metadata1, FOpts1} =
-        case {State, Answered} of
-            %% Entering RX_DELAY_CHANGE state occurs in maybe_update_rx_delay().
-            {?RX_DELAY_ESTABLISHED, _} ->
-                {Actual, Metadata0, FOpts0};
-            {?RX_DELAY_CHANGE, _} ->
-                %% Console changed `rx_delay' value.
-                Requested = maps:get(rx_delay, Metadata0),
-                FOpts = [{rx_timing_setup_req, Requested} | FOpts0],
-                Metadata = maps:put(rx_delay_state, ?RX_DELAY_REQUESTED, Metadata0),
-                {Actual, Metadata, FOpts};
-            {?RX_DELAY_REQUESTED, false} ->
-                %% Router sent downlink request, Device has yet to ACK.
-                Requested = maps:get(rx_delay, Metadata0),
-                FOpts = [{rx_timing_setup_req, Requested} | FOpts0],
-                {Actual, Metadata0, FOpts};
-            {?RX_DELAY_REQUESTED, true} ->
-                %% Device responded with ACK, so Router can apply the requested rx_delay.
-                Requested = maps:get(rx_delay, Metadata0),
-                Map = #{rx_delay_actual => Requested, rx_delay_state => ?RX_DELAY_ESTABLISHED},
-                {Requested, maps:merge(Metadata0, Map), FOpts0}
-        end,
-    {RxDelay, Metadata1, FOpts1}.
 
 %% TODO: we need `link_adr_answer' for ADR. Suggest refactoring this.
 -spec channel_correction_and_fopts(
@@ -2121,7 +2045,7 @@ get_device(DB, CF, DeviceID) ->
                 {app_eui, router_device:app_eui(APIDevice)},
                 {metadata,
                     maps:merge(
-                        maybe_update_rx_delay(APIDevice, Device),
+                        lorawan_rxdelay:maybe_update(APIDevice, Device),
                         router_device:metadata(APIDevice)
                     )},
                 {is_active, IsActive}

@@ -155,49 +155,49 @@ url_test_() ->
     [
         ?_assertEqual(
             {
-                <<"https://website.com/">>,
+                <<"https://website.com">>,
                 []
             },
             make_url("https://website.com", [], #{})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=two">>,
+                <<"https://website.com?one=two">>,
                 [{<<"one">>, <<"two">>}]
             },
             make_url("https://website.com?one=two", [], #{})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=two">>,
+                <<"https://website.com?one=two">>,
                 [{<<"one">>, <<"two">>}]
             },
             make_url("https://website.com", [{<<"one">>, <<"two">>}], #{})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=two&three=four">>,
+                <<"https://website.com?one=two&three=four">>,
                 [{<<"one">>, <<"two">>}, {<<"three">>, <<"four">>}]
             },
             make_url("https://website.com?one=two", [{<<"three">>, <<"four">>}], #{})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=2">>,
+                <<"https://website.com?one=2">>,
                 [{<<"one">>, <<"2">>}]
             },
             make_url("https://website.com", [{<<"one">>, <<"{{value}}">>}], #{<<"value">> => 2})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=%7b%7bvalue%7d%7d">>,
+                <<"https://website.com?one=%7B%7Bvalue%7D%7D">>,
                 [{<<"one">>, <<"{{value}}">>}]
             },
             make_url("https://website.com?one={{value}}", [], #{<<"value">> => 2})
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=42">>,
+                <<"https://website.com?one=42">>,
                 [{<<"one">>, <<"42">>}]
             },
             make_url(
@@ -208,7 +208,7 @@ url_test_() ->
         ),
         ?_assertEqual(
             {
-                <<"https://website.com/?one=two">>,
+                <<"https://website.com?one=two">>,
                 [{<<"one">>, <<"two">>}]
             },
             make_url(

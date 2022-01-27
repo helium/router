@@ -31,11 +31,11 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
--spec get(Metadata :: map()) -> Del :: non_neg_integer().
+-spec get(Metadata :: map()) -> RxDelay :: non_neg_integer().
 get(Metadata) ->
     ?MODULE:get(Metadata, 0).
 
--spec get(Metadata :: map(), Default :: term()) -> Del :: non_neg_integer() | term().
+-spec get(Metadata :: map(), Default :: term()) -> RxDelay :: non_neg_integer() | term().
 get(Metadata, Default) ->
     maps:get(rx_delay_actual, Metadata, Default).
 
@@ -63,15 +63,15 @@ bootstrap(APIDevice) ->
 maybe_update(APIDevice, Device) ->
     %% Run after the value for `rx_delay` gets changed via Console.
     %% Accommodate net-nil changes via Console as no-op; e.g., A -> B -> A.
-    Metadata0 = router_device:metadata(Device),
-    Actual = maps:get(rx_delay_actual, Metadata0, 0),
+    Metadata = router_device:metadata(Device),
+    Actual = maps:get(rx_delay_actual, Metadata, 0),
     Requested = maps:get(rx_delay, router_device:metadata(APIDevice), Actual),
     case Requested == Actual of
         true ->
-            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata0);
+            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata);
         false when Requested =< 15 ->
             %% Track requested value for new `rx_delay` without actually changing to it.
-            maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata0)
+            maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata)
     end.
 
 -spec adjust(Device :: router_device:device()) -> Metadata :: map().
@@ -91,7 +91,7 @@ adjust(Device, UplinkFOpts, FOpts0) ->
     %% was ack'd, and now there's potentially another new RxDelay value.
     {RxDelay, Metadata1, FOpts1} =
         case {State, Answered} of
-            %% Entering RX_DELAY_CHANGE state occurs in maybe_update_rx_delay().
+            %% Entering `RX_DELAY_CHANGE' state occurs in maybe_update().
             {?RX_DELAY_ESTABLISHED, _} ->
                 {Actual, Metadata0, FOpts0};
             {?RX_DELAY_CHANGE, _} ->
@@ -158,6 +158,7 @@ rx_delay_state_test() ->
         {1, #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 1}, []},
         adjust(Device1, [], [])
     ),
+    %% No net change from a redundant ACK from device:
     ?assertEqual(
         {1, #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 1}, []},
         adjust(Device1, [rx_timing_setup_ans], [])

@@ -2811,7 +2811,6 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
 
     {ok, Packet} = test_utils:wait_state_channel_packet(1000),
 
-    %% check that the timestamp of the packet_pb is our default (1 second in the future)
     ?assertEqual(ExpectedRxDelay * 1000000, Packet#packet_pb.timestamp),
 
     %% Get API's `rx_delay` into Metadata:
@@ -2874,9 +2873,7 @@ rx_delay_continue_session_test(Config) ->
     Send(0, []),
     {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
-    %% check that the timestamp of the packet_pb is our default (1 second in the future)
-    Timestamp0 = Packet0#packet_pb.timestamp,
-    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp0),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet0#packet_pb.timestamp),
 
     gen_server:stop(WorkerPid0),
 
@@ -2887,9 +2884,7 @@ rx_delay_continue_session_test(Config) ->
 
     %% We haven't ack'd channel correction
 
-    %% check that the timestamp of the packet_pb is our default (1 second in the future)
-    Timestamp1 = Packet1#packet_pb.timestamp,
-    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp1),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet1#packet_pb.timestamp),
 
     Channel = router_channel:new(
         <<"fake">>,
@@ -2904,8 +2899,7 @@ rx_delay_continue_session_test(Config) ->
 
     Send(2, []),
     {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
-    Timestamp2 = Packet2#packet_pb.timestamp,
-    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp2),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet2#packet_pb.timestamp),
 
     %% Re-join device, and change its RX_DELAY:
     %% 1. rejoin the device
@@ -2936,15 +2930,11 @@ rx_delay_continue_session_test(Config) ->
         timer:sleep(router_utils:frame_timeout())
     end,
 
-    %% TODO there is a join response but comes from PubKeyBin==undefined, why?
-    %% test_utils:wait_for_join_resp(PubKeyBin, AppKey, DevNonce),
     test_utils:ignore_messages(),
 
     Send1(0, []),
     {ok, Packet3} = test_utils:wait_state_channel_packet(1000),
-    Timestamp3 = Packet3#packet_pb.timestamp,
-    ?assertEqual(ExpectedRxDelay * 1000000, Timestamp3),
-    ?assertNotEqual(1000000, Timestamp3),
+    ?assertEqual(ExpectedRxDelay * 1000000, Packet3#packet_pb.timestamp),
     ok.
 
 rx_delay_change_during_session_test(Config) ->
@@ -2998,11 +2988,11 @@ rx_delay_change_during_session_test(Config) ->
                 )},
         timer:sleep(router_utils:frame_timeout())
     end,
+
     %% No rx_timing_setup_ans necessary upon Join, as join-accept flow is the ACK.
     Send(0, []),
     {ok, Packet0} = test_utils:wait_state_channel_packet(1000),
 
-    %% check that the timestamp of the packet_pb is our default (1 second in the future)
     ?assertEqual(ExpectedRxDelay1 * 1000000, Packet0#packet_pb.timestamp),
 
     %% Simulate a change in `rx_delay` value from Console:

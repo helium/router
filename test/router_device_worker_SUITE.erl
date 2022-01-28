@@ -132,6 +132,7 @@ device_worker_late_packet_double_charge_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
@@ -762,6 +763,7 @@ replay_uplink_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,
@@ -818,7 +820,7 @@ replay_uplink_test(Config) ->
             <<"multi_buy">> => 1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
-            <<"rx_delay_timing_ans_device_ack">> => false,
+            <<"rx_delay_state">> => fun erlang:is_binary/1,
             <<"rx_delay">> => 0
         },
         <<"fcnt">> => 0,

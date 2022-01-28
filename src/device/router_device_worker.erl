@@ -49,7 +49,6 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
--define(RX_DELAY_TIMING_ANS_DEVICE_ACK, rx_delay_timing_ans_device_ack).
 
 -define(NET_ID, <<"He2">>).
 
@@ -359,21 +358,16 @@ handle_cast(
         {ok, APIDevice} ->
             lager:info("device updated: ~p", [APIDevice]),
             router_device_channels_worker:refresh_channels(ChannelsWorker),
-            RxDelayOld = maps:get(rx_delay, router_device:metadata(Device0), 0),
-            RxDelayNew = maps:get(rx_delay, router_device:metadata(APIDevice), RxDelayOld),
-            Metadata =
-                case RxDelayOld == RxDelayNew of
-                    true ->
-                        router_device:metadata(APIDevice);
-                    false ->
-                        maps:put(new_rx_delay, RxDelayNew, router_device:metadata(APIDevice))
-                end,
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, Metadata},
+                {metadata,
+                    maps:merge(
+                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                        router_device:metadata(APIDevice)
+                    )},
                 {is_active, IsActive}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -943,8 +937,10 @@ handle_info(
         packet_to_rxq(Packet)
     ),
     Rx2Window = join2_from_packet(Region, Packet),
+    Metadata = lorawan_rxdelay:adjust(Device),
+    Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
-        craft_join_reply(Device, JoinAcceptArgs, JoinAttemptCount),
+        craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
         TxTime,
         TxFreq,
@@ -1257,7 +1253,7 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, router_device:metadata(APIDevice)},
+        {metadata, lorawan_rxdelay:bootstrap(APIDevice)},
         {last_known_datarate, DR},
         {region, Region}
     ],
@@ -1294,7 +1290,7 @@ craft_join_reply(
             _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
         end,
     RxDelaySeconds =
-        case maps:get(rx_delay, Metadata, default) of
+        case lorawan_rxdelay:get(Metadata, default) of
             default -> <<?RX_DELAY:8/integer-unsigned>>;
             Seconds -> <<0:4, Seconds:4/integer-unsigned>>
         end,
@@ -1647,12 +1643,14 @@ handle_frame_timeout(
             Port = 0,
             FCntDown = router_device:fcntdown(Device0),
             MType = ack_to_mtype(ConfirmedDown),
+            {RxDelay, Metadata, FOpts2} =
+                lorawan_rxdelay:adjust(Device0, Frame#frame.fopts, FOpts1),
             Reply = frame_to_packet_payload(
                 #frame{
                     mtype = MType,
                     devaddr = Frame#frame.devaddr,
                     fcnt = FCntDown,
-                    fopts = FOpts1,
+                    fopts = FOpts2,
                     fport = Port,
                     adr = Frame#frame.adr,
                     ack = ACK,
@@ -1660,26 +1658,6 @@ handle_frame_timeout(
                 },
                 Device0
             ),
-            %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
-            {RXTimingSetupAns, RxDelay} =
-                case
-                    lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
-                        maps:get(
-                            ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
-                            router_device:metadata(Device0),
-                            false
-                        )
-                of
-                    true ->
-                        {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
-                    false ->
-                        {false, 0}
-                end,
-            FOpts2 =
-                case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of
-                    unchanged -> FOpts1;
-                    NewRxDelay -> [{rx_timing_setup_req, NewRxDelay} | FOpts1]
-                end,
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
@@ -1702,12 +1680,7 @@ handle_frame_timeout(
             DeviceUpdates = [
                 {channel_correction, ChannelsCorrected},
                 {fcntdown, (FCntDown + 1)},
-                {metadata,
-                    maps:put(
-                        ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
-                        RXTimingSetupAns,
-                        router_device:metadata(Device0)
-                    )}
+                {metadata, Metadata}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             EventTuple =
@@ -1771,12 +1744,14 @@ handle_frame_timeout(
                 %% more pending downlinks
                 1
         end,
+    {RxDelay, Metadata, FOpts2} =
+        lorawan_rxdelay:adjust(Device0, Frame#frame.fopts, FOpts1),
     Reply = frame_to_packet_payload(
         #frame{
             mtype = MType,
             devaddr = Frame#frame.devaddr,
             fcnt = FCntDown,
-            fopts = FOpts1,
+            fopts = FOpts2,
             fport = Port,
             adr = Frame#frame.adr,
             ack = ACK,
@@ -1785,26 +1760,6 @@ handle_frame_timeout(
         },
         Device0
     ),
-    %% Handle sequential changes to rx_delay: prev was ack'd, now a potentially new RxDelay
-    {RXTimingSetupAns, RxDelay} =
-        case
-            lists:member(rx_timing_setup_ans, Frame#frame.fopts) orelse
-                maps:get(
-                    ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
-                    router_device:metadata(Device0),
-                    false
-                )
-        of
-            true ->
-                {true, maps:get(rx_delay, router_device:metadata(Device0), 0)};
-            false ->
-                {false, 0}
-        end,
-    FOpts2 =
-        case maps:get(new_rx_delay, router_device:metadata(Device0), unchanged) of
-            unchanged -> FOpts1;
-            NewRxDelay -> [{rx_timing_setup_req, NewRxDelay} | FOpts1]
-        end,
     #txq{
         time = TxTime,
         datr = TxDataRate,
@@ -1825,14 +1780,7 @@ handle_frame_timeout(
         Rx2Window
     ),
     EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts2},
-    DeviceUpdateMetadata =
-        {metadata,
-            maps:put(
-                ?RX_DELAY_TIMING_ANS_DEVICE_ACK,
-                RXTimingSetupAns,
-                router_device:metadata(Device0)
-            )},
-
+    DeviceUpdateMetadata = {metadata, Metadata},
     case ConfirmedDown of
         true ->
             Device1 = router_device:channel_correction(ChannelsCorrected, Device0),
@@ -2075,10 +2023,34 @@ save_and_update(DB, CF, Pid, Device) ->
     ok = router_device_channels_worker:handle_device_update(Pid, Device).
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
-get_device(DB, CF, ID) ->
-    case router_device:get_by_id(DB, CF, ID) of
-        {ok, D} -> D;
-        _ -> router_device:new(ID)
+get_device(DB, CF, DeviceID) ->
+    Device =
+        case router_device:get_by_id(DB, CF, DeviceID) of
+            {ok, D} -> D;
+            _ -> router_device:new(DeviceID)
+        end,
+    case router_console_api:get_device(DeviceID) of
+        {error, not_found} ->
+            lager:info("device not found"),
+            Device;
+        {error, _Reason} ->
+            lager:error("failed to get device ~p", [_Reason]),
+            Device;
+        {ok, APIDevice} ->
+            lager:info("got device: ~p", [APIDevice]),
+            IsActive = router_device:is_active(APIDevice),
+            DeviceUpdates = [
+                {name, router_device:name(APIDevice)},
+                {dev_eui, router_device:dev_eui(APIDevice)},
+                {app_eui, router_device:app_eui(APIDevice)},
+                {metadata,
+                    maps:merge(
+                        lorawan_rxdelay:maybe_update(APIDevice, Device),
+                        router_device:metadata(APIDevice)
+                    )},
+                {is_active, IsActive}
+            ],
+            router_device:update(DeviceUpdates, Device)
     end.
 
 -spec maybe_construct_adr_engine(undefined | lorawan_adr:handle(), atom()) -> lorawan_adr:handle().

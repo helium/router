@@ -353,7 +353,7 @@ dot_syntax_test_() ->
             )},
         {"Out of bound access",
             ?_assertEqual(
-                <<"mustache template render failed">>,
+                <<"">>,
                 maybe_apply_template(<<"{{data.9999.value}}">>, BasicMap)
             )},
 

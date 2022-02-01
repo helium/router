@@ -5,7 +5,7 @@ on:
     tags: '*'
 
 jobs:
-  BUILD_AND_PUSH_IMG:
+  quay:
     runs-on: ubuntu-latest
     steps:
       - name: checkout

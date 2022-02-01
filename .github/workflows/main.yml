@@ -1,0 +1,123 @@
+name: Tests
+
+on:
+  push:
+    branches: '*'
+  pull_request:
+    branches: master
+  # Run every day at midnight PST (0800 UTC)
+  # https://crontab.guru/#0_8_*_*_*
+  schedule:
+    - cron: '0 8 * * *'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      # For some reason the toolchain is no installed properly so lets add it...
+      - name: rustup default stable
+        run: rustup default stable
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: cleanup
+        run: |
+          mkdir -p /tmp/router/_build
+          cp -R /opt/router/_build/* /tmp/router/_build
+          cp -R * /tmp/router
+          rm -rf /opt/router/*
+          cp -R /tmp/router /opt
+          rm -rf /tmp/router
+      - name: build
+        run: |
+          make grpc
+          ./rebar3 compile
+        working-directory: /opt/router
+      - name: build test
+        run: ./rebar3 as test compile
+        working-directory: /opt/router
+      - name: tar
+        run: tar -cvzf build.tar.gz -C _build/ .
+        working-directory: /opt/router
+      - name: upload-artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: build
+          path: /opt/router/build.tar.gz
+  format-xref-eunit:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-format-xref-eunit
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: format
+        run: |
+          ./rebar3 fmt --verbose --check rebar.config
+          ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" --exclude-files "src/grpc/autogen/**/*"
+          ./rebar3 fmt --verbose --check "config/{test,sys}.{config,config.src}"
+      - name: xref
+        run: ./rebar3 xref
+      - name: eunit
+        run: ./rebar3 eunit
+  dialyzer:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:latest
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-dialyzer
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: dialyzer
+        run: ./rebar3 dialyzer
+  ct:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:latest
+    strategy:
+      matrix:
+        suite: [router_SUITE,router_channel_aws_SUITE,router_channel_azure_SUITE,router_channel_console_SUITE,router_channel_http_SUITE,router_channel_mqtt_SUITE,router_channel_no_channel_SUITE,router_console_api_SUITE,router_console_dc_tracker_SUITE,router_data_SUITE,router_decoder_SUITE,router_decoder_custom_sup_SUITE,router_decoder_custom_worker_SUITE,router_device_channels_worker_SUITE,router_device_devaddr_SUITE,router_device_routing_SUITE,router_device_worker_SUITE,router_discovery_SUITE,router_downlink_SUITE,router_grpc_SUITE,router_lorawan_SUITE,router_metrics_SUITE,router_sc_worker_SUITE,router_v8_SUITE,router_xor_filter_SUITE]
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-ct-${{ matrix.suite }}
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: ct ${{ matrix.suite }}
+        run: ./rebar3 ct --suite=${{ matrix.suite }}

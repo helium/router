@@ -1,4 +1,4 @@
-name: BUILD_AND_PUSH_IMG
+name: Quay
 
 on:
   push:

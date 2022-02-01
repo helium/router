@@ -43,6 +43,7 @@ RUN make
 
 ADD config/ config/
 ADD priv/ priv/
+RUN ln -s priv/genesis.mainnet priv/genesis
 RUN make rel
 # add router to path for easy interactions
 ENV PATH=$PATH:_build/default/rel/router/bin

@@ -215,7 +215,7 @@ deny_more(PHash) ->
     case lookup_mb(PHash) of
         {ok, PHash, 0, -1} ->
             ok;
-        {error, _} ->
+        _ ->
             true = ets:insert(?MB_ETS, {PHash, 0, -1, erlang:system_time(millisecond)}),
             ok
     end.
@@ -251,7 +251,6 @@ allow_replay(Packet, DeviceID, PacketTime) ->
     ok.
 
 -spec clear_replay(binary()) -> ok.
-
 clear_replay(DeviceID) ->
     X = ets:select_delete(?REPLAY_ETS, ?REPLAY_MS(DeviceID)),
     lager:debug([{device_id, DeviceID}], "cleared ~p replay", [X]),
@@ -1268,6 +1267,19 @@ multi_buy_test() ->
     ?assertEqual(ok, clear_multi_buy(Packet)),
     ?assertEqual({error, not_found}, lookup_mb(PHash)),
     ?assertEqual(ok, clear_multi_buy(Packet)),
+
+    ets:delete(?MB_ETS),
+    ok.
+
+multi_buy_deny_more_test() ->
+    ets:new(?MB_ETS, [public, named_table, set]),
+    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
+    ?assertEqual({error, not_found}, lookup_mb(PHash), "never before seen"),
+    ?assertEqual(ok, accept_more(PHash), "let's buy a few copies"),
+    ?assertEqual(ok, deny_more(PHash), "changed our mind"),
+    ?assertMatch({ok, PHash, 0, -1}, lookup_mb(PHash), "making sure"),
 
     ets:delete(?MB_ETS),
     ok.

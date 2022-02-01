@@ -1,6 +1,17 @@
 .PHONY: compile clean test rel run grpc docker-build docker-test docker-run
 grpc_services_directory=src/grpc/autogen
 
+## https://www.gnu.org/software/make/manual/html_node/Syntax-of-Functions.html#Syntax-of-Functions
+## for example of join on comma
+null  :=
+space := $(null) #
+comma := ,
+comma-join-fn = $(subst $(space),$(comma),$(1))
+
+LORA_FILES = $(notdir $(wildcard test/*lorawan*SUITE.erl))
+TEST_FILES = $(notdir $(wildcard test/*_SUITE.erl))
+MAC_SUITES = $(call comma-join-fn,$(filter-out $(LORA_FILES),$(TEST_FILES)))
+
 REBAR=./rebar3
 
 compile: | $(grpc_services_directory)
@@ -26,7 +37,7 @@ test-mac: | $(grpc_services_directory)
 	$(REBAR) fmt --verbose --check "config/{test,sys}.{config,config.src}"
 	$(REBAR) xref
 	$(REBAR) eunit
-	$(REBAR) ct --suite=$(cd test/ && ls -1N *_SUITE.erl | grep -v _lorawan_ | awk '{gsub(".erl$", ""); printf("%s,", $0)}')
+	$(REBAR) ct --suite=$(MAC_SUITES)
 	$(REBAR) dialyzer
 
 rel: | $(grpc_services_directory)

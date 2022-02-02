@@ -116,6 +116,7 @@ jobs:
           SUITES=${SUITES%,};
           # close array
           SUITES+="]"
+          echo "We are in $(pwd)"
           echo "::set-output name=test_suites::${SUITES}"
   ct:
     needs: [build, suites]

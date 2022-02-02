@@ -66,7 +66,7 @@ start_link() ->
 init([]) ->
     ok = router_decoder:init_ets(),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),
-    
+
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 

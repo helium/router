@@ -7,7 +7,7 @@
 ]).
 
 -export([
-    pagniation_test/1,
+    pagination_test/1,
     ws_get_address_test/1,
     ws_request_address_test/1,
     fetch_queue_test/1,
@@ -36,7 +36,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        pagniation_test,
+        pagination_test,
         ws_get_address_test,
         ws_request_address_test,
         fetch_queue_test,
@@ -59,7 +59,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-pagniation_test(Config) ->
+pagination_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     Max = 100,
     lists:foreach(

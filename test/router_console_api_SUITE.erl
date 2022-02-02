@@ -6,7 +6,13 @@
     end_per_testcase/2
 ]).
 
--export([pagniation_test/1, ws_get_address_test/1, fetch_queue_test/1, consume_queue_test/1]).
+-export([
+    pagniation_test/1,
+    ws_get_address_test/1,
+    ws_request_address_test/1,
+    fetch_queue_test/1,
+    consume_queue_test/1
+]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -29,7 +35,13 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [pagniation_test, ws_get_address_test, fetch_queue_test, consume_queue_test].
+    [
+        pagniation_test,
+        ws_get_address_test,
+        ws_request_address_test,
+        fetch_queue_test,
+        consume_queue_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -88,6 +100,37 @@ ws_get_address_test(_Config) ->
             )
     after 2500 -> ct:fail(websocket_msg_timeout)
     end,
+    ok.
+
+ws_request_address_test(_Config) ->
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+    receive
+        {websocket_msg, Map} ->
+            PubKeyBin = blockchain_swarm:pubkey_bin(),
+            B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+            ?assertEqual(
+                #{
+                    ref => <<"0">>,
+                    topic => <<"organization:all">>,
+                    event => <<"router:address">>,
+                    jref => <<"0">>,
+                    payload => #{<<"address">> => B58}
+                },
+                Map
+            )
+    after 2500 -> ct:fail(websocket_initial_router_address_msg)
+    end,
+
+    WSPid ! refetch_router_address,
+    receive
+        {websocket_msg, #{event := <<"router:address">>}} -> ok
+    after 500 -> ct:fail(websocket_refetch_router_address_msg)
+    end,
+
     ok.
 
 consume_queue_test(Config) ->

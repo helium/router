@@ -391,6 +391,14 @@ websocket_info(_Req, {org_update, Topic}, State) ->
         Payload
     ),
     {reply, {text, Data}, State};
+websocket_info(_Req, refetch_router_address, State) ->
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"organization:all:refetch:router_address">>,
+        #{}
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, {is_active, true}, State) ->
     Data = router_console_ws_handler:encode_msg(
         <<"0">>,

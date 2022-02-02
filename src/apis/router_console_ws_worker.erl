@@ -79,14 +79,7 @@ handle_info(
     {noreply, State#state{ws = WSPid1}};
 handle_info(ws_joined, #state{ws = WSPid} = State) ->
     lager:info("joined, sending router address to console", []),
-    PubKeyBin = blockchain_swarm:pubkey_bin(),
-    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
-    Payload = router_console_ws_handler:encode_msg(
-        <<"0">>,
-        <<"organization:all">>,
-        <<"router:address">>,
-        #{address => B58}
-    ),
+    Payload = get_router_address_msg(),
     WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(
@@ -163,6 +156,14 @@ handle_info(
     #state{db = DB, cf = CF} = State
 ) ->
     update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
+handle_info(
+    {ws_message, <<"organization:all">>, <<"organization:all:refetch:router_address">>, _},
+    #state{ws = WSPid} = State
+) ->
+    lager:info("console requested router address", []),
+    Payload = get_router_address_msg(),
+    WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{
@@ -363,3 +364,14 @@ check_devices(DB, CF) ->
     lager:info("checking all devices in DB"),
     DeviceIDs = [router_device:id(Device) || Device <- router_device:get(DB, CF)],
     update_devices(DB, CF, DeviceIDs).
+
+-spec get_router_address_msg() -> binary().
+get_router_address_msg() ->
+    PubKeyBin = blockchain_swarm:pubkey_bin(),
+    B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
+    router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"router:address">>,
+        #{address => B58}
+    ).

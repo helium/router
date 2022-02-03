@@ -76,7 +76,9 @@ maybe_update(APIDevice, Device) ->
 
 -spec adjust(Device :: router_device:device()) -> Metadata :: map().
 adjust(Device) ->
-    {_, Metadata, _} = adjust(Device, [], []),
+    %% LoRaWAN Join-Accept implies `rx_timing_setup_ans` because
+    %% `RXDelay` was in the Join-Accept.
+    {_, Metadata, _} = adjust(Device, [rx_timing_setup_ans], []),
     Metadata.
 
 -spec adjust(Device :: router_device:device(), UplinkFOpts :: list(), FOpts0 :: list()) ->

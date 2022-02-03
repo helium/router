@@ -19,7 +19,7 @@
     get/2,
     bootstrap/1,
     maybe_update/2,
-    adjust/1,
+    adjust_on_join/1,
     adjust/3
 ]).
 
@@ -38,6 +38,13 @@ get(Metadata) ->
 -spec get(Metadata :: map(), Default :: term()) -> RxDelay :: non_neg_integer() | term().
 get(Metadata, Default) ->
     maps:get(rx_delay_actual, Metadata, Default).
+
+%% TODO bootstrap/1 gets called during `handle_join' but should be in
+%% `join_timeout', which is where adjust_on_join/1 currently gets
+%% called.  Ideally, both bootstrap/1 and adjust_on_join/1 would be
+%% consolidated and called only once during join_timeout as the
+%% canonical bootstrap.  However, Common Test suites become
+%% problematic to write and maintain due to faked joins.
 
 -spec bootstrap(APIDevice :: router_device:device()) -> Metadata :: map().
 bootstrap(APIDevice) ->
@@ -74,10 +81,11 @@ maybe_update(APIDevice, Device) ->
             maps:put(rx_delay_state, ?RX_DELAY_CHANGE, Metadata)
     end.
 
--spec adjust(Device :: router_device:device()) -> Metadata :: map().
-adjust(Device) ->
+-spec adjust_on_join(Device :: router_device:device()) -> Metadata :: map().
+adjust_on_join(Device) ->
     %% LoRaWAN Join-Accept implies `rx_timing_setup_ans` because
-    %% `RXDelay` was in the Join-Accept.
+    %% `RXDelay` was in the Join-Accept.  A subsequent uplink implies
+    %% that the device acknowledged the Join-Accept and thus, RXDelay.
     {_, Metadata, _} = adjust(Device, [rx_timing_setup_ans], []),
     Metadata.
 
@@ -85,8 +93,9 @@ adjust(Device) ->
     {RxDelay :: non_neg_integer(), Metadata1 :: map(), FOpts1 :: list()}.
 adjust(Device, UplinkFOpts, FOpts0) ->
     Metadata0 = router_device:metadata(Device),
-    %% When state is undefined, it's probably a test that omits device_update():
-    State = maps:get(rx_delay_state, Metadata0, ?RX_DELAY_ESTABLISHED),
+    %% When state is undefined, it's probably a test that omits device_update()
+    %% or didn't wait long enough for the async/cast to complete.
+    State = maps:get(rx_delay_state, Metadata0, unknown_state),
     Actual = maps:get(rx_delay_actual, Metadata0, 0),
     Answered = lists:member(rx_timing_setup_ans, UplinkFOpts),
     %% Handle sequential changes to rx_delay; e.g, a previous change
@@ -111,7 +120,10 @@ adjust(Device, UplinkFOpts, FOpts0) ->
                 %% Device responded with ACK, so Router can apply the requested rx_delay.
                 Requested = maps:get(rx_delay, Metadata0),
                 Map = #{rx_delay_actual => Requested, rx_delay_state => ?RX_DELAY_ESTABLISHED},
-                {Requested, maps:merge(Metadata0, Map), FOpts0}
+                {Requested, maps:merge(Metadata0, Map), FOpts0};
+            {unknown_state, _} ->
+                lager:error("rx_delay state=unknown device-id=~p", [router_device:id(Device)]),
+                {Actual, Metadata0, FOpts0}
         end,
     {RxDelay, Metadata1, FOpts1}.
 
@@ -119,28 +131,42 @@ adjust(Device, UplinkFOpts, FOpts0) ->
 -include_lib("eunit/include/eunit.hrl").
 
 rx_delay_state_test() ->
+    {ok, _} = application:ensure_all_started(lager),
+
     ?assertEqual(default, get(#{foo => bar}, default)),
     ?assertEqual(default, get(#{rx_delay => 15}, default)),
     ?assertEqual(15, get(#{rx_delay_actual => 15}, default)),
 
     %% Ensure only LoRaWAN-approved values used
     Device = router_device:new(<<"foo">>),
-    ApiDeviceDelTooBig = router_device:metadata(#{rx_delay => 99}, Device),
-    ?assertError({case_clause, 99}, bootstrap(ApiDeviceDelTooBig)),
+    ApiSettingsDelTooBig = router_device:metadata(#{rx_delay => 99}, Device),
+    ?assertError({case_clause, 99}, bootstrap(ApiSettingsDelTooBig)),
 
     %% Bootstrapping state
     ?assertEqual(#{rx_delay_state => ?RX_DELAY_ESTABLISHED}, bootstrap(Device)),
-    ApiDevice = router_device:metadata(#{rx_delay => 5}, Device),
+    ApiSettings = router_device:metadata(#{rx_delay => 5}, Device),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 5, rx_delay => 5},
-        bootstrap(ApiDevice)
+        bootstrap(ApiSettings)
     ),
 
     %% No net change yet, as LoRaWAN's RxDelay default is 0
-    ApiDevice0 = router_device:metadata(#{rx_delay => 0}, Device),
+    ApiSettings0 = router_device:metadata(#{rx_delay => 0}, Device),
+    ?assertEqual(
+        #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay => 0},
+        bootstrap(ApiSettings0)
+    ),
+    Device0 = router_device:metadata(
+        #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay => 0},
+        Device
+    ),
+    ?assertEqual(
+        #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay => 0},
+        adjust_on_join(Device0)
+    ),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED},
-        maybe_update(ApiDevice0, Device)
+        maybe_update(ApiSettings0, Device)
     ),
 
     %% No net change when using non-default value for RxDelay.
@@ -148,10 +174,10 @@ rx_delay_state_test() ->
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 1},
         Device
     ),
-    ApiDevice1 = router_device:metadata(#{rx_delay => 1}, Device),
+    ApiSettings1 = router_device:metadata(#{rx_delay => 1}, Device),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 1},
-        maybe_update(ApiDevice1, Device1)
+        maybe_update(ApiSettings1, Device1)
     ),
 
     %% Exercise default case to recover state
@@ -168,10 +194,10 @@ rx_delay_state_test() ->
 
     %% Change delay value
 
-    ApiDevice2 = router_device:metadata(#{rx_delay => 2}, Device1),
+    ApiSettings2 = router_device:metadata(#{rx_delay => 2}, Device1),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_CHANGE, rx_delay_actual => 1},
-        maybe_update(ApiDevice2, Device1)
+        maybe_update(ApiSettings2, Device1)
     ),
 
     Device2 = router_device:metadata(

@@ -937,7 +937,7 @@ handle_info(
         packet_to_rxq(Packet)
     ),
     Rx2Window = join2_from_packet(Region, Packet),
-    Metadata = lorawan_rxdelay:adjust(Device),
+    Metadata = lorawan_rxdelay:adjust_on_join(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),

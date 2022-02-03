@@ -101,7 +101,7 @@ init_per_testcase(TestCase, Config) ->
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
 
-    {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    {HotspotSwarm, HotspotKeys} = test_utils:start_swarm(BaseDir, TestCase, 0),
     #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
     {ok, _GenesisMembers, _ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,

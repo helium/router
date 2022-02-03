@@ -72,9 +72,8 @@ init_per_testcase(TestCase, Config) ->
         DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
         {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
     end),
-    BaseDir =
-        erlang:atom_to_list(TestCase) ++
-            "-" ++ erlang:atom_to_list(proplists:get_value(region, Config)),
+    Region = proplists:get_value(region, Config),
+    BaseDir = erlang:atom_to_list(TestCase) ++ "-" ++ erlang:atom_to_list(Region),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
@@ -102,16 +101,22 @@ init_per_testcase(TestCase, Config) ->
     {ok, Pid} = elli:start_link(ElliOpts),
     {ok, _} = application:ensure_all_started(router),
 
-    {Swarm, Keys} = test_utils:start_swarm(BaseDir, TestCase, 0),
-    #{public := PubKey, secret := PrivKey} = Keys,
+    {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(BaseDir, TestCase, 0),
+    #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
     {ok, _GenesisMembers, _ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        [{PrivKey, PubKey}]
+        [{HotspotPrivKey, HotspotPubKey}]
     ),
-
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
-
-    [{app_key, AppKey}, {ets, Tab}, {elli, Pid}, {base_dir, BaseDir}, {swarm, Swarm} | Config].
+    [
+        {app_key, AppKey},
+        {ets, Tab},
+        {elli, Pid},
+        {base_dir, BaseDir},
+        {swarm, HotspotSwarm},
+        {keys, HotspotKeys}
+        | Config
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
@@ -128,7 +133,6 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
-    catch exit(whereis(libp2p_swarm_sup_join_test_swarm_0), kill),
     meck:unload(router_device_devaddr),
     ok.
 
@@ -137,21 +141,18 @@ end_per_testcase(_TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 lw_join_test(Config) ->
+    Swarm = proplists:get_value(swarm, Config),
     AppKey = proplists:get_value(app_key, Config),
-    BaseDir = proplists:get_value(base_dir, Config),
+    Region = proplists:get_value(region, Config),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 3620),
-    ct:pal("registered ~p", [registered()]),
-    Swarm0 = whereis(libp2p_swarm_sup_join_test_swarm_0),
-    Region = proplists:get_value(region, Config),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     {ok, Stream0} = libp2p_swarm:dial_framed_stream(
-        Swarm0,
+        Swarm,
         Address,
         router_lorawan_handler_test:version(),
         router_lorawan_handler_test,
-        [self(), PubKeyBin0, Region]
+        [self(), PubKeyBin, Region]
     ),
     receive
         {client_data, _, _Data3} ->
@@ -170,7 +171,7 @@ lw_join_test(Config) ->
     after 5000 -> ct:fail("Joined failed")
     end,
 
-    {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
     test_utils:wait_for_console_event(<<"join_request">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"join_request">>,
@@ -187,8 +188,8 @@ lw_join_test(Config) ->
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"rssi">> => -35.0,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF7BW125">>,
@@ -202,7 +203,7 @@ lw_join_test(Config) ->
 
     %% Waiting for reply resp form router
     {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, CFList} = test_utils:wait_for_join_resp(
-        PubKeyBin0,
+        PubKeyBin,
         AppKey,
         DevNonce
     ),
@@ -266,8 +267,8 @@ lw_join_test(Config) ->
         <<"devaddr">> => '_',
         <<"hotspots">> => [
             #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
@@ -297,8 +298,8 @@ lw_join_test(Config) ->
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
@@ -335,8 +336,8 @@ lw_join_test(Config) ->
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                    <<"name">> => erlang:list_to_binary(HotspotName0),
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
                     <<"rssi">> => -35.0,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF7BW125">>,
@@ -399,7 +400,7 @@ lw_join_test(Config) ->
         }
     }),
 
-    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin0),
+    test_utils:wait_state_channel_message(router_utils:frame_timeout() + 250, PubKeyBin),
 
     receive
         rx -> ok
@@ -435,8 +436,8 @@ lw_join_test(Config) ->
         <<"devaddr">> => '_',
         <<"hotspots">> => [
             #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"reported_at">> => fun erlang:is_integer/1,
                 <<"hold_time">> => fun erlang:is_integer/1,
                 <<"status">> => <<"success">>,
@@ -470,8 +471,8 @@ lw_join_test(Config) ->
                 <<"port">> => fun erlang:is_integer/1,
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                    <<"name">> => erlang:list_to_binary(HotspotName0),
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
                     <<"rssi">> => -35.0,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF7BW125">>,
@@ -548,8 +549,8 @@ lw_join_test(Config) ->
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
             <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin0)),
-                <<"name">> => erlang:list_to_binary(HotspotName0),
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
                 <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => '_',
                 <<"spreading">> => fun erlang:is_binary/1,
@@ -593,7 +594,6 @@ lw_join_test(Config) ->
     after 5000 -> ct:fail("device did not see downlink 2")
     end,
 
-    libp2p_swarm:stop(Swarm0),
     ok.
 
 %% ------------------------------------------------------------------

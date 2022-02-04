@@ -1,4 +1,4 @@
-# Helium Router ![CI](https://github.com/helium/routerv3/workflows/CI/badge.svg?branch=master) ![BUILD_AND_PUSH_IMG](https://github.com/helium/routerv3/workflows/BUILD_AND_PUSH_IMG/badge.svg)
+# Helium Router [![Tests](https://github.com/helium/router/actions/workflows/main.yml/badge.svg)](https://github.com/helium/router/actions/workflows/main.yml)
 
 Helium's LoRa Network Server (LNS) backend.
 

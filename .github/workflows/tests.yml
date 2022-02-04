@@ -1,0 +1,160 @@
+name: Tests
+
+on:
+  push:
+    branches: '*'
+  pull_request:
+    branches: master
+  # Run every day at midnight PST (0800 UTC)
+  # https://crontab.guru/#0_8_*_*_*
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      # For some reason the toolchain is no installed properly so lets add it...
+      - name: rustup default stable
+        run: rustup default stable
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: cleanup
+        run: |
+          mkdir -p /tmp/router/_build
+          cp -R /opt/router/_build/* /tmp/router/_build
+          cp -R * /tmp/router
+          rm -rf /opt/router/*
+          cp -R /tmp/router /opt
+          rm -rf /tmp/router
+      - name: build
+        run: |
+          make grpc
+          ./rebar3 compile
+        working-directory: /opt/router
+      - name: build test
+        run: ./rebar3 as test compile
+        working-directory: /opt/router
+      - name: tar
+        run: tar -cvzf build.tar.gz -C _build/ .
+        working-directory: /opt/router
+      - name: upload-artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: build
+          path: /opt/router/build.tar.gz
+  xref:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-xref
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: xref
+        run: ./rebar3 xref
+  eunit:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-eunit
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: eunit
+        run: ./rebar3 eunit
+  dialyzer:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-dialyzer
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: dialyzer
+        run: ./rebar3 dialyzer
+  suites:
+    runs-on: ubuntu-latest
+    outputs:
+      test_suites: ${{ steps.gen_test_suites.outputs.test_suites }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: gen_test_suites
+        id: gen_test_suites
+        run: |
+          SUITES="["
+          for F in ./test/*_SUITE.erl
+          do
+            SUITES+="\"$(basename $F)\",";
+          done
+          # remove last comma
+          SUITES=${SUITES%,};
+          # close array
+          SUITES+="]"
+          echo "We are in $(pwd)"
+          echo "::set-output name=test_suites::${SUITES}"
+  ct:
+    needs: [build, suites]
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: "${{ fromJSON(needs.suites.outputs.test_suites) }}"
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-ct-${{ matrix.suite }}
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
+      - name: ct ${{ matrix.suite }}
+        run: CT_LAGER=DEBUG ./rebar3 ct --suite=${{ matrix.suite }}

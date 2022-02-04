@@ -4,19 +4,17 @@ on:
   push:
     branches: master
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Image Tag'
-        required: true
-        default: 'CI'
-
+  
 jobs:
   CI_Build:
     runs-on: ubuntu-latest
     steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.5.0
+        with:
+          access_token: ${{ github.token }}
       - name: checkout
         uses: actions/checkout@v2
-
       - name: Build and push Docker images
         uses: docker/build-push-action@v1
         with:
@@ -24,6 +22,6 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
           repository: team-helium/router
-          tags: "quay.io/team-helium/router:${{ github.event.inputs.tag }}"
+          tags: "quay.io/team-helium/router:CI"
           file: Dockerfile-CI
           push: true

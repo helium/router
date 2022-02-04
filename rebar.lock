@@ -9,7 +9,7 @@
   0},
  {<<"blockchain">>,
   {git,"https://github.com/helium/blockchain-core.git",
-       {ref,"9bd62eb6881a00662f6543e586e7a36e7125e2b6"}},
+       {ref,"1be2a959d6a5b598f498dc17e753ac9918c9cf45"}},
   0},
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.8.0">>},1},
  {<<"chatterbox">>,
@@ -100,7 +100,6 @@
        {ref,"39d0173bd9ae44a6af1d65a444a465bcf61d396c"}},
   0},
  {<<"idna">>,{pkg,<<"idna">>,<<"6.1.1">>},1},
-
  {<<"inert">>,{pkg,<<"inert">>,<<"1.0.4">>},3},
  {<<"inet_cidr">>,{pkg,<<"erl_cidr">>,<<"1.1.0">>},0},
  {<<"inet_ext">>,

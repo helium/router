@@ -52,15 +52,8 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
 
-    Payload0 = blockchain_helium_packet_v1:payload(Packet),
-    Payload1 =
-        case Payload0 of
-            undefined ->
-                <<>>;
-            _ ->
-                Payload0
-        end,
-    PayloadSize = erlang:byte_size(Payload1),
+    Payload = blockchain_helium_packet_v1:payload(Packet),
+    PayloadSize = erlang:byte_size(Payload),
     Ledger = blockchain:ledger(Chain),
     Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
 

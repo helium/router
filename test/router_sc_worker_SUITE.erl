@@ -94,7 +94,7 @@ sc_worker_test(Config) ->
 
     %% Create and submit OUI txn with an empty filter
     OUI1 = 1,
-    {BinFilter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    {BinFilter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], BinFilter, 8),
     OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
     OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),

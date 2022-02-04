@@ -1,0 +1,27 @@
+name: CI Build
+
+on:
+  push:
+    branches: master
+  workflow_dispatch:
+  
+jobs:
+  CI_Build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: Build and push Docker images
+        uses: docker/build-push-action@v1
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+          repository: team-helium/router
+          tags: CI
+          file: Dockerfile-CI
+          push: true

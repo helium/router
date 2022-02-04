@@ -3,7 +3,7 @@ services:
   router:
     build:
       context: .
-      dockerfile: Dockerfile-local
+      dockerfile: Dockerfile-CI
     image: quay.io/team-helium/router:local
     container_name: helium_router
     restart: always

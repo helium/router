@@ -3,12 +3,12 @@ name: CI Build
 on:
   push:
     branches: master
-    paths:
-      - '**.yml'
-  # Run every day at midnight PST (0800 UTC)
-  # https://crontab.guru/#0_8_*_*_*
-  schedule:
-    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image Tag'
+        required: true
+        default: 'CI'
 
 jobs:
   CI_Build:
@@ -24,6 +24,6 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
           repository: team-helium/router
-          tags: quay.io/team-helium/router:CI
+          tags: "quay.io/team-helium/router:${{ github.event.inputs.tag }}"
           file: Dockerfile-CI
           push: true

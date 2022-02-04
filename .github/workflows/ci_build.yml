@@ -22,6 +22,6 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
           repository: team-helium/router
-          tags: "quay.io/team-helium/router:CI"
+          tags: CI
           file: Dockerfile-CI
           push: true

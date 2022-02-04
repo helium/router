@@ -9,7 +9,6 @@ on:
   # https://crontab.guru/#0_8_*_*_*
   schedule:
     - cron: '0 8 * * *'
-  workflow_dispatch:
 
 jobs:
   CI:
@@ -17,14 +16,23 @@ jobs:
     container:
       image: quay.io/team-helium/router:CI
     steps:
+      - name: Cancel previous runs
+        uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          access_token: ${{ github.token }}
+
       - name: checkout
         uses: actions/checkout@v2
+
       # For some reason the toolchain is no installed properly so lets add it...
       - name: rustup default stable
         run: rustup default stable
+
       - name: Pre cleanup
         run: rm -rf /opt/router
+
       - name: Build
         run: make
+
       - name: Run test
         run: make test

@@ -284,21 +284,23 @@ handle_call(
         [{AppKey, _} | _] ->
             AppNonce = crypto:strong_rand_bytes(3),
             DevNonce = crypto:strong_rand_bytes(2),
-            NwkSKey = crypto:block_encrypt(
-                aes_ecb,
+            NwkSKey = crypto:crypto_one_time(
+                aes_128_ecb,
                 AppKey,
                 lorawan_utils:padded(
                     16,
                     <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
-                )
+                ),
+                true
             ),
-            AppSKey = crypto:block_encrypt(
-                aes_ecb,
+            AppSKey = crypto:crypto_one_time(
+                aes_128_ecb,
                 AppKey,
                 lorawan_utils:padded(
                     16,
                     <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>
-                )
+                ),
+                true
             ),
             {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
             DeviceUpdates = [
@@ -1228,15 +1230,17 @@ handle_join(
     Device0
 ) ->
     AppNonce = crypto:strong_rand_bytes(3),
-    NwkSKey = crypto:block_encrypt(
-        aes_ecb,
+    NwkSKey = crypto:crypto_one_time(
+        aes_128_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#01, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>),
+        true
     ),
-    AppSKey = crypto:block_encrypt(
-        aes_ecb,
+    AppSKey = crypto:crypto_one_time(
+        aes_128_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>)
+        lorawan_utils:padded(16, <<16#02, AppNonce/binary, ?NET_ID/binary, DevNonce/binary>>),
+        true
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
     DeviceName = router_device:name(APIDevice),
@@ -1297,11 +1301,12 @@ craft_join_reply(
     ReplyPayload =
         <<AppNonce/binary, ?NET_ID/binary, DevAddr/binary, DLSettings/binary, RxDelaySeconds/binary,
             CFList/binary>>,
-    ReplyMIC = crypto:cmac(aes_cbc128, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
-    EncryptedReply = crypto:block_decrypt(
-        aes_ecb,
+    ReplyMIC = crypto:macN(cmac, aes_128_cbc, AppKey, <<ReplyHdr/binary, ReplyPayload/binary>>, 4),
+    EncryptedReply = crypto:crypto_one_time(
+        aes_128_ecb,
         AppKey,
-        lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>)
+        lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>),
+        true
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 
@@ -1968,8 +1973,9 @@ frame_to_packet_payload(Frame, Device) ->
                 <<(Frame#frame.fport):8/integer-unsigned, EncPayload/binary>>
         end,
     Msg = <<PktHdr/binary, PktBody/binary>>,
-    MIC = crypto:cmac(
-        aes_cbc128,
+    MIC = crypto:macN(
+        cmac,
+        aes_128_cbc,
         NwkSKey,
         <<(router_utils:b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary,
             Msg/binary>>,
@@ -2038,6 +2044,7 @@ get_device(DB, CF, DeviceID) ->
             Device;
         {ok, APIDevice} ->
             lager:info("got device: ~p", [APIDevice]),
+
             IsActive = router_device:is_active(APIDevice),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},

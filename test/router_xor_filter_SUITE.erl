@@ -116,7 +116,7 @@ init_per_testcase(TestCase, Config0) ->
 
     %% Create and submit OUI txn with an empty filter
     OUI1 = 1,
-    {BinFilter, _} = xor16:to_bin(xor16:new([], fun xxhash:hash64/1)),
+    {BinFilter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
     OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], BinFilter, 8),
     OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
     OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
@@ -373,7 +373,7 @@ migrate_filter_test(Config) ->
     %%        Two   - 5 devices
     %%        Three - 5 devices
     %%        Four  - 0 devices
-    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit = true),
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit0 = true),
     %% migration should be two blocks, 1 (block 8) for new big filter, 1 (block 9) for empty filter
     ok = expect_block(9, Chain),
     State1 = sys:get_state(router_xor_filter_worker),
@@ -389,7 +389,7 @@ migrate_filter_test(Config) ->
     %%        Two   - 5 devices
     %%        Three - 0 devices
     %%        Four  - 0 devices
-    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit = true),
+    {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit1 = true),
     %% migration should be two blocks, 1 (block 10) for new big filter, 1 (block 11) for empty filter
     ok = expect_block(11, Chain),
 

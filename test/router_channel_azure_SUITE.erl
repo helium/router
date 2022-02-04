@@ -42,18 +42,12 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
-    {ok, _} = application:ensure_all_started(emqx),
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
-    application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -72,7 +66,7 @@ azure_test(Config) ->
             http_sas_uri => <<"unused">>,
             http_url => <<"unused">>,
             mqtt_sas_uri => <<"unused">>,
-            mqtt_host => <<"127.0.0.1">>,
+            mqtt_host => <<"test.mosquitto.org">>,
             mqtt_port => 1883,
             mqtt_username => DeviceID
         }
@@ -81,7 +75,7 @@ azure_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, azure}),
 
-    {ok, Conn} = connect(<<"mqtt://127.0.0.1:1883">>, <<"azure-test">>, undefined),
+    {ok, Conn} = connect(<<"mqtt://test.mosquitto.org:1883">>, <<"azure-test">>, undefined),
 
     DownlinkPayload = <<"azure_mqtt_payload">>,
     SendDownlink = fun() ->
@@ -91,6 +85,7 @@ azure_test(Config) ->
             jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}),
             0
         ),
+        timer:sleep(1000),
         ok
     end,
 
@@ -444,15 +439,16 @@ azure_test(Config) ->
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
-    Opts = [
-        {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URI, Opts) of
-        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when
-            Scheme == mqtt orelse
-                Scheme == mqtts
+    case uri_string:parse(URI) of
+        #{
+            host := Host,
+            port := Port,
+            scheme := Scheme
+        } = Map when
+            Scheme == <<"mqtt">> orelse
+                Scheme == <<"mqtts">>
         ->
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};

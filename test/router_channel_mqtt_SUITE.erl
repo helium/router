@@ -38,18 +38,12 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    ok = file:write_file("acl.conf", <<"{allow, all}.">>),
-    application:set_env(emqx, acl_file, "acl.conf"),
-    application:set_env(emqx, allow_anonymous, true),
-    application:set_env(emqx, listeners, [{tcp, 1883, []}]),
-    {ok, _} = application:ensure_all_started(emqx),
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
-    application:stop(emqx),
     test_utils:end_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -79,7 +73,7 @@ mqtt_test(Config) ->
     UplinkTopic = render_topic(UplinkTemplate, DeviceForTemplate),
     DownlinkTopic = render_topic(DownlinkTemplate, DeviceForTemplate),
     {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
-
+    ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, UplinkTopic]),
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,
@@ -237,6 +231,7 @@ mqtt_test(Config) ->
         jsx:encode(#{<<"payload_raw">> => base64:encode(DownlinkPayload)}),
         0
     ),
+    timer:sleep(1000),
 
     %% Send UNCONFIRMED_UP frame packet
     Stream !
@@ -609,9 +604,9 @@ mqtt_update_test(Config) ->
     MQTTChannel0 = #{
         <<"type">> => <<"mqtt">>,
         <<"credentials">> => #{
-            <<"endpoint">> => <<"mqtt://127.0.0.1:1883">>,
+            <<"endpoint">> => <<"mqtt://test.mosquitto.org:1883">>,
             <<"uplink">> => #{<<"topic">> => UplinkTemplate1},
-            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}
+            <<"downlink">> => #{<<"topic">> => <<"downlink/{{organization_id}}/{{device_id}}">>}
         },
         <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
         <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME
@@ -767,12 +762,13 @@ mqtt_update_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     %% Switching endpoint channel should restart (back to sub topic 0)
+    Endpoint = <<"mqtt://broker.hivemq.com:1883">>,
     MQTTChannel1 = #{
         <<"type">> => <<"mqtt">>,
         <<"credentials">> => #{
-            <<"endpoint">> => <<"mqtt://localhost:1883">>,
-            <<"uplink">> => #{<<"topic">> => <<"uplink/{{org_id}}/{{device_id}}">>},
-            <<"downlink">> => #{<<"topic">> => <<"downlink/{{org_id}}/{{device_id}}">>}
+            <<"endpoint">> => Endpoint,
+            <<"uplink">> => #{<<"topic">> => <<"uplink/{{organization_id}}/{{device_id}}">>},
+            <<"downlink">> => #{<<"topic">> => <<"downlink/{{organization_id}}/{{device_id}}">>}
         },
         <<"id">> => ?CONSOLE_MQTT_CHANNEL_ID,
         <<"name">> => ?CONSOLE_MQTT_CHANNEL_NAME
@@ -780,7 +776,12 @@ mqtt_update_test(Config) ->
     ets:insert(Tab, {channels, [MQTTChannel1]}),
     {ok, WorkerPid} = router_devices_sup:maybe_start_worker(WorkerID, #{}),
     {ok, _, _} = emqtt:unsubscribe(MQTTConn, UplinkTopic1),
-    {ok, _, _} = emqtt:subscribe(MQTTConn, UplinkTopic, 0),
+    {ok, MQTTConn1} = connect(
+        Endpoint,
+        <<"mqtt_test2">>,
+        undefined
+    ),
+    {ok, _, _} = emqtt:subscribe(MQTTConn1, UplinkTopic, 0),
 
     %% Force device_worker refresh channels
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
@@ -928,6 +929,7 @@ mqtt_update_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     ok = emqtt:disconnect(MQTTConn),
+    ok = emqtt:disconnect(MQTTConn1),
     ok.
 
 %% ------------------------------------------------------------------
@@ -947,15 +949,16 @@ render_topic(Template, Device) ->
 
 -spec connect(binary(), binary(), any()) -> {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
-    Opts = [
-        {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URI, Opts) of
-        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when
-            Scheme == mqtt orelse
-                Scheme == mqtts
+    case uri_string:parse(URI) of
+        #{
+            host := Host,
+            port := Port,
+            scheme := Scheme
+        } = Map when
+            Scheme == <<"mqtt">> orelse
+                Scheme == <<"mqtts">>
         ->
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};

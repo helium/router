@@ -665,7 +665,8 @@ maybe_multi_buy(Offer, Attempts, Device) ->
             end
     end.
 
--spec lookup_mb(binary()) -> {ok, binary(), non_neg_integer(), integer()} | {error, not_found}.
+-spec lookup_mb(PHash :: binary()) ->
+    {ok, PHash :: binary(), Max :: non_neg_integer(), Curr :: integer()} | {error, not_found}.
 %% use -1 to mean deny more
 lookup_mb(PHash) ->
     case ets:lookup(?MB_ETS, PHash) of
@@ -675,8 +676,10 @@ lookup_mb(PHash) ->
             {error, not_found}
     end.
 
--spec check_device_is_active(router_device:device(), libp2p_crypto:pubkey_bin()) ->
-    ok | {error, any()}.
+-spec check_device_is_active(
+    Device :: router_device:device(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
+) -> ok | {error, ?DEVICE_INACTIVE}.
 check_device_is_active(Device, PubKeyBin) ->
     case router_device:is_active(Device) of
         false ->
@@ -692,11 +695,11 @@ check_device_is_active(Device, PubKeyBin) ->
     end.
 
 -spec check_device_balance(
-    non_neg_integer(),
-    router_device:device(),
-    libp2p_crypto:pubkey_bin(),
-    blockchain:blockchain()
-) -> ok | {error, any()}.
+    PayloadSize :: non_neg_integer(),
+    Device :: router_device:device(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Chain :: blockchain:blockchain()
+) -> ok | {error, ?DEVICE_NO_DC}.
 check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
     case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
@@ -711,14 +714,14 @@ check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
             ok
     end.
 
--spec eui_to_bin(undefined | non_neg_integer()) -> binary().
+-spec eui_to_bin(EUI :: undefined | non_neg_integer()) -> binary().
 eui_to_bin(undefined) -> <<>>;
 eui_to_bin(EUI) -> <<EUI:64/integer-unsigned-big>>.
 
--spec devaddr_to_bin(non_neg_integer()) -> binary().
+-spec devaddr_to_bin(Devaddr :: non_neg_integer()) -> binary().
 devaddr_to_bin(Devaddr) -> <<Devaddr:32/integer-unsigned-big>>.
 
--spec lookup_bf(atom()) -> reference().
+-spec lookup_bf(Key :: atom()) -> reference().
 lookup_bf(Key) ->
     [{Key, Ref}] = ets:lookup(?BF_ETS, Key),
     Ref.
@@ -881,15 +884,21 @@ packet(
 packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
--spec get_devices(binary(), binary()) -> {ok, [router_device:device()]} | {error, any()}.
+-spec get_devices(DevEUI :: binary(), AppEUI :: binary()) ->
+    {ok, [router_device:device()]} | {error, api_not_found}.
 get_devices(DevEUI, AppEUI) ->
     case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
         [] -> {error, api_not_found};
         KeysAndDevices -> {ok, [Device || {_, Device} <- KeysAndDevices]}
     end.
 
--spec get_device(binary(), binary(), binary(), binary(), blockchain:blockchain()) ->
-    {ok, router_device:device(), binary()} | {error, any()}.
+-spec get_device(
+    DevEUI :: binary(),
+    AppEUI :: binary(),
+    Msg :: binary(),
+    MIC :: binary(),
+    Chain :: blockchain:blockchain()
+) -> {ok, router_device:device(), binary()} | {error, any()}.
 get_device(DevEUI, AppEUI, Msg, MIC, Chain) ->
     case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
         [] ->
@@ -899,15 +908,15 @@ get_device(DevEUI, AppEUI, Msg, MIC, Chain) ->
     end.
 
 -spec find_device(
-    binary(),
-    binary(),
+    Msg :: binary(),
+    MIC :: binary(),
     [{binary(), router_device:device()}],
-    blockchain:blockchain()
-) -> {ok, router_device:device(), binary()} | {error, not_found}.
+    Chain :: blockchain:blockchain()
+) -> {ok, Device :: router_device:device(), AppKey :: binary()} | {error, not_found}.
 find_device(_Msg, _MIC, [], _Chain) ->
     {error, not_found};
 find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
-    case crypto:cmac(aes_cbc128, AppKey, Msg, 4) of
+    case crypto:macN(cmac, aes_128_cbc, AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
@@ -1118,7 +1127,7 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
 brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
     DeviceID = router_device:id(Device),
     try
-        case crypto:cmac(aes_cbc128, NwkSKey, B0, 4) of
+        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4) of
             MIC ->
                 true;
             _ ->
@@ -1126,7 +1135,7 @@ brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
                 case router_device:fcnt(Device) > ?MAX_16_BITS - 100 of
                     true ->
                         B0_32 = b0_from_payload(Payload, 32),
-                        case crypto:cmac(aes_cbc128, NwkSKey, B0_32, 4) of
+                        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0_32, 4) of
                             MIC ->
                                 lager:warning(
                                     [{device_id, DeviceID}],

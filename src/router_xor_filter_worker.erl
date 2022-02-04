@@ -1175,6 +1175,9 @@ enumerate_0(L) ->
     lists:zip(lists:seq(0, erlang:length(L) - 1), L).
 
 -spec new_xor_filter(devices_dev_eui_app_eui()) -> Filter :: reference().
+new_xor_filter([]) ->
+    {Filter, _} = xor16:new([0], ?HASH_FUN),
+    Filter;
 new_xor_filter(DeviceEntries) ->
     IDS = [ID || #{eui := ID} <- DeviceEntries],
     {Filter, _} = xor16:new(lists:usort(IDS), ?HASH_FUN),
@@ -1231,7 +1234,7 @@ deveui_appeui_test() ->
     ).
 
 should_update_filters_test() ->
-    {timeout, 15, fun test_for_should_update_filters_test/0}.
+    {timeout, 30, fun test_for_should_update_filters_test/0}.
 test_for_should_update_filters_test() ->
     OUI = 1,
 

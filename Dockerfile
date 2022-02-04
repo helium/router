@@ -1,4 +1,4 @@
-FROM erlang:22
+FROM erlang:24
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt update
@@ -13,7 +13,8 @@ RUN apt-get install -y -q \
         libtool \
         pkg-config \
         cmake \
-        libsodium-dev
+        libsodium-dev \
+        iproute2
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -40,9 +41,8 @@ RUN make
 
 ADD config/ config/
 ADD priv/genesis.${BUILD_NET} priv/genesis
-
 RUN ./rebar3 as ${BUILD_NET} release
-# add router to path for easy interactions
+
 ENV PATH=$PATH:_build/${BUILD_NET}/rel/router/bin
 RUN ln -s /opt/router/_build/${BUILD_NET}/rel /opt/router/_build/default/rel
 RUN ln -s /opt/router/_build/default/rel/router/bin/router /opt/router-exec

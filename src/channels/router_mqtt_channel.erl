@@ -317,7 +317,7 @@ publish(
     Body = router_channel:encode_data(Channel, Data),
     try emqtt:publish(Conn, Topic, Body, 0) of
         Resp ->
-            lager:debug("[~s] published: ~p result: ~p", [ChannelID, Data, Resp]),
+            lager:debug("[~s] published: ~p to ~p result: ~p", [ChannelID, Data, Topic, Resp]),
             {ok, Resp}
     catch
         _:_ ->
@@ -426,14 +426,14 @@ make_response_report({ok, Response}, Channel) ->
 -spec connect(URI :: binary(), DeviceID :: binary(), Name :: binary()) ->
     {ok, pid()} | {error, term()}.
 connect(URI, DeviceID, Name) ->
-    Opts = [
-        {scheme_defaults, [{mqtt, 1883}, {mqtts, 8883} | http_uri:scheme_defaults()]},
-        {fragment, false}
-    ],
-    case http_uri:parse(URI, Opts) of
-        {ok, {Scheme, UserInfo, Host, Port, _Path, _Query}} when
-            Scheme == mqtt orelse
-                Scheme == mqtts
+    case uri_string:parse(URI) of
+        #{
+            host := Host,
+            port := Port,
+            scheme := Scheme
+        } = Map when
+            Scheme == <<"mqtt">> orelse
+                Scheme == <<"mqtts">>
         ->
             %% An optional userinfo subcomponent that may consist of a user name
             %% and an optional password preceded by a colon (:), followed by an
@@ -442,6 +442,7 @@ connect(URI, DeviceID, Name) ->
             %% should not render as clear text any data after the first colon
             %% (:) found within a userinfo subcomponent unless the data after
             %% the colon is the empty string (indicating no password).
+            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};
@@ -460,7 +461,7 @@ connect(URI, DeviceID, Name) ->
                     [
                         {clean_start, false},
                         {keepalive, 30},
-                        {ssl, Scheme == mqtts}
+                        {ssl, Scheme == <<"mqtts">>}
                     ],
             {ok, C} = emqtt:start_link(EmqttOpts),
             case emqtt:connect(C) of
@@ -486,6 +487,7 @@ connect(URI, DeviceID, Name) ->
 render_topic(undefined, _Device) ->
     undefined;
 render_topic(Template, Device) ->
+    lager:notice("~p ~p", [Template, Device]),
     Metadata = router_device:metadata(Device),
     Map = #{
         "device_id" => router_device:id(Device),

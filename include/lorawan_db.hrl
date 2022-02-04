@@ -17,7 +17,7 @@
 }.
 
 -record(rxq, {
-    freq :: number(),
+    freq :: number() | float(),
     datr :: binary() | integer(),
     codr :: binary(),
     time :: calendar:datetime(),
@@ -29,7 +29,7 @@
 }).
 
 -record(txq, {
-    freq :: number(),
+    freq :: number() | float(),
     datr :: binary() | integer(),
     codr :: binary(),
     time :: integer() | 'immediately' | calendar:datetime(),

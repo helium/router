@@ -72,10 +72,21 @@ azure_test(Config) ->
         }
     end),
 
+    meck:new(emqtt, [passthrough]),
+    meck:expect(emqtt, start_link, fun(Arg) ->
+        case Arg of
+            Map when is_map(Map) ->
+                Map1 = maps:put(clientid, erlang:binary_to_list(router_utils:uuid_v4()), Map),
+                meck:passthrough([Map1]);
+            _ ->
+                meck:passthrough([Arg])
+        end
+    end),
+
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, azure}),
 
-    {ok, Conn} = connect(<<"mqtt://test.mosquitto.org:1883">>, <<"azure-test">>, undefined),
+    {ok, Conn} = connect(<<"mqtt://test.mosquitto.org:1883">>, router_utils:uuid_v4(), undefined),
 
     DownlinkPayload = <<"azure_mqtt_payload">>,
     SendDownlink = fun() ->
@@ -431,6 +442,7 @@ azure_test(Config) ->
 
     ok = emqtt:disconnect(Conn),
     meck:unload(router_azure_connection),
+    meck:unload(emqtt),
     ok.
 
 %% ------------------------------------------------------------------

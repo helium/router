@@ -44,13 +44,10 @@ run: | $(grpc_services_directory)
 	_build/default/rel/router/bin/router foreground
 
 docker-build:
-	docker build -f Dockerfile-local --force-rm -t quay.io/team-helium/router:local .
+	docker build -f Dockerfile-CI --force-rm -t quay.io/team-helium/router:local .
 
 docker-test:
 	docker run --rm -it --init --name=helium_router_test quay.io/team-helium/router:local make test
-
-docker-test-mac:
-	docker run --rm -it --init --name=helium_router_test quay.io/team-helium/router:local make test-mac
 
 docker-run: 
 	docker run --rm -it --init --env-file=.env --network=host --volume=data:/var/data --name=helium_router quay.io/team-helium/router:local

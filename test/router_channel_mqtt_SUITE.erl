@@ -59,7 +59,7 @@ mqtt_test(Config) ->
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(
         kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel),
-        <<"mqtt_test">>,
+        router_utils:uuid_v4(),
         undefined
     ),
     UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">>, <<"topic">>], MQTTChannel),
@@ -434,7 +434,7 @@ mqtt_update_test(Config) ->
     MQTTChannel = ?CONSOLE_MQTT_CHANNEL,
     {ok, MQTTConn} = connect(
         kvc:path([<<"credentials">>, <<"endpoint">>], MQTTChannel),
-        <<"mqtt_test">>,
+        router_utils:uuid_v4(),
         undefined
     ),
     UplinkTemplate = kvc:path([<<"credentials">>, <<"uplink">>, <<"topic">>], MQTTChannel),
@@ -778,7 +778,7 @@ mqtt_update_test(Config) ->
     {ok, _, _} = emqtt:unsubscribe(MQTTConn, UplinkTopic1),
     {ok, MQTTConn1} = connect(
         Endpoint,
-        <<"mqtt_test2">>,
+        router_utils:uuid_v4(),
         undefined
     ),
     {ok, _, _} = emqtt:subscribe(MQTTConn1, UplinkTopic, 0),

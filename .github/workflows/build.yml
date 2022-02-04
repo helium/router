@@ -1,11 +1,11 @@
-name: BUILD_AND_PUSH_IMG
+name: Build
 
 on:
   push:
     tags: '*'
 
 jobs:
-  BUILD_AND_PUSH_IMG:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: checkout

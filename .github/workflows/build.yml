@@ -1,11 +1,11 @@
-name: Quay
+name: Build
 
 on:
   push:
     tags: '*'
 
 jobs:
-  quay:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: checkout

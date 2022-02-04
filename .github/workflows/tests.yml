@@ -9,12 +9,13 @@ on:
   # https://crontab.guru/#0_8_*_*_*
   schedule:
     - cron: '0 8 * * *'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: quay.io/team-helium/router:latest
+      image: quay.io/team-helium/router:CI
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
@@ -48,13 +49,13 @@ jobs:
         with:
           name: build
           path: /opt/router/build.tar.gz
-  format-xref-eunit:
+  xref:
     needs: build
     runs-on: ubuntu-latest
     container:
-      image: quay.io/team-helium/router:latest
+      image: quay.io/team-helium/router:CI
     concurrency: 
-      group: ${{ github.workflow }}-${{ github.ref }}-format-xref-eunit
+      group: ${{ github.workflow }}-${{ github.ref }}-xref
       cancel-in-progress: true
     steps:
       - name: checkout
@@ -67,20 +68,34 @@ jobs:
         run: |
           mkdir _build
           tar -xvf build.tar.gz -C _build
-      - name: format
-        run: |
-          ./rebar3 fmt --verbose --check rebar.config
-          ./rebar3 fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" --exclude-files "src/grpc/autogen/**/*"
-          ./rebar3 fmt --verbose --check "config/{test,sys}.{config,config.src}"
       - name: xref
         run: ./rebar3 xref
+  eunit:
+    needs: build
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/team-helium/router:CI
+    concurrency: 
+      group: ${{ github.workflow }}-${{ github.ref }}-eunit
+      cancel-in-progress: true
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: download-artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: build
+      - name: untar
+        run: |
+          mkdir _build
+          tar -xvf build.tar.gz -C _build
       - name: eunit
         run: ./rebar3 eunit
   dialyzer:
     needs: build
     runs-on: ubuntu-latest
     container:
-      image: quay.io/team-helium/router:latest
+      image: quay.io/team-helium/router:CI
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-dialyzer
       cancel-in-progress: true
@@ -122,7 +137,7 @@ jobs:
     needs: [build, suites]
     runs-on: ubuntu-latest
     container:
-      image: quay.io/team-helium/router:latest
+      image: quay.io/team-helium/router:CI
     strategy:
       fail-fast: false
       matrix:

@@ -41,9 +41,8 @@ RUN make
 
 ADD config/ config/
 ADD priv/genesis.${BUILD_NET} priv/genesis
-
 RUN ./rebar3 as ${BUILD_NET} release
-# add router to path for easy interactions
+
 ENV PATH=$PATH:_build/${BUILD_NET}/rel/router/bin
 RUN ln -s /opt/router/_build/${BUILD_NET}/rel /opt/router/_build/default/rel
 RUN ln -s /opt/router/_build/default/rel/router/bin/router /opt/router-exec

@@ -39,17 +39,8 @@ get(Metadata) ->
 get(Metadata, Default) ->
     maps:get(rx_delay_actual, Metadata, Default).
 
-%% TODO bootstrap/1 gets called during `handle_join' but should be in
-%% `join_timeout', which is where adjust_on_join/1 currently gets
-%% called.  Ideally, both bootstrap/1 and adjust_on_join/1 would be
-%% consolidated and called only once during join_timeout as the
-%% canonical bootstrap.  However, Common Test suites become
-%% problematic to write and maintain due to faked joins.
-
--spec bootstrap(APIDevice :: router_device:device()) -> Metadata :: map().
-bootstrap(APIDevice) ->
-    %% Metadata here is ostensibly "settings" from Console/API:
-    Metadata = router_device:metadata(APIDevice),
+-spec bootstrap(Metadata0 :: map()) -> Metadata :: map().
+bootstrap(Metadata) ->
     %% The key `rx_delay' comes from Console/API for changing to that
     %% value.  `rx_delay_actual' represents the value set in LoRaWAN
     %% header during device Join and must go through request/answer
@@ -57,10 +48,9 @@ bootstrap(APIDevice) ->
     case maps:get(rx_delay, Metadata, 0) of
         0 ->
             %% Console always sends rx_delay via API, so default arm rarely gets used.
-            maps:put(rx_delay_state, ?RX_DELAY_ESTABLISHED, Metadata);
+            Metadata#{rx_delay_state => ?RX_DELAY_ESTABLISHED};
         Del when Del =< 15 ->
-            Map = #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => Del},
-            maps:merge(Metadata, Map)
+            Metadata#{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => Del}
     end.
 
 -spec maybe_update(

@@ -1253,7 +1253,13 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, lorawan_rxdelay:bootstrap(APIDevice)},
+        {metadata,
+            lorawan_rxdelay:bootstrap(
+                maps:merge(
+                    router_device:metadata(Device0),
+                    router_device:metadata(APIDevice)
+                )
+            )},
         {last_known_datarate, DR},
         {region, Region}
     ],

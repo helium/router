@@ -1312,7 +1312,7 @@ craft_join_reply(
         aes_128_ecb,
         AppKey,
         lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>),
-        true
+        false
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 

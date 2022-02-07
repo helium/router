@@ -129,22 +129,25 @@ rx_delay_state_test() ->
 
     %% Ensure only LoRaWAN-approved values used
     Device = router_device:new(<<"foo">>),
-    ApiSettingsDelTooBig = router_device:metadata(#{rx_delay => 99}, Device),
+    ApiSettingsDelTooBig = maps:merge(router_device:metadata(Device), #{rx_delay => 99}),
     ?assertError({case_clause, 99}, bootstrap(ApiSettingsDelTooBig)),
 
     %% Bootstrapping state
-    ?assertEqual(#{rx_delay_state => ?RX_DELAY_ESTABLISHED}, bootstrap(Device)),
+    ?assertEqual(
+        #{rx_delay_state => ?RX_DELAY_ESTABLISHED},
+        bootstrap(router_device:metadata(Device))
+    ),
     ApiSettings = router_device:metadata(#{rx_delay => 5}, Device),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay_actual => 5, rx_delay => 5},
-        bootstrap(ApiSettings)
+        bootstrap(router_device:metadata(ApiSettings))
     ),
 
     %% No net change yet, as LoRaWAN's RxDelay default is 0
     ApiSettings0 = router_device:metadata(#{rx_delay => 0}, Device),
     ?assertEqual(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay => 0},
-        bootstrap(ApiSettings0)
+        bootstrap(router_device:metadata(ApiSettings0))
     ),
     Device0 = router_device:metadata(
         #{rx_delay_state => ?RX_DELAY_ESTABLISHED, rx_delay => 0},

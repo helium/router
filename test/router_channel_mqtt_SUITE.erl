@@ -604,7 +604,7 @@ mqtt_update_test(Config) ->
     MQTTChannel0 = #{
         <<"type">> => <<"mqtt">>,
         <<"credentials">> => #{
-            <<"endpoint">> => <<"mqtt://test.mosquitto.org:1883">>,
+            <<"endpoint">> => <<"mqtt://broker.emqx.io:1883">>,
             <<"uplink">> => #{<<"topic">> => UplinkTemplate1},
             <<"downlink">> => #{<<"topic">> => <<"downlink/{{organization_id}}/{{device_id}}">>}
         },

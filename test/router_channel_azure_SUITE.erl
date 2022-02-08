@@ -66,7 +66,7 @@ azure_test(Config) ->
             http_sas_uri => <<"unused">>,
             http_url => <<"unused">>,
             mqtt_sas_uri => <<"unused">>,
-            mqtt_host => <<"test.mosquitto.org">>,
+            mqtt_host => <<"broker.emqx.io">>,
             mqtt_port => 1883,
             mqtt_username => DeviceID
         }
@@ -86,7 +86,7 @@ azure_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, azure}),
 
-    {ok, Conn} = connect(<<"mqtt://test.mosquitto.org:1883">>, router_utils:uuid_v4(), undefined),
+    {ok, Conn} = connect(<<"mqtt://broker.emqx.io:1883">>, router_utils:uuid_v4(), undefined),
 
     DownlinkPayload = <<"azure_mqtt_payload">>,
     SendDownlink = fun() ->
@@ -470,6 +470,7 @@ connect(URI, DeviceID, Name) ->
                 end,
             EmqttOpts =
                 [
+                    {connect_timeout, 3},
                     {host, erlang:binary_to_list(Host)},
                     {port, Port},
                     {clientid, DeviceID}
@@ -477,7 +478,7 @@ connect(URI, DeviceID, Name) ->
                     [{username, Username} || Username /= undefined] ++
                     [{password, Password} || Password /= undefined] ++
                     [
-                        {clean_start, false},
+                        {clean_start, true},
                         {keepalive, 30},
                         {ssl, Scheme == mqtts}
                     ],

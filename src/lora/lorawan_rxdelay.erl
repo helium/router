@@ -121,8 +121,6 @@ adjust(Device, UplinkFOpts, FOpts0) ->
 -include_lib("eunit/include/eunit.hrl").
 
 rx_delay_state_test() ->
-    {ok, _} = application:ensure_all_started(lager),
-
     ?assertEqual(default, get(#{foo => bar}, default)),
     ?assertEqual(default, get(#{rx_delay => 15}, default)),
     ?assertEqual(15, get(#{rx_delay_actual => 15}, default)),

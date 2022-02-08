@@ -954,7 +954,7 @@ deframe_join_packet(
     AppKey
 ) when MType == ?JOIN_ACCEPT ->
     ct:pal("Enc join ~w", [EncPayload]),
-    Payload = crypto:crypto_one_time(aes_128_ecb, AppKey, EncPayload, false),
+    Payload = crypto:crypto_one_time(aes_128_ecb, AppKey, EncPayload, true),
     {AppNonce, NetID, DevAddr, DLSettings, RxDelay, MIC, CFList} =
         case Payload of
             <<AN:3/binary, NID:3/binary, DA:4/binary, DL:8/integer-unsigned, RxD:8/integer-unsigned,

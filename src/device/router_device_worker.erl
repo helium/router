@@ -939,7 +939,7 @@ handle_info(
         packet_to_rxq(Packet)
     ),
     Rx2Window = join2_from_packet(Region, Packet),
-    Metadata = lorawan_rxdelay:adjust(Device),
+    Metadata = lorawan_rxdelay:adjust_on_join(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),
@@ -1257,7 +1257,13 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata, lorawan_rxdelay:bootstrap(APIDevice)},
+        {metadata,
+            lorawan_rxdelay:bootstrap(
+                maps:merge(
+                    router_device:metadata(Device0),
+                    router_device:metadata(APIDevice)
+                )
+            )},
         {last_known_datarate, DR},
         {region, Region}
     ],
@@ -1306,7 +1312,7 @@ craft_join_reply(
         aes_128_ecb,
         AppKey,
         lorawan_utils:padded(16, <<ReplyPayload/binary, ReplyMIC/binary>>),
-        true
+        false
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 

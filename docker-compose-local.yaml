@@ -28,6 +28,8 @@ services:
       - "--collector.filesystem"
       - "--collector.netstat"
       - "--collector.meminfo"
+      - "--collector.cpu"
+      - "--collector.loadavg"
     network_mode: host
     pid: host
     restart: unless-stopped

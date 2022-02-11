@@ -1327,7 +1327,7 @@ do_multi_buy(Packet, Device, FrameAck) ->
     case MultiBuyValue > 1 of
         true ->
             lager:debug("accepting more packets [multi_buy: ~p] for ~p", [MultiBuyValue, PHash]),
-            router_device_routing:accept_more(PHash, MultiBuyValue);
+            _ = router_device_routing:accept_more(PHash, MultiBuyValue);
         false ->
             case {router_device:queue(Device), FrameAck == 1} of
                 {[], false} ->
@@ -1340,7 +1340,7 @@ do_multi_buy(Packet, Device, FrameAck) ->
                         "accepting more packets [queue_length: ~p] [frame_ack: ~p] for ~p",
                         [length(_Queue), _Ack, PHash]
                     ),
-                    router_device_routing:accept_more(PHash)
+                    _ = router_device_routing:accept_more(PHash)
             end
     end,
     ok.

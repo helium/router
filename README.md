@@ -258,28 +258,28 @@ Here are some of the most commun queries that can be added into grafana.
 
 ### US915
 **Uplink**
-- 902.3 MHz increment by 200 Hz
-- 903.0 MHz increment by 1600 Hz
+- 902.3 MHz increment by 200 kHz
+- 903.0 MHz increment by 1600 kHz
 
 **Downlink**
-- 923.3 MHz increment by 600 Hz (RX1)
+- 923.3 MHz increment by 600 kHz (RX1)
 - 923.3 MHz (RX2)
 
 ### CN470
 **Uplink**
-- 470.3 MHz increment by 200 Hz
+- 470.3 MHz increment by 200 kHz
 
 **Downlink**
-- 500.3 MHz increment by 600 Hz (RX1)
+- 500.3 MHz increment by 600 kHz (RX1)
 - 505.3 MHz (RX2)
 
 ### AU915
 **Uplink**
-- 915.2 MHz increment by 200 Hz
-- 915.9 MHz increment by 1600 Hz
+- 915.2 MHz increment by 200 kHz
+- 915.9 MHz increment by 1600 kHz
 
 **Downlink**
-- 923.3 MHz increment by 600 Hz (RX1)
+- 923.3 MHz increment by 600 kHz (RX1)
 - 923.3 MHz (RX2)
 
 ### EU868

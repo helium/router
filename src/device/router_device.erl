@@ -194,7 +194,15 @@ last_known_datarate(DR, Device) ->
 
 -spec ecc_compact(device()) -> map().
 ecc_compact(Device) ->
-    Device#device_v6.ecc_compact.
+    case Device#device_v6.ecc_compact of
+        #{secret := {ecc_compact, {'ECPrivateKey', Version, PrivKey, Params, PubKey}}} = Map ->
+            Map#{
+                secret =>
+                    {ecc_compact, {'ECPrivateKey', Version, PrivKey, Params, PubKey, asn1_NOVALUE}}
+            };
+        M ->
+            M
+    end.
 
 -spec ecc_compact(map(), device()) -> device().
 ecc_compact(Keys, Device) ->

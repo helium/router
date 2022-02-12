@@ -97,7 +97,7 @@
  {<<"hpack">>,{pkg,<<"hpack_erl">>,<<"0.2.3">>},2},
  {<<"httpc_aws">>,
   {git,"https://github.com/helium/httpc-aws.git",
-       {ref,"88653c4b52355e11209c6478ac1ff804fb6f2679"}},
+       {ref,"a1d0228b49756ce5ce48eb400ccff3b22b57e3c1"}},
   0},
  {<<"idna">>,{pkg,<<"idna">>,<<"6.1.1">>},1},
  {<<"inert">>,{pkg,<<"inert">>,<<"1.0.4">>},3},

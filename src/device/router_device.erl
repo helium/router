@@ -194,6 +194,9 @@ last_known_datarate(DR, Device) ->
 
 -spec ecc_compact(device()) -> map().
 ecc_compact(Device) ->
+    %% NOTE: https://github.com/erlang/otp/commit/37a58368d7876e325710a4c269f0af27b40434c6#diff-b190dfbfb70f8d4c5a3c13699d85f65523bf79dd630117ccf6cd535ee6945996
+    %% That commit to OTP/24 added another field to the #'ECPrivateKey'{} record.
+    %% Until we can update all of them in our db, let's upgrade to the new record when they're requested.
     case Device#device_v6.ecc_compact of
         #{secret := {ecc_compact, {'ECPrivateKey', Version, PrivKey, Params, PubKey}}} = Map ->
             Map#{

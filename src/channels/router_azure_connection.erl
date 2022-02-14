@@ -37,7 +37,7 @@
 
 %% longest expiration time for azure is 365 days
 -define(EXPIRATION_TIME, timer:hours(25)).
--define(REQUEST_OPTIONS, [with_body, {ssl_options, [{versions, ['tlsv1.2']}]}]).
+-define(REQUEST_OPTIONS, [with_body]).
 -define(MQTT_API_VERSION, "/?api-version=2018-06-30").
 -define(HTTP_API_VERSION, "/?api-version=2020-03-13").
 -define(AZURE_HOST, <<".azure-devices.net">>).

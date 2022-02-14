@@ -220,19 +220,30 @@ deny_more(PHash) ->
             ok
     end.
 
--spec accept_more(binary()) -> ok.
+-spec accept_more(binary()) -> ok | {error, any()}.
 accept_more(PHash) ->
     ?MODULE:accept_more(PHash, ?PACKET_MAX).
 
--spec accept_more(binary(), non_neg_integer()) -> ok.
-accept_more(PHash, Max) ->
+-spec accept_more(binary(), non_neg_integer()) -> ok | {error, any()}.
+accept_more(PHash, NewMax) ->
     case lookup_mb(PHash) of
-        {ok, PHash, Max, _} ->
+        %% We got denied somewhere else for more we should not overide this
+        {ok, PHash, 0, -1} ->
+            {error, ?MB_DENY_MORE};
+        %% Everything normal, this is a noop
+        {ok, PHash, CurrMax, _} when CurrMax =:= NewMax ->
+            ok;
+        %% We are trying to increase Max lets do it
+        {ok, PHash, CurrMax, V} when CurrMax < NewMax ->
+            true = ets:insert(?MB_ETS, {PHash, NewMax, V, erlang:system_time(millisecond)}),
+            ok;
+        %% Looks like we are trying to decrease Max let's noop
+        {ok, PHash, CurrMax, _} when CurrMax > NewMax ->
             ok;
         {error, _} ->
             %% NOTE: Only called for packets. When this is called the first
             %% time, we've already purchased a packet.
-            true = ets:insert(?MB_ETS, {PHash, Max, 2, erlang:system_time(millisecond)}),
+            true = ets:insert(?MB_ETS, {PHash, NewMax, 2, erlang:system_time(millisecond)}),
             ok
     end.
 

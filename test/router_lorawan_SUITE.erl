@@ -75,14 +75,68 @@ init_per_testcase(TestCase, Config) ->
     Region = proplists:get_value(region, Config),
     BaseDir = erlang:atom_to_list(TestCase) ++ "-" ++ erlang:atom_to_list(Region),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
+    ok = application:set_env(router, testing, true),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {downlink_endpoint, ?CONSOLE_URL},
         {ws_endpoint, ?CONSOLE_WS_URL},
         {secret, <<>>}
     ]),
+    FormatStr = [
+        "[",
+        date,
+        " ",
+        time,
+        "] ",
+        pid,
+        " [",
+        severity,
+        "]",
+        {device_id, [" [", device_id, "]"], ""},
+        " [",
+        {module, ""},
+        {function, [":", function], ""},
+        {line, [":", line], ""},
+        "] ",
+        message,
+        "\n"
+    ],
     filelib:ensure_dir(BaseDir ++ "/log"),
     ok = application:set_env(lager, log_root, BaseDir ++ "/log"),
+    ok = application:set_env(lager, crash_log, "crash.log"),
+    case os:getenv("CT_LAGER", "NONE") of
+        "DEBUG" ->
+            ok = application:set_env(lager, handlers, [
+                {lager_console_backend, [
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "router.log"},
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]},
+                {lager_file_backend, [
+                    {file, "device.log"},
+                    {level, error},
+                    {formatter_config, FormatStr}
+                ]}
+            ]),
+            ok = application:set_env(lager, traces, [
+                {lager_console_backend, [{application, router}], debug},
+                {lager_console_backend, [{module, router_console_api}], debug},
+                {lager_console_backend, [{module, router_device_routing}], debug},
+                {lager_console_backend, [{module, console_callback}], debug},
+                {lager_console_backend, [{module, router_lorawan_handler_test}], debug},
+                {{lager_file_backend, "router.log"}, [{application, router}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
+                {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
+                {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug},
+                {{lager_file_backend, "router.log"}, [{module, console_callback}], debug}
+            ]);
+        _ ->
+            ok
+    end,
     Tab = ets:new(?ETS, [public, set]),
     AppKey =
         <<16#2B, 16#7E, 16#15, 16#16, 16#28, 16#AE, 16#D2, 16#A6, 16#AB, 16#F7, 16#15, 16#88, 16#09,
@@ -130,6 +184,9 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
+    e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
+    e2qc:teardown(router_console_api_get_org),
+    application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),

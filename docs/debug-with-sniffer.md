@@ -6,7 +6,7 @@ software-based protocol sniffer.
 
 ## Dependencies
 
-1. Ensure the [Router](https://github.com/helium/router.git) is running and
+1. Ensure [Router](https://github.com/helium/router.git) is running and
    [Console](https://github.com/helium/console.git) is connected to it.
 1. The wallet to be used requires enough HNT to burn for joining the virtual
    device to the network.
@@ -38,7 +38,7 @@ The approximate sequence:
 1. Wait for "pending" to resolve on Console
 1. Finally, the virtual device joins the network
 
-Order of operations is significant.
+Order of operations below is significant.
 
 # Setup
 
@@ -121,7 +121,7 @@ Output from that command will include a transaction ID associated with the
 `txn` field.  Copy this value (without quotes) which is referred to as
 `TxnID...` below for use with the CLI wallet.
 
-Accommodate cache:  [ TODO: Is cache unnecessary for purposes here? ]
+Accommodate cache, which isn't strictly necessary for purposes here:
 
     mkdir cache
     echo 'store = "'$(pwd)'/cache"' > config/settings.toml
@@ -179,9 +179,9 @@ Example:
 
 ```toml
 [device.one.credentials]
-dev_eui = "D43D6A91D7EA136C"
-app_eui = "9D9D83C7716AF74A"
-app_key = "41FD3AAE2C1B959A21665373F78BA5C4"
+dev_eui = "DevEUIHexValue..."
+app_eui = "AppEUIHexValue..."
+app_key = "AppKeyLongHexValue..."
 
 [packet_forwarder.default]
 host = "localhost:1600"
@@ -204,9 +204,9 @@ Example:
 ```json
 [
     {
-        "dev_eui": "D43D6A91D7EA136C",
-        "app_eui": "9D9D83C7716AF74A",
-        "app_key": "41FD3AAE2C1B959A21665373F78BA5C4"
+        "dev_eui": "DevEUIHexValue...",
+        "app_eui": "AppEUIHexValue...",
+        "app_key": "AppKeyLongHexValue..."
     }
 ]
 ```

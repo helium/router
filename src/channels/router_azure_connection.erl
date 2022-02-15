@@ -37,7 +37,7 @@
 
 %% longest expiration time for azure is 365 days
 -define(EXPIRATION_TIME, timer:hours(25)).
--define(REQUEST_OPTIONS, [with_body, {ssl_options, [{versions, ['tlsv1.2']}]}]).
+-define(REQUEST_OPTIONS, [with_body]).
 -define(MQTT_API_VERSION, "/?api-version=2018-06-30").
 -define(HTTP_API_VERSION, "/?api-version=2020-03-13").
 -define(AZURE_HOST, <<".azure-devices.net">>).
@@ -315,12 +315,15 @@ generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
     EncodedURI = uri_string:transcode(URI, []),
     ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
     ToSign = <<EncodedURI/binary, "\n", ExpireBin/binary>>,
-    Signed = uri_string:transcode(
-        base64:encode(crypto:mac(hmac, sha256, base64:decode(PolicyKey), ToSign)),
-        []
-    ),
-    <<"SharedAccessSignature ", "sr=", EncodedURI/binary, "&sig=", Signed/binary, "&se=",
-        ExpireBin/binary, "&skn=", PolicyName/binary>>.
+    Signed = base64:encode(crypto:mac(hmac, sha256, base64:decode(PolicyKey), ToSign)),
+
+    Params = uri_string:compose_query([
+        {<<"sr">>, EncodedURI},
+        {<<"sig">>, Signed},
+        {<<"se">>, ExpireBin},
+        {<<"skn">>, PolicyName}
+    ]),
+    <<"SharedAccessSignature ", Params/binary>>.
 
 -spec clean_connection_string(ConnectionString :: binary()) -> {ok, list(tuple())}.
 clean_connection_string(ConnectionString) ->

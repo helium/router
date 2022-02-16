@@ -434,7 +434,13 @@ connect(URI, DeviceID, Name) ->
             Scheme == <<"mqtt">> orelse
                 Scheme == <<"mqtts">>
         ->
-            Port = maps:get(port, Map, 1883),
+            SSL = Scheme == <<"mqtts">>,
+            DefaultPort =
+                case SSL of
+                    true -> 8883;
+                    false -> 1883
+                end,
+            Port = maps:get(port, Map, DefaultPort),
             UserInfo = maps:get(userinfo, Map, <<>>),
             %% An optional userinfo subcomponent that may consist of a user name
             %% and an optional password preceded by a colon (:), followed by an
@@ -461,7 +467,7 @@ connect(URI, DeviceID, Name) ->
                     [
                         {clean_start, false},
                         {keepalive, 30},
-                        {ssl, Scheme == <<"mqtts">>}
+                        {ssl, SSL}
                     ],
             {ok, C} = emqtt:start_link(EmqttOpts),
             case emqtt:connect(C) of

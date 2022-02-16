@@ -429,12 +429,13 @@ connect(URI, DeviceID, Name) ->
     case uri_string:parse(URI) of
         #{
             host := Host,
-            port := Port,
             scheme := Scheme
         } = Map when
             Scheme == <<"mqtt">> orelse
                 Scheme == <<"mqtts">>
         ->
+            Port = maps:get(port, Map, 1883),
+            UserInfo = maps:get(userinfo, Map, <<>>),
             %% An optional userinfo subcomponent that may consist of a user name
             %% and an optional password preceded by a colon (:), followed by an
             %% at symbol (@). Use of the format username:password in the userinfo
@@ -442,7 +443,6 @@ connect(URI, DeviceID, Name) ->
             %% should not render as clear text any data after the first colon
             %% (:) found within a userinfo subcomponent unless the data after
             %% the colon is the empty string (indicating no password).
-            UserInfo = maps:get(userinfo, Map, <<>>),
             {Username, Password} =
                 case binary:split(UserInfo, <<":">>) of
                     [Un, <<>>] -> {Un, undefined};

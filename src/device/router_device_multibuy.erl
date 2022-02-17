@@ -17,6 +17,7 @@
 -define(MAX_PACKET, multi_buy_max_packet).
 -define(DENY_MORE, multi_buy_deny_more).
 -define(TIME_KEY(Key), {time, Key}).
+-define(CLEANUP, timer:hours(1)).
 
 -spec init() -> ok.
 init() ->
@@ -33,7 +34,7 @@ init() ->
         set,
         {read_concurrency, true}
     ]),
-    %% TODO: cleanup
+    ok = scheduled_cleanup(?CLEANUP),
     ok.
 
 -spec max(Key :: binary()) -> integer() | not_found.
@@ -89,6 +90,32 @@ maybe_buy(DeviceID, PHash) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec scheduled_cleanup(Duration :: non_neg_integer()) -> ok.
+scheduled_cleanup(Duration) ->
+    erlang:spawn(
+        fun() ->
+            Time = erlang:system_time(millisecond) - Duration,
+            Expired = select_expired(Time),
+            lists:foreach(
+                fun(PHash) ->
+                    _ = ets:delete(?ETS_MAX, PHash),
+                    _ = ets:delete(?ETS, PHash),
+                    _ = ets:delete(?ETS, ?TIME_KEY(PHash))
+                end,
+                Expired
+            ),
+            timer:sleep(Duration),
+            ok = scheduled_cleanup(Duration)
+        end
+    ),
+    ok.
+
+-spec select_expired(Time :: non_neg_integer()) -> list(binary()).
+select_expired(Time) ->
+    ets:select(?ETS, [
+        {{{time, '$1'}, '$2'}, [{'<', '$2', Time}], ['$1']}
+    ]).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -303,6 +330,45 @@ maybe_buy_phash_max_test() ->
     %% performance check in MICRO seconds
     TotalTime = lists:sum([T || {T, _} <- maps:values(Results)]),
     ?assert(TotalTime / Packets < ?TEST_PERF),
+    ok.
+
+scheduled_cleanup_test() ->
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
+
+    ok = ?MODULE:init(),
+
+    %% Setup Max packet for device
+    DeviceID = router_utils:uuid_v4(),
+    Max = 5,
+    ?assertEqual(ok, ?MODULE:max(DeviceID, Max)),
+
+    Packets = 100,
+    lists:foreach(
+        fun(_) ->
+            %% Populate table with a bunch of different packets and max values
+            erlang:spawn(
+                fun() ->
+                    PHash = crypto:strong_rand_bytes(32),
+                    ok = ?MODULE:max(DeviceID, Max),
+                    ok = ?MODULE:maybe_buy(DeviceID, PHash)
+                end
+            )
+        end,
+        lists:seq(1, Packets)
+    ),
+
+    %% Wait 100ms and then run a cleanup for 10ms
+    timer:sleep(100),
+    Time = erlang:system_time(millisecond) - 10,
+    ?assertEqual(Packets, erlang:length(select_expired(Time))),
+    ok = scheduled_cleanup(10),
+    timer:sleep(100),
+    % %% It should remove every values except the device max
+    ?assertEqual(Max, ?MODULE:max(DeviceID)),
+    ?assertEqual(0, erlang:length(select_expired(Time))),
+    ?assertEqual(0, ets:info(?ETS, size)),
+    ?assertEqual(1, ets:info(?ETS_MAX, size)),
     ok.
 
 maybe_buy_test_rcv_loop(Acc) ->

@@ -105,7 +105,8 @@ scheduled_cleanup(Duration) ->
                 end,
                 Expired
             ),
-            timer:sleep(Duration),
+            lager:debug("expiring ~p PHash", [erlang:length(Expired)]),
+            timer:sleep(timer:hours(1)),
             ok = scheduled_cleanup(Duration)
         end
     ),

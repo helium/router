@@ -5,10 +5,6 @@
 %%%-------------------------------------------------------------------
 -module(router_device_multibuy).
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 -export([
     init/0,
     max/1, max/2,

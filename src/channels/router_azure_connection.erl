@@ -1,5 +1,9 @@
 -module(router_azure_connection).
 
+%% TODO: Replace with `uri_string:quote/1' when it get's released.
+%% https://github.com/erlang/otp/pull/5700
+-compile({nowarn_deprecated_function, [{http_uri, encode, 1}]}).
+
 %% Create API
 -export([
     from_connection_string/2,
@@ -312,7 +316,10 @@ generate_mqtt_sas_token(#azure{mqtt_sas_uri = URI, policy_name = PName, policy_k
 
 -spec generate_sas_token(binary(), binary(), binary(), number()) -> binary().
 generate_sas_token(URI, PolicyName, PolicyKey, Expires) ->
-    EncodedURI = uri_string:transcode(URI, []),
+    %% TODO: Replace with `uri_string:quote/1' when it get's released.
+    %% https://github.com/erlang/otp/pull/5700
+    EncodedURI = http_uri:encode(URI),
+
     ExpireBin = erlang:integer_to_binary(erlang:system_time(seconds) + Expires),
     ToSign = <<EncodedURI/binary, "\n", ExpireBin/binary>>,
     Signed = base64:encode(crypto:mac(hmac, sha256, base64:decode(PolicyKey), ToSign)),

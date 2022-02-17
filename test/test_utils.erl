@@ -170,7 +170,7 @@ init_per_testcase(TestCase, Config) ->
     ].
 
 end_per_testcase(_TestCase, Config) ->
-    libp2p_swarm:stop(proplists:get_value(swarm, Config)),
+    catch libp2p_swarm:stop(proplists:get_value(swarm, Config)),
     Pid = proplists:get_value(elli, Config),
     {ok, Acceptors} = elli:get_acceptors(Pid),
     ok = elli:stop(Pid),
@@ -310,7 +310,7 @@ get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
-        _IsActive, _JoinAttemptCount, _Discovery} = sys:get_state(
+        _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
     ChannelsWorkerPid.
@@ -319,7 +319,7 @@ get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive, _JoinAttemptCount, _Discovery} = sys:get_state(
+        _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
     LastDevNonce.
@@ -334,7 +334,7 @@ get_device_last_seen_fcnt(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive, _JoinAttemptCount, _Discovery} = sys:get_state(
+        _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
     FCnt.
@@ -343,7 +343,7 @@ get_device_worker_device(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
-        _IsActive, _JoinAttemptCount, _Discovery} = sys:get_state(
+        _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
     Device.
@@ -352,7 +352,7 @@ get_device_worker_offer_cache(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
     {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
         _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache,
-        _IsActive, _JoinAttemptCount, _Discovery} = sys:get_state(
+        _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
     OfferCache.

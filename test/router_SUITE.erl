@@ -874,11 +874,7 @@ us915_join_enabled_cf_list_test(Config) ->
         AppKey,
         DevNonce2
     ),
-    %% This CFList is empty. We don't know if the device is using lora version
-    %% older than 1.0.3 and might be choking on the cflist, so we'll send an
-    %% empty one and see if they can join with that. The device will still
-    %% receive a channel mask update in the first packets downlink after join.
-    ?assertEqual(<<>>, CFList2),
+    ?assertNotEqual(<<>>, CFList2),
 
     %% Send one more just to make sure it wasn't a fluke
     DevNonce3 = crypto:strong_rand_bytes(2),
@@ -890,7 +886,6 @@ us915_join_enabled_cf_list_test(Config) ->
         AppKey,
         DevNonce3
     ),
-    %% We alternate sending and not sending the channel mask cflist.
     ?assertNotEqual(<<>>, CFList3),
 
     %% Send a first packet not request ADR to make sure we still get a channel
@@ -936,6 +931,10 @@ us915_join_disabled_cf_list_test(Config) ->
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
 
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    %% Tell the device to disable join-accept cflist when it starts up
+    Tab = proplists:get_value(ets, Config),
+    _ = ets:insert(Tab, {cf_list_enabled, false}),
 
     {ok, Stream} = libp2p_swarm:dial_framed_stream(
         Swarm,

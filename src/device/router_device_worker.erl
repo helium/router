@@ -75,7 +75,6 @@
     offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
     is_active = true :: boolean(),
-    join_attempt_count = 0 :: integer(),
     discovery = false :: boolean()
 }).
 
@@ -911,8 +910,7 @@ handle_info(
         chain = Blockchain,
         channels_worker = ChannelsWorker,
         device = Device,
-        join_cache = JoinCache,
-        join_attempt_count = JoinAttemptCount
+        join_cache = JoinCache
     } = State
 ) ->
     Join =
@@ -942,7 +940,7 @@ handle_info(
     Metadata = lorawan_rxdelay:adjust_on_join(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
-        craft_join_reply(Device1, JoinAcceptArgs, JoinAttemptCount),
+        craft_join_reply(Device1, JoinAcceptArgs),
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
         TxTime,
         TxFreq,
@@ -966,8 +964,7 @@ handle_info(
     ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
     {noreply, State#state{
         last_dev_nonce = DevNonce,
-        join_cache = maps:remove(DevNonce, JoinCache),
-        join_attempt_count = JoinAttemptCount + 1
+        join_cache = maps:remove(DevNonce, JoinCache)
     }};
 handle_info(
     {frame_timeout, FCnt, PacketTime},
@@ -1284,20 +1281,19 @@ handle_join(
         app_key = AppKey
     }}.
 
--spec craft_join_reply(router_device:device(), #join_accept_args{}, integer()) -> binary().
+-spec craft_join_reply(router_device:device(), #join_accept_args{}) -> binary().
 craft_join_reply(
     Device,
-    #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey},
-    JoinAttemptCount
+    #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey}
 ) ->
     DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     Metadata = router_device:metadata(Device),
     CFList =
-        case {Region, maps:get(cf_list_enabled, Metadata, false)} of
-            {'US915', false} -> <<>>;
-            _ -> lorawan_mac_region:mk_join_accept_cf_list(Region, JoinAttemptCount)
+        case maps:get(cf_list_enabled, Metadata, true) of
+            false -> <<>>;
+            true -> lorawan_mac_region:mk_join_accept_cf_list(Region)
         end,
     RxDelaySeconds =
         case lorawan_rxdelay:get(Metadata, default) of

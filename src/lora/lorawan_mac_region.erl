@@ -31,7 +31,7 @@
 -export([downlink_signal_strength/2]).
 -export([dr_to_down/3]).
 -export([window2_dr/1, top_level_region/1, freq_to_chan/2]).
--export([mk_join_accept_cf_list/2]).
+-export([mk_join_accept_cf_list/1]).
 
 -include("lorawan_db.hrl").
 
@@ -864,15 +864,6 @@ max_snr(SF) ->
 %% CFList functions
 %% -------------------------------------------------------------------
 
--spec mk_join_accept_cf_list(atom(), integer()) -> binary().
-mk_join_accept_cf_list('US915' = Region, Count) ->
-    case (Count rem 2) == 0 of
-        true -> mk_join_accept_cf_list(Region);
-        false -> <<>>
-    end;
-mk_join_accept_cf_list(Region, _Count) ->
-    mk_join_accept_cf_list(Region).
-
 -spec mk_join_accept_cf_list(atom()) -> binary().
 mk_join_accept_cf_list('US915') ->
     %% https://lora-alliance.org/wp-content/uploads/2021/05/RP-2-1.0.3.pdf
@@ -1325,17 +1316,6 @@ bits_test_() ->
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])
         )
     ].
-
-us915_join_accept_cf_list_structure_test() ->
-    Bin = mk_join_accept_cf_list('US915'),
-    ?assertEqual(16, erlang:byte_size(Bin), "Correct size"),
-    ?assertEqual(1, binary:last(Bin), "CFListType field SHALL contain the value 0x01"),
-    ?assertNotEqual(
-        mk_join_accept_cf_list('US915', _JoinAttempt0 = 0),
-        mk_join_accept_cf_list('US915', _JoinAttempt1 = 1),
-        "A/B join attempt cflists to allow old devices a chance to join"
-    ),
-    ok.
 
 mk_join_accept_cf_list_test_() ->
     [

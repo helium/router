@@ -141,7 +141,7 @@ mqtt_connect(
         device_id = DeviceID
     } = Azure
 ) ->
-    Password = generate_mqtt_sas_token(Azure),
+    Password = generate_http_sas_token(Azure),
 
     {ok, Connection} = emqtt:start_link(#{
         clientid => DeviceID,

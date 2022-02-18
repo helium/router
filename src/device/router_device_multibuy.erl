@@ -130,9 +130,6 @@ select_expired(Time) ->
 -define(TEST_PERF, 1000).
 
 max_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     DeviceID = router_utils:uuid_v4(),
@@ -141,12 +138,11 @@ max_test() ->
     ?assertEqual(ok, ?MODULE:max(DeviceID, Max)),
     ?assertEqual(Max, ?MODULE:max(DeviceID)),
 
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 maybe_buy_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     %% Setup Max packet for device
@@ -235,12 +231,12 @@ maybe_buy_only_1_test() ->
     %% performance check in MICRO seconds
     TotalTime = lists:sum([T || {T, _} <- maps:values(Results)]),
     ?assert(TotalTime / Packets < ?TEST_PERF),
+
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 maybe_buy_deny_more_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     %% Setup Max packet for device
@@ -282,12 +278,12 @@ maybe_buy_deny_more_test() ->
     %% performance check in MICRO seconds
     TotalTime = lists:sum([T || {T, _} <- maps:values(Results)]),
     ?assert(TotalTime / Packets < ?TEST_PERF),
+
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 maybe_buy_phash_max_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     %% Setup Max packet for device
@@ -332,12 +328,12 @@ maybe_buy_phash_max_test() ->
     %% performance check in MICRO seconds
     TotalTime = lists:sum([T || {T, _} <- maps:values(Results)]),
     ?assert(TotalTime / Packets < ?TEST_PERF),
+
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 scheduled_cleanup_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     %% Setup Max packet for device
@@ -371,6 +367,9 @@ scheduled_cleanup_test() ->
     ?assertEqual(0, erlang:length(select_expired(Time))),
     ?assertEqual(0, ets:info(?ETS, size)),
     ?assertEqual(1, ets:info(?ETS_MAX, size)),
+
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 maybe_buy_test_rcv_loop(Acc) ->

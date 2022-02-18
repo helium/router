@@ -373,20 +373,20 @@ f2uch('AS923_1', Freq) ->
     end;
 f2uch('AS923_2', Freq) ->
     case Freq of
-        923.2 -> 1;
-        923.4 -> 2;
+        921.4 -> 1;
+        921.6 -> 2;
         _ -> f2uch(Freq, {9218, 2}) + 2
     end;
 f2uch('AS923_3', Freq) ->
     case Freq of
-        923.2 -> 1;
-        923.4 -> 2;
+        916.6 -> 1;
+        916.8 -> 2;
         _ -> f2uch(Freq, {9170, 2}) + 2
     end;
 f2uch('AS923_4', Freq) ->
     case Freq of
-        923.2 -> 1;
-        923.4 -> 2;
+        917.3 -> 1;
+        917.5 -> 2;
         _ -> f2uch(Freq, {9177, 2}) + 2
     end;
 f2uch('AS923', Freq) ->

@@ -372,6 +372,8 @@ handle_cast(
                 {is_active, IsActive}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
+            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
+            ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
@@ -628,7 +630,7 @@ handle_cast(
 ) ->
     ok = router_metrics:packet_hold_time_observe(packet, HoldTime),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    _ = router_device_routing:deny_more(PHash),
+    ok = router_device_multibuy:max(PHash, 0),
     <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, FCnt:16/little-unsigned-integer, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -716,7 +718,7 @@ handle_cast(
                 PubKeyBin
             ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
-            _ = router_device_routing:deny_more(PHash),
+            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,
@@ -748,7 +750,7 @@ handle_cast(
                         Region
                     )
             end,
-            _ = router_device_routing:deny_more(PHash),
+            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,
@@ -996,7 +998,7 @@ handle_info(
         region = Region
     } = FrameCache,
     Cache1 = maps:remove(FCnt, Cache0),
-    ok = router_device_routing:clear_multi_buy(Packet),
+    ok = router_device_multibuy:delete(blockchain_helium_packet_v1:packet_hash(Packet)),
     ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
@@ -1312,35 +1314,6 @@ craft_join_reply(
     ),
     <<ReplyHdr/binary, EncryptedReply/binary>>.
 
--spec do_multi_buy(
-    Packet :: blockchain_helium_packet_v1:packet(),
-    Device :: router_device:device(),
-    FrameAck :: 0 | 1
-) -> ok.
-do_multi_buy(Packet, Device, FrameAck) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
-    case MultiBuyValue > 1 of
-        true ->
-            lager:debug("accepting more packets [multi_buy: ~p] for ~p", [MultiBuyValue, PHash]),
-            _ = router_device_routing:accept_more(PHash, MultiBuyValue);
-        false ->
-            case {router_device:queue(Device), FrameAck == 1} of
-                {[], false} ->
-                    lager:debug("denying more packets [queue_length: 0] [frame_ack: 0] for ~p", [
-                        PHash
-                    ]),
-                    router_device_routing:deny_more(PHash);
-                {_Queue, _Ack} ->
-                    lager:debug(
-                        "accepting more packets [queue_length: ~p] [frame_ack: ~p] for ~p",
-                        [length(_Queue), _Ack, PHash]
-                    ),
-                    _ = router_device_routing:accept_more(PHash)
-            end
-    end,
-    ok.
-
 %%%-------------------------------------------------------------------
 %% @doc
 %% Validate frame packet, figures out FPort/FOptsLen to see if
@@ -1404,7 +1377,6 @@ validate_frame(
             ),
             validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true);
         undefined ->
-            ok = do_multi_buy(Packet, Device0, FrameAck),
             validate_frame_(Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false)
     end.
 
@@ -2032,37 +2004,42 @@ save_and_update(DB, CF, Pid, Device) ->
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().
 get_device(DB, CF, DeviceID) ->
-    Device =
+    Device0 =
         case router_device:get_by_id(DB, CF, DeviceID) of
             {ok, D} -> D;
             _ -> router_device:new(DeviceID)
         end,
-    case router_console_api:get_device(DeviceID) of
-        {error, not_found} ->
-            lager:info("device not found"),
-            Device;
-        {error, _Reason} ->
-            lager:error("failed to get device ~p", [_Reason]),
-            Device;
-        {ok, APIDevice} ->
-            lager:info("got device: ~p", [APIDevice]),
+    Device1 =
+        case router_console_api:get_device(DeviceID) of
+            {error, not_found} ->
+                lager:info("device not found"),
+                Device0;
+            {error, _Reason} ->
+                lager:error("failed to get device ~p", [_Reason]),
+                Device0;
+            {ok, APIDevice} ->
+                lager:info("got device: ~p", [APIDevice]),
 
-            IsActive = router_device:is_active(APIDevice),
-            DeviceUpdates = [
-                {name, router_device:name(APIDevice)},
-                {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
-                {metadata,
-                    maps:merge(
-                        lorawan_rxdelay:maybe_update(APIDevice, Device),
-                        router_device:metadata(APIDevice)
-                    )},
-                {is_active, IsActive}
-            ],
-            router_device:update(DeviceUpdates, Device)
-    end.
+                IsActive = router_device:is_active(APIDevice),
+                DeviceUpdates = [
+                    {name, router_device:name(APIDevice)},
+                    {dev_eui, router_device:dev_eui(APIDevice)},
+                    {app_eui, router_device:app_eui(APIDevice)},
+                    {metadata,
+                        maps:merge(
+                            lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                            router_device:metadata(APIDevice)
+                        )},
+                    {is_active, IsActive}
+                ],
+                router_device:update(DeviceUpdates, Device0)
+        end,
+    MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
+    ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),
+    Device1.
 
 -spec maybe_construct_adr_engine(undefined | lorawan_adr:handle(), atom()) -> lorawan_adr:handle().
+
 maybe_construct_adr_engine(Other, Region) ->
     case Other of
         undefined ->

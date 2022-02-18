@@ -268,7 +268,7 @@ multi_buy_test(Config) ->
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% Hotspot 2
     #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
@@ -290,14 +290,14 @@ multi_buy_test(Config) ->
     PubKeyBin5 = libp2p_crypto:pubkey_to_bin(PubKey5),
     {ok, _HotspotName5} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin5)),
 
-    HandleOfferForHotspotFun = fun(PubKeyBin, Device, FCnt) ->
+    HandleOfferForHotspotFun = fun(PubKeyBin, Device0, FCnt) ->
         SCPacket = test_utils:frame_packet(
             ?UNCONFIRMED_UP,
             PubKeyBin,
-            router_device:nwk_s_key(Device),
-            router_device:app_s_key(Device),
+            router_device:nwk_s_key(Device0),
+            router_device:app_s_key(Device0),
             FCnt,
-            #{dont_encode => true, routing => true, devaddr => router_device:devaddr(Device)}
+            #{dont_encode => true, routing => true, devaddr => router_device:devaddr(Device0)}
         ),
         Offer = blockchain_state_channel_offer_v1:from_packet(
             blockchain_state_channel_packet_v1:packet(SCPacket),
@@ -308,33 +308,24 @@ multi_buy_test(Config) ->
     end,
 
     %% Multi buy for device is set to 2
-    Device1 = router_device:metadata(
-        maps:merge(router_device:metadata(Device0), #{multi_buy => 2}),
-        Device0
-    ),
-    {ok, Device2} = router_device:save(DB, CF, Device1),
-    {ok, _} = router_device_cache:save(Device2),
+    DeviceID = router_device:id(Device),
+    ok = router_device_multibuy:max(DeviceID, 2),
 
     %% Send the same packet from all hotspots
-    ok = HandleOfferForHotspotFun(PubKeyBin1, Device2, 0),
-    ok = HandleOfferForHotspotFun(PubKeyBin2, Device2, 0),
-    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin3, Device2, 0),
-    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin4, Device2, 0),
+    ok = HandleOfferForHotspotFun(PubKeyBin1, Device, 0),
+    ok = HandleOfferForHotspotFun(PubKeyBin2, Device, 0),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin3, Device, 0),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin4, Device, 0),
 
     %% Change multi-buy to 4
-    Device3 = router_device:metadata(
-        maps:merge(router_device:metadata(Device0), #{multi_buy => 4}),
-        Device0
-    ),
-    {ok, Device4} = router_device:save(DB, CF, Device3),
-    {ok, _} = router_device_cache:save(Device3),
+    ok = router_device_multibuy:max(DeviceID, 4),
 
     %% Send the same packet from all hotspots
-    ok = HandleOfferForHotspotFun(PubKeyBin1, Device4, 1),
-    ok = HandleOfferForHotspotFun(PubKeyBin2, Device4, 1),
-    ok = HandleOfferForHotspotFun(PubKeyBin3, Device4, 1),
-    ok = HandleOfferForHotspotFun(PubKeyBin4, Device4, 1),
-    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin5, Device4, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin1, Device, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin2, Device, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin3, Device, 1),
+    ok = HandleOfferForHotspotFun(PubKeyBin4, Device, 1),
+    {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin5, Device, 1),
 
     ok.
 

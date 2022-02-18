@@ -8,7 +8,8 @@
 -export([
     init/0,
     max/1, max/2,
-    maybe_buy/2
+    maybe_buy/2,
+    delete/1
 ]).
 
 -define(ETS, router_device_multibuy_ets).
@@ -87,6 +88,13 @@ maybe_buy(DeviceID, PHash) ->
             end
     end.
 
+-spec delete(PHash :: binary()) -> ok.
+delete(PHash) ->
+    _ = ets:delete(?ETS_MAX, PHash),
+    _ = ets:delete(?ETS, PHash),
+    _ = ets:delete(?ETS, ?TIME_KEY(PHash)),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
@@ -97,14 +105,7 @@ scheduled_cleanup(Duration) ->
         fun() ->
             Time = erlang:system_time(millisecond) - Duration,
             Expired = select_expired(Time),
-            lists:foreach(
-                fun(PHash) ->
-                    _ = ets:delete(?ETS_MAX, PHash),
-                    _ = ets:delete(?ETS, PHash),
-                    _ = ets:delete(?ETS, ?TIME_KEY(PHash))
-                end,
-                Expired
-            ),
+            lists:foreach(fun ?MODULE:delete/1, Expired),
             lager:debug("expiring ~p PHash", [erlang:length(Expired)]),
             timer:sleep(timer:hours(1)),
             ok = scheduled_cleanup(Duration)

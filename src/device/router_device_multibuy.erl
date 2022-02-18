@@ -373,9 +373,6 @@ scheduled_cleanup_test() ->
     ok.
 
 scheduled_cleanup_test() ->
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-
     ok = ?MODULE:init(),
 
     %% Setup Max packet for device
@@ -409,6 +406,9 @@ scheduled_cleanup_test() ->
     ?assertEqual(0, erlang:length(select_expired(Time))),
     ?assertEqual(0, ets:info(?ETS, size)),
     ?assertEqual(1, ets:info(?ETS_MAX, size)),
+
+    _ = catch ets:delete(?ETS),
+    _ = catch ets:delete(?ETS_MAX),
     ok.
 
 maybe_buy_test_rcv_loop(Acc) ->

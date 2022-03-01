@@ -8,6 +8,8 @@
 
 -export([
     device_update_test/1,
+    device_update_app_eui_reset_devaddr_test/1,
+    device_update_dev_eui_reset_devaddr_test/1,
     drop_downlink_test/1,
     replay_joins_test/1,
     replay_uplink_test/1,
@@ -44,6 +46,8 @@ all() ->
     [
         device_worker_stop_children_test,
         device_update_test,
+        device_update_app_eui_reset_devaddr_test,
+        device_update_dev_eui_reset_devaddr_test,
         drop_downlink_test,
         replay_joins_test,
         replay_uplink_test,
@@ -366,6 +370,60 @@ device_update_test(Config) ->
 
     test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
+
+    ok.
+
+device_update_app_eui_reset_devaddr_test(Config) ->
+    #{} = test_utils:join_device(Config),
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    D1 = test_utils:get_device_worker_device(DeviceID),
+
+    %% Make sure joined device has a session
+    ?assertNotEqual(undefined, router_device:devaddr(D1)),
+
+    %% Setup for next fetch to return a new value
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {app_eui, crypto:strong_rand_bytes(8)}),
+
+    %% Update devices, wait for update to go through
+    WSPid ! {device_update, <<"device:all">>},
+    timer:sleep(100),
+
+    %% Devaddr has been reset because the join credentials changed
+    D2 = test_utils:get_device_worker_device(DeviceID),
+    ?assertEqual(undefined, router_device:devaddr(D2)),
+
+    ok.
+
+device_update_dev_eui_reset_devaddr_test(Config) ->
+    #{} = test_utils:join_device(Config),
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    D1 = test_utils:get_device_worker_device(DeviceID),
+
+    %% Make sure joined device has a session
+    ?assertNotEqual(undefined, router_device:devaddr(D1)),
+
+    %% Setup for next fetch to return a new value
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {dev_eui, crypto:strong_rand_bytes(8)}),
+
+    %% Update devices, wait for update to go through
+    WSPid ! {device_update, <<"device:all">>},
+    timer:sleep(100),
+
+    %% Devaddr has been reset because the join credentials changed
+    D2 = test_utils:get_device_worker_device(DeviceID),
+    ?assertEqual(undefined, router_device:devaddr(D2)),
 
     ok.
 

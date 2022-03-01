@@ -360,10 +360,25 @@ handle_cast(
             lager:info("device updated: ~p", [APIDevice]),
             router_device_channels_worker:refresh_channels(ChannelsWorker),
             IsActive = router_device:is_active(APIDevice),
+            Devaddr =
+                case
+                    {
+                        {router_device:app_eui(Device0), router_device:app_eui(APIDevice)},
+                        {router_device:dev_eui(Device0), router_device:dev_eui(APIDevice)}
+                    }
+                of
+                    {{App, App}, {Dev, Dev}} ->
+                        router_device:devaddr(Device0);
+                    _ ->
+                        lager:info("app_eui or dev_eui changed, unsetting devaddr"),
+                        undefined
+                end,
+
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
+                {devaddr, Devaddr},
                 {metadata,
                     maps:merge(
                         lorawan_rxdelay:maybe_update(APIDevice, Device0),

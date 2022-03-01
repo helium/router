@@ -33,7 +33,8 @@
     tmp_dir/0, tmp_dir/1,
     wait_until/1, wait_until/3,
     wait_until_no_messages/1,
-    is_jsx_encoded_map/1
+    is_jsx_encoded_map/1,
+    ws_init/0
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -997,3 +998,11 @@ deframe_join_packet(
 is_jsx_encoded_map([]) -> true;
 is_jsx_encoded_map(M) when is_map(M) -> true;
 is_jsx_encoded_map(_) -> false.
+
+-spec ws_init() -> {ok, pid()}.
+ws_init() ->
+    receive
+        {websocket_init, Pid} ->
+            {ok, Pid}
+    after 2500 -> ct:fail(websocket_init_timeout)
+    end.

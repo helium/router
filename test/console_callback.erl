@@ -200,13 +200,23 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             [] -> 0;
             [{rx_delay, DelaySeconds}] -> DelaySeconds
         end,
+    AppEUI =
+        case ets:lookup(Tab, app_eui) of
+            [] -> maps:get(app_eui, Args);
+            [{app_eui, EUI1}] -> EUI1
+        end,
+    DevEUI =
+        case ets:lookup(Tab, dev_eui) of
+            [] -> maps:get(dev_eui, Args);
+            [{dev_eui, EUI2}] -> EUI2
+        end,
 
     Body = #{
         <<"id">> => DeviceID,
         <<"name">> => ?CONSOLE_DEVICE_NAME,
         <<"app_key">> => lorawan_utils:binary_to_hex(maps:get(app_key, Args)),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(maps:get(app_eui, Args)),
-        <<"dev_eui">> => lorawan_utils:binary_to_hex(maps:get(dev_eui, Args)),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(AppEUI),
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(DevEUI),
         <<"channels">> => Channels,
         <<"labels">> => ?CONSOLE_LABELS,
         <<"organization_id">> => ?CONSOLE_ORG_ID,

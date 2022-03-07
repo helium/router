@@ -111,7 +111,8 @@ init_per_testcase(TestCase, Config) ->
                 {lager_console_backend, [{application, router}], debug},
                 {lager_console_backend, [{module, router_console_api}], debug},
                 {lager_console_backend, [{module, router_device_routing}], debug},
-                {lager_console_backend, [{module, console_callback}], debug},
+                {lager_console_backend, [{module, router_test_console_callback}], debug},
+                {lager_console_backend, [{module, router_test_device}], debug},
                 {{lager_file_backend, "router.log"}, [{application, router}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
@@ -132,10 +133,12 @@ init_per_testcase(TestCase, Config) ->
             app_eui => ?APPEUI,
             dev_eui => ?DEVEUI
         }},
-        {port, 3000}
+        {port, 3010}
     ],
     {ok, Pid} = elli:start_link(ElliOpts),
     application:ensure_all_started(gun),
+
+    _ = router_test_console:init(),
 
     {ok, _} = application:ensure_all_started(router),
 
@@ -153,9 +156,17 @@ init_per_testcase(TestCase, Config) ->
     {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(HotspotDir, TestCase, 0),
     #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
 
+    RandomHotspots = lists:map(
+        fun(_) ->
+            #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+            {PrivKey, PubKey}
+        end,
+        lists:seq(1, 5)
+    ),
+
     {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
         5000,
-        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
+        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}] ++ RandomHotspots
     ),
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
@@ -167,6 +178,7 @@ init_per_testcase(TestCase, Config) ->
         {base_dir, BaseDir},
         {swarm, HotspotSwarm},
         {keys, HotspotKeys},
+        {hotspots, RandomHotspots},
         {consensus_member, ConsensusMembers}
         | Config
     ].
@@ -264,7 +276,16 @@ join_device(Config, JoinOpts) ->
                 msg = {packet, SCPacket}
             })},
 
+join_device(TestDevicePid, JoinOpts) ->
+    {ok, SCPacket} = router_test_device:join(TestDevicePid, JoinOpts),
     timer:sleep(router_utils:join_timeout()),
+    ?assert(router_test_device:joined(TestDevicePid)),
+
+    TestDevice = router_test_device:device(TestDevicePid),
+    DeviceID = router_device:id(TestDevice),
+
+    PubKeyBin = router_test_device:hotspot_pubkey_bin(TestDevicePid),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
 
     %% Waiting for report device status on that join request
     ?MODULE:wait_for_console_event(<<"join_request">>, #{
@@ -273,7 +294,7 @@ join_device(Config, JoinOpts) ->
         <<"sub_category">> => <<"undefined">>,
         <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"device_id">> => DeviceID,
         <<"data">> => #{
             <<"dc">> => fun erlang:is_map/1,
             <<"fcnt">> => 0,
@@ -307,7 +328,7 @@ join_device(Config, JoinOpts) ->
         <<"sub_category">> => <<"undefined">>,
         <<"description">> => fun erlang:is_binary/1,
         <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"device_id">> => DeviceID,
         <<"data">> => #{
             <<"fcnt">> => 0,
             <<"payload_size">> => fun erlang:is_integer/1,
@@ -327,13 +348,7 @@ join_device(Config, JoinOpts) ->
             }
         }
     }),
-    #{
-        app_key => AppKey,
-        dev_nonce => DevNonce,
-        hotspot_name => HotspotName,
-        stream => Stream,
-        pubkey_bin => PubKeyBin
-    }.
+    ok.
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),

@@ -1,4 +1,4 @@
--module(router_channel_azure_SUITE).
+-module(router_channel_iot_hub_SUITE).
 
 -export([
     all/0,
@@ -7,7 +7,7 @@
 ]).
 
 -export([
-    azure_test/1
+    iot_hub_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -35,7 +35,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        azure_test
+        iot_hub_test
     ].
 
 %%--------------------------------------------------------------------
@@ -54,12 +54,12 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-azure_test(Config) ->
-    meck:new(router_azure_connection, [passthrough]),
-    meck:expect(router_azure_connection, fetch_device, fun(_) ->
+iot_hub_test(Config) ->
+    meck:new(router_iot_hub_connection, [passthrough]),
+    meck:expect(router_iot_hub_connection, fetch_device, fun(_) ->
         {ok, device_map_would_go_here}
     end),
-    meck:expect(router_azure_connection, connection_information, fun(_HubName, DeviceID) ->
+    meck:expect(router_iot_hub_connection, connection_information, fun(_HubName, DeviceID) ->
         %% This allows us ot skip over the crazy nonsense that is contructing
         %% msft's credentials.
         #{
@@ -441,7 +441,7 @@ azure_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     ok = emqtt:disconnect(Conn),
-    meck:unload(router_azure_connection),
+    meck:unload(router_iot_hub_connection),
     meck:unload(emqtt),
     ok.
 

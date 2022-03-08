@@ -1,4 +1,4 @@
--module(router_azure_connection).
+-module(router_iot_hub_connection).
 
 %% TODO: Replace with `uri_string:quote/1' when it get's released.
 %% https://github.com/erlang/otp/pull/5700

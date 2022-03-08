@@ -155,7 +155,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
             http -> ?CONSOLE_HTTP_CHANNEL;
             mqtt -> ?CONSOLE_MQTT_CHANNEL;
             aws -> ?CONSOLE_AWS_CHANNEL;
-            azure -> ?CONSOLE_AZURE_CHANNEL;
+            iot_hub -> ?CONSOLE_IOT_HUB_CHANNEL;
             decoder -> ?CONSOLE_DECODER_CHANNEL;
             console -> ?CONSOLE_CONSOLE_CHANNEL;
             template -> ?CONSOLE_TEMPLATE_CHANNEL

@@ -211,7 +211,7 @@ iot_hub_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
@@ -221,8 +221,8 @@ iot_hub_test(Config) ->
                 <<"body">> => fun erlang:is_binary/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -233,15 +233,15 @@ iot_hub_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
             <<"res">> => #{},
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -340,8 +340,8 @@ iot_hub_test(Config) ->
                 <<"long">> => fun erlang:is_float/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             },
             <<"mac">> => fun erlang:is_list/1
@@ -388,7 +388,7 @@ iot_hub_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
@@ -398,8 +398,8 @@ iot_hub_test(Config) ->
                 <<"body">> => fun erlang:is_binary/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -410,15 +410,15 @@ iot_hub_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
             <<"res">> => #{},
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }

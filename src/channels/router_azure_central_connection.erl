@@ -43,6 +43,9 @@
 
 -define(DPS_API_VERSION, "?api-version=2021-06-01").
 -define(IOT_CENTRAL_API_VERSION, "?api-version=1.0").
+-define(IOT_CENTRAL_MQTT_USERNAME_API_VERSION, "?api-version=2021-04-12").
+
+-define(MAX_REGISTRATION_ATTEMPTS, 10).
 
 -record(iot_central, {
     %% User provided:
@@ -65,7 +68,6 @@
     %%
     device_primary_key :: binary(),
     %% Able to generate after device is registered in DPS
-    connection_string :: binary(),
     mqtt_connection :: undefined | pid(),
     mqtt_host :: binary(),
     mqtt_username :: binary()
@@ -300,23 +302,54 @@ http_device_credentials(
 
 %% DPS Functions ===============================================================
 
-http_device_check_registration(Central) ->
-    http_device_check_registration(Central, 0).
+-spec http_device_check_registration(
+    Central :: #iot_central{},
+    RetryWaitTimeSeconds :: non_neg_integer()
+) ->
+    {ok, #iot_central{}} | {error, any()}.
+http_device_check_registration(#iot_central{device_id = DeviceID} = Central, RetryWaitSeconds) ->
+    case http_device_check_registration(Central, RetryWaitSeconds / 2, 0) of
+        {ok, AssignedHub} ->
+            {ok, Central#iot_central{
+                mqtt_host = AssignedHub,
+                mqtt_username =
+                    <<AssignedHub/binary, "/", DeviceID/binary,
+                        ?IOT_CENTRAL_MQTT_USERNAME_API_VERSION>>
+            }};
+        Other ->
+            Other
+    end.
 
-http_device_check_registration(Central, Retries) ->
-    lager:debug("  getting assignment [attempts: ~p]", [Retries]),
+-spec http_device_check_registration(
+    Central :: #iot_central{},
+    RetryWaitTimeSeconds :: float(),
+    Attempts :: non_neg_integer()
+) -> {ok, #iot_central{}} | {error, any()}.
+http_device_check_registration(
+    #iot_central{prefix = Prefix, device_id = DeviceID} = _Central,
+    _RetryWaitSeconds,
+    ?MAX_REGISTRATION_ATTEMPTS
+) ->
+    lager:warning(
+        "max retries, bailing on checking registration [prefix: ~p] [device_id: ~p]",
+        [Prefix, DeviceID]
+    ),
+    {error, max_registration_attempts};
+http_device_check_registration(Central, RetryWaitSeconds, Attempts) ->
+    lager:debug("  getting assignment [attempts: ~p]", [Attempts]),
     case do_http_device_check_registration(Central) of
         %% {ok, _} = Resp ->
         %%     Resp;
         {error, {device_not_assigned, _}} ->
-            timer:sleep(250),
-            http_device_check_registration(Central, Retries + 1);
+            timer:sleep(RetryWaitSeconds * 1000),
+            http_device_check_registration(Central, RetryWaitSeconds, Attempts + 1);
         Other ->
             Other
     end.
 
 -spec do_http_device_check_registration(Central :: #iot_central{}) ->
-    {ok, #iot_central{}} | {error, any()}.
+    {ok, AssignedHub :: binary()}
+    | {error, any()}.
 do_http_device_check_registration(#iot_central{device_primary_key = undefined}) ->
     {error, device_credentials_unfetched};
 do_http_device_check_registration(
@@ -325,7 +358,7 @@ do_http_device_check_registration(
         dps_host = Host,
         device_id = DeviceID,
         device_primary_key = DevicePrimaryKey
-    } = Central
+    } = _Central
 ) ->
     URL = format_url(
         "https://{{host}}/{{scope_id}}/registrations/{{device_id}}{{api_version}}",
@@ -339,23 +372,8 @@ do_http_device_check_registration(
     case hackney:post(URL, Headers, jsx:encode(Payload), [with_body]) of
         {ok, 200, _, Body} ->
             try jsx:decode(Body, [return_maps]) of
-                #{
-                    <<"status">> := <<"assigned">>,
-                    <<"assignedHub">> := AssignedHub,
-                    <<"deviceId">> := DeviceID
-                } ->
-                    ConnectionString = erlang:list_to_binary(
-                        io_lib:format("HostName=~s;DeviceId=~s;SharedAccessKey=~s", [
-                            AssignedHub, DeviceID, DevicePrimaryKey
-                        ])
-                    ),
-                    {ok, Central#iot_central{
-                        % TODO: Put this in a better spot.
-                        connection_string = ConnectionString,
-                        mqtt_host = AssignedHub,
-                        mqtt_username =
-                            <<AssignedHub/binary, "/", DeviceID/binary, "/?api-version=2021-04-12">>
-                    }};
+                #{<<"status">> := <<"assigned">>, <<"assignedHub">> := AssignedHub} ->
+                    {ok, AssignedHub};
                 #{<<"status">> := Status} ->
                     {error, {device_not_assigned, Status}}
             catch
@@ -388,10 +406,13 @@ http_device_register(
     Headers = default_headers(Token),
     Payload = #{registrationId => DeviceID},
     case hackney:put(URL, Headers, jsx:encode(Payload), [with_body]) of
-        {ok, 202, _, Body} ->
-            B = jsx:decode(Body, [return_maps]),
+        {ok, 202, RespHeaders, Body} ->
+            %% Reported in seconds
+            RetryAfter = erlang:binary_to_integer(
+                proplists:get_value(<<"Retry-After">>, RespHeaders, <<"1">>)
+            ),
             lager:debug("  registration successful"),
-            {ok, B};
+            {ok, RetryAfter, jsx:decode(Body, [return_maps])};
         Other ->
             lager:debug("  registration failed"),
             {error, Other}

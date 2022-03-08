@@ -1,3 +1,13 @@
+%%%-------------------------------------------------------------------
+%% @doc
+%% == Router Azure IoT Central Channel ==
+%%
+%% - Ensure device is created in iot-central application.
+%% - Ensure device is registered to an underlying iot-hub with the DPS.
+%% - Connect and communcate as device over mqtt.
+%%
+%% @end
+%%%-------------------------------------------------------------------
 -module(router_azure_central_connection).
 
 -compile([export_all, nowarn_export_all]).

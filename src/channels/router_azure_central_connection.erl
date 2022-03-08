@@ -86,6 +86,30 @@ new(Prefix, ScopeID, ApiKey, DeviceID) ->
     }}.
 
 %% -------------------------------------------------------------------
+%% Flows
+%% -------------------------------------------------------------------
+
+-spec http_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+http_device_setup(#iot_central{} = Central0) ->
+    ok = ?MODULE:http_device_ensure_exists(Central0),
+    {ok, Central1} = ?MODULE:http_device_credentials(Central0),
+    {ok, RetryAfter, _Body} = ?MODULE:http_device_register(Central1),
+    {ok, Central2} = ?MODULE:http_device_check_registration(Central1, RetryAfter),
+    {ok, Central2}.
+
+-spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+mqtt_device_setup(#iot_central{} = Central0) ->
+    {ok, Central1} = ?MODULE:mqtt_connect(Central0),
+    {ok, _, _} = ?MODULE:mqtt_subscribe(Central1),
+    {ok, Central1}.
+
+-spec setup(#iot_central{}) -> {ok, #iot_central{}}.
+setup(#iot_central{} = Central0) ->
+    {ok, Central1} = ?MODULE:http_device_setup(Central0),
+    {ok, Central2} = ?MODULE:mqtt_device_setup(Central1),
+    {ok, Central2}.
+
+%% -------------------------------------------------------------------
 %% MQTT
 %% -------------------------------------------------------------------
 
@@ -372,31 +396,6 @@ http_device_register(
             lager:debug("  registration failed"),
             {error, Other}
     end.
-
-http_device_setup(#iot_central{} = Central0) ->
-    lager:debug("http - making sure device exists"),
-    ok = ?MODULE:http_device_ensure_exists(Central0),
-    lager:debug("http - getting credentials"),
-    {ok, Central1} = ?MODULE:http_device_credentials(Central0),
-    lager:debug("http - registering with dps"),
-    {ok, _} = ?MODULE:http_device_register(Central1),
-    lager:debug("http - getting assigned hub"),
-    {ok, Central2} = ?MODULE:http_device_check_registration(Central1),
-    lager:debug("http - all good"),
-    {ok, Central2}.
-
-mqtt_device_setup(#iot_central{} = Central0) ->
-    lager:debug("mqtt - connecting"),
-    {ok, Central1} = ?MODULE:mqtt_connect(Central0),
-    lager:debug("mqtt - subscribing"),
-    {ok, _, _} = ?MODULE:mqtt_subscribe(Central1),
-    lager:debug("mqtt - all good"),
-    {ok, Central1}.
-
-setup(#iot_central{} = Central0) ->
-    {ok, Central1} = ?MODULE:http_device_setup(Central0),
-    {ok, Central2} = ?MODULE:mqtt_device_setup(Central1),
-    {ok, Central2}.
 
 %% -------------------------------------------------------------------
 %% Internal Functions

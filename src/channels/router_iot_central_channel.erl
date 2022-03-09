@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Router IoT Hub Channel ==
+%% == Router IoT Channel Channel ==
 %% @end
 %%%-------------------------------------------------------------------
 -module(router_iot_central_channel).
@@ -26,7 +26,7 @@
 -record(state, {
     channel :: router_channel:channel(),
     channel_id :: binary(),
-    azure :: router_iot_hub_connection:azure(),
+    azure :: router_iot_central_connection:azure(),
     conn_backoff :: backoff:backoff(),
     conn_backoff_ref :: reference() | undefined,
     ping :: reference() | undefined
@@ -158,7 +158,7 @@ do_handle_event(
     State1.
 
 -spec setup_iot_central(router_channel:channel()) ->
-    {ok, router_iot_hub_connection:azure()} | {error, any()}.
+    {ok, router_iot_central_connection:azure()} | {error, any()}.
 setup_iot_central(Channel) ->
     #{
         iot_central_app_name := AppName,
@@ -167,10 +167,10 @@ setup_iot_central(Channel) ->
     } = router_channel:args(Channel),
 
     DeviceID = router_channel:device_id(Channel),
-    {ok, Account} = router_iot_central_connection:new(AppName, ScopeID, ApiKey, DeviceID),
+    {ok, Account0} = router_iot_central_connection:new(AppName, ScopeID, ApiKey, DeviceID),
 
-    case router_iot_central_connection:http_device_setup(Account) of
-        ok -> {ok, Account};
+    case router_iot_central_connection:http_device_setup(Account0) of
+        {ok, Account1} -> {ok, Account1};
         Err -> Err
     end.
 

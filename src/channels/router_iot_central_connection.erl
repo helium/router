@@ -53,6 +53,8 @@
     mqtt_device_setup_/1
 ]).
 
+-export_type([azure/0]).
+
 -define(DPS_API_VERSION, "?api-version=2021-06-01").
 -define(IOT_CENTRAL_API_VERSION, "?api-version=1.0").
 -define(IOT_CENTRAL_MQTT_USERNAME_API_VERSION, "?api-version=2021-04-12").
@@ -78,13 +80,15 @@
 
     %% Computed after device creation:
     %%
-    device_primary_key :: binary(),
+    device_primary_key :: undefined | binary(),
     %% Able to generate after device is registered in DPS
     mqtt_connection :: undefined | pid(),
-    mqtt_host :: binary(),
-    mqtt_username :: binary(),
+    mqtt_host :: undefined | binary(),
+    mqtt_username :: undefined | binary(),
     mqtt_port = 8883 :: 8883 | 1883
 }).
+
+-type azure() :: #iot_central{}.
 
 -spec new(
     Prefix :: binary(),
@@ -110,34 +114,38 @@ setup(#iot_central{} = Central0) ->
     {ok, Central2} = ?MODULE:mqtt_device_setup(Central1),
     {ok, Central2}.
 
--spec http_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+-spec http_device_setup(#iot_central{}) -> {ok, #iot_central{}} | {error, any()}.
 http_device_setup(#iot_central{} = Central) ->
     %% HTTP setup includes all setup involving HTTP requests.
     %% That results in mostly MQTT values.
-    #{
-        device_primary_key := DevicePrimaryKey,
-        mqtt_host := MqttHost,
-        mqtt_username := MqttUsername,
-        mqtt_port := MqttPort
-    } = ?MODULE:http_device_setup_(Central),
+    try ?MODULE:http_device_setup_(Central) of
+        #{
+            device_primary_key := DevicePrimaryKey,
+            mqtt_host := MqttHost,
+            mqtt_username := MqttUsername,
+            mqtt_port := MqttPort
+        } ->
+            {ok, Central#iot_central{
+                device_primary_key = DevicePrimaryKey,
+                mqtt_host = MqttHost,
+                mqtt_username = MqttUsername,
+                mqtt_port = MqttPort
+            }}
+    catch
+        _:Err -> {error, Err}
+    end.
 
-    {ok, Central#iot_central{
-        device_primary_key = DevicePrimaryKey,
-        mqtt_host = MqttHost,
-        mqtt_username = MqttUsername,
-        mqtt_port = MqttPort
-    }}.
-
--spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+-spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}} | {error, any()}.
 mqtt_device_setup(#iot_central{} = Central) ->
     %% MQTT setup includes all setup touching emqtt.
-    #{
-        mqtt_connection := MqttConnection
-    } = ?MODULE:mqtt_device_setup_(Central),
-
-    {ok, Central#iot_central{
-        mqtt_connection = MqttConnection
-    }}.
+    try ?MODULE:mqtt_device_setup_(Central) of
+        #{mqtt_connection := MqttConnection} ->
+            {ok, Central#iot_central{
+                mqtt_connection = MqttConnection
+            }}
+    catch
+        _:Err -> {error, Err}
+    end.
 
 %% Flow Helpers ======================================================
 
@@ -154,7 +162,7 @@ http_device_setup_(#iot_central{} = Central0) ->
         mqtt_port => Central2#iot_central.mqtt_port
     }.
 
--spec mqtt_device_setup_(#iot_central{}) -> {ok, #iot_central{}}.
+-spec mqtt_device_setup_(#iot_central{}) -> map().
 mqtt_device_setup_(#iot_central{} = Central0) ->
     {ok, Central1} = ?MODULE:mqtt_connect(Central0),
     {ok, _, _} = ?MODULE:mqtt_subscribe(Central1),
@@ -376,7 +384,7 @@ http_device_check_registration(#iot_central{device_id = DeviceID} = Central, Ret
     Central :: #iot_central{},
     RetryWaitTimeSeconds :: float(),
     Attempts :: non_neg_integer()
-) -> {ok, #iot_central{}} | {error, any()}.
+) -> {ok, AssignedHub :: binary()} | {error, any()}.
 http_device_check_registration(
     #iot_central{prefix = Prefix, device_id = DeviceID} = _Central,
     _RetryWaitSeconds,
@@ -437,7 +445,7 @@ do_http_device_check_registration(
     end.
 
 -spec http_device_register(Central :: #iot_central{}) ->
-    {ok, map()} | {error, any()}.
+    {ok, RetryAfterSeconds :: non_neg_integer(), RequestBody :: map()} | {error, any()}.
 http_device_register(#iot_central{device_primary_key = undefined}) ->
     {error, device_credentials_unfetched};
 http_device_register(
@@ -519,7 +527,7 @@ generate_mqtt_sas_token(#iot_central{
 -spec generate_mqtt_sas_token(
     URI :: binary(),
     DeviceKey :: binary(),
-    Expires :: number()
+    ExpireBin :: binary()
 ) -> binary().
 generate_mqtt_sas_token(URI, SigningKey, ExpireBin) ->
     %% TODO: Replace with `uri_string:quote/1' when it get's released.

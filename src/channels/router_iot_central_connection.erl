@@ -8,7 +8,7 @@
 %%
 %% @end
 %%%-------------------------------------------------------------------
--module(router_azure_central_connection).
+-module(router_iot_central_connection).
 
 -compile([export_all, nowarn_export_all]).
 %% TODO: Replace with `uri_string:quote/1' when it get's released.
@@ -30,7 +30,7 @@
     http_device_create/1,
     http_device_credentials/1,
     http_device_ensure_exists/1,
-    http_device_check_registration/1,
+    http_device_check_registration/2,
     http_device_register/1
 ]).
 
@@ -48,7 +48,9 @@
 -export([
     generate_mqtt_sas_token/1,
     generate_mqtt_sas_token/3,
-    generate_registration_sas_token/2
+    generate_registration_sas_token/2,
+    http_device_setup_/1,
+    mqtt_device_setup_/1
 ]).
 
 -define(DPS_API_VERSION, "?api-version=2021-06-01").
@@ -80,7 +82,8 @@
     %% Able to generate after device is registered in DPS
     mqtt_connection :: undefined | pid(),
     mqtt_host :: binary(),
-    mqtt_username :: binary()
+    mqtt_username :: binary(),
+    mqtt_port = 8883 :: 8883 | 1883
 }).
 
 -spec new(
@@ -101,25 +104,63 @@ new(Prefix, ScopeID, ApiKey, DeviceID) ->
 %% Flows
 %% -------------------------------------------------------------------
 
--spec http_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
-http_device_setup(#iot_central{} = Central0) ->
-    ok = ?MODULE:http_device_ensure_exists(Central0),
-    {ok, Central1} = ?MODULE:http_device_credentials(Central0),
-    {ok, RetryAfter, _Body} = ?MODULE:http_device_register(Central1),
-    {ok, Central2} = ?MODULE:http_device_check_registration(Central1, RetryAfter),
-    {ok, Central2}.
-
--spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
-mqtt_device_setup(#iot_central{} = Central0) ->
-    {ok, Central1} = ?MODULE:mqtt_connect(Central0),
-    {ok, _, _} = ?MODULE:mqtt_subscribe(Central1),
-    {ok, Central1}.
-
 -spec setup(#iot_central{}) -> {ok, #iot_central{}}.
 setup(#iot_central{} = Central0) ->
     {ok, Central1} = ?MODULE:http_device_setup(Central0),
     {ok, Central2} = ?MODULE:mqtt_device_setup(Central1),
     {ok, Central2}.
+
+-spec http_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+http_device_setup(#iot_central{} = Central) ->
+    %% HTTP setup includes all setup involving HTTP requests.
+    %% That results in mostly MQTT values.
+    #{
+        device_primary_key := DevicePrimaryKey,
+        mqtt_host := MqttHost,
+        mqtt_username := MqttUsername,
+        mqtt_port := MqttPort
+    } = ?MODULE:http_device_setup_(Central),
+
+    {ok, Central#iot_central{
+        device_primary_key = DevicePrimaryKey,
+        mqtt_host = MqttHost,
+        mqtt_username = MqttUsername,
+        mqtt_port = MqttPort
+    }}.
+
+-spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}}.
+mqtt_device_setup(#iot_central{} = Central) ->
+    %% MQTT setup includes all setup touching emqtt.
+    #{
+        mqtt_connection := MqttConnection
+    } = ?MODULE:mqtt_device_setup(Central),
+
+    {ok, Central#iot_central{
+        mqtt_connection = MqttConnection
+    }}.
+
+%% Flow Helpers ======================================================
+
+-spec http_device_setup_(#iot_central{}) -> map().
+http_device_setup_(#iot_central{} = Central0) ->
+    ok = ?MODULE:http_device_ensure_exists(Central0),
+    {ok, Central1} = ?MODULE:http_device_credentials(Central0),
+    {ok, RetryAfter, _Body} = ?MODULE:http_device_register(Central1),
+    {ok, Central2} = ?MODULE:http_device_check_registration(Central1, RetryAfter),
+    #{
+        device_primary_key => Central2#iot_central.device_primary_key,
+        mqtt_host => Central2#iot_central.mqtt_host,
+        mqtt_username => Central2#iot_central.mqtt_username,
+        mqtt_port => Central2#iot_central.mqtt_port
+    }.
+
+-spec mqtt_device_setup_(#iot_central{}) -> {ok, #iot_central{}}.
+mqtt_device_setup_(#iot_central{} = Central0) ->
+    {ok, Central1} = ?MODULE:mqtt_connect(Central0),
+    {ok, _, _} = ?MODULE:mqtt_subscribe(Central1),
+    #{
+        mqtt_connection => Central1#iot_central.mqtt_connection
+    }.
 
 %% -------------------------------------------------------------------
 %% MQTT
@@ -130,7 +171,8 @@ mqtt_connect(
     #iot_central{
         device_id = DeviceID,
         mqtt_host = Host,
-        mqtt_username = Username
+        mqtt_username = Username,
+        mqtt_port = Port
     } = Central
 ) ->
     Password = generate_mqtt_sas_token(Central),
@@ -138,10 +180,10 @@ mqtt_connect(
     lager:debug("  connecting"),
     {ok, Connection} = emqtt:start_link(#{
         clientid => DeviceID,
-        ssl => true,
+        ssl => Port == 8883,
         ssl_opts => [{verify, verify_none}],
         host => erlang:binary_to_list(Host),
-        port => 8883,
+        port => Port,
         username => Username,
         password => Password,
         keepalive => 30,

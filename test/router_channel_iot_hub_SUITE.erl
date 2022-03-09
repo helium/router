@@ -84,7 +84,7 @@ iot_hub_test(Config) ->
     end),
 
     Tab = proplists:get_value(ets, Config),
-    ets:insert(Tab, {channel_type, azure}),
+    ets:insert(Tab, {channel_type, iot_hub}),
 
     {ok, Conn} = connect(<<"mqtt://broker.emqx.io:1883">>, router_utils:uuid_v4(), undefined),
 

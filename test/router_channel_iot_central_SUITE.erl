@@ -61,7 +61,7 @@ iot_central_test(Config) ->
         http_device_setup_,
         fun(_Central) ->
             #{
-                device_primary_key => <<"yolo_id">>,
+                device_primary_key => base64:encode(<<"yolo_id">>),
                 mqtt_host => <<"broker.emqx.io">>,
                 mqtt_username => <<"mqtt_username">>,
                 mqtt_port => 1883

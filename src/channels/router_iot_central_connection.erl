@@ -133,7 +133,7 @@ mqtt_device_setup(#iot_central{} = Central) ->
     %% MQTT setup includes all setup touching emqtt.
     #{
         mqtt_connection := MqttConnection
-    } = ?MODULE:mqtt_device_setup(Central),
+    } = ?MODULE:mqtt_device_setup_(Central),
 
     {ok, Central#iot_central{
         mqtt_connection = MqttConnection

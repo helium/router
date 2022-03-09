@@ -38,8 +38,8 @@
 init({[Channel, Device], _}) ->
     ok = router_utils:lager_md(Device),
     ChannelID = router_channel:unique_id(Channel),
-    lager:info("init azure with ~p", [Channel]),
-    case setup_azure(Channel) of
+    lager:info("init iot_hub with ~p", [Channel]),
+    case setup_iot_hub(Channel) of
         {ok, Account} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
             send_connect_after(ChannelID, 0),
@@ -50,7 +50,7 @@ init({[Channel, Device], _}) ->
                 conn_backoff = Backoff
             }};
         Err ->
-            lager:warning("could not setup azure connection ~p", [Err]),
+            lager:warning("could not setup iot_hub connection ~p", [Err]),
             Err
     end.
 
@@ -157,9 +157,9 @@ do_handle_event(
     ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
     State1.
 
--spec setup_azure(router_channel:channel()) ->
+-spec setup_iot_hub(router_channel:channel()) ->
     {ok, router_iot_hub_connection:azure()} | {error, any()}.
-setup_azure(Channel) ->
+setup_iot_hub(Channel) ->
     #{
         azure_hub_name := HubName,
         azure_policy_name := PolicyName,

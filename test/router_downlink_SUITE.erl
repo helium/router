@@ -12,7 +12,8 @@
     console_tool_downlink_order_test/1,
     console_tool_clear_queue_test/1,
     console_tool_downlink_clear_queue_test/1,
-    device_queue_size_limit_test/1
+    device_queue_size_limit_test/1,
+    uplink_confirmed_and_manually_downlink_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -45,7 +46,8 @@ all() ->
         console_tool_downlink_order_test,
         console_tool_clear_queue_test,
         console_tool_downlink_clear_queue_test,
-        device_queue_size_limit_test
+        device_queue_size_limit_test,
+        uplink_confirmed_and_manually_downlink_test
     ].
 
 %%--------------------------------------------------------------------
@@ -547,6 +549,108 @@ device_queue_size_limit_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => fun erlang:is_map/1
+    }),
+
+    ok.
+
+uplink_confirmed_and_manually_downlink_test(Config) ->
+    _GrabFCnts = fun() ->
+        {ok, D} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+        {router_device:fcnt(D), router_device:fcntdown(D)}
+    end,
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream
+    } = test_utils:join_device(Config),
+
+    {ok, DB, CF} = router_db:get_devices(),
+    {ok, Device} = router_device:get_by_id(DB, CF, ?CONSOLE_DEVICE_ID),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
+            )},
+    test_utils:wait_for_console_event_sub(<<"downlink_ack">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_ack">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 0,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => fun erlang:is_map/1
+        }
+    }),
+
+    %% Grab the websocket and queue a downlink
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+    Downlink = #{
+        payload_raw => base64:encode(<<"downlink_payload">>),
+        from => <<"console_downlink_queue">>
+    },
+    WSPid ! {downlink, Downlink},
+
+    %% Make sure downlink was queued
+    test_utils:wait_for_console_event_sub(<<"downlink_queued">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_queued">>,
+        <<"description">> => <<"Downlink queued in last place">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => fun erlang:is_integer/1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
+            <<"hotspot">> => #{},
+            <<"integration">> => #{
+                <<"id">> => <<"console_websocket">>,
+                <<"name">> => <<"Console downlink tool">>,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                1
+            )},
+    test_utils:wait_for_console_event_sub(<<"downlink_ack">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_ack">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 1,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => fun erlang:is_map/1
+        }
     }),
 
     ok.

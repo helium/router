@@ -1064,7 +1064,7 @@ handle_info(
                 IsDownlinkAck,
                 ConfirmedDown,
                 Port,
-                Device1,
+                Device0,
                 ChannelMap,
                 Blockchain,
                 PubKeyBin,

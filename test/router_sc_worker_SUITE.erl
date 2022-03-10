@@ -81,7 +81,7 @@ sc_worker_test(Config) ->
                     Block,
                     blockchain_worker:blockchain(),
                     self(),
-                    blockchain_swarm:swarm()
+                    blockchain_swarm:tid()
                 ),
                 Callback(ok)
         end,
@@ -103,7 +103,7 @@ sc_worker_test(Config) ->
     SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SignFun),
 
     {ok, OUIBlock} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(OUIBlock, Chain, self(), blockchain_swarm:swarm()),
+    _ = blockchain_test_utils:add_block(OUIBlock, Chain, self(), blockchain_swarm:tid()),
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 

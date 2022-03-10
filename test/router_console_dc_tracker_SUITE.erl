@@ -283,7 +283,7 @@ burned_test(Config) ->
     SignedBurnTxn = blockchain_txn_token_burn_v1:sign(BurnTxn1, PayerSigFun),
 
     {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedBurnTxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
 
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 

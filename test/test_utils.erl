@@ -3,6 +3,7 @@
 -export([
     init_per_testcase/2,
     end_per_testcase/2,
+    add_oui/1,
     start_swarm/3,
     get_device_channels_worker/1,
     get_channel_worker_event_manager/1,
@@ -204,6 +205,33 @@ start_swarm(BaseDir, Name, Port) ->
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     {Swarm, Keys}.
 
+add_oui(Config) ->
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    Chain = blockchain_worker:blockchain(),
+    Ledger = blockchain:ledger(Chain),
+    ConsensusMembers = proplists:get_value(consensus_member, Config),
+
+    %% Create and submit OUI txn with an empty filter
+    OUI = 1,
+    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
+    OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
+    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
+
+    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+    [{oui, OUI} | Config].
+
 join_device(Config) ->
     join_device(Config, #{}).
 
@@ -397,7 +425,7 @@ wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~n~p", [
                 Category,
                 {_Reason, _Stacktrace}
             ]),
@@ -418,7 +446,7 @@ wait_for_console_event(Category, Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
+            ct:pal("wait_for_console_event ~p stacktrace ~n~p", [Category, {_Reason, _Stacktrace}]),
             ct:fail("wait_for_console_event ~p failed", [Category])
     end.
 
@@ -455,7 +483,7 @@ wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) 
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~n~p", [
                 ExpectedUUID,
                 SubCategory,
                 {_Reason, _Stacktrace}
@@ -483,7 +511,7 @@ wait_for_console_event_sub(SubCategory, Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event_sub ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event_sub ~p stacktrace ~n~p", [
                 SubCategory,
                 {_Reason, _Stacktrace}
             ]),
@@ -528,7 +556,7 @@ wait_channel_data(Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_channel_data stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_channel_data stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_channel_data failed caught ~p", [_Reason])
     end.
 
@@ -561,7 +589,7 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -601,7 +629,7 @@ wait_state_channel_message(Timeout, PubKeyBin, AppSKey) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message with frame stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message with frame failed")
     end.
 
@@ -661,7 +689,7 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -698,7 +726,7 @@ wait_state_channel_packet(Timeout) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_packet with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_packet with frame stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_packet with frame failed")
     end.
 
@@ -717,7 +745,7 @@ wait_organizations_burned(Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_organizations_burned stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_organizations_burned stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_organizations_burned failed")
     end.
 

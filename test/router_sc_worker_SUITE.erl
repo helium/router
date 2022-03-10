@@ -81,31 +81,15 @@ sc_worker_test(Config) ->
                     Block,
                     blockchain_worker:blockchain(),
                     self(),
-                    blockchain_swarm:swarm()
+                    blockchain_swarm:tid()
                 ),
                 Callback(ok)
         end,
         ok
     end),
 
+    _ = test_utils:add_oui(Config),
     Chain = blockchain_worker:blockchain(),
-    {ok, PubKey, SignFun, _} = blockchain_swarm:keys(),
-    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-
-    %% Create and submit OUI txn with an empty filter
-    OUI1 = 1,
-    {BinFilter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], BinFilter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SignFun),
-
-    {ok, OUIBlock} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(OUIBlock, Chain, self(), blockchain_swarm:swarm()),
-
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     % Force tick to open first SC
     router_sc_worker ! '__router_sc_tick',

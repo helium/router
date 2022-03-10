@@ -36,8 +36,10 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(TestCase, Config) ->
-    test_utils:init_per_testcase(TestCase, Config).
+init_per_testcase(TestCase, Config0) ->
+    Config1 = test_utils:init_per_testcase(TestCase, Config0),
+    Config2 = test_utils:add_oui(Config1),
+    Config2.
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
@@ -53,31 +55,7 @@ allocate(Config) ->
     meck:delete(router_device_devaddr, allocate, 2, false),
 
     Swarm = proplists:get_value(swarm, Config),
-    Keys = proplists:get_value(keys, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    ConsensusMembers = proplists:get_value(consensus_member, Config),
-
-    Chain = blockchain_worker:blockchain(),
-    Ledger = blockchain:ledger(Chain),
-
-    OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
-
-    #{secret := PrivKey} = Keys,
-    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
-
-    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
-
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
-
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
@@ -98,7 +76,7 @@ allocate(Config) ->
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     Expected = [
         <<(I - 1):25/integer-unsigned-little, DevAddrPrefix:7/integer>>
-        || I <- lists:seq(1, 8)
+     || I <- lists:seq(1, 8)
     ],
     ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(DevAddrs)),
     ok.
@@ -107,31 +85,7 @@ route_packet(Config) ->
     meck:delete(router_device_devaddr, allocate, 2, false),
 
     Swarm = proplists:get_value(swarm, Config),
-    Keys = proplists:get_value(keys, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    ConsensusMembers = proplists:get_value(consensus_member, Config),
-
-    Chain = blockchain_worker:blockchain(),
-    Ledger = blockchain:ledger(Chain),
-
-    OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], Filter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
-
-    #{secret := PrivKey} = Keys,
-    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
-
-    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
-
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
-
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),

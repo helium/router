@@ -161,9 +161,7 @@ multi_buy_test(Config) ->
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
-    Keys = proplists:get_value(keys, Config),
     RouterSwarm = blockchain_swarm:swarm(),
-    ConsensusMembers = proplists:get_value(consensus_member, Config),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
     {ok, Stream} = libp2p_swarm:dial_framed_stream(
         Swarm,
@@ -175,28 +173,8 @@ multi_buy_test(Config) ->
     PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
-    Chain = blockchain_worker:blockchain(),
-    Ledger = blockchain:ledger(Chain),
-
     %% Inserting OUI into chain for routing
-    OUI1 = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin1, [PubKeyBin1], Filter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
-
-    #{secret := PrivKey} = Keys,
-    SigFun = libp2p_crypto:mk_sig_fun(PrivKey),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
-
-    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI1, Ledger)),
-
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:swarm()),
-
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+    _ = test_utils:add_oui(Config),
 
     %% device should join under OUI 1
     %% Send join packet

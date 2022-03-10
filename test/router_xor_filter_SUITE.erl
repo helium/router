@@ -394,7 +394,7 @@ migrate_filter_test(Config) ->
                 {Three, fun xxhash:hash64/1},
                 router_xor_filter_worker:deveui_appeui(Device)
             )
-            || Device <- AllDevices
+         || Device <- AllDevices
         ]),
         "No devices in filter Three"
     ),
@@ -405,7 +405,7 @@ migrate_filter_test(Config) ->
                 {Four, fun xxhash:hash64/1},
                 router_xor_filter_worker:deveui_appeui(Device)
             )
-            || Device <- AllDevices
+         || Device <- AllDevices
         ]),
         "No devices in filter Four"
     ),
@@ -853,7 +853,7 @@ remove_devices_filter_after_restart_test(Config) ->
             {Filter, fun xxhash:hash64/1},
             router_xor_filter_worker:deveui_appeui(Device)
         )
-        || Filter <- Filters1, Device <- Removed
+     || Filter <- Filters1, Device <- Removed
     ],
     ?assertEqual(
         true,

@@ -111,25 +111,9 @@ init_per_testcase(TestCase, Config0) ->
     end),
 
     Chain = blockchain_worker:blockchain(),
-    {ok, PubKey, SignFun, _} = blockchain_swarm:keys(),
-    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+    Config2 = test_utils:add_oui(Config),
 
-    %% Create and submit OUI txn with an empty filter
-    OUI1 = 1,
-    {BinFilter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI1, PubKeyBin, [PubKeyBin], BinFilter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SignFun),
-
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
-
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
-
-    [{chain, Chain}, {oui, OUI1} | Config].
+    [{chain, Chain} | Config2].
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN

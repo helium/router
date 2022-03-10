@@ -3,6 +3,7 @@
 -export([
     init_per_testcase/2,
     end_per_testcase/2,
+    add_oui/1,
     start_swarm/3,
     get_device_channels_worker/1,
     get_channel_worker_event_manager/1,
@@ -203,6 +204,33 @@ start_swarm(BaseDir, Name, Port) ->
     libp2p_swarm:listen(Swarm, "/ip4/0.0.0.0/tcp/" ++ erlang:integer_to_list(Port)),
     ct:pal("created swarm ~p @ ~p p2p address=~p", [Name, Swarm, libp2p_swarm:p2p_address(Swarm)]),
     {Swarm, Keys}.
+
+add_oui(Config) ->
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    Chain = blockchain_worker:blockchain(),
+    Ledger = blockchain:ledger(Chain),
+    ConsensusMembers = proplists:get_value(consensus_member, Config),
+
+    %% Create and submit OUI txn with an empty filter
+    OUI = 1,
+    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
+    OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
+    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+
+    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
+
+    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
+
+    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
+
+    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+    [{oui, OUI} | Config].
 
 join_device(Config) ->
     join_device(Config, #{}).

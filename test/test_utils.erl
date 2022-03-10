@@ -397,7 +397,7 @@ wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event (explicit id) ~p stacktrace ~n~p", [
                 Category,
                 {_Reason, _Stacktrace}
             ]),
@@ -418,7 +418,7 @@ wait_for_console_event(Category, Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event ~p stacktrace ~p~n", [Category, {_Reason, _Stacktrace}]),
+            ct:pal("wait_for_console_event ~p stacktrace ~n~p", [Category, {_Reason, _Stacktrace}]),
             ct:fail("wait_for_console_event ~p failed", [Category])
     end.
 
@@ -455,7 +455,7 @@ wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) 
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~n~p", [
                 ExpectedUUID,
                 SubCategory,
                 {_Reason, _Stacktrace}
@@ -483,7 +483,7 @@ wait_for_console_event_sub(SubCategory, Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_for_console_event_sub ~p stacktrace ~p~n", [
+            ct:pal("wait_for_console_event_sub ~p stacktrace ~n~p", [
                 SubCategory,
                 {_Reason, _Stacktrace}
             ]),
@@ -528,7 +528,7 @@ wait_channel_data(Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_channel_data stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_channel_data stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_channel_data failed caught ~p", [_Reason])
     end.
 
@@ -561,7 +561,7 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -601,7 +601,7 @@ wait_state_channel_message(Timeout, PubKeyBin, AppSKey) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message with frame stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message with frame failed")
     end.
 
@@ -661,7 +661,7 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_message stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
 
@@ -698,7 +698,7 @@ wait_state_channel_packet(Timeout) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_state_channel_packet with frame stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_state_channel_packet with frame stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_packet with frame failed")
     end.
 
@@ -717,7 +717,7 @@ wait_organizations_burned(Expected) ->
         end
     catch
         _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_organizations_burned stacktrace ~p~n", [{_Reason, _Stacktrace}]),
+            ct:pal("wait_organizations_burned stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_organizations_burned failed")
     end.
 

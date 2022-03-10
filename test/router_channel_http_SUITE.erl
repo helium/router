@@ -263,7 +263,7 @@ http_test(Config) ->
     }),
 
     %% Waiting for report channel status from HTTP channel
-    test_utils:wait_for_console_event(<<"downlink">>, #{
+    test_utils:wait_for_console_event_sub(<<"downlink_unconfirmed">>, #{
         <<"id">> => fun erlang:is_binary/1,
         <<"category">> => <<"downlink">>,
         <<"sub_category">> => <<"downlink_unconfirmed">>,

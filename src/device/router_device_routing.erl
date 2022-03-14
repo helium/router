@@ -17,24 +17,12 @@
 
 -include("lorawan_vars.hrl").
 
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 %% sc_handler API
 -export([
     init/0,
     handle_offer/2,
     handle_packet/3,
     handle_packet/4
-]).
-
-%% multi-buy API
--export([
-    deny_more/1,
-    accept_more/1,
-    accept_more/2,
-    clear_multi_buy/1
 ]).
 
 %% replay API
@@ -71,21 +59,6 @@
 %% Late packet error
 -define(LATE_PACKET, late_packet).
 
-%% Multi Buy
--define(MB_ETS, router_device_routing_mb_ets).
--define(MB_FUN(Hash), [
-    {
-        {Hash, '$1', '$2', '$3'},
-        [{'=<', '$2', '$1'}],
-        [{{Hash, '$1', {'+', '$2', 1}, '$3'}}]
-    }
-]).
-
--define(MB_MAX_PACKET, multi_buy_max_packet).
--define(MB_TOO_MANY_ATTEMPTS, multi_buy_too_many_attempts).
--define(MB_DENY_MORE, multi_buy_deny_more).
--define(MB_UNLIMITED, 9999).
-
 %% Replay
 -define(REPLAY_ETS, router_device_routing_replay_ets).
 -define(REPLAY_MS(DeviceID), [{{'_', '$1', '_'}, [{'==', '$1', {const, DeviceID}}], [true]}]).
@@ -118,7 +91,6 @@ init() ->
         {read_concurrency, true}
     ],
     ets:new(?ETS, Options),
-    ets:new(?MB_ETS, Options),
     ets:new(?BF_ETS, Options),
     ets:new(?REPLAY_ETS, Options),
     {ok, BloomJoinRef} = bloom:new_forgetful(
@@ -128,7 +100,6 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
-    ok = cleanup(timer:hours(24), timer:hours(1)),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -209,50 +180,6 @@ handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
             ),
             ok
     end.
-
--spec deny_more(binary()) -> ok.
-deny_more(PHash) ->
-    case lookup_mb(PHash) of
-        {ok, PHash, 0, -1} ->
-            ok;
-        _ ->
-            true = ets:insert(?MB_ETS, {PHash, 0, -1, erlang:system_time(millisecond)}),
-            ok
-    end.
-
--spec accept_more(binary()) -> ok | {error, any()}.
-accept_more(PHash) ->
-    ?MODULE:accept_more(PHash, ?PACKET_MAX).
-
--spec accept_more(binary(), non_neg_integer()) -> ok | {error, any()}.
-accept_more(PHash, NewMax) ->
-    case lookup_mb(PHash) of
-        %% We got denied somewhere else for more we should not overide this
-        {ok, PHash, 0, -1} ->
-            {error, ?MB_DENY_MORE};
-        %% Everything normal, this is a noop
-        {ok, PHash, CurrMax, _} when CurrMax =:= NewMax ->
-            ok;
-        %% We are trying to increase Max lets do it
-        {ok, PHash, CurrMax, V} when CurrMax < NewMax ->
-            true = ets:insert(?MB_ETS, {PHash, NewMax, V, erlang:system_time(millisecond)}),
-            ok;
-        %% Looks like we are trying to decrease Max let's noop
-        {ok, PHash, CurrMax, _} when CurrMax > NewMax ->
-            ok;
-        {error, _} ->
-            %% NOTE: Only called for packets. When this is called the first
-            %% time, we've already purchased a packet.
-            true = ets:insert(?MB_ETS, {PHash, NewMax, 2, erlang:system_time(millisecond)}),
-            ok
-    end.
-
--spec clear_multi_buy(blockchain_helium_packet_v1:packet()) -> ok.
-clear_multi_buy(Packet) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    true = ets:delete(?MB_ETS, PHash),
-    lager:debug("cleared multi buy for ~p", [PHash]),
-    ok.
 
 -spec allow_replay(blockchain_helium_packet_v1:packet(), binary(), non_neg_integer()) -> ok.
 allow_replay(Packet, DeviceID, PacketTime) ->
@@ -437,24 +364,9 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    BFRef = lookup_bf(?BF_KEY),
+                    DeviceID = router_device:id(Device),
                     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-                    case bloom:set(BFRef, PHash) of
-                        true ->
-                            maybe_multi_buy(Offer, 10, Device);
-                        false ->
-                            true = ets:insert(
-                                ?MB_ETS,
-                                {PHash, ?JOIN_MAX, 1, erlang:system_time(millisecond)}
-                            ),
-                            DeviceID = router_device:id(Device),
-                            lager:debug(
-                                [{device_id, DeviceID}],
-                                "buying first join for ~p",
-                                [PHash]
-                            ),
-                            ok
-                    end
+                    router_device_multibuy:maybe_buy(DeviceID, PHash)
             end
     end.
 
@@ -485,6 +397,8 @@ packet_offer_(Offer, Pid, Chain) ->
         {error, _} = Error ->
             Error;
         {ok, Device} ->
+            DeviceID = router_device:id(Device),
+            LagerOpts = [{device_id, DeviceID}],
             BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
             case bloom:set(BFRef, PHash) of
@@ -494,14 +408,11 @@ packet_offer_(Offer, Pid, Chain) ->
                             case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
                                 true ->
                                     %% Buying replay packet
-                                    lager:debug(
-                                        [{device_id, DeviceID}],
-                                        "most likely a replay packet buying"
-                                    ),
+                                    lager:debug(LagerOpts, "most likely a replay packet buying"),
                                     {ok, Device};
                                 false ->
                                     lager:debug(
-                                        [{device_id, DeviceID}],
+                                        LagerOpts,
                                         "most likely a late packet for ~p multi buying",
                                         [
                                             DeviceID
@@ -510,18 +421,17 @@ packet_offer_(Offer, Pid, Chain) ->
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
-                            case maybe_multi_buy(Offer, 10, Device) of
+                            case router_device_multibuy:maybe_buy(DeviceID, PHash) of
                                 ok -> {ok, Device};
                                 {error, _} = Error -> Error
                             end
                     end;
                 false ->
-                    lager:debug(
-                        [{device_id, router_device:id(Device)}],
-                        "buying 1st packet for ~p",
-                        [PHash]
-                    ),
-                    {ok, Device}
+                    lager:debug(LagerOpts, "buying 1st packet for ~p", [PHash]),
+                    case router_device_multibuy:maybe_buy(DeviceID, PHash) of
+                        ok -> {ok, Device};
+                        {error, _} = Error -> Error
+                    end
             end
     end.
 
@@ -596,93 +506,6 @@ lookup_replay(PHash) ->
     case ets:lookup(?REPLAY_ETS, PHash) of
         [{PHash, DeviceID, PacketTime}] ->
             {ok, DeviceID, PacketTime};
-        _ ->
-            {error, not_found}
-    end.
-
--spec maybe_multi_buy(
-    blockchain_state_channel_offer_v1:offer(),
-    non_neg_integer(),
-    router_device:device()
-) -> ok | {error, any()}.
-%% Handle an issue with worker (so we dont stay in a loop)
-maybe_multi_buy(_Offer, 0, _Device) ->
-    {error, ?MB_TOO_MANY_ATTEMPTS};
-maybe_multi_buy(Offer, Attempts, Device) ->
-    DeviceID = router_device:id(Device),
-    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    case lookup_mb(PHash) of
-        {error, not_found} ->
-            MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device), 1),
-            case MultiBuyValue > 1 of
-                true ->
-                    lager:debug(
-                        [{device_id, DeviceID}],
-                        "accepting more packets [multi_buy: ~p] for ~p",
-                        [MultiBuyValue, PHash]
-                    ),
-                    ?MODULE:accept_more(PHash, MultiBuyValue);
-                false ->
-                    case router_device:queue(Device) of
-                        [] ->
-                            lager:debug(
-                                [{device_id, DeviceID}],
-                                "did not get an answer from device worker yet waiting, packet: ~p",
-                                [PHash]
-                            ),
-                            timer:sleep(10),
-                            maybe_multi_buy(Offer, Attempts - 1, Device);
-                        _Queue ->
-                            lager:debug(
-                                [{device_id, DeviceID}],
-                                "Accepting more packets [queue_length: ~p]",
-                                [
-                                    length(_Queue)
-                                ]
-                            ),
-                            ?MODULE:accept_more(PHash)
-                    end
-            end;
-        {ok, PHash, ?MB_UNLIMITED, _Curr} ->
-            lager:debug(
-                [{device_id, DeviceID}],
-                "accepting more packets [multi_buy: ~p] for ~p",
-                [?MB_UNLIMITED, PHash]
-            ),
-            ok;
-        {ok, PHash, 0, -1} ->
-            lager:debug(
-                [{device_id, DeviceID}],
-                "denying more packets for ~p",
-                [PHash]
-            ),
-            {error, ?MB_DENY_MORE};
-        {ok, PHash, Max, Curr} when Max == Curr ->
-            lager:debug(
-                [{device_id, DeviceID}],
-                "denying more packets max reached ~p for ~p",
-                [Max, PHash]
-            ),
-            {error, ?MB_MAX_PACKET};
-        {ok, PHash, _Max, _Curr} ->
-            lager:debug(
-                [{device_id, DeviceID}],
-                "accepting more packets max: ~p current: ~p for ~p",
-                [_Max, _Curr, PHash]
-            ),
-            case ets:select_replace(?MB_ETS, ?MB_FUN(PHash)) of
-                0 -> {error, ?MB_MAX_PACKET};
-                1 -> ok
-            end
-    end.
-
--spec lookup_mb(PHash :: binary()) ->
-    {ok, PHash :: binary(), Max :: non_neg_integer(), Curr :: integer()} | {error, not_found}.
-%% use -1 to mean deny more
-lookup_mb(PHash) ->
-    case ets:lookup(?MB_ETS, PHash) of
-        [{PHash, Max, Curr, _Time}] ->
-            {ok, PHash, Max, Curr};
         _ ->
             {error, not_found}
     end.
@@ -1249,60 +1072,12 @@ handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End - Start).
 
--spec cleanup(non_neg_integer(), non_neg_integer()) -> ok.
-cleanup(MaxReplayDuration, MaxMBDuration) ->
-    erlang:spawn(
-        fun() ->
-            Now = erlang:system_time(millisecond),
-            ets:select_delete(?REPLAY_ETS, [
-                {{'_', '_', '$1'}, [{'<', '$1', Now - MaxReplayDuration}], [true]}
-            ]),
-            ets:select_delete(?MB_ETS, [
-                {{'_', '_', '_', '$1'}, [{'<', '$1', Now - MaxMBDuration}], [true]}
-            ]),
-
-            timer:sleep(timer:hours(1)),
-            cleanup(MaxReplayDuration, MaxMBDuration)
-        end
-    ),
-    ok.
-
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-multi_buy_test() ->
-    ets:new(?MB_ETS, [public, named_table, set]),
-    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-
-    ?assertEqual({error, not_found}, lookup_mb(PHash)),
-    ?assertEqual(ok, deny_more(PHash)),
-    ?assertMatch({ok, PHash, 0, -1}, lookup_mb(PHash)),
-    ?assertEqual(ok, clear_multi_buy(Packet)),
-    ?assertEqual({error, not_found}, lookup_mb(PHash)),
-    ?assertEqual(ok, accept_more(PHash)),
-    ?assertMatch({ok, PHash, ?PACKET_MAX, 2}, lookup_mb(PHash)),
-    ?assertEqual(ok, clear_multi_buy(Packet)),
-    ?assertEqual({error, not_found}, lookup_mb(PHash)),
-    ?assertEqual(ok, clear_multi_buy(Packet)),
-
-    ets:delete(?MB_ETS),
-    ok.
-
-multi_buy_deny_more_test() ->
-    ets:new(?MB_ETS, [public, named_table, set]),
-    Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<"payload">>),
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-
-    ?assertEqual({error, not_found}, lookup_mb(PHash), "never before seen"),
-    ?assertEqual(ok, accept_more(PHash), "let's buy a few copies"),
-    ?assertEqual(ok, deny_more(PHash), "changed our mind"),
-    ?assertMatch({ok, PHash, 0, -1}, lookup_mb(PHash), "making sure"),
-
-    ets:delete(?MB_ETS),
-    ok.
+-include_lib("eunit/include/eunit.hrl").
 
 replay_test() ->
     ets:new(?REPLAY_ETS, [public, named_table, set]),
@@ -1330,31 +1105,6 @@ replay_test() ->
     ets:delete(?REPLAY_ETS),
     ok.
 
-cleanup_test() ->
-    ets:new(?MB_ETS, [public, named_table, set]),
-    ets:new(?REPLAY_ETS, [public, named_table, set]),
-
-    DeviceID = <<"device_id">>,
-    lists:foreach(
-        fun(X) ->
-            Packet = blockchain_helium_packet_v1:new({devaddr, 16#deadbeef}, <<X>>),
-            PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-            ok = allow_replay(Packet, DeviceID, erlang:system_time(millisecond)),
-            ok = accept_more(PHash)
-        end,
-        lists:seq(1, 100)
-    ),
-
-    timer:sleep(100),
-    ?assertEqual(ok, cleanup(10, 10)),
-    timer:sleep(100),
-    ?assertEqual(0, ets:select_count(?REPLAY_ETS, ?REPLAY_MS(DeviceID))),
-    ?assertEqual(0, ets:select_count(?MB_ETS, [{{'_', '_', '_', '_'}, [], [true]}])),
-
-    ets:delete(?MB_ETS),
-    ets:delete(?REPLAY_ETS),
-    ok.
-
 false_positive_test() ->
     {ok, BFRef} = bloom:new_forgetful(
         ?BF_BITMAP_SIZE,
@@ -1377,15 +1127,18 @@ false_positive_test() ->
     ?assert(Failures < 10),
     ok.
 
-handle_join_offer_test() ->
-    {timeout, 15, fun test_for_handle_join_offer/0}.
+% handle_join_offer_test() ->
+%     {timeout, 15, fun test_for_handle_join_offer/0}.
 
-test_for_handle_join_offer() ->
+handle_join_offer_test() ->
     ok = init(),
+    ok = router_device_multibuy:init(),
+
+    DeviceID = router_utils:uuid_v4(),
     application:ensure_all_started(lager),
     meck:new(router_console_api, [passthrough]),
     meck:expect(router_console_api, get_devices_by_deveui_appeui, fun(_, _) ->
-        [{key, router_device:new(<<"id">>)}]
+        [{key, router_device:new(DeviceID)}]
     end),
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
@@ -1397,6 +1150,8 @@ test_for_handle_join_offer() ->
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
 
+    router_device_multibuy:max(DeviceID, 5),
+
     JoinPacket = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
     JoinOffer = blockchain_state_channel_offer_v1:from_packet(JoinPacket, <<"hotspot">>, 'REGION'),
 
@@ -1405,8 +1160,8 @@ test_for_handle_join_offer() ->
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
     ?assertEqual(ok, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
-    ?assertEqual({error, ?MB_MAX_PACKET}, handle_offer(JoinOffer, self())),
+    ?assertMatch({error, _}, handle_offer(JoinOffer, self())),
+    ?assertMatch({error, _}, handle_offer(JoinOffer, self())),
 
     ?assert(meck:validate(router_console_api)),
     meck:unload(router_console_api),
@@ -1420,8 +1175,9 @@ test_for_handle_join_offer() ->
     meck:unload(router_devices_sup),
     ets:delete(?ETS),
     ets:delete(?BF_ETS),
-    ets:delete(?MB_ETS),
     ets:delete(?REPLAY_ETS),
+    _ = catch ets:delete(router_device_multibuy_ets),
+    _ = catch ets:delete(router_device_multibuy_max_ets),
     application:stop(lager),
     ok.
 

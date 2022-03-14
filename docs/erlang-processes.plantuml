@@ -1,0 +1,118 @@
+' To generate diagrams, run: plantuml -tsvg *.plantuml
+' On Debian-ish Linux, use latest .jar from plantuml.com
+
+@startuml
+
+header Erlang processes within Router 
+footer Page %page% of %lastpage%
+
+' Preserve same sequence across all diagrams:
+' (intentionally omitted: Lager)
+actor        APIs                           as api      order 1
+collections  "Blockchain\nCore"             as core     order 10
+entity       "State\nChannel"               as sc       order 20
+box "Exists entirely within router's BEAM image"
+participant  "Listener\nfor gRPC\n(ranch)"  as listener order 30
+control      "Router\ninit/1"               as init     order 40
+participant  "Channels\n(Integrations)"     as channels order 50
+participant  Device                         as device   order 60
+database     ETS                            as ets      order 61
+participant  Metrics                        as metrics  order 70
+participant  DevAddr                        as devaddr  order 80
+participant  Decoder                        as decoder  order 90
+participant  "XOR\nFilter"                  as xor      order 99
+end box
+database     "Router\nDB"                   as db       order 100
+participant  "V8\n(JS)"                     as v8       order 200
+
+title Router Start of Persistent Erlang Processes\n(some have remote components)
+
+skinparam sequence {
+        LifeLineBorderColor #LightSteelBlue
+        LifeLineBackgroundColor #Salmon
+        MessageAlign direction
+}
+
+activate init #Salmon
+
+        init ->o ets : init_ets/0\nets:new/2
+        note right
+                ETS: in-memory data store
+                ./src/decoders/router_decoder.erl
+        end note
+
+        init ->o listener : application:\n ensure_all_started/1
+        note right
+                RPC using Google ProtoBufs listens via ranch socket server
+                ./src/grpc/helium_router_service.erl, grpc_lib, grpc_client
+                Template rendered via ./_build/default/lib/grpc_*/erlang.mk
+        end note
+
+        init ->o core : init supervisor
+        note right
+                See GitHub: helium/blockchain-core/
+                Nested init: lock, swarm, event, score_cache,
+                worker, txn_mgr, state_channel, ...
+        end note
+
+        init ->o metrics : init worker
+        note left: ./src/metrics/router_metrics.erl
+
+        init ->o db : init worker
+        note left: ./src/router_db.erl
+
+        init -> device ++ : init supervisor
+        note right: ./src/device/router_devices_sup.erl
+        device -> device : init worker
+        note right: router_device_worker
+        device ->o ets : ets:new/2
+        note right
+                ./src/device/router_device_routing.erl
+                ./src/device/router_device_cache.erl
+        end note
+        device -> channels --++ : init supervisor
+        note right: ./src/device/router_device_worker.erl 
+        channels ->o channels -- : init worker
+        note right: ./src/device/router_device_channels_worker.erl
+
+        init ->o sc : init worker
+        note right: ./src/router_sc_worker.erl State Channels
+
+        init -> api ++ : init supervisor
+        note right: ./src/apis/router_console_sup.erl
+        api -> api : init worker
+        note right
+                router_console_api
+                router_console_ws_worker
+                router_console_dc_tracker
+        end note
+        api ->o ets -- : ets:new/2
+        note right
+                ./src/apis/router_console_api.erl
+                ./src/apis/router_console_dc_tracker.erl
+        end note
+
+        init -> decoder ++ : init supervisor
+        note left
+                Payload extraction
+                ./src/decoders/router_decoder_sup.erl
+        end note
+        decoder -> decoder : init worker
+        note left
+                For eval of user-defined JavaScript functions
+                ./src/decoders/router_decoder_custom_sup.erl
+        end note
+        decoder ->o v8 : init worker
+        note left: ./src/decoders/router_v8.erl JavaScript for Integrations
+        decoder ->o ets : ets:new/2
+        decoder ->o decoder -- : init worker
+        note left: ./src/decoders/router_decoder_custom_worker.erl
+
+        init ->o devaddr : init worker
+        note left: ./src/device/ LoRaWAN device addresses
+        init ->o xor : init worker
+        note left: ./src/router_xor_filter_worker.erl Filter devices
+
+...
+
+@enduml

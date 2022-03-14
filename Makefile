@@ -1,4 +1,6 @@
-.PHONY: compile clean test rel run grpc docker-build docker-test docker-run
+.PHONY: compile clean docs test rel run grpc
+.PHONY: docker-build docker-docs docker-test docker-run
+
 grpc_services_directory=src/grpc/autogen
 
 OS := $(shell uname -s)
@@ -28,6 +30,11 @@ compile: | $(grpc_services_directory)
 clean:
 	git clean -dXfffffffffff
 
+docs:
+	@which plantuml || (echo "Run: apt-get install plantuml"; false)
+	(cd docs/ && plantuml -tsvg *.plantuml)
+	(cd docs/ && plantuml -tpng *.plantuml)
+
 test: | $(grpc_services_directory)
 	$(REBAR) fmt --verbose --check rebar.config
 	$(REBAR) fmt --verbose --check "{src,include,test}/**/*.{hrl,erl,app.src}" --exclude-files "src/grpc/autogen/**/*"
@@ -45,6 +52,10 @@ run: | $(grpc_services_directory)
 
 docker-build:
 	docker build -f Dockerfile-CI --force-rm -t quay.io/team-helium/router:local .
+
+docker-docs:
+	docker build -f Dockerfile-docs -t router-docs .
+	docker run --rm -it -v "$(shell pwd):/opt/router" router-docs
 
 docker-test:
 	docker run --rm -it --init --name=helium_router_test quay.io/team-helium/router:local make test

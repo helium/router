@@ -1,0 +1,83 @@
+' To generate diagrams, run: plantuml -tsvg *.plantuml
+' On Debian-ish Linux, use latest .jar from plantuml.com
+
+@startuml
+
+header Router dispatching Decoder via V8 JavaScript engine
+footer Page %page% of %lastpage%
+
+' Preserve same sequence across all diagrams:
+' (intentionally omitted: Lager)
+actor        APIs                           as api      order 1
+collections  "Blockchain\nCore"             as core     order 10
+entity       "State\nChannel"               as sc       order 20
+box "Exists entirely within router's BEAM image"
+participant  "Listener\nfor gRPC\n(ranch)"  as listener order 30
+'control      "Router\ninit/1"               as init     order 40
+participant  "Channels\n(Integrations)"     as channels order 50
+participant  Device                         as device   order 60
+database     ETS                            as ets      order 61
+participant  Metrics                        as metrics  order 70
+participant  DevAddr                        as devaddr  order 80
+participant  Decoder                        as decoder  order 90
+participant  "XOR\nFilter"                  as xor      order 99
+end box
+database     "Router\nDB"                   as db       order 100
+participant  "V8\n(JS)"                     as v8       order 200
+
+title
+        Decode LoRaWAN frame payload via JavaScript in V8
+        Evaluating a custom decoder function
+end title
+
+skinparam sequence {
+        LifeLineBorderColor #LightSteelBlue
+        LifeLineBackgroundColor #Salmon
+        MessageAlign direction
+}
+
+...
+
+[-> listener ++: Encoded payload
+note right: gRPC service via grpcbox
+listener -> channels --++ : gen_event
+channels -> channels : add_sup_handler
+note left: ./src/channels/router_channel.erl
+
+channels -> device ++ : gen_server
+note left: ./src/device/router_device_channels_worker.erl
+
+device -> device : handle_cast:\nhandle_join or\nhandle_frame
+note right: Cache by UUID
+
+device -> device : handle_cast:\nframe_timeout
+device -> device : send_join_to_channel()\n or\nsend_data_to_channel()
+channels <- device -- : encode_payload()
+note right: Yes, it is called "encode_payload" despite initiating "decode"
+
+channels -> decoder ++ : decode()
+note left
+        ./src/decoders/router_decoder.erl
+        ./src/decoders/router_decoder_custom_sup.erl
+end note
+decoder -> ets ++ : lookup()
+decoder <- ets -- : custom_decoder\n JavaScript function definition
+decoder -> decoder : gen_server\nhandle_call:\ndecode
+note left: ./src/decoders/router_decoder_custom_worker.erl
+decoder -> v8 ++ : erlang_v8:call()
+decoder <- v8 -- : Decoded
+channels <- decoder -- : Decoded
+
+[<- channels : gen_event notify
+note right
+        ./src/channels/router_channel.erl
+        Deliver decoded payload to channel subscribers ("integrations")
+        e.g., ./src/channels/router_http_channel.erl
+end note
+
+channels ->o api -- : Decoded
+note right: ./src/channels/router_console_channel.erl
+
+...
+
+@enduml

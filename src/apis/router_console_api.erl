@@ -710,7 +710,7 @@ convert_channel(Device, Pid, #{<<"type">> := <<"mqtt">>} = JSONChannel) ->
     {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
-    Handler = router_azure_channel,
+    Handler = router_iot_hub_channel,
     Name = kvc:path([<<"name">>], JSONChannel),
     ReceiveJoins = kvc:path([<<"receive_joins">>], JSONChannel, false),
     Args = #{

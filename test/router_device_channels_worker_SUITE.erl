@@ -31,9 +31,9 @@
 -define(ETS, ?MODULE).
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
--define(BACKOFF_INIT,
-    {backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()}
-).
+-define(BACKOFF_INIT, {
+    backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()
+}).
 
 -record(state, {
     chain = blockchain:blockchain(),
@@ -214,7 +214,7 @@ remove_channel_backoff_when_channel_changed_test(Config) ->
 
     %% NOTE: MQTT harness is not setup in this test because we want to work with
     %% an channel that fails to start.
-    Channel = ?CONSOLE_AZURE_CHANNEL,
+    Channel = ?CONSOLE_IOT_HUB_CHANNEL,
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {no_channel, false}),
@@ -303,7 +303,7 @@ remove_channel_backoff_when_all_channels_removed_test(Config) ->
 
     %% NOTE: MQTT harness is not setup in this test because we want to work with
     %% an channel that fails to start.
-    Channel = ?CONSOLE_AZURE_CHANNEL,
+    Channel = ?CONSOLE_IOT_HUB_CHANNEL,
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {no_channel, false}),

@@ -1,4 +1,4 @@
--module(router_channel_azure_SUITE).
+-module(router_channel_iot_hub_SUITE).
 
 -export([
     all/0,
@@ -7,7 +7,7 @@
 ]).
 
 -export([
-    azure_test/1
+    iot_hub_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -35,7 +35,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        azure_test
+        iot_hub_test
     ].
 
 %%--------------------------------------------------------------------
@@ -54,12 +54,12 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-azure_test(Config) ->
-    meck:new(router_azure_connection, [passthrough]),
-    meck:expect(router_azure_connection, fetch_device, fun(_) ->
+iot_hub_test(Config) ->
+    meck:new(router_iot_hub_connection, [passthrough]),
+    meck:expect(router_iot_hub_connection, fetch_device, fun(_) ->
         {ok, device_map_would_go_here}
     end),
-    meck:expect(router_azure_connection, connection_information, fun(_HubName, DeviceID) ->
+    meck:expect(router_iot_hub_connection, connection_information, fun(_HubName, DeviceID) ->
         %% This allows us ot skip over the crazy nonsense that is contructing
         %% msft's credentials.
         #{
@@ -84,7 +84,7 @@ azure_test(Config) ->
     end),
 
     Tab = proplists:get_value(ets, Config),
-    ets:insert(Tab, {channel_type, azure}),
+    ets:insert(Tab, {channel_type, iot_hub}),
 
     {ok, Conn} = connect(<<"mqtt://broker.emqx.io:1883">>, router_utils:uuid_v4(), undefined),
 
@@ -211,7 +211,7 @@ azure_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
@@ -221,8 +221,8 @@ azure_test(Config) ->
                 <<"body">> => fun erlang:is_binary/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -233,15 +233,15 @@ azure_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
             <<"res">> => #{},
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -340,8 +340,8 @@ azure_test(Config) ->
                 <<"long">> => fun erlang:is_float/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             },
             <<"mac">> => fun erlang:is_list/1
@@ -388,7 +388,7 @@ azure_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_req">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
@@ -398,8 +398,8 @@ azure_test(Config) ->
                 <<"body">> => fun erlang:is_binary/1
             },
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -410,15 +410,15 @@ azure_test(Config) ->
         <<"category">> => <<"uplink">>,
         <<"sub_category">> => <<"uplink_integration_res">>,
         <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_AZURE_CHANNEL_NAME])
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_HUB_CHANNEL_NAME])
         ),
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
             <<"res">> => #{},
             <<"integration">> => #{
-                <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME,
+                <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME,
                 <<"status">> => <<"success">>
             }
         }
@@ -441,7 +441,7 @@ azure_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     ok = emqtt:disconnect(Conn),
-    meck:unload(router_azure_connection),
+    meck:unload(router_iot_hub_connection),
     meck:unload(emqtt),
     ok.
 

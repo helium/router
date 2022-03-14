@@ -48,17 +48,17 @@
     <<"name">> => ?CONSOLE_AWS_CHANNEL_NAME
 }).
 
--define(CONSOLE_AZURE_CHANNEL_ID, <<"161718">>).
--define(CONSOLE_AZURE_CHANNEL_NAME, <<"fake_azure">>).
--define(CONSOLE_AZURE_CHANNEL, #{
+-define(CONSOLE_IOT_HUB_CHANNEL_ID, <<"161718">>).
+-define(CONSOLE_IOT_HUB_CHANNEL_NAME, <<"fake_azure">>).
+-define(CONSOLE_IOT_HUB_CHANNEL, #{
     <<"type">> => <<"azure">>,
     <<"credentials">> => #{
         <<"azure_hub_name">> => <<"helium-iot-hub">>,
         <<"azure_policy_name">> => <<"fake-policy-name">>,
         <<"azure_policy_key">> => base64:encode(<<"obviously-fake-policy-token">>)
     },
-    <<"id">> => ?CONSOLE_AZURE_CHANNEL_ID,
-    <<"name">> => ?CONSOLE_AZURE_CHANNEL_NAME
+    <<"id">> => ?CONSOLE_IOT_HUB_CHANNEL_ID,
+    <<"name">> => ?CONSOLE_IOT_HUB_CHANNEL_NAME
 }).
 
 -define(CONSOLE_DECODER_CHANNEL_ID, <<"131415">>).

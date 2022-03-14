@@ -1825,7 +1825,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
-            <<"fcnt">> => 0,
+            <<"fcnt">> => 1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => Msg1#downlink.port,
@@ -2014,7 +2014,7 @@ adr_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"device_id">> => ?CONSOLE_DEVICE_ID,
         <<"data">> => #{
-            <<"fcnt">> => 0,
+            <<"fcnt">> => 1,
             <<"payload_size">> => fun erlang:is_integer/1,
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => Msg1#downlink.port,

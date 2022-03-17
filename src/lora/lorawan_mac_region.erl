@@ -918,6 +918,23 @@ cf_list_for_channel_mask_table(ChMaskTable) ->
 
 %% link_adr_req command
 
+set_channels_(Region, {0, <<"NoChange">>, Chans}, FOptsOut) when
+    Region == 'US915'; Region == 'AU915'
+->
+    case all_bit({0, 63}, Chans) of
+        true ->
+            [
+                {link_adr_req, 16#F, 16#F,
+                    build_chmask(Chans, {64, 71}), 6, 0}
+                | FOptsOut
+            ];
+        false ->
+            [
+                {link_adr_req, 16#F, 16#F,
+                    build_chmask(Chans, {64, 71}), 7, 0}
+                | append_mask(Region, 3, {0, <<"NoChange">>, Chans}, FOptsOut)
+            ]
+    end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
     Region == 'US915'; Region == 'AU915'
 ->
@@ -997,6 +1014,18 @@ build_chmask0({Min, Max}, {A, B}) ->
 
 append_mask(_Region, Idx, _, FOptsOut) when Idx < 0 ->
     FOptsOut;
+append_mask(Region, Idx, {0, <<"NoChange">>, Chans}, FOptsOut) ->
+    append_mask(
+        Region,
+        Idx - 1,
+        {0, <<"NoChange">>, Chans},
+        case build_chmask(Chans, {16 * Idx, 16 * (Idx + 1) - 1}) of
+            0 ->
+                FOptsOut;
+            ChMask ->
+                [{link_adr_req, 16#F, 16#F, ChMask, Idx, 0} | FOptsOut]
+        end
+    );
 append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
     append_mask(
         Region,

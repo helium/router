@@ -1855,11 +1855,26 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             %% Some regions allow the channel list to be sent in the join response as well,
             %% so we may need to do that there as well
             {true, false, _} ->
-                lorawan_mac_region:set_channels(
-                    Region,
-                    {0, erlang:list_to_binary(DataRate), [Channels]},
-                    []
-                );
+                case Region of
+                    'US915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    'AU915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    _ ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, erlang:list_to_binary(DataRate), [Channels]},
+                            []
+                        )
+                end;
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
                 %% begin-needs-refactor
                 %%
@@ -1869,12 +1884,28 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 %% rate in the form of "SFdd?BWddd?" so that's what
                 %% we'll give it.
                 NewDr = lorawan_mac_region:dr_to_datar(Region, NewDataRateIdx),
+                NewTxPowerIdx = 0,
                 %% end-needs-refactor
-                lorawan_mac_region:set_channels(
-                    Region,
-                    {NewTxPowerIdx, NewDr, [Channels]},
-                    []
-                );
+                case Region of
+                    'US915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {NewTxPowerIdx, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    'AU915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {NewTxPowerIdx, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    _ ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {NewTxPowerIdx, NewDr, [Channels]},
+                            []
+                        );
+                end;
             _ ->
                 []
         end,

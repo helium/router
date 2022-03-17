@@ -251,7 +251,13 @@ handle_cast(
 ) ->
     case maps:take(UUID, DataCache0) of
         {CachedData, DataCache1} ->
-            {ok, Map} = send_data_to_channel(CachedData, Device, EventMgrPid, Blockchain, BalanceNonce),
+            {ok, Map} = send_data_to_channel(
+                CachedData,
+                Device,
+                EventMgrPid,
+                Blockchain,
+                BalanceNonce
+            ),
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
             {noreply, State#state{data_cache = DataCache1}};
         error ->
@@ -659,9 +665,9 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce)
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspots => lists:map(FormatHotspot, CachedData1),
         dc => #{
-                <<"dc_balance">> => Balance,
-                <<"nonce">> => Nonce
-               }
+            <<"dc_balance">> => Balance,
+            <<"nonce">> => Nonce
+        }
     },
     ok = router_channel:handle_uplink(EventMgrRef, Map, UUID),
     {ok, Map}.

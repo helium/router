@@ -824,7 +824,11 @@ handle_cast(
                             FCnt,
                             Timeout
                         ]),
-                        _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime, BalanceNonce}),
+                        _ = erlang:send_after(
+                            Timeout,
+                            self(),
+                            {frame_timeout, FCnt, PacketTime, BalanceNonce}
+                        ),
                         {NewFrameCache#frame_cache.uuid, State#state{
                             device = Device2,
                             frame_cache = maps:put(FCnt, NewFrameCache, Cache0)

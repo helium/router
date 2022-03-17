@@ -337,10 +337,9 @@ lw_join_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from console downlink
@@ -511,10 +510,9 @@ lw_join_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel

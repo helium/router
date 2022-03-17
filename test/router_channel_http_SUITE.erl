@@ -127,9 +127,9 @@ http_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -265,9 +265,9 @@ http_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -466,9 +466,9 @@ http_update_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -865,9 +865,9 @@ http_decoded_payload_test(Config) ->
         <<"devaddr">> => '_',
         <<"hotspots">> => fun erlang:is_list/1,
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel

@@ -145,9 +145,9 @@ data_test_1(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
@@ -288,9 +288,9 @@ data_test_2(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% ---------------------------------------------------------------
@@ -430,9 +430,9 @@ data_test_3(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% ---------------------------------------------------------------

@@ -189,10 +189,9 @@ disovery_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     [_, Payload2 | _] = DiscoveryData1#discovery_start_pb.packets,
@@ -264,10 +263,9 @@ disovery_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Restart process one more to make sure device worker behaves correctly
@@ -357,10 +355,9 @@ disovery_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     ok.
@@ -448,10 +445,9 @@ fail_to_connect_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
-
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     ok.

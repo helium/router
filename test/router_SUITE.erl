@@ -295,9 +295,9 @@ dupes_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -1626,9 +1626,9 @@ adr_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Unconfirmed downlink sent to device
@@ -1821,9 +1821,9 @@ adr_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% ---------------------------------------------------------------
@@ -2015,9 +2015,9 @@ adr_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Sending Msg1 again because it was not acknowledged by the device
@@ -2215,9 +2215,9 @@ adr_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                              <<"dc_balance">> => fun erlang:is_integer/1,
-                              <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -2370,9 +2370,9 @@ adr_test(Config) ->
             }
         ],
         <<"dc">> => #{
-                      <<"dc_balance">> => fun erlang:is_integer/1,
-                      <<"nonce">> => fun erlang:is_integer/1
-                     }
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel

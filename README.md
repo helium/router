@@ -254,6 +254,14 @@ Here are some of the most commun queries that can be added into grafana.
 
 `sum(rate(router_console_api_duration_count{status="ok"}[5m])) / (sum(rate(router_console_api_duration_count{status="error"}[5m])) + sum(rate(router_console_api_duration_count{status="ok"}[5m]))) * 100` API success rate
 
+## Supported Lorawan Versions
+
+- [X] 1.0.2
+- [X] 1.0.3
+- [X] 1.0.4
+
+**NOTE**: Any further support or improvement will be done in https://github.com/helium/erlang-lorawan
+
 ## Supported Countries/Frequencies
 
 ### US915

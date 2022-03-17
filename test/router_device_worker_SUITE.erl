@@ -162,7 +162,12 @@ device_worker_late_packet_double_charge_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
 
     {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(
@@ -846,7 +851,12 @@ replay_uplink_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
 
     timer:sleep(2000 + 100),
@@ -903,7 +913,12 @@ replay_uplink_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
 
     ok.

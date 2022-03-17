@@ -133,7 +133,12 @@ decode_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
     ok.
 
@@ -248,7 +253,12 @@ timeout_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),
@@ -344,7 +354,12 @@ too_many_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+                      <<"dc_balance">> => fun erlang:is_integer/1,
+                      <<"nonce">> => fun erlang:is_integer/1
+                     }
+
     }),
 
     DecoderID = maps:get(<<"id">>, ?CONSOLE_DECODER),

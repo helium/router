@@ -437,7 +437,7 @@ can_queue_payload(Payload, Device) ->
             DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
             MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
             Size = erlang:byte_size(Payload),
-            {Size < MaxSize, Size, MaxSize, DownDR}
+            {Size =< MaxSize, Size, MaxSize, DownDR}
     end.
 
 %% ------------------------------------------------------------------

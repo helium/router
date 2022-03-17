@@ -824,7 +824,7 @@ handle_cast(
                             FCnt,
                             Timeout
                         ]),
-                        _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime}),
+                        _ = erlang:send_after(Timeout, self(), {frame_timeout, FCnt, PacketTime, BalanceNonce}),
                         {NewFrameCache#frame_cache.uuid, State#state{
                             device = Device2,
                             frame_cache = maps:put(FCnt, NewFrameCache, Cache0)
@@ -984,7 +984,7 @@ handle_info(
         join_cache = maps:remove(DevNonce, JoinCache)
     }};
 handle_info(
-    {frame_timeout, FCnt, PacketTime},
+    {frame_timeout, FCnt, PacketTime, BalanceNonce},
     #state{
         chain = Blockchain,
         db = DB,
@@ -1014,7 +1014,7 @@ handle_info(
     } = FrameCache,
     Cache1 = maps:remove(FCnt, Cache0),
     ok = router_device_multibuy:delete(blockchain_helium_packet_v1:packet_hash(Packet)),
-    ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID),
+    ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID, BalanceNonce),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
     DeviceID = router_device:id(Device0),

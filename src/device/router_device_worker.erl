@@ -1153,7 +1153,7 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     ForwardPid !
         {?MODULE, queue_update, LabelID, router_device:id(Device), [
             downlink_to_map(D)
-            || D <- router_device:queue(Device)
+         || D <- router_device:queue(Device)
         ]},
     ok.
 
@@ -1167,8 +1167,9 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     Blockchain :: blockchain:blockchain(),
     OfferCache :: map()
 ) ->
-    {ok, router_device:device(), binary(), #join_accept_args{},
-        {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
+    {ok, router_device:device(), binary(), #join_accept_args{}, {
+        Balance :: non_neg_integer(), Nonce :: non_neg_integer()
+    }}
     | {error, any()}.
 validate_join(
     #packet_pb{
@@ -1904,7 +1905,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                             Region,
                             {NewTxPowerIdx, NewDr, [Channels]},
                             []
-                        );
+                        )
                 end;
             _ ->
                 []
@@ -1962,9 +1963,19 @@ frame_to_packet_payload(Frame, Device) ->
     FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
     FOptsLen = erlang:byte_size(FOpts),
     PktHdr =
-        <<(Frame#frame.mtype):3, 0:3, 0:2, (Frame#frame.devaddr)/binary, (Frame#frame.adr):1, 0:1,
-            (Frame#frame.ack):1, (Frame#frame.fpending):1, FOptsLen:4,
-            (Frame#frame.fcnt):16/integer-unsigned-little, FOpts:FOptsLen/binary>>,
+        <<
+            (Frame#frame.mtype):3,
+            0:3,
+            0:2,
+            (Frame#frame.devaddr)/binary,
+            (Frame#frame.adr):1,
+            0:1,
+            (Frame#frame.ack):1,
+            (Frame#frame.fpending):1,
+            FOptsLen:4,
+            (Frame#frame.fcnt):16/integer-unsigned-little,
+            FOpts:FOptsLen/binary
+        >>,
     NwkSKey = router_device:nwk_s_key(Device),
     PktBody =
         case Frame#frame.data of
@@ -1997,8 +2008,10 @@ frame_to_packet_payload(Frame, Device) ->
         cmac,
         aes_128_cbc,
         NwkSKey,
-        <<(router_utils:b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary,
-            Msg/binary>>,
+        <<
+            (router_utils:b0(1, Frame#frame.devaddr, Frame#frame.fcnt, byte_size(Msg)))/binary,
+            Msg/binary
+        >>,
         4
     ),
     <<Msg/binary, MIC/binary>>.

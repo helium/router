@@ -176,8 +176,10 @@ rx1_or_rx2_window(Region, Delay, Offset, RxQ) ->
     case TopLevelRegion of
         'EU868' ->
             if
-                % In Europe the RX Windows uses different frequencies, TX power rules and Duty cycle rules.
-                % If the signal is poor then prefer window 2 where TX power is higher.  See - https://github.com/helium/router/issues/423
+                % In Europe the RX Windows uses different frequencies,
+                % TX power rules and Duty cycle rules.  If the signal is
+                % poor then prefer window 2 where TX power is higher.
+                % See - https://github.com/helium/router/issues/423
                 RxQ#rxq.rssi < -80 -> rx2_window(Region, Delay, RxQ);
                 true -> rx1_window(Region, Delay, Offset, RxQ)
             end;
@@ -784,8 +786,8 @@ uplink_power_table_('EU868') ->
 %% Bobcat team was testing and noticed downlink `rf_power' was too high for CN470.
 %%
 %% longAP team was testing and also noticed `rf_power' was too high for EU868.
-%% Followup from disk91:
-%% https://www.etsi.org/deliver/etsi_en/300200_300299/30022002/03.02.01_60/en_30022002v030201p.pdf (page 22)
+%% Followup from disk91: (page 22)
+%% https://www.etsi.org/deliver/etsi_en/300200_300299/30022002/03.02.01_60/en_30022002v030201p.pdf
 %% MwToDb = fun(Mw) -> round(10 * math:log10(Mw)) end.
 %%
 %% NOTE: We may want to reduce to default tx_power

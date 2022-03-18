@@ -243,7 +243,8 @@ load_test() ->
     ID = <<"ID">>,
     {ok, VM} = router_v8:get(),
     Function =
-        <<"\n"
+        <<
+            "\n"
             "function bytesToInt(by) {\n"
             "                         f = by[0] | by[1]<<8 | by[2]<<16 | by[3]<<24;\n"
             "                                                                   return f;\n"
@@ -273,7 +274,8 @@ load_test() ->
             "    decoded.battery = ((bytes[i++] << 8) | bytes[i++]);\n"
             "\n"
             "    return decoded;\n"
-            "}\n">>,
+            "}\n"
+        >>,
     Args = #{id => ID, vm => VM, function => Function},
     {ok, Pid} = ?MODULE:start_link(Args),
 
@@ -316,7 +318,8 @@ random_test() ->
     ID = <<"ID">>,
     {ok, VM} = router_v8:get(),
     Function =
-        <<"\n"
+        <<
+            "\n"
             "function Decoder(bytes, port) { \n"
             "  var decoded = {};\n"
             "  if (bytes[0] == 1) {\n"
@@ -326,7 +329,8 @@ random_test() ->
             "    decoded.illuminance = (bytes[4]<<8 | bytes[5])\n"
             "  }\n"
             "  return decoded; \n"
-            "}\n">>,
+            "}\n"
+        >>,
     Args = #{id => ID, vm => VM, function => Function},
     {ok, Pid} = ?MODULE:start_link(Args),
 
@@ -376,7 +380,8 @@ with_uplink_info_test() ->
     ID = <<"ID">>,
     {ok, VM} = router_v8:get(),
     Function =
-        <<"\n"
+        <<
+            "\n"
             "function Decoder(bytes, port, uplink_info) { \n"
             "  var decoded = {};\n"
             "  if (uplink_info) {\n"
@@ -387,7 +392,8 @@ with_uplink_info_test() ->
             "    decoded.devaddr = uplink_info.devaddr;\n"
             "  }\n"
             "  return decoded; \n"
-            "}\n">>,
+            "}\n"
+        >>,
 
     Args = #{id => ID, vm => VM, function => Function},
     {ok, Pid} = ?MODULE:start_link(Args),

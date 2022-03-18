@@ -998,13 +998,15 @@ b0_from_payload(Payload, FCntSize) ->
         FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, _FOpts:FOptsLen/binary,
         _PayloadAndMIC/binary>> = Payload,
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
-    <<(router_utils:b0(
+    <<
+        (router_utils:b0(
             MType band 1,
             <<DevAddr:4/binary>>,
             FCnt,
             erlang:byte_size(Msg)
         ))/binary,
-        Msg/binary>>.
+        Msg/binary
+    >>.
 
 %%%-------------------------------------------------------------------
 %% @doc

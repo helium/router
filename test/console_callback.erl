@@ -61,7 +61,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
     {Devices, ResourceID} =
         case ets:lookup(Tab, devices) of
             [] ->
-                {[
+                {
+                    [
                         #{
                             <<"id">> => ?CONSOLE_DEVICE_ID,
                             <<"name">> => ?CONSOLE_DEVICE_NAME,
@@ -75,7 +76,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
                             <<"multi_buy">> => 1
                         }
                     ],
-                    undefined};
+                    undefined
+                };
             [{devices, {Qs, [], Refill}}] ->
                 true = ets:insert(Tab, {devices, Refill}),
                 {[], undefined};

@@ -181,7 +181,7 @@ replace_index_lookup_with_special_key(Template) ->
 index_list_of_maps(LofM) ->
     [
         {integer_to_binary(Idx), V}
-        || {Idx, V} <- lists:zip(lists:seq(0, length(LofM) - 1), LofM)
+     || {Idx, V} <- lists:zip(lists:seq(0, length(LofM) - 1), LofM)
     ].
 
 %% ------------------------------------------------------------------

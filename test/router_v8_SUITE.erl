@@ -40,10 +40,12 @@ end_per_testcase(TestCase, Config) ->
 
 invalid_context_test(_Config) ->
     GoodFunction =
-        <<"function Decoder(bytes, port) {\n"
+        <<
+            "function Decoder(bytes, port) {\n"
             "  var payload = {\"Testing\": \"42\"};\n"
             "  return payload;\n"
-            "}">>,
+            "}"
+        >>,
     BadFunction = <<"function Decoder() { returrrrrrrn 0; }">>,
 
     VMPid =

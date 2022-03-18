@@ -281,17 +281,17 @@ device_worker_late_packet_double_charge_test(Config) ->
                     <<"channel_mask">> => 0,
                     <<"channel_mask_control">> => 7,
                     <<"command">> => <<"link_adr_req">>,
-                    <<"data_rate">> => 2,
+                    <<"data_rate">> => 15,
                     <<"number_of_transmissions">> => 0,
-                    <<"tx_power">> => 0
+                    <<"tx_power">> => 15
                 },
                 #{
                     <<"channel_mask">> => 65280,
                     <<"channel_mask_control">> => 0,
                     <<"command">> => <<"link_adr_req">>,
-                    <<"data_rate">> => 2,
+                    <<"data_rate">> => 15,
                     <<"number_of_transmissions">> => 0,
-                    <<"tx_power">> => 0
+                    <<"tx_power">> => 15
                 }
             ]
         }

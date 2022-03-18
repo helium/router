@@ -143,7 +143,11 @@ dc_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel

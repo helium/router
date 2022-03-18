@@ -25,7 +25,7 @@
     handle_console_downlink/4,
     new_data_cache/8,
     refresh_channels/1,
-    frame_timeout/2
+    frame_timeout/3
 ]).
 
 %% ------------------------------------------------------------------
@@ -61,6 +61,7 @@
 
 -type channel_map() :: #{ChannelID :: binary() := router_channel:channel()}.
 -type backoff_map() :: #{ChannelID :: binary() := {backoff:backoff(), reference()}}.
+-type balance_nonce() :: {Balance :: integer(), Nonce :: integer}.
 
 -record(state, {
     chain = blockchain:blockchain(),
@@ -98,9 +99,9 @@ report_request(Pid, UUID, Channel, Map) ->
 report_response(Pid, UUID, Channel, Map) ->
     gen_server:cast(Pid, {report_response, UUID, Channel, Map}).
 
--spec frame_timeout(pid(), router_utils:uuid_v4()) -> ok.
-frame_timeout(Pid, UUID) ->
-    gen_server:cast(Pid, {frame_timeout, UUID}).
+-spec frame_timeout(pid(), router_utils:uuid_v4(), balance_nonce()) -> ok.
+frame_timeout(Pid, UUID, BalanceNonce) ->
+    gen_server:cast(Pid, {frame_timeout, UUID, BalanceNonce}).
 
 -spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
 handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
@@ -240,7 +241,7 @@ handle_cast(
     DataCache1 = maps:put(UUID, UUIDCache1, DataCache),
     {noreply, State#state{data_cache = DataCache1}};
 handle_cast(
-    {frame_timeout, UUID},
+    {frame_timeout, UUID, BalanceNonce},
     #state{
         data_cache = DataCache0,
         chain = Blockchain,
@@ -250,7 +251,13 @@ handle_cast(
 ) ->
     case maps:take(UUID, DataCache0) of
         {CachedData, DataCache1} ->
-            {ok, Map} = send_data_to_channel(CachedData, Device, EventMgrPid, Blockchain),
+            {ok, Map} = send_data_to_channel(
+                CachedData,
+                Device,
+                EventMgrPid,
+                Blockchain,
+                BalanceNonce
+            ),
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
             {noreply, State#state{data_cache = DataCache1}};
         error ->
@@ -620,9 +627,10 @@ send_join_to_channel(
     CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
     Device :: router_device:device(),
     EventMgrRef :: pid(),
-    Blockchain :: blockchain:blockchain()
+    Blockchain :: blockchain:blockchain(),
+    BalanceNonce :: balance_nonce()
 ) -> {ok, map()}.
-send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
+send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce) ->
     FormatHotspot = fun(DataCache) ->
         format_hotspot(DataCache, Blockchain)
     end,
@@ -633,6 +641,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
     [#data_cache{frame = Frame, time = Time, uuid = UUID, replay = Replay, packet = Packet} | _] =
         CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
+    {Balance, Nonce} = BalanceNonce,
     %% No touchy, this is set in STONE
     Map = #{
         type => uplink,
@@ -654,7 +663,11 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain) ->
                 _ -> Port
             end,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
-        hotspots => lists:map(FormatHotspot, CachedData1)
+        hotspots => lists:map(FormatHotspot, CachedData1),
+        dc => #{
+            <<"dc_balance">> => Balance,
+            <<"nonce">> => Nonce
+        }
     },
     ok = router_channel:handle_uplink(EventMgrRef, Map, UUID),
     {ok, Map}.

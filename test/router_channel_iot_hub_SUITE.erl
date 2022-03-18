@@ -168,7 +168,11 @@ iot_hub_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from MQTT channel
@@ -311,7 +315,11 @@ iot_hub_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from MQTT channel

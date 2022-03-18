@@ -293,7 +293,11 @@ dupes_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -1620,7 +1624,11 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Unconfirmed downlink sent to device
@@ -1811,7 +1819,11 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% ---------------------------------------------------------------
@@ -2001,7 +2013,11 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Sending Msg1 again because it was not acknowledged by the device
@@ -2197,7 +2213,11 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel
@@ -2348,7 +2368,11 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel

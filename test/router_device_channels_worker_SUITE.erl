@@ -32,7 +32,8 @@
 -define(BACKOFF_MIN, timer:seconds(15)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_INIT, {
-    backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal), erlang:make_ref()
+    backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
+    erlang:make_ref()
 }).
 
 -record(state, {
@@ -662,7 +663,11 @@ late_packet_test(Config) ->
                 <<"lat">> => <<"unknown">>,
                 <<"long">> => <<"unknown">>
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     %% Waiting for report channel status from HTTP channel from hotspots 1

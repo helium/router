@@ -76,7 +76,7 @@ allocate(Config) ->
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
     Expected = [
         <<(I - 1):25/integer-unsigned-little, DevAddrPrefix:7/integer>>
-     || I <- lists:seq(1, 8)
+        || I <- lists:seq(1, 8)
     ],
     ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(DevAddrs)),
     ok.
@@ -163,7 +163,11 @@ route_packet(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             }
-        ]
+        ],
+        <<"dc">> => #{
+            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"nonce">> => fun erlang:is_integer/1
+        }
     }),
 
     ok.

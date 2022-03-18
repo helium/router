@@ -1885,28 +1885,12 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 %% rate in the form of "SFdd?BWddd?" so that's what
                 %% we'll give it.
                 NewDr = lorawan_mac_region:dr_to_datar(Region, NewDataRateIdx),
-                NewTxPowerIdx = 0,
                 %% end-needs-refactor
-                case Region of
-                    'US915' ->
-                        lorawan_mac_region:set_channels(
-                            Region,
-                            {NewTxPowerIdx, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    'AU915' ->
-                        lorawan_mac_region:set_channels(
-                            Region,
-                            {NewTxPowerIdx, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    _ ->
-                        lorawan_mac_region:set_channels(
-                            Region,
-                            {NewTxPowerIdx, NewDr, [Channels]},
-                            []
-                        )
-                end;
+                lorawan_mac_region:set_channels(
+                    Region,
+                    {NewTxPowerIdx, NewDr, [Channels]},
+                    []
+                );
             _ ->
                 []
         end,

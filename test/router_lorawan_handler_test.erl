@@ -212,9 +212,9 @@ parse_channel_mask(
         {1, []},
         binary_to_list(<<
             <<Y:8/integer, X:8/integer>>
-            || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(
-                   <<A/binary, B/binary, C/binary, D/binary, E/binary>>
-               )
+         || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(
+                <<A/binary, B/binary, C/binary, D/binary, E/binary>>
+            )
         >>)
     ),
     [F - 1 || F <- R, F /= 0];
@@ -222,7 +222,7 @@ parse_channel_mask(<<A:4/binary, _/binary>>, _) ->
     %% XXX assume AS923 form
     [Byte, _] = binary_to_list(<<
         <<Y:8/integer, X:8/integer>>
-        || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(<<A/binary>>)
+     || <<X:8/integer, Y:8/integer>> <= lorawan_utils:hex_to_binary(<<A/binary>>)
     >>),
     ct:pal("byte ~p", [Byte]),
     R = [

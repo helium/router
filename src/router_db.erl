@@ -132,7 +132,7 @@ open_db(Dir) ->
 
     CFs = maps:from_list([
         {erlang:list_to_atom(X), proplists:get_value(X, L3)}
-        || X <- DefaultCFs
+     || X <- DefaultCFs
     ]),
 
     {ok, DB, CFs}.

@@ -26,17 +26,17 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
 
     GenPaymentTxs = [
         blockchain_txn_coinbase_v1:new(Addr, Balance)
-        || {Addr, _} <- GenesisMembers
+     || {Addr, _} <- GenesisMembers
     ],
 
     GenSecPaymentTxs = [
         blockchain_txn_security_coinbase_v1:new(Addr, Balance)
-        || {Addr, _} <- GenesisMembers
+     || {Addr, _} <- GenesisMembers
     ],
 
     GenDCTxs = [
         blockchain_txn_dc_coinbase_v1:new(Addr, Balance)
-        || {Addr, _} <- GenesisMembers
+     || {Addr, _} <- GenesisMembers
     ],
 
     Addresses = [Addr || {Addr, _} <- GenesisMembers],
@@ -50,7 +50,7 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
     ),
     InitialGatewayTxn = [
         blockchain_txn_gen_gateway_v1:new(Addr, Addr, Loc, 0)
-        || {Addr, Loc} <- lists:zip(Addresses, Locations)
+     || {Addr, Loc} <- lists:zip(Addresses, Locations)
     ],
 
     ConsensusMembers = lists:sublist(GenesisMembers, 7),

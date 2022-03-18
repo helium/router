@@ -102,7 +102,7 @@ filter_migrate(["filter", "migrate"], [], Flags) ->
             {new_size, length(maps:get(Index, NewGroups))},
             {cost, maps:get(Index, Costs)}
         ]
-        || Index <- [FromIndex, ToIndex]
+     || Index <- [FromIndex, ToIndex]
     ],
 
     case Commit of
@@ -126,7 +126,7 @@ filter_move_to_front(["filter", "move_to_front", NumGroupStr], [], Flags) ->
             {new_size, length(maps:get(Index, NewGroups))},
             {cost, maps:get(Index, Costs)}
         ]
-        || Index <- lists:seq(0, 4)
+     || Index <- lists:seq(0, 4)
     ],
 
     case Commit of
@@ -152,7 +152,7 @@ filter_report(["filter", "report"], [], []) ->
             {num_devices_in_cache, Devices},
             {size_in_bytes, Size}
         ]
-        || {{Idx, Devices}, {Idx, Size}} <- lists:zip(Memory, Routing)
+     || {{Idx, Devices}, {Idx, Size}} <- lists:zip(Memory, Routing)
     ]).
 
 filter_timer(["filter", "timer"], [], []) ->
@@ -179,7 +179,7 @@ filter_update(["filter", "update"], [], Flags) ->
             Adding = io_lib:format("- Adding ~p devices", [length(Added)]),
             Removing = [
                 io_lib:format("  - ~p - ~p", [FI, length(Devices)])
-                || {FI, Devices} <- maps:to_list(Removed)
+             || {FI, Devices} <- maps:to_list(Removed)
             ],
             c_list(
                 lists:join(
@@ -197,7 +197,7 @@ filter_update(["filter", "update"], [], Flags) ->
             Adding = io_lib:format("- Adding ~p devices", [length(Added)]),
             Removing = [
                 io_lib:format("  - ~p - ~p", [FI, length(Devices)])
-                || {FI, Devices} <- maps:to_list(Removed)
+             || {FI, Devices} <- maps:to_list(Removed)
             ],
             c_list(
                 lists:join(
@@ -223,7 +223,7 @@ filter_rebalance(["filter", "rebalance"], [], Flags) ->
                         {old_size, erlang:length(maps:get(Key, OldGroups))},
                         {new_size, erlang:length(maps:get(Key, NewGroups))}
                     ]
-                || Key <- lists:seq(0, 4)
+             || Key <- lists:seq(0, 4)
             ]);
         {true, {ok, OldGroups, NewGroups}} ->
             {ok, _NewPending} = router_xor_filter_worker:commit_groups_to_filters(NewGroups),
@@ -233,7 +233,7 @@ filter_rebalance(["filter", "rebalance"], [], Flags) ->
                     {old_size, erlang:length(maps:get(Key, OldGroups))},
                     {new_size, erlang:length(maps:get(Key, NewGroups))}
                 ]
-                || Key <- lists:seq(0, 4)
+             || Key <- lists:seq(0, 4)
             ])
     end.
 

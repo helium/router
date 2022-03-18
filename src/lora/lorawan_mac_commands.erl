@@ -584,7 +584,8 @@ send_adr(_Network, _Node, FOptsOut) ->
     FOptsOut.
 
 merge_adr({A1, B1, C1}, {A2, B2, C2}) ->
-    {if
+    {
+        if
             is_integer(A1) -> A1;
             true -> A2
         end,
@@ -595,7 +596,8 @@ merge_adr({A1, B1, C1}, {A2, B2, C2}) ->
         if
             is_list(C1), length(C1) > 0 -> C1;
             true -> C2
-        end};
+        end
+    };
 merge_adr(_Else, ABC) ->
     ABC.
 
@@ -624,7 +626,8 @@ set_rxwin(_Profile, _Node, FOptsOut) ->
     FOptsOut.
 
 merge_rxwin({A1, B1, C1}, {A2, B2, C2}) ->
-    {if
+    {
+        if
             is_integer(A1) -> A1;
             true -> A2
         end,
@@ -635,7 +638,8 @@ merge_rxwin({A1, B1, C1}, {A2, B2, C2}) ->
         if
             is_number(C1) -> C1;
             true -> C2
-        end};
+        end
+    };
 merge_rxwin(_Else, ABC) ->
     ABC.
 

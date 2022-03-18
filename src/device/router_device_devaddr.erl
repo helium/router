@@ -342,22 +342,22 @@ sort_devices_test() ->
 
     ?assertEqual([<<"A">>, <<"B">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"A">>, chain)
+     || D <- sort_devices(Devices, <<"A">>, chain)
     ]),
 
     ?assertEqual([<<"B">>, <<"A">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"B">>, chain)
+     || D <- sort_devices(Devices, <<"B">>, chain)
     ]),
 
     ?assertEqual([<<"C">>, <<"D">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"C">>, chain)
+     || D <- sort_devices(Devices, <<"C">>, chain)
     ]),
 
     ?assertEqual([<<"D">>, <<"C">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"D">>, chain)
+     || D <- sort_devices(Devices, <<"D">>, chain)
     ]),
 
     ?assert(meck:validate(blockchain)),
@@ -384,17 +384,17 @@ sort_devices_long_distance_test() ->
 
     ?assertEqual([<<"SAN_JOSE">>, <<"SUNNYVALE">>, <<"HOUSTON">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"SAN_JOSE">>, chain)
+     || D <- sort_devices(Devices, <<"SAN_JOSE">>, chain)
     ]),
 
     ?assertEqual([<<"SUNNYVALE">>, <<"SAN_JOSE">>, <<"HOUSTON">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"SUNNYVALE">>, chain)
+     || D <- sort_devices(Devices, <<"SUNNYVALE">>, chain)
     ]),
 
     ?assertEqual([<<"HOUSTON">>, <<"SAN_JOSE">>, <<"SUNNYVALE">>], [
         router_device:id(D)
-        || D <- sort_devices(Devices, <<"HOUSTON">>, chain)
+     || D <- sort_devices(Devices, <<"HOUSTON">>, chain)
     ]),
 
     ?assert(meck:validate(blockchain)),

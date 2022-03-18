@@ -230,7 +230,7 @@ handle_call(
                 {routing, enumerate_0([byte_size(F) || F <- Filters])},
                 {in_memory, [
                     {Idx, erlang:length(Devs)}
-                    || {Idx, Devs} <- maps:to_list(FilterToDevices)
+                 || {Idx, Devs} <- maps:to_list(FilterToDevices)
                 ]}
             ],
             {reply, Reply, State}
@@ -249,11 +249,11 @@ handle_call(
             Reply = [
                 {routing, [
                     {Idx, xor16:contain({Filter, ?HASH_FUN}, DeviceEUI)}
-                    || {Idx, Filter} <- enumerate_0(BinFilters)
+                 || {Idx, Filter} <- enumerate_0(BinFilters)
                 ]},
                 {in_memory, [
                     {Idx, is_unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
-                    || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
+                 || {Idx, DeviceList} <- lists:sort(maps:to_list(FilterToDevices))
                 ]}
             ],
 
@@ -586,7 +586,7 @@ get_balanced_filters_across_n_groups(FilterToDevices, NumGroups) ->
                 Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, NumGroups),
                 maps:from_list([
                     {Idx, assign_filter_index(Idx, Group)}
-                    || {Idx, Group} <- enumerate_0(Grouped)
+                 || {Idx, Group} <- enumerate_0(Grouped)
                 ])
         end,
     {ok, FilterToDevices, BalancedFilterToDevices}.
@@ -747,7 +747,7 @@ filter_to_devices_diff(OldMapping, NewMapping) ->
             NewFilter -- OldFilter,
             OldFilter -- NewFilter
         }
-        || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldSorted, NewSorted)
+     || {{Key, OldFilter}, {Key, NewFilter}} <- lists:zip(OldSorted, NewSorted)
     ]),
     {
         lists:flatten(ToBeAdded),

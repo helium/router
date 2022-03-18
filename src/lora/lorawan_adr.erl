@@ -556,13 +556,15 @@ track_packet(
         [] -> ok;
         _ -> lager:info("device turned off ADR, clearing history")
     end,
-    {Device#device{
+    {
+        Device#device{
             packet_history = [],
             offer_history = [],
             pending_adjustments = [],
             accepted_adjustments = []
         },
-        hold}.
+        hold
+    }.
 
 %% ------------------------------------------------------------------
 %% @doc Returns this device's minimum (slowest) DataRate index[1].
@@ -981,7 +983,7 @@ adr_harness_test_() ->
         ?_test(begin
             valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
         end)
-        || X <- gen_startend_range(-120.0, 0.1, 0.0)
+     || X <- gen_startend_range(-120.0, 0.1, 0.0)
     ].
 
 adr_exercise_test_() ->
@@ -1064,85 +1066,85 @@ adr_exercise_test_() ->
             ?_test(begin
                 valid_exercise(StateX, 0, 22, -20.0, -120.0, 0, 0)
             end)
-            || StateX <- [new('US915'), new('EU868'), new('CN470'), new('AS923'), new('AU915')]
+         || StateX <- [new('US915'), new('EU868'), new('CN470'), new('AS923'), new('AU915')]
         ],
         [
             ?_test(begin
                 valid_exercise(State0, 0, X, -20.0, -120.0, 0, 0)
             end)
-            || X <- lists:seq(1, 200)
+         || X <- lists:seq(1, 200)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 0, 0)
             end)
-            || X <- gen_startend_range(-20.0, 0.1, -2.5)
+         || X <- gen_startend_range(-20.0, 0.1, -2.5)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 1, 0)
             end)
-            || X <- gen_startend_range(-1.0, 0.1, 0.9)
+         || X <- gen_startend_range(-1.0, 0.1, 0.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 2, 0)
             end)
-            || X <- gen_startend_range(1.0, 0.1, 3.9)
+         || X <- gen_startend_range(1.0, 0.1, 3.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 0)
             end)
-            || X <- gen_startend_range(4.0, 0.1, 6.9)
+         || X <- gen_startend_range(4.0, 0.1, 6.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 1)
             end)
-            || X <- gen_startend_range(7.0, 0.1, 9.9)
+         || X <- gen_startend_range(7.0, 0.1, 9.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 3)
             end)
-            || X <- gen_startend_range(10.0, 0.1, 12.9)
+         || X <- gen_startend_range(10.0, 0.1, 12.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 4)
             end)
-            || X <- gen_startend_range(13.0, 0.1, 15.9)
+         || X <- gen_startend_range(13.0, 0.1, 15.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 6)
             end)
-            || X <- gen_startend_range(16.0, 0.1, 18.9)
+         || X <- gen_startend_range(16.0, 0.1, 18.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 7)
             end)
-            || X <- gen_startend_range(19.0, 0.1, 21.9)
+         || X <- gen_startend_range(19.0, 0.1, 21.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, X, -120.0, 3, 9)
             end)
-            || X <- gen_startend_range(22.0, 0.1, 24.9)
+         || X <- gen_startend_range(22.0, 0.1, 24.9)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, 6.9, X, 3, 0)
             end)
-            || X <- gen_startend_range(-120.0, 0.1, 0.0)
+         || X <- gen_startend_range(-120.0, 0.1, 0.0)
         ],
         [
             ?_test(begin
                 valid_exercise(State0, DataRate0, 22, 7.0, X, 3, 1)
             end)
-            || X <- gen_startend_range(-120.0, 0.1, 0.0)
+         || X <- gen_startend_range(-120.0, 0.1, 0.0)
         ]
     ],
 

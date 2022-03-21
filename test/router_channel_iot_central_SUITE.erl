@@ -162,6 +162,7 @@ iot_central_test(Config) ->
         <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
@@ -305,6 +306,7 @@ iot_central_test(Config) ->
         <<"raw_packet">> => fun erlang:is_binary/1,
         <<"port">> => 1,
         <<"devaddr">> => '_',
+        <<"dc">> => fun erlang:is_map/1,
         <<"hotspots">> => [
             #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),

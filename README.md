@@ -18,6 +18,11 @@ make docker-test
 
 ```
 
+Optionally
+[debug with sniffer](https://docs.helium.com/use-the-network/run-a-network-server/debug-with-sniffer/)
+to confirm router runtime behavior using a virtual LoRaWAN device and a
+software-based protocol sniffer.
+
 ### Production
 
 Image hosted on https://quay.io/repository/team-helium/router.

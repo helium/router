@@ -1860,11 +1860,26 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             %% Some regions allow the channel list to be sent in the join response as well,
             %% so we may need to do that there as well
             {true, false, _} ->
-                lorawan_mac_region:set_channels(
-                    Region,
-                    {0, erlang:list_to_binary(DataRate), [Channels]},
-                    []
-                );
+                case Region of
+                    'US915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    'AU915' ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, <<"NoChange">>, [Channels]},
+                            []
+                        );
+                    _ ->
+                        lorawan_mac_region:set_channels(
+                            Region,
+                            {0, erlang:list_to_binary(DataRate), [Channels]},
+                            []
+                        )
+                end;
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
                 %% begin-needs-refactor
                 %%

@@ -458,29 +458,28 @@ wait_for_console_event(Category, Expected) ->
 wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) when
     erlang:is_binary(ExpectedUUID)
 ->
-    try
+    Got =
         receive
-            {console_event, _, SubCategory, #{<<"id">> := ExpectedUUID} = Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        {ok, Got};
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail(
-                            "wait_for_console_event_sub (explicit id: ~p) ~p data failed ~n~p",
-                            [
-                                ExpectedUUID,
-                                SubCategory,
-                                Reason
-                            ]
-                        )
-                end
+            {console_event, _, SubCategory, #{<<"id">> := ExpectedUUID} = G} ->
+                G
         after 4250 ->
             ct:fail("wait_for_console_event_sub (explicit id: ~p) ~p timeout", [
                 ExpectedUUID,
                 SubCategory
             ])
-        end
+        end,
+
+    try match_map(Expected, Got) of
+        true ->
+            {ok, Got};
+        {false, Reason} ->
+            ct:pal("FAILED: got: ~n~p~n~nexpected: ~n~p", [Got, Expected]),
+            ct:fail({
+                wait_for_console_event_sub,
+                {sub_category, SubCategory},
+                {expected_id, ExpectedUUID},
+                Reason
+            })
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_for_console_event_sub (explicit id: ~p) ~p stacktrace ~n~p", [
@@ -488,10 +487,12 @@ wait_for_console_event_sub(SubCategory, #{<<"id">> := ExpectedUUID} = Expected) 
                 SubCategory,
                 {_Reason, _Stacktrace}
             ]),
-            ct:fail("wait_for_console_event_sub (explicit id: ~p) ~p failed", [
-                ExpectedUUID,
-                SubCategory
-            ])
+            ct:fail({
+                wait_for_console_event_sub,
+                {sub_category, SubCategory},
+                {expected_id, ExpectedUUID},
+                _Reason
+            })
     end;
 wait_for_console_event_sub(SubCategory, Expected) ->
     try
@@ -542,18 +543,18 @@ wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->
     end.
 
 wait_channel_data(Expected) ->
-    try
+    Got =
         receive
-            {channel_data, Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        {ok, Got};
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_channel_data failed ~p", [Reason])
-                end
-        after 1250 -> ct:fail("wait_channel_data timeout")
-        end
+            {channel_data, G} -> G
+        after 1250 ->
+            ct:fail("wait_channel_data timeout")
+        end,
+    try match_map(Expected, Got) of
+        true ->
+            {ok, Got};
+        {false, Reason} ->
+            ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+            ct:fail({wait_channel_data, Reason})
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_channel_data stacktrace ~n~p", [{_Reason, _Stacktrace}]),

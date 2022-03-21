@@ -901,9 +901,16 @@ wait_until_no_messages(Pid) ->
 
 -spec match_map(map(), any()) -> true | {false, term()}.
 match_map(Expected, Got) when is_map(Got) ->
-    case maps:size(Expected) == maps:size(Got) of
+    ESize = maps:size(Expected),
+    GSize = maps:size(Got),
+    case ESize == GSize of
         false ->
-            {false, {size_mismatch, maps:size(Expected), maps:size(Got)}};
+            Flavor =
+                case ESize > GSize of
+                    true -> {missing_keys, maps:keys(Expected) -- maps:keys(Got)};
+                    false -> {extra_keys, maps:keys(Got) -- maps:keys(Expected)}
+                end,
+            {false, {size_mismatch, {expected, ESize}, {got, GSize}, Flavor}};
         true ->
             maps:fold(
                 fun

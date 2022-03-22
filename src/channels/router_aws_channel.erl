@@ -523,6 +523,13 @@ ensure_certificate(AWS, Device) ->
             case get_certificate_from_arn(AWS, CertificateArn) of
                 {error, _} = Error -> Error;
                 {ok, Cert} -> {ok, Keys, Cert}
+            end;
+        CertificateArns ->
+            lager:warning("found multiple CertificateArns ~p", [CertificateArns]),
+            CertificateArn = lists:last(CertificateArns),
+            case get_certificate_from_arn(AWS, CertificateArn) of
+                {error, _} = Error -> Error;
+                {ok, Cert} -> {ok, Keys, Cert}
             end
     end.
 

@@ -15,6 +15,7 @@
     packet_trip_observe_start/3,
     packet_trip_observe_end/5, packet_trip_observe_end/6,
     packet_hold_time_observe/2,
+    packet_routing_error/2,
     decoder_observe/3,
     function_observe/2,
     console_api_observe/3,
@@ -99,6 +100,14 @@ packet_trip_observe_end(PacketHash, PubKeyBin, Time, Type, Downlink, false) ->
 -spec packet_hold_time_observe(Type :: join | packet, HoldTime :: non_neg_integer()) -> ok.
 packet_hold_time_observe(Type, HoldTime) when Type == join orelse Type == packet ->
     _ = prometheus_histogram:observe(?METRICS_PACKET_HOLD_TIME, [Type], HoldTime),
+    ok.
+
+-spec packet_routing_error(
+    Type :: join | packet,
+    Error :: device_not_found | api_not_found | bad_mic
+) -> ok.
+packet_routing_error(Type, Error) ->
+    _ = prometheus_counter:inc(?METRICS_PACKET_ERROR, [Type, Error]),
     ok.
 
 -spec decoder_observe(atom(), ok | error, non_neg_integer()) -> ok.

@@ -610,6 +610,7 @@ packet(
                     )
             end;
         {error, api_not_found} ->
+            router_metrics:packet_routing_error(join, api_not_found),
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "no key for ~p ~p received by ~s",
@@ -621,6 +622,7 @@ packet(
             ),
             {error, undefined_app_key};
         {error, _Reason} ->
+            router_metrics:packet_routing_error(join, bad_mic),
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "Device ~s with AppEUI ~s tried to join through ~s " ++
@@ -783,6 +785,11 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
+            router_metrics:packet_routing_error(packet, device_not_found),
+            lager:warning(
+                "unable to find device for packet [devaddr: ~p] [gateway: ~p]",
+                [DevAddr, libp2p_crypto:bin_to_b58(PubKeyBin)]
+            ),
             Error;
         {Device, NwkSKey} ->
             DeviceID = router_device:id(Device),

@@ -12,6 +12,7 @@
 -define(METRICS_ROUTING_PACKET, "router_device_routing_packet_duration").
 -define(METRICS_PACKET_TRIP, "router_device_packet_trip_duration").
 -define(METRICS_PACKET_HOLD_TIME, "router_device_packet_hold_time_duration").
+-define(METRICS_PACKET_ERROR, "router_device_packet_error_count").
 -define(METRICS_DECODED_TIME, "router_decoder_decoded_duration").
 -define(METRICS_FUN_DURATION, "router_function_duration").
 -define(METRICS_CONSOLE_API_TIME, "router_console_api_duration").
@@ -39,6 +40,7 @@
         "Routing Packet duration"},
     {?METRICS_PACKET_TRIP, prometheus_histogram, [type, downlink], "Packet round trip duration"},
     {?METRICS_PACKET_HOLD_TIME, prometheus_histogram, [type], "Packet hold time duration"},
+    {?METRICS_PACKET_ERROR, prometheus_counter, [type, error], "Packet errors in routing"},
     {?METRICS_DECODED_TIME, prometheus_histogram, [type, status], "Decoder decoded duration"},
     {?METRICS_FUN_DURATION, prometheus_histogram, [function], "Function duration"},
     {?METRICS_CONSOLE_API_TIME, prometheus_histogram, [type, status], "Console API duration"},

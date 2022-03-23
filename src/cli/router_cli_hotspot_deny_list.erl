@@ -93,10 +93,15 @@ hotspot_deny_list_remove([_, _, _], [], []) ->
 
 -spec format_deny_list(list()) -> list(list()).
 format_deny_list(DenyList) ->
-    [
-        [{b58, libp2p_crypto:bin_to_b58(PubKeyBin)}, {name, blockchain_utils:addr2name(PubKeyBin)}]
-     || {PubKeyBin, _} <- DenyList
-    ].
+    lists:map(
+        fun({PubKeyBin, _}) ->
+            [
+                {b58, libp2p_crypto:bin_to_b58(PubKeyBin)},
+                {name, blockchain_utils:addr2name(PubKeyBin)}
+            ]
+        end,
+        DenyList
+    ).
 
 -spec c_table(list(proplists:proplist()) | proplists:proplist()) -> clique_status:status().
 c_table(PropLists) -> [clique_status:table(PropLists)].

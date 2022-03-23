@@ -108,13 +108,10 @@ handle_offer(Offer, HandlerPid) ->
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp =
-        case
-            router_hotspot_deny_list:enabled() andalso
-                router_hotspot_deny_list:approved(Hotspot)
-        of
-            {true, false} ->
+        case router_hotspot_deny_list:enabled() andalso router_hotspot_deny_list:denied(Hotspot) of
+            true ->
                 {error, denied};
-            _ ->
+            false ->
                 case Routing of
                     #routing_information_pb{data = {eui, _EUI}} ->
                         join_offer(Offer, HandlerPid);

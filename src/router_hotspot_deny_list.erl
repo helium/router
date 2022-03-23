@@ -14,7 +14,7 @@
     enabled/0,
     init/1,
     ls/0,
-    approved/1,
+    denied/1,
     deny/1,
     approve/1
 ]).
@@ -33,17 +33,17 @@ enabled() ->
 
 -spec init(BaseDir :: string()) -> ok.
 init(BaseDir) ->
-    Opts = [
-        public,
-        named_table,
-        set,
-        {read_concurrency, true}
-    ],
     case ?MODULE:enabled() of
         false ->
             lager:info("router_hotspot_deny_list disabled");
         true ->
             lager:info("router_hotspot_deny_list enabled"),
+            Opts = [
+                public,
+                named_table,
+                set,
+                {read_concurrency, true}
+            ],
             _ = ets:new(?ETS, Opts),
             ok = load_from_file(BaseDir),
             ok
@@ -53,11 +53,11 @@ init(BaseDir) ->
 ls() ->
     ets:tab2list(?ETS).
 
--spec approved(libp2p_crypto:pubkey_bin()) -> boolean().
-approved(PubKeyBin) ->
+-spec denied(libp2p_crypto:pubkey_bin()) -> boolean().
+denied(PubKeyBin) ->
     case ets:lookup(?ETS, PubKeyBin) of
-        [] -> true;
-        [{PubKeyBin, _}] -> false
+        [] -> false;
+        [{PubKeyBin, _}] -> true
     end.
 
 -spec deny(libp2p_crypto:pubkey_bin()) -> ok.
@@ -122,18 +122,16 @@ all_test() ->
 
     ok = init(BaseDir),
 
-    lager:info("~p ~p", [B580, B581]),
-
-    ?assertEqual(false, ?MODULE:approved(PubKeyBin0)),
-    ?assertEqual(false, ?MODULE:approved(PubKeyBin1)),
-    ?assertEqual(true, ?MODULE:approved(<<"random">>)),
+    ?assertEqual(true, ?MODULE:denied(PubKeyBin0)),
+    ?assertEqual(true, ?MODULE:denied(PubKeyBin1)),
+    ?assertEqual(false, ?MODULE:denied(<<"random">>)),
 
     DenyList = ?MODULE:ls(),
     ?assert(proplists:is_defined(PubKeyBin0, DenyList)),
     ?assert(proplists:is_defined(PubKeyBin1, DenyList)),
 
     ?assertEqual(ok, ?MODULE:approve(PubKeyBin0)),
-    ?assertEqual(true, ?MODULE:approved(PubKeyBin0)),
+    ?assertEqual(false, ?MODULE:denied(PubKeyBin0)),
 
     ets:delete(?ETS),
     application:stop(lager),

@@ -11,6 +11,7 @@
 %% API Exports
 %% ------------------------------------------------------------------
 -export([
+    enabled/0,
     init/1,
     approved/1,
     deny/1
@@ -20,6 +21,14 @@
 %% API Functions
 %% ------------------------------------------------------------------
 
+-spec enabled() -> boolean().
+enabled() ->
+    case application:get_env(router, deny_list_enabled, false) of
+        "true" -> true;
+        true -> true;
+        _ -> false
+    end.
+
 -spec init(BaseDir :: string()) -> ok.
 init(BaseDir) ->
     Opts = [
@@ -28,9 +37,15 @@ init(BaseDir) ->
         set,
         {read_concurrency, true}
     ],
-    _ = ets:new(?ETS, Opts),
-    ok = load_from_file(BaseDir),
-    ok.
+    case ?MODULE:enabled() of
+        false ->
+            lager:info("router_deny_list disabled");
+        true ->
+            lager:info("router_deny_list enabled"),
+            _ = ets:new(?ETS, Opts),
+            ok = load_from_file(BaseDir),
+            ok
+    end.
 
 -spec approved(libp2p_crypto:pubkey_bin()) -> boolean().
 approved(PubKeyBin) ->
@@ -80,6 +95,7 @@ load_from_file(BaseDir) ->
 
 all_test() ->
     application:ensure_all_started(lager),
+    application:set_env(router, deny_list_enabled, true),
 
     BaseDir = test_utils:tmp_dir("router_deny_list_all_test"),
     #{public := PubKey0} = libp2p_crypto:generate_keys(ecc_compact),

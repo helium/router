@@ -3,9 +3,9 @@
 %%% == Router Deny List ==
 %%% @end
 %%%-------------------------------------------------------------------
--module(router_deny_list).
+-module(router_hotspot_deny_list).
 
--define(ETS, router_deny_list_ets).
+-define(ETS, router_hotspot_deny_list_ets).
 
 %% ------------------------------------------------------------------
 %% API Exports
@@ -13,8 +13,10 @@
 -export([
     enabled/0,
     init/1,
+    ls/0,
     approved/1,
-    deny/1
+    deny/1,
+    approve/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -23,7 +25,7 @@
 
 -spec enabled() -> boolean().
 enabled() ->
-    case application:get_env(router, deny_list_enabled, false) of
+    case application:get_env(router, hotspot_deny_list_enabled, false) of
         "true" -> true;
         true -> true;
         _ -> false
@@ -39,13 +41,17 @@ init(BaseDir) ->
     ],
     case ?MODULE:enabled() of
         false ->
-            lager:info("router_deny_list disabled");
+            lager:info("router_hotspot_deny_list disabled");
         true ->
-            lager:info("router_deny_list enabled"),
+            lager:info("router_hotspot_deny_list enabled"),
             _ = ets:new(?ETS, Opts),
             ok = load_from_file(BaseDir),
             ok
     end.
+
+-spec ls() -> [].
+ls() ->
+    ets:tab2list(?ETS).
 
 -spec approved(libp2p_crypto:pubkey_bin()) -> boolean().
 approved(PubKeyBin) ->
@@ -59,17 +65,22 @@ deny(PubKeyBin) ->
     true = ets:insert(?ETS, {PubKeyBin, 0}),
     ok.
 
+-spec approve(libp2p_crypto:pubkey_bin()) -> ok.
+approve(PubKeyBin) ->
+    true = ets:delete(?ETS, PubKeyBin),
+    ok.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
 -spec load_from_file(BaseDir :: string()) -> ok.
 load_from_file(BaseDir) ->
-    FileName = application:get_env(router, deny_list, "deny_list.json"),
+    FileName = application:get_env(router, hotspot_deny_list, "hotspot_deny_list.json"),
     File = BaseDir ++ "/" ++ FileName,
     case file:read_file(File) of
         {error, Error} ->
-            lager:info("failed to read deny list ~p: ~p", [File, Error]);
+            lager:warning("failed to read deny list ~p: ~p", [File, Error]);
         {ok, Binary} ->
             try jsx:decode(Binary) of
                 DenyList ->
@@ -95,9 +106,9 @@ load_from_file(BaseDir) ->
 
 all_test() ->
     application:ensure_all_started(lager),
-    application:set_env(router, deny_list_enabled, true),
+    application:set_env(router, hotspot_deny_list_enabled, true),
 
-    BaseDir = test_utils:tmp_dir("router_deny_list_all_test"),
+    BaseDir = test_utils:tmp_dir("router_hotspot_deny_list_all_test"),
     #{public := PubKey0} = libp2p_crypto:generate_keys(ecc_compact),
     B580 = libp2p_crypto:pubkey_to_b58(PubKey0),
     PubKeyBin0 = libp2p_crypto:pubkey_to_bin(PubKey0),
@@ -107,13 +118,20 @@ all_test() ->
     Content =
         <<"[\"", (erlang:list_to_binary(B580))/binary, "\",\"",
             (erlang:list_to_binary(B581))/binary, "\"]">>,
-    ok = file:write_file(BaseDir ++ "/deny_list.json", Content),
+    ok = file:write_file(BaseDir ++ "/hotspot_deny_list.json", Content),
 
     ok = init(BaseDir),
 
     ?assertEqual(false, ?MODULE:approved(PubKeyBin0)),
     ?assertEqual(false, ?MODULE:approved(PubKeyBin1)),
     ?assertEqual(true, ?MODULE:approved(<<"random">>)),
+
+    DenyList = ?MODULE:ls(),
+    ?assert(proplists:is_defined(PubKeyBin0, DenyList)),
+    ?assert(proplists:is_defined(PubKeyBin1, DenyList)),
+
+    ?assertEqual(ok, ?MODULE:approve(PubKeyBin0)),
+    ?assertEqual(true, ?MODULE:approved(PubKeyBin0)),
 
     ets:delete(?ETS),
     application:stop(lager),

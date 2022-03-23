@@ -93,7 +93,7 @@ load_from_file(BaseDir) ->
                     )
             catch
                 _E:_R ->
-                    lager:info("failed to decode deny list ~p: ~p", [File, {_E, _R}])
+                    lager:warning("failed to decode deny list ~p: ~p", [File, {_E, _R}])
             end
     end.
 
@@ -121,6 +121,8 @@ all_test() ->
     ok = file:write_file(BaseDir ++ "/hotspot_deny_list.json", Content),
 
     ok = init(BaseDir),
+
+    lager:info("~p ~p", [B580, B581]),
 
     ?assertEqual(false, ?MODULE:approved(PubKeyBin0)),
     ?assertEqual(false, ?MODULE:approved(PubKeyBin1)),

@@ -3,7 +3,7 @@ ENV DEBIAN_FRONTEND noninteractive
 
 ARG ROUTER_VERSION
 ENV ROUTER_VERSION=${ROUTER_VERSION:-unknown}
-RUN echo $ROUTER_VERSION > router.version
+RUN echo ${ROUTER_VERSION} > router.version
 
 RUN apt update
 RUN apt-get install -y -q \

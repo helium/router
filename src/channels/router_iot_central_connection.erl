@@ -125,6 +125,7 @@ http_device_setup(#iot_central{} = Central) ->
             mqtt_username := MqttUsername,
             mqtt_port := MqttPort
         } ->
+            lager:debug("http device setup success"),
             {ok, Central#iot_central{
                 device_primary_key = DevicePrimaryKey,
                 mqtt_host = MqttHost,
@@ -132,7 +133,9 @@ http_device_setup(#iot_central{} = Central) ->
                 mqtt_port = MqttPort
             }}
     catch
-        _:Err -> {error, Err}
+        _:Err:_Stack ->
+            lager:error("http device setup failed: ~p", [Err]),
+            {error, Err}
     end.
 
 -spec mqtt_device_setup(#iot_central{}) -> {ok, #iot_central{}} | {error, any()}.
@@ -185,7 +188,6 @@ mqtt_connect(
 ) ->
     Password = generate_mqtt_sas_token(Central),
 
-    lager:debug("  connecting"),
     {ok, Connection} = emqtt:start_link(#{
         clientid => erlang:binary_to_list(DeviceID),
         ssl => Port == 8883,
@@ -201,9 +203,10 @@ mqtt_connect(
 
     case emqtt:connect(Connection) of
         {ok, _Props} ->
+            lager:debug("iot central mqtt successfully connected"),
             {ok, Central#iot_central{mqtt_connection = Connection}};
         Err ->
-            lager:error("IoT Central mqtt could not connect [error: ~p]", [Err]),
+            lager:error("iot central mqtt could not connect [error: ~p]", [Err]),
             {error, Err}
     end.
 
@@ -395,7 +398,7 @@ http_device_check_registration(
     ),
     {error, max_registration_attempts};
 http_device_check_registration(Central, RetryWaitSeconds, Attempts) ->
-    lager:debug("  getting assignment [attempts: ~p]", [Attempts]),
+    lager:debug("getting assignment [attempts: ~p]", [Attempts]),
     case do_http_device_check_registration(Central) of
         %% {ok, _} = Resp ->
         %%     Resp;

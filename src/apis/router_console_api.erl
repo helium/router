@@ -742,9 +742,18 @@ convert_channel(Device, Pid, #{<<"type">> := <<"iot_central">>} = JSONChannel) -
     Name = kvc:path([<<"name">>], JSONChannel),
     ReceiveJoins = kvc:path([<<"receive_joins">>], JSONChannel, false),
     Args = #{
-        iot_central_app_name => kvc:path([<<"credentials">>, <<"iot_central_app_name">>], JSONChannel),
-        iot_central_scope_id => kvc:path([<<"credentials">>, <<"iot_central_scope_id">>], JSONChannel),
-        iot_central_api_key => kvc:path([<<"credentials">>, <<"iot_central_api_key">>], JSONChannel)
+        iot_central_app_name => kvc:path(
+            [<<"credentials">>, <<"iot_central_app_name">>],
+            JSONChannel
+        ),
+        iot_central_scope_id => kvc:path(
+            [<<"credentials">>, <<"iot_central_scope_id">>],
+            JSONChannel
+        ),
+        iot_central_api_key => kvc:path(
+            [<<"credentials">>, <<"iot_central_api_key">>],
+            JSONChannel
+        )
     },
     DeviceID = router_device:id(Device),
     Decoder = convert_decoder(JSONChannel),

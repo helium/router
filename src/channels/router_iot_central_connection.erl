@@ -187,14 +187,13 @@ mqtt_connect(
 
     lager:debug("  connecting"),
     {ok, Connection} = emqtt:start_link(#{
-        clientid => DeviceID,
+        clientid => erlang:binary_to_list(DeviceID),
         ssl => Port == 8883,
-        ssl_opts => [{verify, verify_none}],
         host => erlang:binary_to_list(Host),
         port => Port,
-        username => Username,
-        password => Password,
-        keepalive => 30,
+        username => erlang:binary_to_list(Username),
+        password => erlang:binary_to_list(Password),
+        keepalive => 180,
         clean_start => false,
         force_ping => true,
         active => true
@@ -373,7 +372,7 @@ http_device_check_registration(#iot_central{device_id = DeviceID} = Central, Ret
             {ok, Central#iot_central{
                 mqtt_host = AssignedHub,
                 mqtt_username =
-                    <<AssignedHub/binary, "/", DeviceID/binary,
+                    <<AssignedHub/binary, "/", DeviceID/binary, "/",
                         ?IOT_CENTRAL_MQTT_USERNAME_API_VERSION>>
             }};
         Other ->

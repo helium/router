@@ -403,7 +403,7 @@ http_device_check_registration(Central, RetryWaitSeconds, Attempts) ->
         %% {ok, _} = Resp ->
         %%     Resp;
         {error, {device_not_assigned, _}} ->
-            timer:sleep(RetryWaitSeconds * 1000),
+            timer:sleep(erlang:round(RetryWaitSeconds * 1000)),
             http_device_check_registration(Central, RetryWaitSeconds, Attempts + 1);
         Other ->
             Other

@@ -1,6 +1,10 @@
 FROM erlang:24
 ENV DEBIAN_FRONTEND noninteractive
 
+ARG ROUTER_VERSION
+ENV ROUTER_VERSION=${ROUTER_VERSION:-unknown}
+RUN echo $ROUTER_VERSION > router.version
+
 RUN apt update
 RUN apt-get install -y -q \
         build-essential \
@@ -46,9 +50,5 @@ RUN ./rebar3 as ${BUILD_NET} release
 ENV PATH=$PATH:_build/${BUILD_NET}/rel/router/bin
 RUN ln -s /opt/router/_build/${BUILD_NET}/rel /opt/router/_build/default/rel
 RUN ln -s /opt/router/_build/default/rel/router/bin/router /opt/router-exec
-
-ARG ROUTER_VERSION
-ENV ROUTER_VERSION=${ROUTER_VERSION:-unknown}
-RUN echo $ROUTER_VERSION > router.version
 
 CMD ["make", "run"]

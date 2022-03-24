@@ -79,7 +79,7 @@ docker-compose down && docker-compose up -d
 
 ## File System Cleanup
 
-Keep `blockchain` because it contains your swam key.
+Keep `blockchain` because it contains your swarm key.
 
 Keep `router.db` because it contains device cache.
 
@@ -236,7 +236,7 @@ For applying new values to application variables, use `remote_console`.
 
 ```bash
 router remote_console
-'application:set_env(blockchain, snapshot_memory_limit, 2048).'
+application:set_env(blockchain, snapshot_memory_limit, 2048).
 ^D
 ```
 

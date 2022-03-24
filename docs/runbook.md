@@ -187,7 +187,7 @@ wget -N \
 
 The base of that URL is specified by `blockchain` `->` `snap_source_base_url`
 within
-[`sys.config.src`](https://github.com/helium/router/config/sys.config.src)
+[`sys.config.src`](../config/sys.config.src)
 with the filename being then-current block height.
 
 Similarly, locally generated snapshots should be within the directory path

@@ -145,6 +145,10 @@ jobs:
     concurrency: 
       group: ${{ github.workflow }}-${{ github.ref }}-ct-${{ matrix.suite }}
       cancel-in-progress: true
+    env:
+      IC_APP_NAME: '${{ secrets.IC_APP_NAME }}'
+      IC_SCOPE_ID: '${{ secrets.IC_SCOPE_ID }}'
+      IC_API_KEY: '${{ secrets.IC_API_KEY  }}'
     steps:
       - name: checkout
         uses: actions/checkout@v2
@@ -157,9 +161,4 @@ jobs:
           mkdir _build
           tar -xvf build.tar.gz -C _build
       - name: ct ${{ matrix.suite }}
-        run: |
-          CT_LAGER=DEBUG \
-          IC_APP_NAME=${{ secrets.IC_APP_NAME }} \
-          IC_SCOPE_ID=${{ secrets.IC_SCOPE_ID }} \
-          IC_API_KEY=${{ secrets.IC_API_KEY }} \
-          ./rebar3 ct --suite=${{ matrix.suite }} --readable=true
+        run: CT_LAGER=DEBUG ./rebar3 ct --suite=${{ matrix.suite }} --readable=true

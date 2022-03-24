@@ -733,6 +733,8 @@ getenv(Name) ->
     case os:getenv(Name) of
         false ->
             throw({missing_env_var, Name});
+        [] ->
+            throw({empty_env_var, Name});
         V ->
             V
     end.

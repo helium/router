@@ -4,6 +4,8 @@ Helium's LoRa Network Server (LNS) backend.
 
 ## Usage
 
+Running version `docker exec -it helium_router cat /opt/router/router.version`
+
 ### Testing / Local
 
 ```

@@ -7,7 +7,8 @@
 ]).
 
 -export([
-    iot_central_test/1
+    iot_central_test/1,
+    iot_central_integration_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -35,7 +36,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        iot_central_test
+        iot_central_test,
+        iot_central_integration_test
     ].
 
 %%--------------------------------------------------------------------
@@ -68,15 +70,6 @@ iot_central_test(Config) ->
             }
         end
     ),
-    %% meck:expect(
-    %%     router_iot_central_connection,
-    %%     mqtt_device_setup_,
-    %%     fun(_Central) ->
-    %%         #{
-    %%             mqtt_connection => todo
-    %%         }
-    %%     end
-    %% ),
     meck:expect(router_iot_central_connection, http_device_get, fun(_) ->
         {ok, device_map_would_go_here}
     end),
@@ -456,6 +449,231 @@ iot_central_test(Config) ->
     meck:unload(emqtt),
     ok.
 
+iot_central_integration_test(Config) ->
+    Channel = #{
+        <<"type">> => <<"iot_central">>,
+        <<"credentials">> => #{
+            <<"iot_central_app_name">> => getenv("IC_APP_NAME"),
+            <<"iot_central_scope_id">> => getenv("IC_SCOPE_ID"),
+            <<"iot_central_api_key">> => getenv("IC_API_KEY")
+        },
+        <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
+        <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME
+    },
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channels, [Channel]}),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, [_, CF]} = router_db:get(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    ct:print("giving time for channel to startup and connect, DPS can take some time"),
+    timer:sleep(timer:seconds(10)),
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% ASSERTION REMOVED: waiting to receive from mqtt connection
+    %% ASSERTION REMOVED: wait_channel_data for uplink
+
+    %% Waiting for report channel status from MQTT channel
+    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => UplinkUUID1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_CENTRAL_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"qos">> => 0,
+                <<"body">> => fun erlang:is_binary/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
+        <<"id">> => UplinkUUID1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_res">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_CENTRAL_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"res">> => #{},
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    %% We ignore the channel correction messages
+    ok = test_utils:ignore_messages(),
+
+    %% ACTION REMOVED: queueing downlink
+
+    %% Send UNCONFIRMED_UP frame packet
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1
+            )},
+
+    %% ASSERTION REMOVED: waiting for receive from mqtt connection
+    %% ASSERTION REMOVED: wait_channel_data for uplink
+    %% ASSERTION REMOVED: wait_for_console_event_sub for downlink_unconfirmed
+
+    %% Waiting for report channel status from MQTT channel
+    {ok, #{<<"id">> := UplinkUUID2}} = test_utils:wait_for_console_event_sub(
+        <<"uplink_unconfirmed">>,
+        #{
+            <<"id">> => fun erlang:is_binary/1,
+            <<"category">> => <<"uplink">>,
+            <<"sub_category">> => <<"uplink_unconfirmed">>,
+            <<"description">> => fun erlang:is_binary/1,
+            <<"reported_at">> => fun erlang:is_integer/1,
+            <<"device_id">> => ?CONSOLE_DEVICE_ID,
+            <<"data">> => #{
+                <<"dc">> => #{<<"balance">> => 97, <<"nonce">> => 1, <<"used">> => 1},
+                <<"fcnt">> => fun erlang:is_integer/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"raw_packet">> => fun erlang:is_binary/1,
+                <<"port">> => fun erlang:is_integer/1,
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"hotspot">> => #{
+                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                    <<"name">> => erlang:list_to_binary(HotspotName),
+                    <<"rssi">> => 0.0,
+                    <<"snr">> => 0.0,
+                    <<"spreading">> => <<"SF8BW125">>,
+                    <<"frequency">> => fun erlang:is_float/1,
+                    <<"channel">> => fun erlang:is_number/1,
+                    <<"lat">> => fun erlang:is_float/1,
+                    <<"long">> => fun erlang:is_float/1
+                },
+                <<"mac">> => [],
+                <<"hold_time">> => fun erlang:is_integer/1
+            }
+        }
+    ),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
+        <<"id">> => UplinkUUID2,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_req">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Request sent to ~p", [?CONSOLE_IOT_CENTRAL_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"req">> => #{
+                <<"qos">> => 0,
+                <<"body">> => fun erlang:is_binary/1
+            },
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
+        <<"id">> => UplinkUUID2,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_integration_res">>,
+        <<"description">> => erlang:list_to_binary(
+            io_lib:format("Response received from ~p", [?CONSOLE_IOT_CENTRAL_CHANNEL_NAME])
+        ),
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"res">> => #{},
+            <<"integration">> => #{
+                <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
+                <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME,
+                <<"status">> => <<"success">>
+            }
+        }
+    }),
+
+    %% ASSERTION REMOVED: waiting for downlink in state channel
+
+    %% We ignore the report status down
+    ok = test_utils:ignore_messages(),
+
+    ok.
+
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
@@ -509,4 +727,12 @@ connect(URI, DeviceID, Name) ->
         _ ->
             lager:info("BAD MQTT URI ~s for channel ~s ~p", [URI, Name]),
             {error, invalid_mqtt_uri}
+    end.
+
+getenv(Name) ->
+    case os:getenv(Name) of
+        false ->
+            throw({missing_env_var, Name});
+        V ->
+            V
     end.

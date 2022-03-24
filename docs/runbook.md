@@ -237,7 +237,7 @@ For applying new values to application variables, use `remote_console`.
 ```bash
 router remote_console
 application:set_env(blockchain, snapshot_memory_limit, 2048).
-^D
+^C^C
 ```
 
 If you use a particular expression upon several occasions, suggest it as a

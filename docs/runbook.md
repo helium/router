@@ -60,6 +60,10 @@ docker-compose down
 docker-compose up -d
 ```
 
+Docker images that were running prior to `shutdown` or `reboot` are expected
+to resume after OS boots again, because Docker defaults to `Restart=always`
+within its systemd configuration.
+
 ## Install A Release
 
 Published Docker images are

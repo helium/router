@@ -263,7 +263,8 @@ application:get_env(router, device_trace_timeout, 240).
 
 ## Erlang Expressions
 
-For one-off expressions **not** intended to impact the running BEAM, use `eval`:
+For one-off expressions **not** intended to persist inside the running BEAM,
+use `eval`:
 
 ```bash
 router eval 'B = blockchain_worker:blockchain(), blockchain:height(B).'

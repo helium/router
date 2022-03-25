@@ -34,12 +34,6 @@ alias console_up='docker-compose build && docker-compose up -d && docker-compose
 alias console_update='docker-compose build --pull && console_restart'
 ```
 
-Miscellaneous:
-
-```bash
-alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
-```
-
 With the above set of aliases defined and available in your current shell,
 confirm:
 
@@ -210,6 +204,30 @@ Once copied to the intended server, load that snapshot:
 
 ```bash
 router snapshot load /var/data/latest.snap
+```
+
+## State Channels
+
+State Channels provide off-chain transactions to later be durably recorded
+on-chain en masse and are critical for timely operations and network
+semantics.
+
+For a router that is actively used, there will always be at least one State
+Channel active.
+
+Get summary of State Channels currently in use on router or
+packet-purchaser, respectively.
+
+```bash
+router sc list
+pp sc list
+```
+
+Or:
+
+```bash
+tail -F /var/data/log/router.log | grep _sc_worker
+tail -F /var/data/log/packet_purchaser.log | grep _sc_worker
 ```
 
 ## Tracing A Device

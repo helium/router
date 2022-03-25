@@ -165,7 +165,7 @@ route_packet(Config) ->
             }
         ],
         <<"dc">> => #{
-            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"balance">> => fun erlang:is_integer/1,
             <<"nonce">> => fun erlang:is_integer/1
         }
     }),

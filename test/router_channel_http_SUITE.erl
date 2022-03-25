@@ -127,7 +127,7 @@ http_test(Config) ->
             }
         ],
         <<"dc">> => #{
-            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"balance">> => fun erlang:is_integer/1,
             <<"nonce">> => fun erlang:is_integer/1
         }
     }),
@@ -265,7 +265,7 @@ http_test(Config) ->
             }
         ],
         <<"dc">> => #{
-            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"balance">> => fun erlang:is_integer/1,
             <<"nonce">> => fun erlang:is_integer/1
         }
     }),
@@ -466,7 +466,7 @@ http_update_test(Config) ->
             }
         ],
         <<"dc">> => #{
-            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"balance">> => fun erlang:is_integer/1,
             <<"nonce">> => fun erlang:is_integer/1
         }
     }),
@@ -865,7 +865,7 @@ http_decoded_payload_test(Config) ->
         <<"devaddr">> => '_',
         <<"hotspots">> => fun erlang:is_list/1,
         <<"dc">> => #{
-            <<"dc_balance">> => fun erlang:is_integer/1,
+            <<"balance">> => fun erlang:is_integer/1,
             <<"nonce">> => fun erlang:is_integer/1
         }
     }),

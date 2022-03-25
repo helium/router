@@ -665,7 +665,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce)
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
         hotspots => lists:map(FormatHotspot, CachedData1),
         dc => #{
-            <<"dc_balance">> => Balance,
+            <<"balance">> => Balance,
             <<"nonce">> => Nonce
         }
     },

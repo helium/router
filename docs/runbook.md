@@ -232,6 +232,9 @@ tail -F /var/data/log/packet_purchaser.log | grep _sc_worker
 
 ## Tracing A Device
 
+Traces disable themselves after 240 minutes or if the service gets
+restarted.
+
 ```bash
 router device trace --id=abc12345-bbbb-cccc-dddd-eeeeeeeeeeee
 tail -F /var/data/router/log/traces/abc12.log

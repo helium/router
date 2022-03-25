@@ -191,7 +191,7 @@ specified by `blockchain` `->` `base_dir`.
 
 Start on a server confirmed to be current with respect to blockchain height.
 
-Maybe start on a validator, which uses the `minor` command rather than
+Maybe start on a validator, which uses the `miner` command rather than
 `router` but otherwise works the same.
 
 ```bash
@@ -238,6 +238,13 @@ restarted.
 ```bash
 router device trace --id=abc12345-bbbb-cccc-dddd-eeeeeeeeeeee
 tail -F /var/data/router/log/traces/abc12.log
+```
+
+The default expiration may be changed by evaluating the following, but see
+also *Erlang Expressions* section below.
+
+```Erlang
+application:get_env(router, device_trace_timeout, 240).
 ```
 
 ## Erlang Expressions

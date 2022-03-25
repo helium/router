@@ -38,8 +38,15 @@ With the above set of aliases defined and available in your current shell,
 confirm:
 
 ```bash
+cd ~/router/
 router --help
 ```
+
+Alternatively for a **packet-purchaser** host, the subdirectory will be
+`~/packet-purchaser/` instead.
+
+All `docker-compose` and aliased `docker` commands such as `router` and `pp`
+should be run from within their respective subdirectories, as noted above.
 
 ## Stop/Start
 
@@ -197,7 +204,7 @@ Maybe start on a validator, which uses the `miner` command rather than
 ```bash
 miner snapshot take latest.snap
 docker cp validator:/opt/miner/latest.snap /tmp/
-rsync -a /tmp/latest.snap  192.168.123.123:/var/data/latest.snap
+rsync -a --progress /tmp/latest.snap  192.168.123.123:/var/data/latest.snap
 ```
 
 Once copied to the intended server, load that snapshot:
@@ -238,6 +245,13 @@ restarted.
 ```bash
 router device trace --id=abc12345-bbbb-cccc-dddd-eeeeeeeeeeee
 tail -F /var/data/router/log/traces/abc12.log
+```
+
+Timeouts may be temporarily overridden using `RELX_RPC_TIMEOUT` environment
+variable.
+
+```bash
+RELX_RPC_TIMEOUT=900 router ...
 ```
 
 The default expiration may be changed by evaluating the following, but see

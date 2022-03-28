@@ -57,4 +57,8 @@ ADD test/ test/
 RUN ./rebar3 as test compile
 # END EXTRA
 
+ARG ROUTER_VERSION
+ENV ROUTER_VERSION=${ROUTER_VERSION:-unknown}
+RUN echo ${ROUTER_VERSION} > router.version && cat router.version
+
 CMD ["make", "run"]

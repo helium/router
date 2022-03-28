@@ -25,3 +25,4 @@ jobs:
           tags: CI
           file: Dockerfile-CI
           push: true
+          build_args: ROUTER_VERSION=${{ github.ref_name }}

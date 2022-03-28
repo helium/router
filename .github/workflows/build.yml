@@ -20,3 +20,4 @@ jobs:
           repository: team-helium/router
           tag_with_ref: true
           push: true
+          build_args: ROUTER_VERSION=${{ github.ref_name }}

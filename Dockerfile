@@ -47,4 +47,8 @@ ENV PATH=$PATH:_build/${BUILD_NET}/rel/router/bin
 RUN ln -s /opt/router/_build/${BUILD_NET}/rel /opt/router/_build/default/rel
 RUN ln -s /opt/router/_build/default/rel/router/bin/router /opt/router-exec
 
+ARG ROUTER_VERSION
+ENV ROUTER_VERSION=${ROUTER_VERSION:-unknown}
+RUN echo ${ROUTER_VERSION} > router.version && cat router.version
+
 CMD ["make", "run"]

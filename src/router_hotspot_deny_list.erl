@@ -6,6 +6,7 @@
 -module(router_hotspot_deny_list).
 
 -define(ETS, router_hotspot_deny_list_ets).
+-define(DEFAULT_FILE, "hotspot_deny_list.json").
 
 %% ------------------------------------------------------------------
 %% API Exports
@@ -76,7 +77,7 @@ approve(PubKeyBin) ->
 
 -spec load_from_file(BaseDir :: string()) -> ok.
 load_from_file(BaseDir) ->
-    FileName = application:get_env(router, hotspot_deny_list, "hotspot_deny_list.json"),
+    FileName = application:get_env(router, hotspot_deny_list, ?DEFAULT_FILE),
     File = BaseDir ++ "/" ++ FileName,
     case file:read_file(File) of
         {error, Error} ->

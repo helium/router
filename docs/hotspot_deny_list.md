@@ -11,7 +11,7 @@ The Hotspot Deny List allows to reject any offer from unwanted hotspots.
 ["112NiuFH2rJmeTTvr84Tov6tkXnWEQEVqHaJEu2qsQBxPvYuzw4c", "1121pS286YsPR6fohpLkzXA99gAkQpwftiGdoteqzn4rbEzoZCWy"]
 ```
 
-*Note: default file can be change via `sys.config` `{hotspot_deny_list, "alternarive_hotspot_deny_list.json"}`*
+*Note: default file can be changed via `sys.config` `{hotspot_deny_list, "alternative_hotspot_deny_list.json"}`*
 
 ## Usage
 

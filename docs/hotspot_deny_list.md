@@ -32,4 +32,4 @@ The Hotspot Deny List allows to reject any offer from unwanted hotspots.
 `router hotspot_deny_list remove 112NiuFH2rJmeTTvr84Tov6tkXnWEQEVqHaJEu2qsQBxPvYuzw4c`
 
 
-**Note: any add/remove does not get saved to config file, `hotspot_deny_list.json` will need to be updated indifidually**
+**Note: any add/remove does not get saved to config file, `hotspot_deny_list.json` will need to be updated individually**

@@ -40,6 +40,7 @@ filter_usage() ->
             "  filter reset_db  --commit                        - Reset rocksdb from Console api\n"
             "  filter migrate --from=<from> --to=<to> --commit  - Migrate devices, emptying filter <from> (Remember: filters are 0-indexed)\n"
             "  filter move_to_front <NumGroups> --commit        - Migrate devices to <NumGroups> filters, emptying the rest\n"
+            "  filter contains --app=<app_eui> --dev=<dev_eui>  - Check if a device EUI pair is in XOR filters\n"
             "\n"
         ]
     ].
@@ -82,8 +83,73 @@ filter_cmd() ->
             [],
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun filter_move_to_front/3
+        ],
+        [
+            ["filter", "contains"],
+            [],
+            [
+                {app, [{longname, "app_eui"}, {typecast, fun erlang:list_to_binary/1}]},
+                {dev, [{longname, "dev_eui"}, {typecast, fun erlang:list_to_binary/1}]}
+            ],
+            fun filter_contains/3
         ]
     ].
+
+filter_contains(["filter", "contains"], [], Flags) ->
+    #{app_eui := AppEUI0, dev_eui := DevEUI0} = maps:from_list(Flags),
+
+    %% Device creds put into filter
+    <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(AppEUI0),
+    <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(DevEUI0),
+    Target = <<DevEUI:64/integer-unsigned-little, AppEUI:64/integer-unsigned-little>>,
+
+    Ledger = blockchain:ledger(),
+    {ok, OUICount} = blockchain_ledger_v1:get_oui_counter(Ledger),
+    Enum = fun(L) -> lists:zip(lists:seq(1, length(L)), L) end,
+    HashFun = fun xxhash:hash64/1,
+
+    %% [{1, {routing_v1, ...}}]
+    Routing = [
+        {OUI, element(2, blockchain_ledger_v1:find_routing(OUI, Ledger))}
+     || OUI <- lists:seq(1, OUICount)
+    ],
+    %% [{1, [filter1, filter2]}]
+    Filters = [
+        {OUI, blockchain_ledger_routing_v1:filters(InnerRouting)}
+     || {OUI, InnerRouting} <- Routing
+    ],
+
+    %% #{{1, 1} => filter1, {1, 2} => filter2}
+    OUIFilterMap = maps:from_list(
+        [
+            {{OUI, Idx}, Filter}
+         || {OUI, IF} <- Filters, {Idx, Filter} <- Enum(IF)
+        ]
+    ),
+
+    Contains = fun(OUI, FilterNum, Creds) ->
+        case maps:get({OUI, FilterNum}, OUIFilterMap, no_filter) of
+            no_filter -> "__";
+            Filter -> xor16:contain({Filter, HashFun}, Creds)
+        end
+    end,
+
+    %% [
+    %%  [{oui, 1}, {{filter, 1}, true}, {{filter, 2}, false}],
+    %%  [{oui, 2}, {{filter, 1}, false}, {{filter, 2}, false}]
+    %% ]
+    Results = [
+        [
+            {'OUI', OUI}
+            | [
+                {{filter, Num}, Contains(OUI, Num, Target)}
+             || Num <- lists:seq(1, 5)
+            ]
+        ]
+     || OUI <- lists:seq(1, OUICount)
+    ],
+
+    c_table(Results).
 
 filter_migrate(["filter", "migrate"], [], Flags) ->
     Options = #{from := FromIndex, to := ToIndex} = maps:from_list(Flags),

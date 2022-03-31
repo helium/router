@@ -1,3 +1,12 @@
+%%%-------------------------------------------------------------------
+%% @doc
+%% == Router Azure IoT Hub Channel ==
+%%
+%% - Ensure device is created in iot-hub.
+%% - Connect and communcate as device over mqtt.
+%%
+%% @end
+%%%-------------------------------------------------------------------
 -module(router_iot_hub_connection).
 
 %% TODO: Replace with `uri_string:quote/1' when it get's released.

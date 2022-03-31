@@ -736,6 +736,43 @@ convert_channel(Device, Pid, #{<<"type">> := <<"azure">>} = JSONChannel) ->
         end
     ),
     {true, Channel};
+convert_channel(Device, Pid, #{<<"type">> := <<"iot_central">>} = JSONChannel) ->
+    ID = kvc:path([<<"id">>], JSONChannel),
+    Handler = router_iot_central_channel,
+    Name = kvc:path([<<"name">>], JSONChannel),
+    ReceiveJoins = kvc:path([<<"receive_joins">>], JSONChannel, false),
+    Args = #{
+        iot_central_app_name => kvc:path(
+            [<<"credentials">>, <<"iot_central_app_name">>],
+            JSONChannel
+        ),
+        iot_central_scope_id => kvc:path(
+            [<<"credentials">>, <<"iot_central_scope_id">>],
+            JSONChannel
+        ),
+        iot_central_api_key => kvc:path(
+            [<<"credentials">>, <<"iot_central_api_key">>],
+            JSONChannel
+        )
+    },
+    DeviceID = router_device:id(Device),
+    Decoder = convert_decoder(JSONChannel),
+    Template = convert_template(JSONChannel),
+    Channel = router_channel:new(
+        ID,
+        Handler,
+        Name,
+        Args,
+        DeviceID,
+        Pid,
+        Decoder,
+        Template,
+        case ReceiveJoins of
+            true -> #{receive_joins => true};
+            false -> #{}
+        end
+    ),
+    {true, Channel};
 convert_channel(Device, Pid, #{<<"type">> := <<"aws">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_aws_channel,

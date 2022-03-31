@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %% @doc
-%% == Router IoT Hub Channel ==
+%% == Router IoT Channel Channel ==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_iot_hub_channel).
+-module(router_iot_central_channel).
 
 -behaviour(gen_event).
 
@@ -26,7 +26,7 @@
 -record(state, {
     channel :: router_channel:channel(),
     channel_id :: binary(),
-    azure :: router_iot_hub_connection:azure(),
+    azure :: router_iot_central_connection:azure(),
     conn_backoff :: backoff:backoff(),
     conn_backoff_ref :: reference() | undefined,
     ping :: reference() | undefined
@@ -38,8 +38,8 @@
 init({[Channel, Device], _}) ->
     ok = router_utils:lager_md(Device),
     ChannelID = router_channel:unique_id(Channel),
-    lager:info("init iot_hub with ~p", [Channel]),
-    case setup_iot_hub(Channel) of
+    lager:info("init iot_central with ~p", [Channel]),
+    case setup_iot_central(Channel) of
         {ok, Account} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
             send_connect_after(ChannelID, 0),
@@ -50,7 +50,7 @@ init({[Channel, Device], _}) ->
                 conn_backoff = Backoff
             }};
         Err ->
-            lager:warning("could not setup iot_hub connection ~p", [Err]),
+            lager:warning("could not setup iot_central connection ~p", [Err]),
             Err
     end.
 
@@ -78,7 +78,7 @@ handle_info(
     {publish, PublishPayload},
     #state{azure = Azure, channel = Channel, channel_id = ChannelID} = State
 ) ->
-    case router_iot_hub_connection:mqtt_response(Azure, PublishPayload) of
+    case router_iot_central_connection:mqtt_response(Azure, PublishPayload) of
         {ok, Payload} ->
             Controller = router_channel:controller(Channel),
             router_device_channels_worker:handle_downlink(Controller, Payload, Channel);
@@ -102,12 +102,12 @@ handle_info(
 handle_info({?MODULE, connect, _}, State) ->
     {ok, State};
 handle_info({?MODULE, ping, ChannelID}, #state{channel_id = ChannelID, azure = Azure} = State) ->
-    case router_iot_hub_connection:mqtt_ping(Azure) of
+    case router_iot_central_connection:mqtt_ping(Azure) of
         ok ->
-            lager:debug("[~s] pinged Azure successfully", [ChannelID]),
+            lager:debug("[~s] pinged iot_central successfully", [ChannelID]),
             {ok, State#state{ping = schedule_ping(ChannelID)}};
         {error, _Reason} ->
-            lager:error("[~s] failed to ping Azure connection: ~p", [ChannelID, _Reason]),
+            lager:error("[~s] failed to ping iot_central connection: ~p", [ChannelID, _Reason]),
             {ok, reconnect(State)}
     end;
 handle_info(_Msg, State) ->
@@ -137,7 +137,7 @@ do_handle_event(
     lager:debug("got data: ~p", [Data]),
 
     EncodedData = router_channel:encode_data(Channel, Data),
-    Response = router_iot_hub_connection:mqtt_publish(Azure, EncodedData),
+    Response = router_iot_central_connection:mqtt_publish(Azure, EncodedData),
 
     RequestReport = make_request_report(Response, Data, State0),
     Pid = router_channel:controller(Channel),
@@ -157,30 +157,30 @@ do_handle_event(
     ok = router_device_channels_worker:report_response(Pid, UUIDRef, Channel, ResponseReport),
     State1.
 
--spec setup_iot_hub(router_channel:channel()) ->
-    {ok, router_iot_hub_connection:azure()} | {error, any()}.
-setup_iot_hub(Channel) ->
+-spec setup_iot_central(router_channel:channel()) ->
+    {ok, router_iot_central_connection:azure()} | {error, any()}.
+setup_iot_central(Channel) ->
     #{
-        azure_hub_name := HubName,
-        azure_policy_name := PolicyName,
-        azure_policy_key := PolicyKey
+        iot_central_app_name := AppName,
+        iot_central_scope_id := ScopeID,
+        iot_central_api_key := ApiKey
     } = router_channel:args(Channel),
 
     DeviceID = router_channel:device_id(Channel),
-    {ok, Account} = router_iot_hub_connection:new(HubName, PolicyName, PolicyKey, DeviceID),
+    {ok, Account0} = router_iot_central_connection:new(AppName, ScopeID, ApiKey, DeviceID),
 
-    case router_iot_hub_connection:ensure_device_exists(Account) of
-        ok -> {ok, Account};
+    case router_iot_central_connection:http_device_setup(Account0) of
+        {ok, Account1} -> {ok, Account1};
         Err -> Err
     end.
 
 -spec connect(#state{}) -> {ok | error, #state{}}.
 connect(#state{azure = Azure0, conn_backoff = Backoff0, channel_id = ChannelID} = State) ->
-    {ok, Azure1} = router_iot_hub_connection:mqtt_cleanup(Azure0),
+    {ok, Azure1} = router_iot_central_connection:mqtt_cleanup(Azure0),
 
-    case router_iot_hub_connection:mqtt_connect(Azure1) of
+    case router_iot_central_connection:mqtt_connect(Azure1) of
         {ok, Azure2} ->
-            case router_iot_hub_connection:mqtt_subscribe(Azure2) of
+            case router_iot_central_connection:mqtt_subscribe(Azure2) of
                 {ok, _, _} ->
                     lager:info("[~s] connected and subscribed", [ChannelID]),
                     {_, Backoff1} = backoff:succeed(Backoff0),

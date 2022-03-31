@@ -105,13 +105,19 @@ init() ->
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
     Start = erlang:system_time(millisecond),
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp =
-        case Routing of
-            #routing_information_pb{data = {eui, _EUI}} ->
-                join_offer(Offer, HandlerPid);
-            #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                packet_offer(Offer, HandlerPid)
+        case router_hotspot_deny_list:enabled() andalso router_hotspot_deny_list:denied(Hotspot) of
+            true ->
+                {error, denied};
+            false ->
+                case Routing of
+                    #routing_information_pb{data = {eui, _EUI}} ->
+                        join_offer(Offer, HandlerPid);
+                    #routing_information_pb{data = {devaddr, _DevAddr}} ->
+                        packet_offer(Offer, HandlerPid)
+                end
         end,
     End = erlang:system_time(millisecond),
     erlang:spawn(fun() ->

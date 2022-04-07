@@ -372,45 +372,6 @@ scheduled_cleanup_test() ->
     _ = catch ets:delete(?ETS_MAX),
     ok.
 
-scheduled_cleanup_test() ->
-    ok = ?MODULE:init(),
-
-    %% Setup Max packet for device
-    DeviceID = router_utils:uuid_v4(),
-    Max = 5,
-    ?assertEqual(ok, ?MODULE:max(DeviceID, Max)),
-
-    Packets = 100,
-    lists:foreach(
-        fun(_) ->
-            %% Populate table with a bunch of different packets and max values
-            erlang:spawn(
-                fun() ->
-                    PHash = crypto:strong_rand_bytes(32),
-                    ok = ?MODULE:max(DeviceID, Max),
-                    ok = ?MODULE:maybe_buy(DeviceID, PHash)
-                end
-            )
-        end,
-        lists:seq(1, Packets)
-    ),
-
-    %% Wait 100ms and then run a cleanup for 10ms
-    timer:sleep(100),
-    Time = erlang:system_time(millisecond) - 10,
-    ?assertEqual(Packets, erlang:length(select_expired(Time))),
-    ok = scheduled_cleanup(10),
-    timer:sleep(100),
-    % %% It should remove every values except the device max
-    ?assertEqual(Max, ?MODULE:max(DeviceID)),
-    ?assertEqual(0, erlang:length(select_expired(Time))),
-    ?assertEqual(0, ets:info(?ETS, size)),
-    ?assertEqual(1, ets:info(?ETS_MAX, size)),
-
-    _ = catch ets:delete(?ETS),
-    _ = catch ets:delete(?ETS_MAX),
-    ok.
-
 maybe_buy_test_rcv_loop(Acc) ->
     receive
         {maybe_buy_test, X, Time, Result} ->

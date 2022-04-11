@@ -227,7 +227,8 @@ handle_call(
             {reply, Err, State};
         {ok, Filters, _Routing} ->
             Reply = [
-                {routing, enumerate_0([byte_size(F) || F <- Filters])},
+                {routing,
+                    enumerate_0([byte_size(F) || F <- Filters], maps:size(FilterToDevices), 0)},
                 {in_memory, [
                     {Idx, erlang:length(Devs)}
                  || {Idx, Devs} <- maps:to_list(FilterToDevices)
@@ -1169,6 +1170,11 @@ default_timer() ->
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.
+
+-spec enumerate_0(list(T), non_neg_integer(), T) -> list({non_neg_integer(), T}).
+enumerate_0(L0, Max, Default) ->
+    End = lists:duplicate(Max - length(L0), Default),
+    enumerate_0(L0 ++ End).
 
 -spec enumerate_0(list(T)) -> list({non_neg_integer(), T}).
 enumerate_0(L) ->

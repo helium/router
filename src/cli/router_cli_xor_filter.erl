@@ -208,9 +208,13 @@ filter_report(["filter", "report"], [], [{id, ID}]) ->
     report_device(DeviceID);
 filter_report(["filter", "report"], [], []) ->
     [
-        {routing, Routing},
-        {in_memory, Memory}
+        {routing, Routing0},
+        {in_memory, Memory0}
     ] = router_xor_filter_worker:report_filter_sizes(),
+
+    Max = lists:max([length(Routing0), length(Memory0)]),
+    Routing = router_utils:enumerate_0_to_size(Routing0, Max, unused),
+    Memory = router_utils:enumerate_0_to_size(Memory0, Max, unsued),
 
     c_table([
         [

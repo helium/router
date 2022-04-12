@@ -24,8 +24,7 @@
     device_add_multiple_send_updates_to_console_test/1,
     device_add_unique_and_matching_send_updates_to_console_test/1,
     device_removed_send_updates_to_console_test/1,
-    estimate_cost_test/1,
-    reporting_test/1
+    estimate_cost_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -79,8 +78,7 @@ all() ->
         device_add_multiple_send_updates_to_console_test,
         device_add_unique_and_matching_send_updates_to_console_test,
         device_removed_send_updates_to_console_test,
-        estimate_cost_test,
-        reporting_test
+        estimate_cost_test
     ].
 
 %%--------------------------------------------------------------------
@@ -1545,32 +1543,6 @@ estimate_cost_test(Config) ->
     ?assertEqual(0, maps:size(State#state.pending_txns)),
     %% should _NOT_ have pushed a new filter to the chain for only removed devices
     ok = expect_block(3, Chain),
-
-    ?assert(meck:validate(blockchain_worker)),
-    meck:unload(blockchain_worker),
-    ok.
-
-reporting_test(_Config) ->
-    %% Init worker
-    application:set_env(router, router_xor_filter_worker, false),
-    erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
-    %% Ensure reporting returns lists of the same size
-    [
-        {routing, Routing},
-        {in_memory, Memory}
-    ] = router_xor_filter_worker:report_filter_sizes(),
-
-    ?assertEqual(length(Memory), length(Routing), "reports should be the same length"),
-    %% Original thrower of the error
-    _Together = lists:zip(Memory, Routing),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

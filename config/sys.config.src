@@ -51,7 +51,8 @@
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
         {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
         {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
-        {hotspot_deny_list_enabled, "${ROUTER_HOTSPOT_DENY_LIST_ENABLED}"}
+        {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
+        {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"}
     ]},
     {grpcbox, [
         {servers, [

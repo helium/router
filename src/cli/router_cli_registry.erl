@@ -5,7 +5,7 @@
     router_cli_info,
     router_cli_xor_filter,
     router_cli_organization,
-    router_cli_hotspot_deny_list
+    router_cli_hotspot_reputation
 ]).
 
 -export([register_cli/0]).

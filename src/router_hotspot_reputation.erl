@@ -21,6 +21,7 @@
     reputations/0,
     reputation/1,
     denied/1,
+    reset/1,
     crawl_offers/1
 ]).
 
@@ -95,8 +96,18 @@ reputation(Hotspot) ->
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
-    ?MODULE:reputation(Hotspot) >=
-        application:get_env(router, hotspot_reputation_threshold, ?DEFAULT_THRESHOLD).
+    Threshold =
+        case application:get_env(router, hotspot_reputation_threshold, ?DEFAULT_THRESHOLD) of
+            [] -> ?DEFAULT_THRESHOLD;
+            Str when is_list(Str) -> erlang:list_to_integer(Str);
+            I -> I
+        end,
+    ?MODULE:reputation(Hotspot) >= Threshold.
+
+-spec reset(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
+reset(Hotspot) ->
+    true = ets:insert(?ETS, {Hotspot, 0}),
+    ok.
 
 -spec crawl_offers(Timer :: non_neg_integer()) -> ok.
 crawl_offers(Timer) ->
@@ -171,6 +182,11 @@ bad_hotspot_test() ->
     ?assertEqual(true, ?MODULE:denied(Hotspot)),
 
     ?assertEqual([{Hotspot, 100}], ?MODULE:reputations()),
+
+    ok = ?MODULE:reset(Hotspot),
+
+    ?assertEqual(0, ?MODULE:reputation(Hotspot)),
+    ?assertEqual(false, ?MODULE:denied(Hotspot)),
 
     ets:delete(?ETS),
     ets:delete(?OFFER_ETS),

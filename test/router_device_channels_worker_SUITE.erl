@@ -29,7 +29,7 @@
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 -define(ETS, ?MODULE).
--define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_INIT, {
     backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),

@@ -42,7 +42,7 @@
 
 -define(SERVER, ?MODULE).
 -define(REFRESH_CHANNELS, refresh_channels).
--define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_TYPE, normal).
 

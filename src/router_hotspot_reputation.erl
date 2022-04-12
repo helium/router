@@ -70,7 +70,6 @@ track_offer(Offer) ->
         Now = erlang:system_time(millisecond),
         true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
     end),
-
     ok.
 
 -spec track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.

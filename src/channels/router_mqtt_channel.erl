@@ -137,7 +137,7 @@ handle_info(
     _ = (catch erlang:cancel_timer(TimerRef)),
     DeviceID = router_device:id(Device),
     ChannelName = router_channel:name(Channel),
-    case connect(Endpoint, DeviceID, ChannelName) of
+    try connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             lager:info("[~s] connected to : ~p (~p)", [
                 ChannelID,
@@ -151,7 +151,18 @@ handle_info(
                 ping = schedule_ping(ChannelID)
             }};
         {error, _ConnReason} ->
-            lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
+            Report = io_lib:format(
+                "[~s] failed to connect to ~p: ~p",
+                [ChannelID, Endpoint, _ConnReason]
+            ),
+            lager:error(Report),
+            router_device_channels_worker:report_integration_error(Device, Report, Channel),
+            {ok, reconnect(State)}
+    catch
+        Type:Err ->
+            Report = io_lib:format("[~s] failed to connect ~p: ~p", [ChannelID, Type, Err]),
+            lager:error(Report),
+            router_device_channels_worker:report_integration_error(Device, Report, Channel),
             {ok, reconnect(State)}
     end;
 handle_info(
@@ -171,7 +182,7 @@ handle_info(
     _ = (catch erlang:cancel_timer(TimerRef)),
     DeviceID = router_device:id(Device),
     ChannelName = router_channel:name(Channel),
-    case connect(Endpoint, DeviceID, ChannelName) of
+    try connect(Endpoint, DeviceID, ChannelName) of
         {ok, Conn} ->
             case emqtt:subscribe(Conn, DownlinkTopic, 0) of
                 {ok, _, _} ->
@@ -196,7 +207,18 @@ handle_info(
                     {ok, reconnect(State)}
             end;
         {error, _ConnReason} ->
-            lager:error("[~s] failed to connect to ~p: ~p", [ChannelID, Endpoint, _ConnReason]),
+            Report = io_lib:format(
+                "[~s] failed to connect to ~p: ~p",
+                [ChannelID, Endpoint, _ConnReason]
+            ),
+            lager:error(Report),
+            router_device_channels_worker:report_integration_error(Device, Report, Channel),
+            {ok, reconnect(State)}
+    catch
+        Type:Err ->
+            Report = io_lib:format("[~s] failed to connect ~p: ~p", [ChannelID, Type, Err]),
+            lager:error(Report),
+            router_device_channels_worker:report_integration_error(Device, Report, Channel),
             {ok, reconnect(State)}
     end;
 %% Ignore connect message not for us

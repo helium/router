@@ -21,6 +21,7 @@
     handle_frame/2,
     report_request/4,
     report_response/4,
+    report_integration_error/3,
     handle_downlink/3,
     handle_console_downlink/4,
     new_data_cache/8,

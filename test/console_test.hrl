@@ -68,7 +68,9 @@
     <<"credentials">> => #{
         <<"iot_central_app_name">> => <<"helium-iot-central">>,
         <<"iot_central_scope_id">> => <<"0ne0000000">>,
-        <<"iot_central_api_key">> => base64:encode(<<"SharedAccessSignature obviously-fake-policy-token">>)
+        <<"iot_central_api_key">> => base64:encode(
+            <<"SharedAccessSignature obviously-fake-policy-token">>
+        )
     },
     <<"id">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_ID,
     <<"name">> => ?CONSOLE_IOT_CENTRAL_CHANNEL_NAME

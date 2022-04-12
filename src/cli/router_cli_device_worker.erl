@@ -242,7 +242,7 @@ device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
         channel = Channel
     },
 
-    ok = router_device_worker:queue_message(WorkerPid, Msg),
+    ok = router_device_worker:queue_downlink(WorkerPid, Msg),
     c_text("Queued Message to ~p [new_queue_length: ~p]~n~n~p~n~n", [
         DeviceID,
         length(router_device:queue(D)) + 1,

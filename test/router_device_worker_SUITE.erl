@@ -449,7 +449,7 @@ drop_downlink_test(Config) ->
         self()
     ),
     Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
-    ok = router_device_worker:queue_message(DeviceWorkerPid, Msg),
+    ok = router_device_worker:queue_downlink(DeviceWorkerPid, Msg),
 
     DatarateDown = lorawan_mac_region:dr_to_down('US915', 2, 0),
     MaxSize = lorawan_mac_region:max_payload_size('US915', DatarateDown),

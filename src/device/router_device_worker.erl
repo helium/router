@@ -26,8 +26,8 @@
     handle_frame/8,
     get_queue_updates/3,
     stop_queue_updates/1,
-    queue_message/2,
-    queue_message/3,
+    queue_downlink/2,
+    queue_downlink/3,
     device_update/1,
     clear_queue/1,
     fake_join/2
@@ -140,13 +140,13 @@ stop_queue_updates(Pid) ->
     Pid ! stop_queue_updates,
     ok.
 
--spec queue_message(pid(), #downlink{}) -> ok.
-queue_message(Pid, #downlink{} = Downlink) ->
-    ?MODULE:queue_message(Pid, Downlink, last).
+-spec queue_downlink(pid(), #downlink{}) -> ok.
+queue_downlink(Pid, #downlink{} = Downlink) ->
+    ?MODULE:queue_downlink(Pid, Downlink, last).
 
--spec queue_message(pid(), #downlink{}, first | last) -> ok.
-queue_message(Pid, #downlink{} = Downlink, Position) ->
-    gen_server:cast(Pid, {queue_message, Downlink, Position}).
+-spec queue_downlink(pid(), #downlink{}, first | last) -> ok.
+queue_downlink(Pid, #downlink{} = Downlink, Position) ->
+    gen_server:cast(Pid, {queue_downlink, Downlink, Position}).
 
 -spec clear_queue(Pid :: pid()) -> ok.
 clear_queue(Pid) ->
@@ -425,7 +425,7 @@ handle_cast(
     ok = maybe_send_queue_update(Device1, State),
     {noreply, State#state{device = Device1}};
 handle_cast(
-    {queue_message, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
+    {queue_downlink, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
         Position},
     #state{
         db = DB,

@@ -293,9 +293,9 @@ lw_join_test(Config) ->
         payload = <<"some">>,
         channel = Channel
     },
-    router_device_worker:queue_message(WorkerPid, Msg1),
+    router_device_worker:queue_downlink(WorkerPid, Msg1),
     Msg2 = #downlink{confirmed = false, port = 55, payload = <<"data">>, channel = Channel},
-    router_device_worker:queue_message(WorkerPid, Msg2),
+    router_device_worker:queue_downlink(WorkerPid, Msg2),
 
     receive
         rx -> ok

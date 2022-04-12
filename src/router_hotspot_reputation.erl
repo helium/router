@@ -65,20 +65,31 @@ init() ->
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
 track_offer(Offer) ->
     erlang:spawn(fun() ->
-        Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-        PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-        Now = erlang:system_time(millisecond),
-        true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
+        case ?MODULE:enabled() of
+            false ->
+                ok;
+            true ->
+                lager:info("router_hotspot_reputation enabled"),
+                Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+                PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+                Now = erlang:system_time(millisecond),
+                true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
+        end
     end),
     ok.
 
 -spec track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
 track_packet(SCPacket) ->
     erlang:spawn(fun() ->
-        Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-        Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        true = ets:delete(?OFFER_ETS, {Hotspot, PHash})
+        case ?MODULE:enabled() of
+            false ->
+                ok;
+            true ->
+                Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+                Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+                PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+                true = ets:delete(?OFFER_ETS, {Hotspot, PHash})
+        end
     end),
     ok.
 

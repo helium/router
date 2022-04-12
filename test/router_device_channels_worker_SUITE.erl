@@ -8,7 +8,7 @@
 
 -export([
     refresh_channels_test/1,
-    crashing_channel_test/1,
+    crashing_http_channel_test/1,
     late_packet_test/1,
     join_sent_to_integration_test/1,
     join_sent_to_integration_with_decoder_test/1,
@@ -59,7 +59,7 @@
 all() ->
     [
         refresh_channels_test,
-        crashing_channel_test,
+        crashing_http_channel_test,
         late_packet_test,
         join_sent_to_integration_test,
         join_sent_to_integration_with_decoder_test,
@@ -385,7 +385,7 @@ remove_channel_backoff_when_all_channels_removed_test(Config) ->
     gen_server:stop(DeviceWorkerPid),
     ok.
 
-crashing_channel_test(Config) ->
+crashing_http_channel_test(Config) ->
     Tab = proplists:get_value(ets, Config),
     HTTPChannel1 = #{
         <<"type">> => <<"http">>,

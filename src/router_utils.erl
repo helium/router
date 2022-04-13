@@ -713,7 +713,7 @@ parse_fopts_down(FOpts) ->
                     };
                 {link_check_ans, Margin, GwCnt} ->
                     #{
-                        command => dev_status_ans,
+                        command => link_check_ans,
                         gateway_count => GwCnt,
                         margin => Margin
                     };

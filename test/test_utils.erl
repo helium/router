@@ -432,22 +432,22 @@ wait_for_console_event(Category, #{<<"id">> := ExpectedUUID} = Expected) when
             ct:fail("wait_for_console_event (explicit id) ~p failed", [Category])
     end;
 wait_for_console_event(Category, Expected) ->
-    try
+    Got =
         receive
-            {console_event, Category, _, Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        {ok, Got};
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_for_console_event ~p data failed ~p", [Category, Reason])
-                end
-        after 4250 -> ct:fail("wait_for_console_event ~p timeout", [Category])
-        end
+            {console_event, Category, _, G} -> G
+        after 4250 ->
+            ct:fail("wait_for_console_event ~p timeout", [Category])
+        end,
+    try match_map(Expected, Got) of
+        true ->
+            {ok, Got};
+        {false, Reason} ->
+            ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
+            ct:fail({wait_for_console_event, {category, Category}, Reason})
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_for_console_event ~p stacktrace ~n~p", [Category, {_Reason, _Stacktrace}]),
-            ct:fail("wait_for_console_event ~p failed", [Category])
+            ct:fail({wait_for_console_event, {category, Category}, _Reason})
     end.
 
 % "sub_category":

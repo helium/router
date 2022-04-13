@@ -106,12 +106,7 @@ reputation(Hotspot) ->
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
-    Threshold =
-        case application:get_env(router, hotspot_reputation_threshold, ?DEFAULT_THRESHOLD) of
-            [] -> ?DEFAULT_THRESHOLD;
-            Str when is_list(Str) -> erlang:list_to_integer(Str);
-            I -> I
-        end,
+    Threshold = router_utils:get_env_int(hotspot_reputation_threshold, ?DEFAULT_THRESHOLD),
     ?MODULE:reputation(Hotspot) >= Threshold.
 
 -spec reset(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.

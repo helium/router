@@ -31,7 +31,9 @@
     mtype_to_ack/1,
     frame_timeout/0,
     join_timeout/0,
-    get_env_int/2
+    get_env_int/2,
+    enumerate_0/1,
+    enumerate_0_to_size/3
 ]).
 
 -type uuid_v4() :: binary().
@@ -848,11 +850,28 @@ get_device_traces(DeviceID) ->
 trace_file(<<BinFileName:5/binary, _/binary>>) ->
     BinFileName.
 
+-spec enumerate_0(list(T)) -> list({non_neg_integer(), T}).
+enumerate_0(L) ->
+    lists:zip(lists:seq(0, erlang:length(L) - 1), L).
+
+-spec enumerate_0_to_size(list({integer(), T}), integer(), T) -> list({integer(), T}).
+enumerate_0_to_size(IndexedList, Max, Default) ->
+    Needed = Max - length(IndexedList),
+    {_, Start} = lists:unzip(IndexedList),
+    End = lists:duplicate(Needed, Default),
+    enumerate_0(Start ++ End).
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+enumerate_0_to_size_test_() ->
+    [
+        ?_assertEqual([{0, default}], enumerate_0_to_size([], 1, default)),
+        ?_assertEqual([{0, zero}, {1, default}], enumerate_0_to_size([{0, zero}], 2, default))
+    ].
 
 trace_test() ->
     application:ensure_all_started(lager),

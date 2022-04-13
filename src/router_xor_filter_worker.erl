@@ -227,7 +227,7 @@ handle_call(
             {reply, Err, State};
         {ok, Filters, _Routing} ->
             Reply = [
-                {routing, enumerate_0([byte_size(F) || F <- Filters])},
+                {routing, router_utils:enumerate_0([byte_size(F) || F <- Filters])},
                 {in_memory, [
                     {Idx, erlang:length(Devs)}
                  || {Idx, Devs} <- maps:to_list(FilterToDevices)
@@ -249,7 +249,7 @@ handle_call(
             Reply = [
                 {routing, [
                     {Idx, xor16:contain({Filter, ?HASH_FUN}, DeviceEUI)}
-                 || {Idx, Filter} <- enumerate_0(BinFilters)
+                 || {Idx, Filter} <- router_utils:enumerate_0(BinFilters)
                 ]},
                 {in_memory, [
                     {Idx, is_unset_filter_index_in_list(DeviceEUIEntry, DeviceList)}
@@ -586,7 +586,7 @@ get_balanced_filters_across_n_groups(FilterToDevices, NumGroups) ->
                 Grouped = distribute_devices_across_n_groups(DevicesDevEuiAppEUI, NumGroups),
                 maps:from_list([
                     {Idx, assign_filter_index(Idx, Group)}
-                 || {Idx, Group} <- enumerate_0(Grouped)
+                 || {Idx, Group} <- router_utils:enumerate_0(Grouped)
                 ])
         end,
     {ok, FilterToDevices, BalancedFilterToDevices}.
@@ -614,7 +614,7 @@ commit_groups_to_filters(NewGroups, #state{chain = Chain, oui = OUI} = State) ->
 
                 {Hash, {Idx, GroupEuis}}
             end,
-            enumerate_0(maps:to_list(NewGroups))
+            router_utils:enumerate_0(maps:to_list(NewGroups))
         ),
     {ok, maps:from_list(NewPending0)}.
 
@@ -1072,7 +1072,7 @@ contained_in_filters(BinFilters, FilterToDevices, DevicesDevEuiAppEui) ->
                 {InFilterAcc1, RemovedAcc1, AddedLeftover, RemovedLeftover}
             end,
             {#{}, #{}, DevicesDevEuiAppEui, MaybeRemovedDevices},
-            enumerate_0(BinFilters)
+            router_utils:enumerate_0(BinFilters)
         ),
     {CurrFilter, Added, Removed}.
 
@@ -1169,10 +1169,6 @@ default_timer() ->
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
     end.
-
--spec enumerate_0(list(T)) -> list({non_neg_integer(), T}).
-enumerate_0(L) ->
-    lists:zip(lists:seq(0, erlang:length(L) - 1), L).
 
 -spec new_xor_filter(devices_dev_eui_app_eui()) -> Filter :: reference().
 new_xor_filter([]) ->

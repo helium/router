@@ -61,8 +61,8 @@ hotspot_reputation_get(["hotspot_reputation", B58], [], []) ->
             c_text("Hotspot Reputation is disabled");
         true ->
             Hotspot = libp2p_crypto:b58_to_bin(B58),
-            List = router_hotspot_reputation:reputation(Hotspot),
-            c_table(format(List))
+            Reputation = router_hotspot_reputation:reputation(Hotspot),
+            c_table(format([{Hotspot, Reputation}]))
     end;
 hotspot_reputation_get([_, _, _], [], []) ->
     usage.

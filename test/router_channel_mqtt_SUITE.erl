@@ -6,7 +6,11 @@
     end_per_testcase/2
 ]).
 
--export([mqtt_test/1, mqtt_update_test/1]).
+-export([
+    mqtt_test/1,
+    mqtt_crash_test/1,
+    mqtt_update_test/1
+]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -20,6 +24,8 @@
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 -define(MQTT_TIMEOUT, timer:seconds(2)).
+-define(BACKOFF_MIN, timer:seconds(10)).
+
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -32,7 +38,11 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [mqtt_test, mqtt_update_test].
+    [
+        mqtt_test,
+        mqtt_crash_test,
+        mqtt_update_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -431,6 +441,39 @@ mqtt_test(Config) ->
     ok = test_utils:ignore_messages(),
 
     ok = emqtt:disconnect(MQTTConn),
+    ok.
+
+mqtt_crash_test(Config) ->
+    %% setup device to start with mqtt channel ===========================
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {channel_type, mqtt}),
+
+    %% setup bad repsonse ================================================
+    BadResponse =
+        <<"HTTP/1.1 400 Bad Request\r\nServer: nginx\r\nDate: Day, DD MMM YYYY HH:MM:SS GMT\r\nContent-">>,
+
+    meck:new(emqtt_frame, [passthrough]),
+    meck:expect(emqtt_frame, parse, fun(_Bytes, ParseState) ->
+        %% ct:print("Intercepted: ~n~p~n~p", [_Bytes, ParseState]),
+        %% Replace successful connection bytes with unparseable nginx payload
+        meck:passthrough([BadResponse, ParseState])
+    end),
+
+    %% start device ======================================================
+    {ok, _DeviceWorkerPid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
+    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
+
+    %% immediate connection failure should trigger backoff ===============
+    State = sys:get_state(DeviceChannelsWorkerPid),
+    %% NOTE: With no backoff handling, the test fails here because the handler was never successfully added
+    EventMgrSlot = 3,
+    [{router_mqtt_channel, _Name, ChannelState}] = sys:get_state(element(EventMgrSlot, State)),
+
+    Backoff = element(6, ChannelState),
+    ?assertNotEqual(?BACKOFF_MIN, backoff:get(Backoff)),
+
+    %% cleanup ===========================================================
+    meck:unload(emqtt_frame),
     ok.
 
 mqtt_update_test(Config) ->

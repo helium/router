@@ -21,6 +21,7 @@
     handle_frame/2,
     report_request/4,
     report_response/4,
+    report_integration_error/3,
     handle_downlink/3,
     handle_console_downlink/4,
     new_data_cache/8,
@@ -42,7 +43,7 @@
 
 -define(SERVER, ?MODULE).
 -define(REFRESH_CHANNELS, refresh_channels).
--define(BACKOFF_MIN, timer:seconds(15)).
+-define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(BACKOFF_TYPE, normal).
 

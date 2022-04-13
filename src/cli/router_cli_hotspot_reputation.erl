@@ -44,7 +44,7 @@ hotspot_reputation_usage() ->
 hotspot_reputation_cmd() ->
     [
         [["hotspot_reputation", '*'], [], [], fun hotspot_reputation_get/3],
-        [["hotspot_reputation", "rm", '*'], [], [], fun hotspot_reputation_reset/3]
+        [["hotspot_reputation", "reset", '*'], [], [], fun hotspot_reputation_reset/3]
     ].
 
 hotspot_reputation_get(["hotspot_reputation", "ls"], [], []) ->

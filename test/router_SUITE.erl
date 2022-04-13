@@ -304,7 +304,7 @@ dupes_test(Config) ->
         self()
     ),
     Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    router_device_worker:queue_message(WorkerPid, Msg0),
+    router_device_worker:queue_downlink(WorkerPid, Msg0),
 
     %% Send 4 similar packets to make it look like it's coming from 2 diff hotspots
     Stream !
@@ -1625,7 +1625,7 @@ adr_test(Config) ->
 
     %% Queue unconfirmed downlink message for device
     Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    router_device_worker:queue_message(WorkerPid, Msg0),
+    router_device_worker:queue_downlink(WorkerPid, Msg0),
 
     test_utils:wait_for_console_event_sub(<<"downlink_queued">>, #{
         <<"id">> => fun erlang:is_binary/1,
@@ -1656,7 +1656,7 @@ adr_test(Config) ->
         payload = <<"someotherpayload">>,
         channel = Channel
     },
-    router_device_worker:queue_message(WorkerPid, Msg1),
+    router_device_worker:queue_downlink(WorkerPid, Msg1),
 
     test_utils:wait_for_console_event_sub(<<"downlink_queued">>, #{
         <<"id">> => fun erlang:is_binary/1,
@@ -2735,7 +2735,7 @@ rx_delay_downlink_default_test(Config) ->
     %%     self()
     %% ),
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    %% router_device_worker:queue_message(WorkerPid, Msg),
+    %% router_device_worker:queue_downlink(WorkerPid, Msg),
 
     Metadata0 = router_device:metadata(Device0),
     ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata0)),
@@ -2843,7 +2843,7 @@ rx_delay_change_ignored_by_device_downlink_test(Config) ->
     %%     self()
     %% ),
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    %% router_device_worker:queue_message(WorkerPid, Msg),
+    %% router_device_worker:queue_downlink(WorkerPid, Msg),
 
     test_utils:ignore_messages(),
     Send = fun(Fcnt, FOpts) ->
@@ -2925,7 +2925,7 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
     %%     self()
     %% ),
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    %% router_device_worker:queue_message(WorkerPid, Msg),
+    %% router_device_worker:queue_downlink(WorkerPid, Msg),
 
     test_utils:ignore_messages(),
     Stream !
@@ -2989,7 +2989,7 @@ rx_delay_continue_session_test(Config) ->
     %%     self()
     %% ),
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    %% router_device_worker:queue_message(WorkerPid0, Msg),
+    %% router_device_worker:queue_downlink(WorkerPid0, Msg),
 
     test_utils:ignore_messages(),
     Send = fun(Fcnt, FOpts) ->
@@ -3031,7 +3031,7 @@ rx_delay_continue_session_test(Config) ->
         self()
     ),
     Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    router_device_worker:queue_message(WorkerPid1, Msg),
+    router_device_worker:queue_downlink(WorkerPid1, Msg),
 
     Send(2, []),
     {ok, Packet2} = test_utils:wait_state_channel_packet(1000),
@@ -3103,7 +3103,7 @@ rx_delay_change_during_session_test(Config) ->
     %%     self()
     %% ),
     %% Msg = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
-    %% router_device_worker:queue_message(WorkerPid, Msg),
+    %% router_device_worker:queue_downlink(WorkerPid, Msg),
 
     Metadata0 = router_device:metadata(Device0),
     ?assertEqual(rx_delay_established, maps:get(rx_delay_state, Metadata0)),

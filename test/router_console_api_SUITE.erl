@@ -187,8 +187,8 @@ consume_queue_test(Config) ->
         channel = Channel
     },
     Downlink2 = #downlink{confirmed = false, port = 0, payload = <<"payload">>, channel = Channel},
-    ok = router_device_worker:queue_message(Pid, Downlink1),
-    ok = router_device_worker:queue_message(Pid, Downlink2),
+    ok = router_device_worker:queue_downlink(Pid, Downlink1),
+    ok = router_device_worker:queue_downlink(Pid, Downlink2),
 
     %% Message for 1st queued downlink
     receive
@@ -346,7 +346,7 @@ fetch_queue_test(Config) ->
         payload = <<"payload">>,
         channel = Channel
     },
-    ok = router_device_worker:queue_message(Pid, Downlink1),
+    ok = router_device_worker:queue_downlink(Pid, Downlink1),
 
     receive
         {websocket_msg, #{event := <<"downlink:update_queue">>, payload := Payload2}} ->

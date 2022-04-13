@@ -558,7 +558,7 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
                 case maps:find(<<"port">>, MapPayload) of
                     {ok, X} when is_integer(X), X > 0, X < 224 ->
                         X;
-                    0 ->
+                    {ok, 0} ->
                         case allow_port_0() of
                             true -> 0;
                             false -> 1

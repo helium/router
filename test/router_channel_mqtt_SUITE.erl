@@ -26,7 +26,6 @@
 -define(MQTT_TIMEOUT, timer:seconds(2)).
 -define(BACKOFF_MIN, timer:seconds(10)).
 
-
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------

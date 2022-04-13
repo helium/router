@@ -18,6 +18,7 @@ register_all_usage() ->
         fun(Args) -> apply(clique, register_usage, Args) end,
         [
             device_usage(),
+            device_lookup_usage(),
             device_trace_usage(),
             device_queue_usage(),
             device_prune_usage()
@@ -29,6 +30,7 @@ register_all_cmds() ->
         fun(Cmds) -> [apply(clique, register_command, Cmd) || Cmd <- Cmds] end,
         [
             device_cmd(),
+            device_lookup_cmd(),
             device_trace_cmd(),
             device_queue_cmd(),
             device_prune_cmd()
@@ -47,6 +49,7 @@ device_usage() ->
             "  device                                       - this message\n",
             "  device all                                   - All devices in Console\n",
             "  device --id=<id>                             - Info for a device\n",
+            "  device lookup [see Lookup Usage]             - Lookup devices by credentials\n",
             "  device trace --id=<id> [--stop]              - Tracing device's log\n",
             "  device trace stop --id=<id>                  - Stop tracing device's log\n",
             "  device queue --id=<id>                       - Queue of messages for device\n",
@@ -62,6 +65,48 @@ device_cmd() ->
     [
         [["device"], [], [?ID_FLAG], prepend_device_id(fun device_info/4)],
         [["device", "all"], [], [], fun device_list_all/3]
+    ].
+
+%%--------------------------------------------------------------------
+%% device lookup
+%%--------------------------------------------------------------------
+
+device_lookup_usage() ->
+    [
+        ["device", "lookup"],
+        [
+            "Device Lookup Commands\n\n",
+            "  lookup --app=<app_eui>                 - List devices matching App EUI\n",
+            "  lookup --dev=<dev_eui>                 - List devices matching Dev EUI\n",
+            "  lookup --app=<app_eui> --dev=<dev_eui> - List devices matching both EUI\n",
+            "\nExample Usage:\n",
+            "  > lookup --app=XXXXXXXXXXXXXXXX\n",
+            "+-----+-----------+------------------------------------+--------------+----+--------+------------+---------+\n",
+            "| idx | running   |                 id                 |     name     |fcnt|fcntdown|queue_length|is_active|\n",
+            "+-----+-----------+------------------------------------+--------------+----+--------+------------+---------+\n",
+            "|  1  |  false    |11111111-2222-3333-4444-555555555555|  Device 1_1  | 0  |   0    |     0      |  true   |\n",
+            "|  2  |  true     |66666666-7777-8888-9999-000000000000|  Device 1_2  | 0  |   0    |     0      |  true   |\n",
+            "+-----+-----------+------------------------------------+--------------+----+--------+------------+---------+\n\n",
+            "  > lookup --app=XXXXXXXXXXXXXXXX --number=1\n",
+            "  Prints out single device details\n",
+            "\nNotes\n",
+            "  <app_eui> and <dev_eui> are Hex.\n",
+            "  All commands with more than 1 device support a --number=<index> option to target a single device\n"
+        ]
+    ].
+
+device_lookup_cmd() ->
+    [
+        [
+            ["device", "lookup"],
+            [],
+            [
+                {app, [{longname, "app"}, {typecast, fun erlang:list_to_binary/1}]},
+                {dev, [{longname, "dev"}, {typecast, fun erlang:list_to_binary/1}]},
+                {number, [{longname, "number"}, {datatype, integer}]}
+            ],
+            fun device_lookup/3
+        ]
     ].
 
 %%--------------------------------------------------------------------
@@ -194,6 +239,38 @@ device_list_all(["device", "all"], [], []) ->
             c_text("Failed to get devices from Console")
     end.
 
+device_lookup(["device", "lookup"], [], []) ->
+    usage;
+device_lookup(["device", "lookup"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    Devices =
+        case Options of
+            #{app := AppEUI, dev := DevEUI} ->
+                get_devices_by_creds(both, {AppEUI, DevEUI});
+            #{app := AppEUI} ->
+                get_devices_by_creds(app, AppEUI);
+            #{dev := DevEUI} ->
+                get_devices_by_creds(dev, DevEUI);
+            _ ->
+                invalid
+        end,
+    case {Devices, maps:get(number, Options, undefined)} of
+        {invalid, _} ->
+            c_text("provide --app=<app_eui_in_hex> or --dev=<dev_eui_in_hex>");
+        {[], _} ->
+            c_text("no results ~p", [Flags]);
+        {Ds, Number} when Number > length(Ds) ->
+            c_text("There are only ~p devices", [length(Ds)]);
+        {Ds, undefined} ->
+            IndexedDevices = lists:zip(lists:seq(1, length(Ds)), Ds),
+            c_table([
+                [{idx, Idx} | format_device_for_table(Device)]
+             || {Idx, Device} <- IndexedDevices
+            ]);
+        {Ds, Number} ->
+            c_list(format_device_for_list(lists:nth(Number, Ds)))
+    end.
+
 device_info(ID, ["device"], [], [{id, ID}]) ->
     DeviceID = erlang:list_to_binary(ID),
     {ok, D} = lookup(DeviceID),
@@ -303,7 +380,7 @@ device_prune(["device", "prune"], [], Flags) ->
 
 -spec lookup(binary()) -> {ok, router_device:device()}.
 lookup(DeviceID) ->
-    {ok, DB, [_, CF]} = router_db:get(),
+    {ok, DB, CF} = router_db:get_devices(),
     router_device:get_by_id(DB, CF, DeviceID).
 
 -spec get_device_worker(router_device:device()) -> {ok, pid()}.
@@ -315,6 +392,34 @@ lookup_and_get_worker(DeviceID) ->
     {ok, Device} = lookup(DeviceID),
     {ok, Pid} = get_device_worker(Device),
     {ok, Device, Pid}.
+
+-spec get_devices_by_creds(both | app | dev, binary() | {binary(), binary()}) ->
+    list(router_device:device()).
+get_devices_by_creds(both, {AppEUI, DevEUI}) ->
+    {ok, DB, CF} = router_db:get_devices(),
+
+    Fun = fun(Device) ->
+        lorawan_utils:binary_to_hex(router_device:dev_eui(Device)) == DevEUI andalso
+            lorawan_utils:binary_to_hex(router_device:app_eui(Device)) == AppEUI
+    end,
+
+    router_device:get(DB, CF, Fun);
+get_devices_by_creds(app, AppEUI) ->
+    {ok, DB, CF} = router_db:get_devices(),
+
+    Fun = fun(Device) ->
+        lorawan_utils:binary_to_hex(router_device:app_eui(Device)) == AppEUI
+    end,
+
+    router_device:get(DB, CF, Fun);
+get_devices_by_creds(dev, DevEUI) ->
+    {ok, DB, CF} = router_db:get_devices(),
+
+    Fun = fun(Device) ->
+        lorawan_utils:binary_to_hex(router_device:dev_eui(Device)) == DevEUI
+    end,
+
+    router_device:get(DB, CF, Fun).
 
 %%--------------------------------------------------------------------
 %% Private Utilities

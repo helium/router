@@ -367,34 +367,51 @@ f2uch('EU868', Freq) when Freq < 868 ->
     f2uch(Freq, {8671, 2}) + 3;
 f2uch('EU868', Freq) when Freq > 868 ->
     f2uch(Freq, {8681, 2});
+f2uch('KR920', Freq) ->
+    f2uch(Freq, {9221, 2});
+f2uch('IN865', Freq) ->
+    case Freq of
+        865.0625 -> 0;
+        865.4025 -> 1;
+        865.9850 -> 2;
+        _ -> f2uch(Freq, {8660, 1})
+    end;
+f2uch('RU864', Freq) ->
+    case Freq of
+        868.9 -> 0;
+        869.1 -> 1;
+        _ -> f2uch(Freq, {8693, 2})
+    end;
+f2uch('EU433', Freq) ->
+    f2uch(Freq, {4331.75, 2});
 f2uch('AS923_1', Freq) ->
     case Freq of
-        923.2 -> 1;
-        923.4 -> 2;
+        923.2 -> 0;
+        923.4 -> 1;
         _ -> f2uch(Freq, {9236, 2}) + 2
     end;
 f2uch('AS923_2', Freq) ->
     case Freq of
-        921.4 -> 1;
-        921.6 -> 2;
+        921.4 -> 0;
+        921.6 -> 1;
         _ -> f2uch(Freq, {9218, 2}) + 2
     end;
 f2uch('AS923_3', Freq) ->
     case Freq of
-        916.6 -> 1;
-        916.8 -> 2;
+        916.6 -> 0;
+        916.8 -> 1;
         _ -> f2uch(Freq, {9170, 2}) + 2
     end;
 f2uch('AS923_4', Freq) ->
     case Freq of
-        917.3 -> 1;
-        917.5 -> 2;
+        917.3 -> 0;
+        917.5 -> 1;
         _ -> f2uch(Freq, {9177, 2}) + 2
     end;
 f2uch('AS923', Freq) ->
     case Freq of
-        923.2 -> 1;
-        923.4 -> 2;
+        923.2 -> 0;
+        923.4 -> 1;
         _ -> f2uch(Freq, {9222, 2}, {9236, 2})
     end;
 f2uch(Freq, {Start, Inc}) ->
@@ -412,7 +429,8 @@ f2uch(Freq, _, {Start2, Inc2}) when round(10 * Freq - Start2) rem Inc2 == 0 ->
 %% @end
 %% ------------------------------------------------------------------
 -spec f2dch(Region :: atom(), Freq :: freq_float()) -> channel().
-f2dch('AU915', Freq) -> 64 + fi2ch(Freq, {9233, 6});
+f2dch('AU915', Freq) -> fi2ch(Freq, {9233, 6});
+f2dch('US915', Freq) -> fi2ch(Freq, {9233, 6});
 f2dch(Region, Freq) -> f2uch(Region, Freq).
 
 %% ------------------------------------------------------------------
@@ -431,6 +449,40 @@ uch2f('AU915', Ch) when Ch < 64 ->
     ch2fi(Ch, {9152, 2});
 uch2f('AU915', Ch) ->
     ch2fi(Ch - 64, {9159, 16});
+uch2f('EU433', Ch) ->
+    ch2fi(Ch, {4331.75, 2});
+uch2f('EU868', Ch) ->
+    case Ch of
+        0 -> 868.1;
+        1 -> 868.3;
+        2 -> 868.5;
+        _ -> ch2fi(Ch, {8637, 2})
+    end;
+uch2f('IN865', Ch) ->
+    case Ch of
+        0 -> 865.0625;
+        1 -> 865.4025;
+        2 -> 865.9850;
+        _ -> ch2fi(Ch, {8660, 1})
+    end;
+uch2f('KR920', Ch) ->
+    case Ch of
+        0 -> 922.1;
+        1 -> 922.3;
+        2 -> 922.5;
+        _ -> ch2fi(Ch, {9209, 2})
+    end;
+
+uch2f('AS923', Ch) ->
+    uch2f('AS923_1', Ch);
+uch2f('AS923_1', Ch) ->
+    ch2fi(Ch, {9232, 2});
+uch2f('AS923_2', Ch) ->
+    ch2fi(Ch, {9214, 2});
+uch2f('AS923_3', Ch) ->
+    ch2fi(Ch, {9166, 2});
+uch2f('AS923_4', Ch) ->
+    ch2fi(Ch, {9173, 2});
 uch2f('CN470', Ch) ->
     ch2fi(Ch, {4703, 2}).
 
@@ -445,6 +497,14 @@ uch2f('CN470', Ch) ->
     Frequency :: freq_float().
 dch2f(Region, Ch) when Region == 'US915'; Region == 'AU915' ->
     ch2fi(Ch, {9233, 6});
+dch2f('EU868', Ch) ->
+    ch2fi(Ch, {8681, 2});
+dch2f('IN865', Ch) ->
+    ch2fi(Ch, {8660, 1});
+dch2f('AS923_1', Ch) ->
+    ch2fi(Ch, {9232, 2});
+dch2f('KR920', Ch) ->
+    ch2fi(Ch, {9209, 2});
 dch2f('CN470', Ch) ->
     ch2fi(Ch, {5003, 2}).
 
@@ -722,7 +782,12 @@ uplink_power_table_('US915') ->
         {7, 16},
         {8, 14},
         {9, 12},
-        {10, 10}
+        {10, 10},
+        {11, 8},
+        {12, 6},
+        {13, 4},
+        {14, 2},
+        {15, 30}
     ];
 uplink_power_table_('AU915') ->
     uplink_power_table_('US915');
@@ -730,14 +795,14 @@ uplink_power_table_('CN470') ->
     %% NOTE: CN470's power levels are relative to the devices max power;
     %%       they are dB, not dBm.
     [
-        {0, 0},
-        {1, -2},
-        {2, -4},
-        {3, -6},
-        {4, -8},
-        {5, -10},
-        {6, -12},
-        {7, -14}
+        {0, 19},
+        {1, 17},
+        {2, 15},
+        {3, 13},
+        {4, 11},
+        {5, 9},
+        {6, 7},
+        {7, 5}
     ];
 uplink_power_table_('CN779') ->
     [
@@ -749,36 +814,50 @@ uplink_power_table_('CN779') ->
         {5, -5}
     ];
 uplink_power_table_('AS923') ->
-    %% NOTE: AS923's power levels are relative the device's max power;
-    %%       they are dB, not dBm.
     [
-        {0, 0},
-        {1, -2},
-        {2, -4},
-        {3, -6},
-        {4, -8},
-        {5, -10},
-        {6, -12},
-        {7, -14}
+        {0, 16},
+        {1, 14},
+        {2, 12},
+        {3, 10},
+        {4, 8},
+        {5, 6},
+        {6, 4},
+        {7, 2}
     ];
 uplink_power_table_('KR920') ->
     [
-        {0, 20},
-        {1, 14},
+        {0, 14},
+        {1, 12},
         {2, 10},
         {3, 8},
-        {4, 5},
-        {5, 2},
-        {6, 0}
+        {4, 6},
+        {5, 4},
+        {6, 2}
+    ];
+uplink_power_table_('IN865') ->
+    [
+        {0, 30},
+        {1, 28},
+        {2, 26},
+        {3, 24},
+        {4, 22},
+        {5, 20},
+        {6, 18},
+        {7, 16},
+        {8, 14},
+        {9, 12},
+        {10, 10}
     ];
 uplink_power_table_('EU868') ->
     [
-        {0, 20},
+        {0, 16},
         {1, 14},
-        {2, 11},
-        {3, 8},
-        {4, 5},
-        {5, 2}
+        {2, 12},
+        {3, 10},
+        {4, 8},
+        {5, 6},
+        {6, 4},
+        {7, 2}
     ].
 
 %% ------------------------------------------------------------------
@@ -814,11 +893,19 @@ freq('CN470') ->
     #{min => 470, max => 510};
 freq('AS923') ->
     #{min => 915, max => 928, default => [923.20, 923.40]};
+freq('AS923_1') ->
+    #{min => 915, max => 928, default => [923.20, 923.40]};
+freq('AS923_2') ->
+    #{min => 920, max => 923, default => [921.40, 921.60]};
+freq('AS923_3') ->
+    #{min => 915, max => 921, default => [916.60, 916.80]};
+freq('AS923_4') ->
+    #{min => 917, max => 920, default => [917.30, 917.50]};
 freq('KR920') ->
     #{min => 920.9, max => 923.3, default => [922.1, 922.3, 922.5]};
 freq('IN865') ->
     #{min => 865, max => 867, default => [865.0625, 865.4025, 865.985]};
-freq('RU868') ->
+freq('RU864') ->
     #{min => 864, max => 870, default => [868.9, 869.1]}.
 
 net_freqs(#network{region = Region, init_chans = Chans}) when
@@ -1083,6 +1170,62 @@ ceiling(X) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+all_channel_plans_test() ->
+    [channel_plan(X) || X <- [1,2,3,4,5,6,7,8,9,10,11,12,13]].
+
+print_channel(Region, Ch) ->
+    Freq = uch2f(Region, Ch),
+    io:format("Region= ~w Ch= ~w Freq= ~w~n", [Region, Ch, Freq]).
+
+region_channels(Region) ->
+    [print_channel(Region, X) || X <- [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]].
+
+valid_channel(Region, Ch) ->
+    io:format("Region = ~w Ch=~w ~n", [Region, Ch]),
+    #{min := Min, max := Max} = freq(Region),
+    Freq = uch2f(Region, Ch),
+    io:format("Freq = ~w~n", [Freq]),
+    ?assert(Freq =< Max),
+    ?assert(Freq >= Min),
+    Ch2 = f2uch(Region, Freq),
+    io:format("Ch2 = ~w~n", [Ch2]),
+    ?assertEqual(Ch, Ch2).
+
+valid_channel(Ch) ->
+    valid_channel('EU868', Ch),
+    valid_channel('US915', Ch),
+    % valid_channel('CN779', Ch),
+    valid_channel('EU433', Ch),
+    valid_channel('AU915', Ch),
+    % valid_channel('CN470', Ch),
+    valid_channel('AS923_1', Ch),
+    valid_channel('AS923_2', Ch),
+    valid_channel('AS923_3', Ch),
+    valid_channel('KR920', Ch),
+    valid_channel('IN865', Ch),
+    valid_channel('RU864', Ch),
+    valid_channel('AS923_4', Ch).
+
+ch_01_test() ->
+    valid_channel(3),
+    valid_channel(1),
+    valid_channel(2).
+
+ch_02_test() ->
+    region_channels('EU868'),
+    region_channels('US915'),
+    % region_channels('CN779'),
+    region_channels('EU433'),
+    region_channels('AU915'),
+    % region_channels('CN470', Ch),
+    region_channels('AS923_1'),
+    region_channels('AS923_2'),
+    region_channels('AS923_3'),
+    region_channels('KR920'),
+    region_channels('IN865'),
+    region_channels('RU864'),
+    region_channels('AS923_4').
 
 us_window_1_test() ->
     Now = os:timestamp(),

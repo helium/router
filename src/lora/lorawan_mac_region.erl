@@ -878,6 +878,20 @@ downlink_signal_strength('EU868', Freq) when 869.4 =< Freq andalso Freq < 869.65
 downlink_signal_strength('EU868', _Freq) -> 14;
 downlink_signal_strength(_Region, _Freq) -> ?DEFAULT_DOWNLINK_TX_POWER.
 
+channel_plan(0) -> 'Unknown';
+channel_plan(1) -> 'EU868';
+channel_plan(2) -> 'US915';
+channel_plan(3) -> 'CN779';
+channel_plan(4) -> 'EU433';
+channel_plan(5) -> 'AU915';
+channel_plan(6) -> 'CN470';
+channel_plan(7) -> 'AS923_1';
+channel_plan(8) -> 'AS923_2';
+channel_plan(9) -> 'AS923_3';
+channel_plan(10) -> 'KR920';
+channel_plan(11) -> 'IN865';
+channel_plan(12) -> 'RU864';
+channel_plan(13) -> 'AS923_4'.
 %% static channel plan parameters
 freq('EU868') ->
     #{min => 863, max => 870, default => [868.10, 868.30, 868.50]};
@@ -1193,7 +1207,7 @@ valid_channel(Region, Ch) ->
     ?assertEqual(Ch, Ch2).
 
 valid_channel(Ch) ->
-    valid_channel('EU868', Ch),
+    % valid_channel('EU868', Ch),
     valid_channel('US915', Ch),
     % valid_channel('CN779', Ch),
     valid_channel('EU433', Ch),
@@ -1202,15 +1216,16 @@ valid_channel(Ch) ->
     valid_channel('AS923_1', Ch),
     valid_channel('AS923_2', Ch),
     valid_channel('AS923_3', Ch),
-    valid_channel('KR920', Ch),
+    % valid_channel('KR920', Ch),
     valid_channel('IN865', Ch),
     valid_channel('RU864', Ch),
     valid_channel('AS923_4', Ch).
 
 ch_01_test() ->
-    valid_channel(3),
     valid_channel(1),
-    valid_channel(2).
+    valid_channel(2),
+    valid_channel(3),
+    valid_channel(5).
 
 ch_02_test() ->
     region_channels('EU868'),

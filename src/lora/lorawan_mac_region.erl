@@ -878,20 +878,6 @@ downlink_signal_strength('EU868', Freq) when 869.4 =< Freq andalso Freq < 869.65
 downlink_signal_strength('EU868', _Freq) -> 14;
 downlink_signal_strength(_Region, _Freq) -> ?DEFAULT_DOWNLINK_TX_POWER.
 
-channel_plan(0) -> 'Unknown';
-channel_plan(1) -> 'EU868';
-channel_plan(2) -> 'US915';
-channel_plan(3) -> 'CN779';
-channel_plan(4) -> 'EU433';
-channel_plan(5) -> 'AU915';
-channel_plan(6) -> 'CN470';
-channel_plan(7) -> 'AS923_1';
-channel_plan(8) -> 'AS923_2';
-channel_plan(9) -> 'AS923_3';
-channel_plan(10) -> 'KR920';
-channel_plan(11) -> 'IN865';
-channel_plan(12) -> 'RU864';
-channel_plan(13) -> 'AS923_4'.
 %% static channel plan parameters
 freq('EU868') ->
     #{min => 863, max => 870, default => [868.10, 868.30, 868.50]};
@@ -1184,6 +1170,21 @@ ceiling(X) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
+
+channel_plan(0) -> 'Unknown';
+channel_plan(1) -> 'EU868';
+channel_plan(2) -> 'US915';
+channel_plan(3) -> 'CN779';
+channel_plan(4) -> 'EU433';
+channel_plan(5) -> 'AU915';
+channel_plan(6) -> 'CN470';
+channel_plan(7) -> 'AS923_1';
+channel_plan(8) -> 'AS923_2';
+channel_plan(9) -> 'AS923_3';
+channel_plan(10) -> 'KR920';
+channel_plan(11) -> 'IN865';
+channel_plan(12) -> 'RU864';
+channel_plan(13) -> 'AS923_4'.
 
 all_channel_plans_test() ->
     [channel_plan(X) || X <- [1,2,3,4,5,6,7,8,9,10,11,12,13]].

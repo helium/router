@@ -1191,20 +1191,21 @@ all_channel_plans_test() ->
 
 print_channel(Region, Ch) ->
     Freq = uch2f(Region, Ch),
-    io:format("Region= ~w Ch= ~w Freq= ~w~n", [Region, Ch, Freq]).
+    % io:format("Region= ~w Ch= ~w Freq= ~w~n", [Region, Ch, Freq]),
+    Freq.
 
 region_channels(Region) ->
     [print_channel(Region, X) || X <- [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]].
 
 valid_channel(Region, Ch) ->
-    io:format("Region = ~w Ch=~w ~n", [Region, Ch]),
+    % io:format("Region = ~w Ch=~w ~n", [Region, Ch]),
     #{min := Min, max := Max} = freq(Region),
     Freq = uch2f(Region, Ch),
-    io:format("Freq = ~w~n", [Freq]),
+    % io:format("Freq = ~w~n", [Freq]),
     ?assert(Freq =< Max),
     ?assert(Freq >= Min),
     Ch2 = f2uch(Region, Freq),
-    io:format("Ch2 = ~w~n", [Ch2]),
+    % io:format("Ch2 = ~w~n", [Ch2]),
     ?assertEqual(Ch, Ch2).
 
 valid_channel(Ch) ->

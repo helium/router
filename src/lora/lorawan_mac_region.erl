@@ -439,7 +439,7 @@ f2dch(Region, Freq) -> f2uch(Region, Freq).
 %% @end
 %% ------------------------------------------------------------------
 -spec uch2f(Region, Channel) -> freq_float() when
-    Region :: atom(),
+    Region :: 'AU915' | 'US915' | 'EU433' | 'EU868' | 'IN865' | 'KR920' | 'AS923' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4' | 'CN470',
     Channel :: channel().
 uch2f(Region, Ch) when Region == 'US915' andalso Ch < 64 ->
     ch2fi(Ch, {9023, 2});
@@ -472,7 +472,6 @@ uch2f('KR920', Ch) ->
         2 -> 922.5;
         _ -> ch2fi(Ch, {9209, 2})
     end;
-
 uch2f('AS923', Ch) ->
     uch2f('AS923_1', Ch);
 uch2f('AS923_1', Ch) ->
@@ -492,19 +491,31 @@ uch2f('CN470', Ch) ->
 %% @end
 %% ------------------------------------------------------------------
 -spec dch2f(Region, Channel) -> Frequency when
-    Region :: atom(),
+    Region :: 'AU915' | 'US915' | 'EU433' | 'EU868' | 'IN865' | 'KR920' | 'AS923' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4' | 'CN470',
     Channel :: non_neg_integer(),
     Frequency :: freq_float().
-dch2f(Region, Ch) when Region == 'US915'; Region == 'AU915' ->
+dch2f('US915', Ch) ->
     ch2fi(Ch, {9233, 6});
+dch2f('AU915', Ch) ->
+    ch2fi(Ch, {9233, 6});
+dch2f('EU433', Ch) ->
+    ch2fi(Ch, {4331, 2});
 dch2f('EU868', Ch) ->
     ch2fi(Ch, {8681, 2});
 dch2f('IN865', Ch) ->
     ch2fi(Ch, {8660, 1});
-dch2f('AS923_1', Ch) ->
-    ch2fi(Ch, {9232, 2});
 dch2f('KR920', Ch) ->
     ch2fi(Ch, {9209, 2});
+dch2f('AS923', Ch) ->
+    ch2fi(Ch, {9232, 2});
+dch2f('AS923_1', Ch) ->
+    ch2fi(Ch, {9232, 2});
+dch2f('AS923_2', Ch) ->
+    ch2fi(Ch, {9214, 2});
+dch2f('AS923_3', Ch) ->
+    ch2fi(Ch, {9166, 2});
+dch2f('AS923_4', Ch) ->
+    ch2fi(Ch, {9173, 2});
 dch2f('CN470', Ch) ->
     ch2fi(Ch, {5003, 2}).
 

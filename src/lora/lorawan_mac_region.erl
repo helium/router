@@ -383,7 +383,7 @@ f2uch('RU864', Freq) ->
         _ -> f2uch(Freq, {8693, 2})
     end;
 f2uch('EU433', Freq) ->
-    f2uch(Freq, {4331.75, 2});
+    f2uch(Freq, {4331, 2});
 f2uch('AS923_1', Freq) ->
     case Freq of
         923.2 -> 0;
@@ -450,7 +450,7 @@ uch2f('AU915', Ch) when Ch < 64 ->
 uch2f('AU915', Ch) ->
     ch2fi(Ch - 64, {9159, 16});
 uch2f('EU433', Ch) ->
-    ch2fi(Ch, {4331.75, 2});
+    ch2fi(Ch, {4331, 2});
 uch2f('EU868', Ch) ->
     case Ch of
         0 -> 868.1;

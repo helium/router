@@ -1249,7 +1249,7 @@ ch_02_test() ->
     region_channels('AS923_3'),
     region_channels('KR920'),
     region_channels('IN865'),
-    region_channels('RU864'),
+    % region_channels('RU864'),
     region_channels('AS923_4').
 
 us_window_1_test() ->

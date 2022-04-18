@@ -377,12 +377,6 @@ f2uch('IN865', Freq) ->
         865.9850 -> 2;
         _ -> f2uch(Freq, {8660, 1})
     end;
-f2uch('RU864', Freq) ->
-    case Freq of
-        868.9 -> 0;
-        869.1 -> 1;
-        _ -> f2uch(Freq, {8693, 2})
-    end;
 f2uch('EU433', Freq) ->
     f2uch(Freq, {4331, 2});
 f2uch('AS923_1', Freq) ->
@@ -821,15 +815,6 @@ uplink_power_table_('CN470') ->
         {6, 7},
         {7, 5}
     ];
-uplink_power_table_('CN779') ->
-    [
-        {0, 10},
-        {1, 7},
-        {2, 4},
-        {3, 1},
-        {4, -2},
-        {5, -5}
-    ];
 uplink_power_table_('AS923') ->
     [
         {0, 16},
@@ -908,8 +893,6 @@ freq('EU868') ->
     #{min => 863, max => 870, default => [868.10, 868.30, 868.50]};
 freq('US915') ->
     #{min => 902, max => 928};
-freq('CN779') ->
-    #{min => 779.5, max => 786.5, default => [779.5, 779.7, 779.9]};
 freq('EU433') ->
     #{min => 433.175, max => 434.665, default => [433.175, 433.375, 433.575]};
 freq('AU915') ->
@@ -929,9 +912,7 @@ freq('AS923_4') ->
 freq('KR920') ->
     #{min => 920.9, max => 923.3, default => [922.1, 922.3, 922.5]};
 freq('IN865') ->
-    #{min => 865, max => 867, default => [865.0625, 865.4025, 865.985]};
-freq('RU864') ->
-    #{min => 864, max => 870, default => [868.9, 869.1]}.
+    #{min => 865, max => 867, default => [865.0625, 865.4025, 865.985]}.
 
 net_freqs(#network{region = Region, init_chans = Chans}) when
     Region == 'US915'; Region == 'AU915'; Region == 'CN470'
@@ -1199,6 +1180,7 @@ ceiling(X) ->
 channel_plan(0) -> 'Unknown';
 channel_plan(1) -> 'EU868';
 channel_plan(2) -> 'US915';
+%% CN779 is deprecated
 channel_plan(3) -> 'CN779';
 channel_plan(4) -> 'EU433';
 channel_plan(5) -> 'AU915';
@@ -1236,7 +1218,6 @@ valid_channel(Region, Ch) ->
 valid_channel(Ch) ->
     % valid_channel('EU868', Ch),
     valid_channel('US915', Ch),
-    % valid_channel('CN779', Ch),
     valid_channel('EU433', Ch),
     valid_channel('AU915', Ch),
     % valid_channel('CN470', Ch),
@@ -1245,7 +1226,6 @@ valid_channel(Ch) ->
     valid_channel('AS923_3', Ch),
     % valid_channel('KR920', Ch),
     valid_channel('IN865', Ch),
-    % valid_channel('RU864', Ch),
     valid_channel('AS923_4', Ch).
 
 ch_01_test() ->
@@ -1257,7 +1237,6 @@ ch_01_test() ->
 ch_02_test() ->
     region_channels('EU868'),
     region_channels('US915'),
-    % region_channels('CN779'),
     region_channels('EU433'),
     region_channels('AU915'),
     % region_channels('CN470', Ch),
@@ -1266,7 +1245,6 @@ ch_02_test() ->
     region_channels('AS923_3'),
     region_channels('KR920'),
     region_channels('IN865'),
-    % region_channels('RU864'),
     region_channels('AS923_4').
 
 us_window_1_test() ->

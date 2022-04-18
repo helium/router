@@ -32,6 +32,7 @@
 -export([dr_to_down/3]).
 -export([window2_dr/1, top_level_region/1, freq_to_chan/2]).
 -export([mk_join_accept_cf_list/1]).
+-export([dch2f/2, uch2f/2]).
 
 -include("lorawan_db.hrl").
 

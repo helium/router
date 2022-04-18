@@ -66,7 +66,7 @@ start_link() ->
 init([]) ->
     BaseDir = application:get_env(blockchain, base_dir, "data"),
     ok = router_decoder:init_ets(),
-    ok = router_hotspot_deny_list:init(BaseDir),
+    ok = router_hotspot_reputation:init(),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),
 
     {ok, _} = application:ensure_all_started(ranch),

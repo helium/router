@@ -108,7 +108,10 @@ handle_offer(Offer, HandlerPid) ->
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
     Resp =
-        case router_hotspot_deny_list:enabled() andalso router_hotspot_deny_list:denied(Hotspot) of
+        case
+            router_hotspot_reputation:enabled() andalso
+                router_hotspot_reputation:denied(Hotspot)
+        of
             true ->
                 {error, denied};
             false ->
@@ -130,8 +133,11 @@ handle_offer(Offer, HandlerPid) ->
         ok = handle_offer_metrics(Routing, Resp, End - Start)
     end),
     case Resp of
-        {ok, _} -> ok;
-        {error, _} = Error -> Error
+        {ok, _} ->
+            ok = router_hotspot_reputation:track_offer(Offer),
+            ok;
+        {error, _} = Error ->
+            Error
     end.
 
 -spec handle_packet(
@@ -142,6 +148,7 @@ handle_offer(Offer, HandlerPid) ->
 ) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
+    ok = router_hotspot_reputation:track_packet(SCPacket),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),

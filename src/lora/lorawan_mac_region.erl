@@ -438,9 +438,9 @@ f2dch(Region, Freq) -> f2uch(Region, Freq).
 %% Map Channel to Frequency for region.
 %% @end
 %% ------------------------------------------------------------------
--spec uch2f(Region, Channel) -> freq_float() when
+-spec uch2f(
     Region :: 'AU915' | 'US915' | 'EU433' | 'EU868' | 'IN865' | 'KR920' | 'AS923' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4' | 'CN470',
-    Channel :: channel().
+    Channel :: channel()) -> freq_float().
 uch2f('US915', Ch) ->
     case Ch < 64 of
         true ->
@@ -478,8 +478,6 @@ uch2f('KR920', Ch) ->
         2 -> 922.5;
         _ -> ch2fi(Ch, {9209, 2})
     end;
-uch2f('AS923', Ch) ->
-    uch2f('AS923_1', Ch);
 uch2f('AS923_1', Ch) ->
     ch2fi(Ch, {9232, 2});
 uch2f('AS923_2', Ch) ->
@@ -488,6 +486,8 @@ uch2f('AS923_3', Ch) ->
     ch2fi(Ch, {9166, 2});
 uch2f('AS923_4', Ch) ->
     ch2fi(Ch, {9173, 2});
+uch2f('AS923', Ch) ->
+    ch2fi(Ch, {9232, 2});
 uch2f('CN470', Ch) ->
     ch2fi(Ch, {4703, 2}).
 
@@ -496,10 +496,9 @@ uch2f('CN470', Ch) ->
 %% Map Channel to Frequency for region
 %% @end
 %% ------------------------------------------------------------------
--spec dch2f(Region, Channel) -> Frequency when
+-spec dch2f(
     Region :: 'AU915' | 'US915' | 'EU433' | 'EU868' | 'IN865' | 'KR920' | 'AS923' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4' | 'CN470',
-    Channel :: non_neg_integer(),
-    Frequency :: freq_float().
+    Channel :: channel()) -> freq_float().
 dch2f('US915', Ch) ->
     ch2fi(Ch, {9233, 6});
 dch2f('AU915', Ch) ->

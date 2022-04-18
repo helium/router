@@ -449,39 +449,40 @@ uch2f('AU915', Ch) when Ch < 64 ->
     ch2fi(Ch, {9152, 2});
 uch2f('AU915', Ch) ->
     ch2fi(Ch - 64, {9159, 16});
-% uch2f('EU433', Ch) ->
-%     ch2fi(Ch, {4331, 2});
-% uch2f('EU868', Ch) ->
-%     case Ch of
-%         0 -> 868.1;
-%         1 -> 868.3;
-%         2 -> 868.5;
-%         _ -> ch2fi(Ch, {8637, 2})
-%     end;
-% uch2f('IN865', Ch) ->
-%     case Ch of
-%         0 -> 865.0625;
-%         1 -> 865.4025;
-%         2 -> 865.9850;
-%         _ -> ch2fi(Ch, {8660, 1})
-%     end;
-% uch2f('KR920', Ch) ->
-%     case Ch of
-%         0 -> 922.1;
-%         1 -> 922.3;
-%         2 -> 922.5;
-%         _ -> ch2fi(Ch, {9209, 2})
-%     end;
-% uch2f('AS923', Ch) ->
-%     uch2f('AS923_1', Ch);
-% uch2f('AS923_1', Ch) ->
-%     ch2fi(Ch, {9232, 2});
-% uch2f('AS923_2', Ch) ->
-%     ch2fi(Ch, {9214, 2});
-% uch2f('AS923_3', Ch) ->
-%     ch2fi(Ch, {9166, 2});
-% uch2f('AS923_4', Ch) ->
-%     ch2fi(Ch, {9173, 2});
+uch2f('EU433', Ch) ->
+    ch2fi(Ch, {4331, 2});
+uch2f('EU868', Ch) ->
+    case Ch of
+        0 -> 868.1;
+        1 -> 868.3;
+        2 -> 868.5;
+        _ -> ch2fi(Ch, {8637, 2})
+    end;
+uch2f('IN865', Ch) ->
+    case Ch of
+        0 -> 865.0625;
+        1 -> 865.4025;
+        2 -> 865.9850;
+        _ -> ch2fi(Ch, {8660, 1})
+    end;
+uch2f('KR920', Ch) ->
+    case Ch of
+        0 -> 922.1;
+        1 -> 922.3;
+        2 -> 922.5;
+        _ -> ch2fi(Ch, {9209, 2})
+    end;
+
+uch2f('AS923', Ch) ->
+    uch2f('AS923_1', Ch);
+uch2f('AS923_1', Ch) ->
+    ch2fi(Ch, {9232, 2});
+uch2f('AS923_2', Ch) ->
+    ch2fi(Ch, {9214, 2});
+uch2f('AS923_3', Ch) ->
+    ch2fi(Ch, {9166, 2});
+uch2f('AS923_4', Ch) ->
+    ch2fi(Ch, {9173, 2});
 uch2f('CN470', Ch) ->
     ch2fi(Ch, {4703, 2}).
 
@@ -496,14 +497,14 @@ uch2f('CN470', Ch) ->
     Frequency :: freq_float().
 dch2f(Region, Ch) when Region == 'US915'; Region == 'AU915' ->
     ch2fi(Ch, {9233, 6});
-% dch2f('EU868', Ch) ->
-%     ch2fi(Ch, {8681, 2});
-% dch2f('IN865', Ch) ->
-%     ch2fi(Ch, {8660, 1});
-% dch2f('AS923_1', Ch) ->
-%     ch2fi(Ch, {9232, 2});
-% dch2f('KR920', Ch) ->
-%     ch2fi(Ch, {9209, 2});
+dch2f('EU868', Ch) ->
+    ch2fi(Ch, {8681, 2});
+dch2f('IN865', Ch) ->
+    ch2fi(Ch, {8660, 1});
+dch2f('AS923_1', Ch) ->
+    ch2fi(Ch, {9232, 2});
+dch2f('KR920', Ch) ->
+    ch2fi(Ch, {9209, 2});
 dch2f('CN470', Ch) ->
     ch2fi(Ch, {5003, 2}).
 

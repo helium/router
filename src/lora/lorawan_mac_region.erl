@@ -441,14 +441,20 @@ f2dch(Region, Freq) -> f2uch(Region, Freq).
 -spec uch2f(Region, Channel) -> freq_float() when
     Region :: 'AU915' | 'US915' | 'EU433' | 'EU868' | 'IN865' | 'KR920' | 'AS923' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4' | 'CN470',
     Channel :: channel().
-uch2f(Region, Ch) when Region == 'US915' andalso Ch < 64 ->
-    ch2fi(Ch, {9023, 2});
-uch2f(Region, Ch) when Region == 'US915' ->
-    ch2fi(Ch - 64, {9030, 16});
-uch2f('AU915', Ch) when Ch < 64 ->
-    ch2fi(Ch, {9152, 2});
+uch2f('US915', Ch) ->
+    case Ch < 64 of
+        true ->
+            ch2fi(Ch, {9023, 2});
+        false ->
+            ch2fi(Ch - 64, {9030, 16})
+    end;
 uch2f('AU915', Ch) ->
-    ch2fi(Ch - 64, {9159, 16});
+    case Ch < 64 of
+        true ->
+            ch2fi(Ch, {9152, 2});
+        false ->
+            ch2fi(Ch - 64, {9159, 16})
+    end;
 uch2f('EU433', Ch) ->
     ch2fi(Ch, {4331, 2});
 uch2f('EU868', Ch) ->

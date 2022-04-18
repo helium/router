@@ -639,7 +639,6 @@ get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
 
 -spec convert_channel(Device :: router_device:device(), Pid :: pid(), JSONChannel :: map()) ->
     false | {true, router_channel:channel()}.
-
 convert_channel(Device, Pid, #{<<"type">> := <<"http">>} = JSONChannel) ->
     ID = kvc:path([<<"id">>], JSONChannel),
     Handler = router_http_channel,

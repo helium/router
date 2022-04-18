@@ -1228,7 +1228,7 @@ valid_channel(Ch) ->
     valid_channel('AS923_3', Ch),
     % valid_channel('KR920', Ch),
     valid_channel('IN865', Ch),
-    valid_channel('RU864', Ch),
+    % valid_channel('RU864', Ch),
     valid_channel('AS923_4', Ch).
 
 ch_01_test() ->

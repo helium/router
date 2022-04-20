@@ -37,14 +37,26 @@ hotspot_reputation_usage() ->
             "\n\n",
             "hotspot_reputation ls                        - Display all hotspots' reputation\n",
             "hotspot_reputation <b58_hotspot_id>          - Display a hotspot's reputation\n",
-            "hotspot_reputation reset <b58_hotspot_id>    - Reset hotspot's reputation to 0\n"
+            "hotspot_reputation reset <b58_hotspot_id>    - Reset hotspot's reputation to 0\n",
+            "hotspot_reputation sc [--over 10]            - Display hotspots in state channel going over X time the average (Default 10)\n"
         ]
     ].
 
 hotspot_reputation_cmd() ->
     [
         [["hotspot_reputation", '*'], [], [], fun hotspot_reputation_get/3],
-        [["hotspot_reputation", "reset", '*'], [], [], fun hotspot_reputation_reset/3]
+        [["hotspot_reputation", "reset", '*'], [], [], fun hotspot_reputation_reset/3],
+        [
+            ["hotspot_reputation", "sc"],
+            [],
+            [
+                {over, [
+                    {longname, "over"},
+                    {datatype, integer}
+                ]}
+            ],
+            fun hotspot_reputation_sc/3
+        ]
     ].
 
 hotspot_reputation_get(["hotspot_reputation", "ls"], [], []) ->
@@ -78,6 +90,68 @@ hotspot_reputation_reset(["hotspot_reputation", "reset", B58], [], []) ->
             c_text("Hotspot ~p (~p) reputation reseted", [Name, B58])
     end;
 hotspot_reputation_reset([_, _, _], [], []) ->
+    usage.
+
+hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
+    TimeOverAvg = proplists:get_value(over, Flags, 10),
+    ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
+    Avg = maps:from_list(
+        lists:map(
+            fun({SC, _SCState, _Pid}) ->
+                TotalDcs = blockchain_state_channel_v1:total_dcs(SC),
+                case erlang:length(blockchain_state_channel_v1:summaries(SC)) of
+                    0 ->
+                        {blockchain_state_channel_v1:name(SC), 0};
+                    Actors ->
+                        {blockchain_state_channel_v1:name(SC), TotalDcs / Actors}
+                end
+            end,
+            ActiveSCs
+        )
+    ),
+    HotspotList = lists:concat(
+        lists:map(
+            fun({SC, _SCState, _Pid}) ->
+                SCName = blockchain_state_channel_v1:name(SC),
+                FilteredSummaries = lists:filter(
+                    fun(Summary) ->
+                        blockchain_state_channel_summary_v1:num_dcs(Summary) >=
+                            TimeOverAvg * maps:get(blockchain_state_channel_v1:name(SC), Avg)
+                    end,
+                    blockchain_state_channel_v1:summaries(SC)
+                ),
+                lists:map(
+                    fun(Summary) ->
+                        PubKeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
+                        [
+                            {hotspot_name,
+                                erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin))},
+                            {hotspot_id,
+                                erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin))},
+                            {hotspot_dcs, blockchain_state_channel_summary_v1:num_dcs(Summary)},
+                            {hotspot_packets,
+                                blockchain_state_channel_summary_v1:num_packets(Summary)},
+                            {hotspot_reputation, router_hotspot_reputation:reputation(PubKeyBin)},
+                            {state_channel, erlang:list_to_binary(SCName)},
+                            {state_channel_avg, maps:get(SCName, Avg)},
+                            {state_channel_base64,
+                                base64:encode(blockchain_state_channel_v1:id(SC))}
+                        ]
+                    end,
+                    FilteredSummaries
+                )
+            end,
+            ActiveSCs
+        )
+    ),
+    lists:sort(
+        fun(A, B) ->
+            proplists:get_value(hotspot_dcs, A) >
+                proplists:get_value(hotspot_dcs, B)
+        end,
+        HotspotList
+    );
+hotspot_reputation_sc([_, _, _], [], []) ->
     usage.
 
 %%--------------------------------------------------------------------

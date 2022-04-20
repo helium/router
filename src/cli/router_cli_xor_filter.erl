@@ -88,8 +88,16 @@ filter_cmd() ->
             ["filter", "contains"],
             [],
             [
-                {app, [{longname, "app_eui"}, {typecast, fun erlang:list_to_binary/1}]},
-                {dev, [{longname, "dev_eui"}, {typecast, fun erlang:list_to_binary/1}]}
+                {app_eui, [
+                    {shortname, "app"},
+                    {longname, "app_eui"},
+                    {typecast, fun erlang:list_to_binary/1}
+                ]},
+                {dev_eui, [
+                    {shortname, "dev"},
+                    {longname, "dev_eui"},
+                    {typecast, fun erlang:list_to_binary/1}
+                ]}
             ],
             fun filter_contains/3
         ]

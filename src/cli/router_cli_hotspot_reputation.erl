@@ -124,18 +124,13 @@ hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
                     fun(Summary) ->
                         PubKeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
                         [
-                            {hotspot_name,
-                                erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin))},
-                            {hotspot_id,
-                                erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin))},
-                            {hotspot_dcs, blockchain_state_channel_summary_v1:num_dcs(Summary)},
-                            {hotspot_packets,
-                                blockchain_state_channel_summary_v1:num_packets(Summary)},
-                            {hotspot_reputation, router_hotspot_reputation:reputation(PubKeyBin)},
-                            {state_channel, erlang:list_to_binary(SCName)},
-                            {state_channel_avg, maps:get(SCName, Avg)},
-                            {state_channel_base64,
-                                base64:encode(blockchain_state_channel_v1:id(SC))}
+                            {name, erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin))},
+                            {id, erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin))},
+                            {dcs, blockchain_state_channel_summary_v1:num_dcs(Summary)},
+                            {packets, blockchain_state_channel_summary_v1:num_packets(Summary)},
+                            {reputation, router_hotspot_reputation:reputation(PubKeyBin)},
+                            {sc, erlang:list_to_binary(SCName)},
+                            {sc_avg, erlang:round(maps:get(SCName, Avg))}
                         ]
                     end,
                     FilteredSummaries

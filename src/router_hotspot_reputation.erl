@@ -69,7 +69,6 @@ track_offer(Offer) ->
             ok;
         true ->
             erlang:spawn(fun() ->
-                lager:info("router_hotspot_reputation enabled"),
                 Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
                 PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
                 Now = erlang:system_time(millisecond),

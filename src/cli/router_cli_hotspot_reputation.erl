@@ -55,7 +55,7 @@ hotspot_reputation_cmd() ->
                     {datatype, integer}
                 ]},
                 {rep, [
-                    {longname, "reputation"},
+                    {longname, "rep"},
                     {datatype, integer}
                 ]}
             ],

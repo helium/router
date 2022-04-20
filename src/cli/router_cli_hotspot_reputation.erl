@@ -144,13 +144,14 @@ hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
             ActiveSCs
         )
     ),
-    lists:sort(
+    SortedList = lists:sort(
         fun(A, B) ->
             proplists:get_value(hotspot_dcs, A) >
                 proplists:get_value(hotspot_dcs, B)
         end,
         HotspotList
-    );
+    ),
+    c_table(SortedList);
 hotspot_reputation_sc([_, _, _], [], []) ->
     usage.
 

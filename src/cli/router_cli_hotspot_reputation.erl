@@ -35,10 +35,10 @@ hotspot_reputation_usage() ->
         ["hotspot_reputation"],
         [
             "\n\n",
-            "hotspot_reputation ls                        - Display all hotspots' reputation\n",
-            "hotspot_reputation <b58_hotspot_id>          - Display a hotspot's reputation\n",
-            "hotspot_reputation reset <b58_hotspot_id>    - Reset hotspot's reputation to 0\n",
-            "hotspot_reputation sc [--over 10]            - Display hotspots in state channel going over X time the average (Default 10)\n"
+            "hotspot_reputation ls                           - Display all hotspots' reputation\n",
+            "hotspot_reputation <b58_hotspot_id>             - Display a hotspot's reputation\n",
+            "hotspot_reputation reset <b58_hotspot_id>       - Reset hotspot's reputation to 0\n",
+            "hotspot_reputation sc [--over 10] [--rep 10]    - Display hotspots in state channel going over X time the average (Default 10)\n"
         ]
     ].
 
@@ -52,6 +52,10 @@ hotspot_reputation_cmd() ->
             [
                 {over, [
                     {longname, "over"},
+                    {datatype, integer}
+                ]},
+                {rep, [
+                    {longname, "reputation"},
                     {datatype, integer}
                 ]}
             ],
@@ -94,6 +98,7 @@ hotspot_reputation_reset([_, _, _], [], []) ->
 
 hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
     TimeOverAvg = proplists:get_value(over, Flags, 10),
+    ReputationOver = proplists:get_value(rep, Flags, 0),
     ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
     Avg = maps:from_list(
         lists:map(
@@ -139,12 +144,16 @@ hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
             ActiveSCs
         )
     ),
+    FilteredList = lists:filter(
+        fun(H) -> proplists:get_value(reputation, H) >= ReputationOver end,
+        HotspotList
+    ),
     SortedList = lists:sort(
         fun(A, B) ->
             proplists:get_value(hotspot_dcs, A) >
                 proplists:get_value(hotspot_dcs, B)
         end,
-        HotspotList
+        FilteredList
     ),
     c_table(SortedList);
 hotspot_reputation_sc([_, _, _], [], []) ->

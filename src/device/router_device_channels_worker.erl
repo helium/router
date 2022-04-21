@@ -873,7 +873,7 @@ format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain) ->
         snr => blockchain_helium_packet_v1:snr(Packet),
         spreading => erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
         frequency => Freq,
-        channel => lorawan_mac_region:freq_to_chan(Region, Freq),
+        channel => lora_plan:freq_to_channel(lora_plan:region_to_plan(Region), Freq),
         lat => Lat,
         long => Long,
         hold_time => HoldTime

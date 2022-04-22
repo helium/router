@@ -32,22 +32,22 @@ register_all_cmds() ->
 
 hotspot_reputation_usage() ->
     [
-        ["hotspot_reputation"],
+        ["hotspot_rep"],
         [
             "\n\n",
-            "hotspot_reputation ls                           - Display all hotspots' reputation\n",
-            "hotspot_reputation <b58_hotspot_id>             - Display a hotspot's reputation\n",
-            "hotspot_reputation reset <b58_hotspot_id>       - Reset hotspot's reputation to 0\n",
-            "hotspot_reputation sc [--over 10] [--rep 10]    - Display hotspots in state channel going over X time the average (Default 10)\n"
+            "hotspot_rep ls                           - Display all hotspots' reputation\n",
+            "hotspot_rep <b58_hotspot_id>             - Display a hotspot's reputation\n",
+            "hotspot_rep reset <b58_hotspot_id>       - Reset hotspot's reputation to 0\n",
+            "hotspot_rep sc [--over 10] [--rep 10]    - Display hotspots in state channel going over X time the average (Default 10)\n"
         ]
     ].
 
 hotspot_reputation_cmd() ->
     [
-        [["hotspot_reputation", '*'], [], [], fun hotspot_reputation_get/3],
-        [["hotspot_reputation", "reset", '*'], [], [], fun hotspot_reputation_reset/3],
+        [["hotspot_rep", '*'], [], [], fun hotspot_reputation_get/3],
+        [["hotspot_rep", "reset", '*'], [], [], fun hotspot_reputation_reset/3],
         [
-            ["hotspot_reputation", "sc"],
+            ["hotspot_rep", "sc"],
             [],
             [
                 {over, [
@@ -63,40 +63,25 @@ hotspot_reputation_cmd() ->
         ]
     ].
 
-hotspot_reputation_get(["hotspot_reputation", "ls"], [], []) ->
-    case router_hotspot_reputation:enabled() of
-        false ->
-            c_text("Hotspot Reputation is disabled");
-        true ->
-            List = router_hotspot_reputation:reputations(),
-            c_table(format(List))
-    end;
-hotspot_reputation_get(["hotspot_reputation", B58], [], []) ->
-    case router_hotspot_reputation:enabled() of
-        false ->
-            c_text("Hotspot Reputation is disabled");
-        true ->
-            Hotspot = libp2p_crypto:b58_to_bin(B58),
-            Reputation = router_hotspot_reputation:reputation(Hotspot),
-            c_table(format([{Hotspot, Reputation}]))
-    end;
+hotspot_reputation_get(["hotspot_rephotspot_reputation", "ls"], [], []) ->
+    List = router_hotspot_reputation:reputations(),
+    c_table(format(List));
+hotspot_reputation_get(["hotspot_rep", B58], [], []) ->
+    Hotspot = libp2p_crypto:b58_to_bin(B58),
+    Reputation = router_hotspot_reputation:reputation(Hotspot),
+    c_table(format([{Hotspot, Reputation}]));
 hotspot_reputation_get([_, _, _], [], []) ->
     usage.
 
-hotspot_reputation_reset(["hotspot_reputation", "reset", B58], [], []) ->
-    case router_hotspot_reputation:enabled() of
-        false ->
-            c_text("Hotspot Reputation is disabled");
-        true ->
-            PubKeyBin = libp2p_crypto:b58_to_bin(B58),
-            Name = blockchain_utils:addr2name(PubKeyBin),
-            ok = router_hotspot_reputation:reset(PubKeyBin),
-            c_text("Hotspot ~p (~p) reputation reseted", [Name, B58])
-    end;
+hotspot_reputation_reset(["hotspot_rep", "reset", B58], [], []) ->
+    PubKeyBin = libp2p_crypto:b58_to_bin(B58),
+    Name = blockchain_utils:addr2name(PubKeyBin),
+    ok = router_hotspot_reputation:reset(PubKeyBin),
+    c_text("Hotspot ~p (~p) reputation reseted", [Name, B58]);
 hotspot_reputation_reset([_, _, _], [], []) ->
     usage.
 
-hotspot_reputation_sc(["hotspot_reputation", "sc"], [], Flags) ->
+hotspot_reputation_sc(["hotspot_rep", "sc"], [], Flags) ->
     TimeOverAvg = proplists:get_value(over, Flags, 10),
     ReputationOver = proplists:get_value(rep, Flags, 0),
     ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),

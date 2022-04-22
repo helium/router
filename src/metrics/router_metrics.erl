@@ -513,18 +513,18 @@ record_queues() ->
 
 -spec record_hotspot_reputations() -> ok.
 record_hotspot_reputations() ->
-    case router_hotspot_reputation:enabled() of
-        false ->
-            ok;
-        true ->
-            lists:foreach(
-                fun({Hotspot, Counter}) ->
-                    Name = blockchain_utils:addr2name(Hotspot),
-                    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, [Name], Counter)
-                end,
-                router_hotspot_reputation:reputations()
-            )
-    end.
+    lists:foreach(
+        fun({Hotspot, Counter}) ->
+            Name = blockchain_utils:addr2name(Hotspot),
+            case Counter >= router_hotspot_reputation:threshold() of
+                true ->
+                    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, [Name], Counter);
+                false ->
+                    ok
+            end
+        end,
+        router_hotspot_reputation:reputations()
+    ).
 
 -spec get_pid_name(pid()) -> list().
 get_pid_name(Pid) ->

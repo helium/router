@@ -8,13 +8,14 @@
 -define(ETS, router_hotspot_reputation_ets).
 -define(OFFER_ETS, router_hotspot_reputation_offers_ets).
 -define(DEFAULT_TIMER, timer:minutes(2)).
--define(DEFAULT_THRESHOLD, 10).
+-define(DEFAULT_THRESHOLD, 50).
 
 %% ------------------------------------------------------------------
 %% API Exports
 %% ------------------------------------------------------------------
 -export([
     enabled/0,
+    threshold/0,
     init/0,
     track_offer/1,
     track_packet/1,
@@ -37,59 +38,47 @@ enabled() ->
         _ -> false
     end.
 
+-spec threshold() -> non_neg_integer().
+threshold() ->
+    router_utils:get_env_int(hotspot_reputation_threshold, ?DEFAULT_THRESHOLD).
+
 -spec init() -> ok.
 init() ->
-    case ?MODULE:enabled() of
-        false ->
-            lager:info("router_hotspot_reputation disabled");
-        true ->
-            lager:info("router_hotspot_reputation enabled"),
-            Opts1 = [
-                public,
-                named_table,
-                set,
-                {read_concurrency, true}
-            ],
-            _ = ets:new(?ETS, Opts1),
-            Opts2 = [
-                public,
-                named_table,
-                set,
-                {write_concurrency, true}
-            ],
-            _ = ets:new(?OFFER_ETS, Opts2),
-            ok = spawn_crawl_offers(?DEFAULT_TIMER),
-            ok
-    end.
+    Opts1 = [
+        public,
+        named_table,
+        set,
+        {read_concurrency, true}
+    ],
+    _ = ets:new(?ETS, Opts1),
+    Opts2 = [
+        public,
+        named_table,
+        set,
+        {write_concurrency, true}
+    ],
+    _ = ets:new(?OFFER_ETS, Opts2),
+    ok = spawn_crawl_offers(?DEFAULT_TIMER),
+    ok.
 
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
 track_offer(Offer) ->
-    case ?MODULE:enabled() of
-        false ->
-            ok;
-        true ->
-            erlang:spawn(fun() ->
-                Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-                PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-                Now = erlang:system_time(millisecond),
-                true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
-            end)
-    end,
+    erlang:spawn(fun() ->
+        Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+        PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+        Now = erlang:system_time(millisecond),
+        true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
+    end),
     ok.
 
 -spec track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
 track_packet(SCPacket) ->
-    case ?MODULE:enabled() of
-        false ->
-            ok;
-        true ->
-            erlang:spawn(fun() ->
-                Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-                Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-                PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-                true = ets:delete(?OFFER_ETS, {Hotspot, PHash})
-            end)
-    end,
+    erlang:spawn(fun() ->
+        Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+        Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+        true = ets:delete(?OFFER_ETS, {Hotspot, PHash})
+    end),
     ok.
 
 -spec reputations() -> list().
@@ -105,8 +94,7 @@ reputation(Hotspot) ->
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
-    Threshold = router_utils:get_env_int(hotspot_reputation_threshold, ?DEFAULT_THRESHOLD),
-    ?MODULE:reputation(Hotspot) >= Threshold.
+    ?MODULE:reputation(Hotspot) >= ?MODULE:threshold().
 
 -spec reset(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
 reset(Hotspot) ->

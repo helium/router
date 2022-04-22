@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
-%% @doc router_cli_hotspot_reputation
+%% @doc router_cli_hotspot_rep
 %% @end
 %%%-------------------------------------------------------------------
--module(router_cli_hotspot_reputation).
+-module(router_cli_hotspot_rep).
 
 -behavior(clique_handler).
 
@@ -17,20 +17,20 @@ register_cli() ->
 register_all_usage() ->
     lists:foreach(
         fun(Args) -> apply(clique, register_usage, Args) end,
-        [hotspot_reputation_usage()]
+        [hotspot_rep_usage()]
     ).
 
 register_all_cmds() ->
     lists:foreach(
         fun(Cmds) -> [apply(clique, register_command, Cmd) || Cmd <- Cmds] end,
-        [hotspot_reputation_cmd()]
+        [hotspot_rep_cmd()]
     ).
 
 %%--------------------------------------------------------------------
-%% hotspot_reputation
+%% hotspot_rep
 %%--------------------------------------------------------------------
 
-hotspot_reputation_usage() ->
+hotspot_rep_usage() ->
     [
         ["hotspot_rep"],
         [
@@ -42,10 +42,10 @@ hotspot_reputation_usage() ->
         ]
     ].
 
-hotspot_reputation_cmd() ->
+hotspot_rep_cmd() ->
     [
-        [["hotspot_rep", '*'], [], [], fun hotspot_reputation_get/3],
-        [["hotspot_rep", "reset", '*'], [], [], fun hotspot_reputation_reset/3],
+        [["hotspot_rep", '*'], [], [], fun hotspot_rep_get/3],
+        [["hotspot_rep", "reset", '*'], [], [], fun hotspot_rep_reset/3],
         [
             ["hotspot_rep", "sc"],
             [],
@@ -59,29 +59,29 @@ hotspot_reputation_cmd() ->
                     {datatype, integer}
                 ]}
             ],
-            fun hotspot_reputation_sc/3
+            fun hotspot_rep_sc/3
         ]
     ].
 
-hotspot_reputation_get(["hotspot_rephotspot_reputation", "ls"], [], []) ->
+hotspot_rep_get(["hotspot_rephotspot_rep", "ls"], [], []) ->
     List = router_hotspot_reputation:reputations(),
     c_table(format(List));
-hotspot_reputation_get(["hotspot_rep", B58], [], []) ->
+hotspot_rep_get(["hotspot_rep", B58], [], []) ->
     Hotspot = libp2p_crypto:b58_to_bin(B58),
     Reputation = router_hotspot_reputation:reputation(Hotspot),
     c_table(format([{Hotspot, Reputation}]));
-hotspot_reputation_get([_, _, _], [], []) ->
+hotspot_rep_get([_, _, _], [], []) ->
     usage.
 
-hotspot_reputation_reset(["hotspot_rep", "reset", B58], [], []) ->
+hotspot_rep_reset(["hotspot_rep", "reset", B58], [], []) ->
     PubKeyBin = libp2p_crypto:b58_to_bin(B58),
     Name = blockchain_utils:addr2name(PubKeyBin),
     ok = router_hotspot_reputation:reset(PubKeyBin),
     c_text("Hotspot ~p (~p) reputation reseted", [Name, B58]);
-hotspot_reputation_reset([_, _, _], [], []) ->
+hotspot_rep_reset([_, _, _], [], []) ->
     usage.
 
-hotspot_reputation_sc(["hotspot_rep", "sc"], [], Flags) ->
+hotspot_rep_sc(["hotspot_rep", "sc"], [], Flags) ->
     TimeOverAvg = proplists:get_value(over, Flags, 10),
     ReputationOver = proplists:get_value(rep, Flags, 0),
     ActiveSCs = maps:values(blockchain_state_channels_server:get_actives()),
@@ -141,7 +141,7 @@ hotspot_reputation_sc(["hotspot_rep", "sc"], [], Flags) ->
         FilteredList
     ),
     c_table(SortedList);
-hotspot_reputation_sc([_, _, _], [], []) ->
+hotspot_rep_sc([_, _, _], [], []) ->
     usage.
 
 %%--------------------------------------------------------------------

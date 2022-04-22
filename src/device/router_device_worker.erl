@@ -1308,7 +1308,7 @@ craft_join_reply(
     Device,
     #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey}
 ) ->
-    Plan = lora_plan:region_to_plan(lorawan_mac_region:top_level_region(Region)),
+    Plan = lora_plan:region_to_plan(Region),
     DR = lora_plan:rx2_datarate(Plan),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,

@@ -234,7 +234,9 @@ store_actual_adr(
     Node
 ) ->
     % store parameters
-    DataRate = lorawan_mac_region:datar_to_dr(Region, RxQ#rxq.datr),
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:datarate_to_atom(RxQ#rxq.datr),
+    DataRate = lora_plan:datarate_to_index(Plan, DataRateAtom),
     case Node#node.adr_use of
         {TXPower, DataRate, Chans} when
             is_number(TXPower), is_list(Chans), Node#node.adr_flag == ADR
@@ -476,7 +478,7 @@ auto_adr(_Network, _Profile, Node) ->
 
 calculate_adr(
     #network{
-        region = Region,
+        region = _Region,
         max_datr = NwkMaxDR1,
         max_power = MaxPower,
         min_power = MinPower,

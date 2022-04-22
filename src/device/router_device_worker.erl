@@ -962,7 +962,7 @@ handle_info(
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs),
-        lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+        lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
         TxTime,
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1671,7 +1671,7 @@ handle_frame_timeout(
             Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
-                lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+                lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
                 adjust_rx_time(TxTime),
                 TxFreq,
                 binary_to_list(TxDataRate),
@@ -1773,7 +1773,7 @@ handle_frame_timeout(
     Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
-        lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+        lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
         adjust_rx_time(TxTime),
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1889,7 +1889,10 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 %% `lorwan_mac_region'.  But `set_channels' wants data
                 %% rate in the form of "SFdd?BWddd?" so that's what
                 %% we'll give it.
-                NewDr = lorawan_mac_region:dr_to_datar(Region, NewDataRateIdx),
+                Plan = lora_plan:region_to_plan(Region),
+                NewDr = lora_plan:atom_to_datarate(
+                    (lora_plan:index_to_datarate(Plan, NewDataRateIdx))
+                ),
                 %% end-needs-refactor
                 lorawan_mac_region:set_channels(
                     Region,
@@ -2144,7 +2147,8 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% unknowable.
         {false, true} ->
             DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
-            DataRateIdx = lorawan_mac_region:datar_to_dr(Region, DataRateStr),
+            Plan = lora_plan:region_to_plan(Region),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, binary_to_existing_atom(DataRateStr)),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for
@@ -2220,9 +2224,11 @@ packet_datarate(Device, Packet, Region) ->
     {atom(), atom()}
 ) -> {atom(), integer()}.
 packet_datarate(Datarate, {Region, Region}) ->
-    {Region, lorawan_mac_region:datar_to_dr(Region, Datarate)};
+    Plan = lora_plan:region_to_plan(Region),
+    {Region, lora_plan:datarate_to_index(Plan, lora_plan:datarate_to_atom(Datarate))};
 packet_datarate(Datarate, {Region, DeviceRegion}) ->
-    try lorawan_mac_region:datar_to_dr(Region, Datarate) of
+    Plan = lora_plan:region_to_plan(Region),
+    try lora_plan:datarate_to_index(Plan, lora_plan:datarate_to_atom(Datarate)) of
         DR ->
             {Region, DR}
     catch
@@ -2232,7 +2238,9 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
                 Datarate,
                 DeviceRegion
             ]),
-            {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
+            DevicePlan = lora_plan:region_to_plan(DeviceRegion),
+            {DeviceRegion,
+                lora_plan:datarate_to_index(DevicePlan, lora_plan:datarate_to_atom(Datarate))}
     end.
 
 -spec calculate_packet_timeout(

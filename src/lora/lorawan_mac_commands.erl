@@ -425,7 +425,7 @@ find_status(FOptsIn) ->
 
 send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     #rxq{datr = DataRate, lsnr = SNR} = RxQ,
-    Margin = trunc(SNR - lorawan_mac_region:max_uplink_snr(DataRate)),
+    Margin = trunc(SNR - lora_plan:max_uplink_snr(lora_plan:datarate_to_atom(DataRate))),
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
     {link_check_ans, Margin, length(Gateways)}.
 
@@ -506,7 +506,8 @@ calculate_adr(
         end,
     % how many SF steps (per Table 13) are between current SNR and current sensitivity?
     % there is 2.5 dB between the DR, so divide by 3 to get more margin
-    MaxSNR = lorawan_mac_region:max_uplink_snr(Region, DataRate) + 10,
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
     StepsDR = trunc((AvgSNR - MaxSNR) / 3),
     DataRate2 =
         if

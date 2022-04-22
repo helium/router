@@ -1906,9 +1906,9 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
         case lists:member(link_check_req, Frame#frame.fopts) of
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
-                MaxUplinkSNR = lorawan_mac_region:max_uplink_snr(
-                    list_to_binary(blockchain_helium_packet_v1:datarate(Packet))
-                ),
+                DataRateStr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+                DataRateAtom = lora_plan:datarate_to_atom(DataRateStr),
+                MaxUplinkSNR = lora_plan:max_uplink_snr(DataRateAtom),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                 [{link_check_ans, Margin, Count} | FOpts1];
@@ -2148,7 +2148,8 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         {false, true} ->
             DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
             Plan = lora_plan:region_to_plan(Region),
-            DataRateIdx = lora_plan:datarate_to_index(Plan, binary_to_existing_atom(DataRateStr)),
+            DataRate = lora_plan:datarate_to_atom(DataRateStr),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for

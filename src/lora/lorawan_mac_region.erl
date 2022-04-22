@@ -40,19 +40,19 @@
 
 -define(US915_MAX_DOWNLINK_SIZE, 242).
 -define(CN470_MAX_DOWNLINK_SIZE, 242).
--define(AS923_MAX_DOWNLINK_SIZE, 250).
--define(AU915_MAX_DOWNLINK_SIZE, 250).
--define(EU868_MAX_DOWNLINK_SIZE, 222).
+-define(AS923_MAX_DOWNLINK_SIZE, 242).
+-define(AU915_MAX_DOWNLINK_SIZE, 242).
+-define(EU868_MAX_DOWNLINK_SIZE, 242).
 
 -define(AS923_PAYLOAD_SIZE_MAP, #{
-    0 => 59,
-    1 => 59,
-    2 => 59,
-    3 => 123,
-    4 => 250,
-    5 => 250,
-    6 => 250,
-    7 => 250
+    0 => 51,
+    1 => 51,
+    2 => 51,
+    3 => 115,
+    4 => 242,
+    5 => 242,
+    6 => 242,
+    7 => 242
 }).
 
 -define(CN470_PAYLOAD_SIZE_MAP, #{
@@ -82,20 +82,20 @@
 }).
 
 -define(AU915_PAYLOAD_SIZE_MAP, #{
-    0 => 59,
-    1 => 59,
-    2 => 59,
-    3 => 123,
-    4 => 250,
-    5 => 250,
-    6 => 250,
+    0 => 51,
+    1 => 51,
+    2 => 51,
+    3 => 115,
+    4 => 242,
+    5 => 242,
+    6 => 242,
     %% 7 => undefined,
-    8 => 61,
-    9 => 137,
-    10 => 250,
-    11 => 250,
-    12 => 250,
-    13 => 250
+    8 => 53,
+    9 => 129,
+    10 => 242,
+    11 => 242,
+    12 => 242,
+    13 => 242
     %% 14 => undefined,
     %% 15 => undefined,
 }).
@@ -105,10 +105,10 @@
     1 => 51,
     2 => 51,
     3 => 115,
-    4 => 222,
-    5 => 222,
-    6 => 222,
-    7 => 222
+    4 => 242,
+    5 => 242,
+    6 => 242,
+    7 => 242
     %% 8..15 => undefined
 }).
 

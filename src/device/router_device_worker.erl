@@ -948,12 +948,13 @@ handle_info(
         lager:pr(Packet, blockchain_helium_packet_v1),
         erlang:length(Packets) + 1
     ]),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:join1_window(
-        Region,
+    } = lora_plan:join1_window(
+        Plan,
         0,
         packet_to_rxq(Packet)
     ),
@@ -1658,12 +1659,13 @@ handle_frame_timeout(
                 },
                 Device0
             ),
+            Plan = lora_plan:region_to_plan(Region),
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
-            } = lorawan_mac_region:rx1_or_rx2_window(
-                Region,
+            } = lora_plan:rx1_or_rx2_window(
+                Plan,
                 RxDelay,
                 0,
                 packet_to_rxq(Packet0)
@@ -1760,12 +1762,13 @@ handle_frame_timeout(
         },
         Device0
     ),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx1_or_rx2_window(
-        Region,
+    } = lora_plan:rx1_or_rx2_window(
+        Plan,
         RxDelay,
         0,
         packet_to_rxq(Packet0)
@@ -2012,22 +2015,24 @@ frame_to_packet_payload(Frame, Device) ->
     blockchain_helium_packet_v1:window().
 join2_from_packet(Region, Packet) ->
     Rxq = packet_to_rxq(Packet),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:join2_window(Region, Rxq),
+    } = lora_plan:join2_window(Plan, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet(), number()) ->
     blockchain_helium_packet_v1:window().
 rx2_from_packet(Region, Packet, RxDelay) ->
     Rxq = packet_to_rxq(Packet),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx2_window(Region, RxDelay, Rxq),
+    } = lora_plan:rx2_window(Plan, RxDelay, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().

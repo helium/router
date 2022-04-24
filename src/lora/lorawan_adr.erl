@@ -219,7 +219,7 @@
     %% Table of region-specific DataRate parameters.
     datarates :: regional_datarates(),
     %% Table of region-specific uplink power.
-    txpowers :: lorawan_mac_region:tx_power_table(),
+    txpowers :: lora_plan:tx_power_table(),
     %% Slowest DataRate available in this device's `datarates'.
     %%
     %% The word DataRate, as used by the regional parameters document,
@@ -784,7 +784,7 @@ adjust_uplink_params(_, DataRate, _, _, TxPowerDBm, _, _) ->
     WantsADRAck :: boolean(),
     ConfiguredAdrHistoryLen :: pos_integer(),
     ConfiguredSNRHeadroom :: number(),
-    TxPowerTable :: lorawan_mac_region:tx_power_table(),
+    TxPowerTable :: lora_plan:tx_power_table(),
     TxPowerAdjustmentDBmStepSize :: number(),
     CurrentTxPowerIdx :: number()
 ) -> adjustment().

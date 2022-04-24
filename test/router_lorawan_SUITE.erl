@@ -268,7 +268,7 @@ lw_join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list(Region)),
+    ?assertEqual(CFList, lorawan_mac_command:mk_join_accept_cf_list(Region)),
 
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),

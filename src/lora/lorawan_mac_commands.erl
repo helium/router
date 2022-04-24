@@ -912,6 +912,11 @@ none_bit(MinMax, Chans) ->
         Chans
     ).
 
+match_part(MinMax, {A, B}) when B < A ->
+    match_part(MinMax, {B, A});
+match_part({Min, Max}, {A, B}) ->
+    (A =< Max) and (B >= Min).
+
 bits_test_() ->
     [
         ?_assertEqual([0, 1, 2, 5, 6, 7, 8, 9], expand_intervals([{0, 2}, {5, 9}])),

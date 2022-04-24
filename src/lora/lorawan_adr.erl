@@ -291,18 +291,10 @@
 -spec new(Region :: atom()) -> handle().
 new(Region) ->
     %% Filter gotthardp's table down to only 125kHz uplink DataRates.
-    FilterMapFn = fun
-        ({_, _, down}) ->
-            false;
-        ({DataRate, {Spreading, 125 = Bandwidth}, _Direction}) ->
-            {true, {DataRate, {Spreading, Bandwidth}}};
-        (_) ->
-            false
-    end,
-    Datarates = lists:filtermap(FilterMapFn, lorawan_mac_region:datars(Region)),
-    %% min-max refer to #device.min_datarate docs
-    [{MinDataRate, {MaxSpreading, _}} | _] = Datarates,
-    {MaxDataRate, {MinSpreading, _}} = lists:last(Datarates),
+    MinSF = min_adr_sf(Region),
+    MaxSF = max_adr_sf(Region),
+    MinDataRate = min_adr_dr(Region),
+    MaxDataRate = max_adr_dr(Region),
     Plan = lora_plan:region_to_plan(Region),
     TxPowers = lora_plan:tx_power_table(Plan),
     [{MaxTxPowerIdx, MaxTxPowerDBm} | _] = TxPowers,
@@ -316,14 +308,34 @@ new(Region) ->
         datarates = Datarates,
         txpowers = TxPowers,
         min_datarate = MinDataRate,
-        max_spreading = MaxSpreading,
+        max_spreading = MaxSF,
         max_datarate = MaxDataRate,
-        min_spreading = MinSpreading,
+        min_spreading = MinSF,
         max_txpower_idx = MaxTxPowerIdx,
         max_txpower_dbm = MaxTxPowerDBm,
         min_txpower_idx = MinTxPowerIdx,
         min_txpower_dbm = MinTxPowerDBm
     }.
+
+-spec min_adr_sf(atom()) -> pos_integer().
+min_adr_sf(_Region) -> 7.
+
+-spec max_adr_sf(atom()) -> pos_integer().
+max_adr_sf(Region) ->
+    case Region of
+        'US915' -> 10;
+        _ -> 12
+    end.
+
+-spec min_adr_dr(atom()) -> pos_integer().
+min_adr_dr(Region) -> 0.
+
+-spec max_adr_dr(atom()) -> pos_integer().
+max_adr_dr(Region) ->
+    case Region of
+        'US915' -> 3;
+        _ -> 5
+    end.
 
 %% ------------------------------------------------------------------
 %% @doc Returns a new ADR handle for the specified region.

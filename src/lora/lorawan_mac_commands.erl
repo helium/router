@@ -118,25 +118,23 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
 ->
     Plan = lora_plan:region_to_plan(Region),
     DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateAtom),
     case all_bit({0, 63}, Chans) of
         true ->
             [
-                {link_adr_req, DataRateIdx, TXPower,
-                    build_chmask(Chans, {64, 71}), 6, 0}
+                {link_adr_req, DataRateIdx, TXPower, build_chmask(Chans, {64, 71}), 6, 0}
                 | FOptsOut
             ];
         false ->
             [
-                {link_adr_req, DataRateIdx, TXPower,
-                    build_chmask(Chans, {64, 71}), 7, 0}
+                {link_adr_req, DataRateIdx, TXPower, build_chmask(Chans, {64, 71}), 7, 0}
                 | append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)
             ]
     end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when Region == 'CN470' ->
     Plan = lora_plan:region_to_plan(Region),
     DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateAtom),
     case all_bit({0, 95}, Chans) of
         true ->
             [
@@ -149,10 +147,9 @@ set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when Region == 'CN47
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
     Plan = lora_plan:region_to_plan(Region),
     DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateAtom),
     [
-        {link_adr_req, DataRateIdx, TXPower,
-            build_chmask(Chans, {0, 15}), 0, 0}
+        {link_adr_req, DataRateIdx, TXPower, build_chmask(Chans, {0, 15}), 0, 0}
         | FOptsOut
     ].
 
@@ -215,7 +212,7 @@ append_mask(Region, Idx, {0, <<"NoChange">>, Chans}, FOptsOut) ->
 append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
     Plan = lora_plan:region_to_plan(Region),
     DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateAtom),
     append_mask(
         Region,
         Idx - 1,
@@ -225,8 +222,7 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
                 FOptsOut;
             ChMask ->
                 [
-                    {link_adr_req, DataRateIdx, TXPower,
-                        ChMask, Idx, 0}
+                    {link_adr_req, DataRateIdx, TXPower, ChMask, Idx, 0}
                     | FOptsOut
                 ]
         end
@@ -449,24 +445,24 @@ store_actual_adr(
     % store parameters
     Plan = lora_plan:region_to_plan(Region),
     DataRateAtom = lora_plan:datarate_to_atom(RxQ#rxq.datr),
-    DataRate = lora_plan:datarate_to_index(Plan, DataRateAtom),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateAtom),
     case Node#node.adr_use of
-        {TXPower, DataRate, Chans} when
+        {TXPower, DataRateIdx, Chans} when
             is_number(TXPower), is_list(Chans), Node#node.adr_flag == ADR
         ->
             % device didn't change any settings
             Node;
-        {TXPower, DataRate, Chans} when is_number(TXPower), is_list(Chans) ->
+        {TXPower, DataRateIdx, Chans} when is_number(TXPower), is_list(Chans) ->
             lager:debug("ADR indicator set to ~w", [ADR]),
             Node#node{adr_flag = ADR, devstat_fcnt = undefined, last_qs = []};
         {TXPower, _OldDataRate, Chans} when is_number(TXPower), is_list(Chans) ->
             lager:debug("DataRate ~s switched to dr ~w", [
                 lorawan_utils:binary_to_hex(Node#node.devaddr),
-                DataRate
+                DataRateIdx
             ]),
             Node#node{
                 adr_flag = ADR,
-                adr_use = {TXPower, DataRate, Chans},
+                adr_use = {TXPower, DataRateIdx, Chans},
                 devstat_fcnt = undefined,
                 last_qs = []
             };
@@ -474,11 +470,11 @@ store_actual_adr(
             % this should not happen
             lager:warning("DataRate ~s initialized to dr ~w", [
                 lorawan_utils:binary_to_hex(Node#node.devaddr),
-                DataRate
+                DataRateIdx
             ]),
             Node#node{
                 adr_flag = ADR,
-                adr_use = {MaxPower, DataRate, InitChans},
+                adr_use = {MaxPower, DataRateIdx, InitChans},
                 devstat_fcnt = undefined,
                 last_qs = []
             }
@@ -611,7 +607,8 @@ handle_status(FOptsIn, #network{region = Region}, Node) ->
             % compute a maximal D/L SNR
             {_, DataRate, _} = Node#node.adr_use,
             {OffUse, _, _} = Node#node.rxwin_use,
-            MaxSNR = lorawan_mac_region:max_downlink_snr(Region, DataRate, OffUse),
+            % MaxSNR = lorawan_mac_region:max_downlink_snr(Region, DataRate, OffUse),
+            MaxSNR = 0,
             lager:debug("DevStatus: battery ~B, margin: ~B (max ~.1f)", [Battery, Margin, MaxSNR]),
             Node#node{
                 devstat_time = calendar:universal_time(),
@@ -640,7 +637,8 @@ find_status(FOptsIn) ->
 
 send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     #rxq{datr = DataRate, lsnr = SNR} = RxQ,
-    Margin = trunc(SNR - lora_plan:max_uplink_snr(lora_plan:datarate_to_atom(DataRate))),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    Margin = trunc(SNR - lora_plan:max_uplink_snr(DataRateAtom)),
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
     {link_check_ans, Margin, length(Gateways)}.
 

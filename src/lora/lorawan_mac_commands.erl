@@ -116,33 +116,42 @@ set_channels_(Region, {0, <<"NoChange">>, Chans}, FOptsOut) when
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when
     Region == 'US915'; Region == 'AU915'
 ->
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
     case all_bit({0, 63}, Chans) of
         true ->
             [
-                {link_adr_req, lorawan_mac_region:datar_to_dr(Region, DataRate), TXPower,
+                {link_adr_req, DataRateIdx, TXPower,
                     build_chmask(Chans, {64, 71}), 6, 0}
                 | FOptsOut
             ];
         false ->
             [
-                {link_adr_req, lorawan_mac_region:datar_to_dr(Region, DataRate), TXPower,
+                {link_adr_req, DataRateIdx, TXPower,
                     build_chmask(Chans, {64, 71}), 7, 0}
                 | append_mask(Region, 3, {TXPower, DataRate, Chans}, FOptsOut)
             ]
     end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) when Region == 'CN470' ->
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
     case all_bit({0, 95}, Chans) of
         true ->
             [
-                {link_adr_req, lorawan_mac_region:datar_to_dr(Region, DataRate), TXPower, 0, 6, 0}
+                {link_adr_req, DataRateIdx, TXPower, 0, 6, 0}
                 | FOptsOut
             ];
         false ->
             append_mask(Region, 5, {TXPower, DataRate, Chans}, FOptsOut)
     end;
 set_channels_(Region, {TXPower, DataRate, Chans}, FOptsOut) ->
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
     [
-        {link_adr_req, lorawan_mac_region:datar_to_dr(Region, DataRate), TXPower,
+        {link_adr_req, DataRateIdx, TXPower,
             build_chmask(Chans, {0, 15}), 0, 0}
         | FOptsOut
     ].
@@ -204,6 +213,9 @@ append_mask(Region, Idx, {0, <<"NoChange">>, Chans}, FOptsOut) ->
         end
     );
 append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
     append_mask(
         Region,
         Idx - 1,
@@ -213,7 +225,7 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
                 FOptsOut;
             ChMask ->
                 [
-                    {link_adr_req, lorawan_mac_region:datar_to_dr(Region, DataRate), TXPower,
+                    {link_adr_req, DataRateIdx, TXPower,
                         ChMask, Idx, 0}
                     | FOptsOut
                 ]

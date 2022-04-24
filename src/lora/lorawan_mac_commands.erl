@@ -601,12 +601,12 @@ find_rxwin(FOptsIn) ->
         FOptsIn
     ).
 
-handle_status(FOptsIn, #network{region = Region}, Node) ->
+handle_status(FOptsIn, #network{region = _Region}, Node) ->
     case find_status(FOptsIn) of
         {Battery, Margin} ->
             % compute a maximal D/L SNR
-            {_, DataRate, _} = Node#node.adr_use,
-            {OffUse, _, _} = Node#node.rxwin_use,
+            {_, _DataRate, _} = Node#node.adr_use,
+            {_OffUse, _, _} = Node#node.rxwin_use,
             % MaxSNR = lorawan_mac_region:max_downlink_snr(Region, DataRate, OffUse),
             MaxSNR = 0,
             lager:debug("DevStatus: battery ~B, margin: ~B (max ~.1f)", [Battery, Margin, MaxSNR]),

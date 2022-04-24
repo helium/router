@@ -305,7 +305,7 @@ new(Region) ->
         packet_history = [],
         pending_adjustments = [],
         accepted_adjustments = [],
-        datarates = Datarates,
+        %% datarates = Datarates,
         txpowers = TxPowers,
         min_datarate = MinDataRate,
         max_spreading = MaxSF,
@@ -328,7 +328,7 @@ max_adr_sf(Region) ->
     end.
 
 -spec min_adr_dr(atom()) -> pos_integer().
-min_adr_dr(Region) -> 0.
+min_adr_dr(_Region) -> 0.
 
 -spec max_adr_dr(atom()) -> pos_integer().
 max_adr_dr(Region) ->

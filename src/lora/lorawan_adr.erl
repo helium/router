@@ -303,7 +303,8 @@ new(Region) ->
     %% min-max refer to #device.min_datarate docs
     [{MinDataRate, {MaxSpreading, _}} | _] = Datarates,
     {MaxDataRate, {MinSpreading, _}} = lists:last(Datarates),
-    TxPowers = lorawan_mac_region:uplink_power_table(Region),
+    Plan = lora_plan:region_to_plan(Region),
+    TxPowers = lora_plan:tx_power_table(Plan),
     [{MaxTxPowerIdx, MaxTxPowerDBm} | _] = TxPowers,
     {MinTxPowerIdx, MinTxPowerDBm} = lists:last(TxPowers),
     #device{

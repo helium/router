@@ -317,7 +317,7 @@ new(Region) ->
         min_txpower_dbm = MinTxPowerDBm
     }.
 
--spec min_adr_sf(atom()) -> pos_integer().
+-spec min_adr_sf(atom()) -> 7.
 min_adr_sf(_Region) -> 7.
 
 -spec max_adr_sf(atom()) -> pos_integer().
@@ -327,7 +327,7 @@ max_adr_sf(Region) ->
         _ -> 12
     end.
 
--spec min_adr_dr(atom()) -> pos_integer().
+-spec min_adr_dr(atom()) -> 0.
 min_adr_dr(_Region) -> 0.
 
 -spec max_adr_dr(atom()) -> pos_integer().

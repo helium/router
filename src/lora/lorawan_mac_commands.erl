@@ -900,6 +900,18 @@ expand_intervals([{A, B} | Rest]) ->
 expand_intervals([]) ->
     [].
 
+some_bit(MinMax, Chans) ->
+    lists:any(
+        fun(Tuple) -> match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
+none_bit(MinMax, Chans) ->
+    lists:all(
+        fun(Tuple) -> not match_part(MinMax, Tuple) end,
+        Chans
+    ).
+
 bits_test_() ->
     [
         ?_assertEqual([0, 1, 2, 5, 6, 7, 8, 9], expand_intervals([{0, 2}, {5, 9}])),
@@ -924,20 +936,20 @@ bits_test_() ->
         ?_assertEqual(false, all_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(false, none_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(
-            [{link_adr_req, datar_to_dr('EU868', <<"SF12BW125">>), 14, 7, 0, 0}],
+            [{link_adr_req, lora_plan:datar_to_dr('EU868', <<"SF12BW125">>), 14, 7, 0, 0}],
             set_channels('EU868', {14, <<"SF12BW125">>, [{0, 2}]}, [])
         ),
         ?_assertEqual(
             [
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 0, 7, 0},
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
+                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 0, 7, 0},
+                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{0, 7}]}, [])
         ),
         ?_assertEqual(
             [
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 2, 7, 0},
-                {link_adr_req, datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
+                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 2, 7, 0},
+                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])
         )

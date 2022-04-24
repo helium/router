@@ -451,8 +451,9 @@ drop_downlink_test(Config) ->
     Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
     ok = router_device_worker:queue_downlink(DeviceWorkerPid, Msg),
 
-    DatarateDown = lorawan_mac_region:dr_to_down('US915', 2, 0),
-    MaxSize = lorawan_mac_region:max_payload_size('US915', DatarateDown),
+    Plan = lora_plan:region_to_plan('US915'),
+    DatarateDown = lora_plan:dr_to_down(Plan, 2, 0),
+    MaxSize = lora_plan:max_payload_size(DatarateDown),
     Description = erlang:list_to_binary(
         io_lib:format("Payload too big for DR~p max size is ~p (payload was 243)", [
             DatarateDown,

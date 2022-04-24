@@ -434,8 +434,9 @@ can_queue_payload(Payload, Device) ->
         false ->
             Region = ?MODULE:region(Device),
             UpDR = ?MODULE:last_known_datarate(Device),
-            DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
-            MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
+            Plan = lora_plan:region_to_plan(Region),
+            DownDR = lora_plan:dr_to_down(Plan, UpDR, 0),
+            MaxSize = lora_plan:max_payload_size(DownDR),
             Size = erlang:byte_size(Payload),
             {Size =< MaxSize, Size, MaxSize, DownDR}
     end.

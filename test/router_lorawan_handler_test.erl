@@ -63,7 +63,7 @@ init(client, _Conn, [Pid, Pubkeybin, Region] = _Args) ->
         {spawn_executable,
             io_lib:format(
                 "../../../../priv/LoRaMac-classA_~s",
-                [lorawan_mac_region:top_level_region(Region)]
+                [Region]
             )},
         [
             {line, 65535},

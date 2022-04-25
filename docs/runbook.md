@@ -70,11 +70,8 @@ Published Docker images are
 [tagged](https://quay.io/repository/team-helium/router?tab=tags)
 as `production` or `staging` as appropriate.
 
-Install:
-
-```bash
-router install production
-```
+Once updated in that repository, the next start of the Docker container
+should fetch the appropriate image.
 
 Restart the service:
 
@@ -248,7 +245,7 @@ restarted.
 
 ```bash
 router device trace --id=abc12345-bbbb-cccc-dddd-eeeeeeeeeeee
-tail -F /var/data/router/log/traces/abc12.log
+tail -F /var/data/log/traces/abc12.log
 ```
 
 Timeouts may be temporarily overridden using `RELX_RPC_TIMEOUT` environment
@@ -263,6 +260,33 @@ also *Erlang Expressions* section below.
 
 ```Erlang
 application:get_env(router, device_trace_timeout, 240).
+```
+
+## Gateway Reputation
+
+This applies mostly when testing such as on a developer instance of router,
+but customers may inqure as to why their packet offers are rejected by router.
+
+Sufficient load from a single gateway trigger abuse-prevention measures of
+[router](https://github.com/helium/router) such as its reputation system.
+
+Check:
+
+```bash
+router hotspot_rep ls
+```
+
+If you see the name corresponding to your instance(s) of gateway-rs, with a
+score approaching `50` (default threshold), that gateway has been
+banned.
+
+Copy the alphanumeric string associated with your gateway's name under the
+`b58` column, and use it as the identifier below.
+
+Reset reputation:
+
+```bash
+router hotspot_reputation reset longAlphaNumeric...
 ```
 
 ## Erlang Expressions

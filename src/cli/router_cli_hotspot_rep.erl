@@ -63,7 +63,7 @@ hotspot_rep_cmd() ->
         ]
     ].
 
-hotspot_rep_get(["hotspot_rephotspot_rep", "ls"], [], []) ->
+hotspot_rep_get(["hotspot_rep", "ls"], [], []) ->
     List = router_hotspot_reputation:reputations(),
     c_table(format(List));
 hotspot_rep_get(["hotspot_rep", B58], [], []) ->

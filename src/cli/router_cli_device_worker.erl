@@ -259,14 +259,14 @@ device_lookup(["device", "lookup"], [], Flags) ->
             c_text("provide --app=<app_eui_in_hex> or --dev=<dev_eui_in_hex>");
         {[], _} ->
             c_text("no results ~p", [Flags]);
-        {Ds, Number} when Number > length(Ds) ->
-            c_text("There are only ~p devices", [length(Ds)]);
         {Ds, undefined} ->
             IndexedDevices = lists:zip(lists:seq(1, length(Ds)), Ds),
             c_table([
                 [{idx, Idx} | format_device_for_table(Device)]
              || {Idx, Device} <- IndexedDevices
             ]);
+        {Ds, Number} when Number > length(Ds) ->
+            c_text("There are only ~p devices", [length(Ds)]);
         {Ds, Number} ->
             c_list(format_device_for_list(lists:nth(Number, Ds)))
     end.

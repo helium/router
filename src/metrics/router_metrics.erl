@@ -262,7 +262,8 @@ handle_info(
             ok = record_vm_stats(),
             ok = record_ets(),
             ok = record_queues(),
-            ok = record_grpc_connections()
+            ok = record_grpc_connections(),
+            ok = record_hotspot_reputations()
         end,
         [
             {fullsweep_after, 0},
@@ -509,6 +510,21 @@ record_queues() ->
         maps:to_list(NewQs)
     ),
     ok.
+
+-spec record_hotspot_reputations() -> ok.
+record_hotspot_reputations() ->
+    lists:foreach(
+        fun({Hotspot, Counter}) ->
+            Name = blockchain_utils:addr2name(Hotspot),
+            case Counter >= router_hotspot_reputation:threshold() of
+                true ->
+                    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, [Name], Counter);
+                false ->
+                    ok
+            end
+        end,
+        router_hotspot_reputation:reputations()
+    ).
 
 -spec get_pid_name(pid()) -> list().
 get_pid_name(Pid) ->

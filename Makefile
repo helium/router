@@ -24,7 +24,7 @@ endif
 REBAR=./rebar3
 
 compile: | $(grpc_services_directory)
-	$(REBAR) compile
+	BUILD_WITHOUT_QUIC=1 $(REBAR) compile
 	$(REBAR) format
 
 clean:

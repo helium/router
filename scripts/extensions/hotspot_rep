@@ -6,7 +6,7 @@ fi
 
 j=1
 l=$#
-buf="[[\"hotspot_reputation\","
+buf="[[\"hotspot_rep\","
 while [ $j -le $l ]; do
     buf="$buf\"$1\","
     j=$(( j + 1 ))

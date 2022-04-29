@@ -28,7 +28,6 @@
         {max_inbound_connections, 12},
         {outbound_gossip_connections, 4},
         {sc_packet_handler, router_device_routing},
-        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
         {sc_sup_type, server},
         {sc_hook_close_submit, router_sc_worker}
     ]},
@@ -38,7 +37,6 @@
         {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
         {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
         {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},
-        {max_sc_open, "${ROUTER_MAX_SC_OPEN}"},
         {router_console_api, [
             {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
             {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
@@ -47,10 +45,11 @@
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
-        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
+        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
         {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
         {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
+        {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
         {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
         {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"}
     ]},

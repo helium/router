@@ -23,6 +23,7 @@ RUN rustup update
 WORKDIR /opt/router
 
 ARG BUILD_NET=mainnet
+ENV BUILD_WITHOUT_QUIC=1
 
 ADD rebar3 rebar3
 ADD rebar.config rebar.config

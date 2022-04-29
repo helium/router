@@ -918,6 +918,8 @@ match_part({Min, Max}, {A, B}) ->
     (A =< Max) and (B >= Min).
 
 bits_test_() ->
+    PlanEU868 = lora_plan:region_to_plan('EU868'),
+    PlanUS915 = lora_plan:region_to_plan('US915'),
     [
         ?_assertEqual([0, 1, 2, 5, 6, 7, 8, 9], expand_intervals([{0, 2}, {5, 9}])),
         ?_assertEqual(7, build_chmask([{0, 2}], {0, 15})),
@@ -941,20 +943,20 @@ bits_test_() ->
         ?_assertEqual(false, all_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(false, none_bit({0, 15}, [{0, 2}])),
         ?_assertEqual(
-            [{link_adr_req, lora_plan:datar_to_dr('EU868', <<"SF12BW125">>), 14, 7, 0, 0}],
+            [{link_adr_req, lora_plan:datarate_to_index(PlanEU868, 'SF12BW125'), 14, 7, 0, 0}],
             set_channels('EU868', {14, <<"SF12BW125">>, [{0, 2}]}, [])
         ),
         ?_assertEqual(
             [
-                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 0, 7, 0},
-                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 255, 0, 0}
+                {link_adr_req, lora_plan:datarate_to_index(PlanUS915, 'SF12BW500'), 20, 0, 7, 0},
+                {link_adr_req, lora_plan:datarate_to_index(PlanUS915, 'SF12BW500'), 20, 255, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{0, 7}]}, [])
         ),
         ?_assertEqual(
             [
-                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 2, 7, 0},
-                {link_adr_req, lora_plan:datar_to_dr('US915', <<"SF12BW500">>), 20, 65280, 0, 0}
+                {link_adr_req, lora_plan:datarate_to_index(PlanUS915, 'SF12BW500'), 20, 2, 7, 0},
+                {link_adr_req, lora_plan:datarate_to_index(PlanUS915, 'SF12BW500'), 20, 65280, 0, 0}
             ],
             set_channels('US915', {20, <<"SF12BW500">>, [{8, 15}, {65, 65}]}, [])
         )

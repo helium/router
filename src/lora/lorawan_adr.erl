@@ -226,7 +226,7 @@
     %% is essentially an index into a table. It is probably safe to
     %% remove this and assume 0, but let's track it for completeness
     %% sake for the time being.
-    min_datarate :: pos_integer(),
+    min_datarate :: integer(),
     %% Spreading factor for corresponding `min_datarate'.
     %%
     %% Q: Why would a `max_spreading' correspond to `min_datarate'?
@@ -291,11 +291,9 @@
 -spec new(Region :: atom()) -> handle().
 new(Region) ->
     %% Filter gotthardp's table down to only 125kHz uplink DataRates.
-    MinSF = min_adr_sf(Region),
-    MaxSF = max_adr_sf(Region),
-    _MinDataRate = min_adr_dr(Region),
-    MaxDataRate = max_adr_dr(Region),
-    Datarates = [{1, {7, 125}}],
+    {MinSF, MaxSF} = adr_sf_range(Region),
+    {MinDataRate, MaxDataRate} = adr_datarate_range(Region),
+    Datarates = adr_datarates(Region),
     Plan = lora_plan:region_to_plan(Region),
     TxPowers = lora_plan:tx_power_table(Plan),
     [{MaxTxPowerIdx, MaxTxPowerDBm} | _] = TxPowers,
@@ -308,7 +306,7 @@ new(Region) ->
         accepted_adjustments = [],
         datarates = Datarates,
         txpowers = TxPowers,
-        min_datarate = 1,
+        min_datarate = MinDataRate,
         max_spreading = MaxSF,
         max_datarate = MaxDataRate,
         min_spreading = MinSF,
@@ -318,24 +316,34 @@ new(Region) ->
         min_txpower_dbm = MinTxPowerDBm
     }.
 
--spec min_adr_sf(atom()) -> 7.
-min_adr_sf(_Region) -> 7.
-
--spec max_adr_sf(atom()) -> pos_integer().
-max_adr_sf(Region) ->
+adr_datarates(Region) ->
     case Region of
-        'US915' -> 10;
-        _ -> 12
+        'US915' -> [{0,{10,125}},{1,{9,125}},{2,{8,125}},{3,{7,125}}];
+        'EU868' -> [{0,{12,125}},{1,{11,125}},{2,{10,125}},{3,{9,125}},{4,{8,125}},{5,{7,125}}];
+        'AU915' -> [{0,{12,125}},{1,{11,125}},{2,{10,125}},{3,{9,125}},{4,{8,125}},{5,{7,125}}];
+        'CN470' -> [{0,{12,125}},{1,{11,125}},{2,{10,125}},{3,{9,125}},{4,{8,125}},{5,{7,125}}];
+        'AS923' -> [{0,{12,125}},{1,{11,125}},{2,{10,125}},{3,{9,125}},{4,{8,125}},{5,{7,125}}];
+        _ -> [{0,{12,125}},{1,{11,125}},{2,{10,125}},{3,{9,125}},{4,{8,125}},{5,{7,125}}]
     end.
 
--spec min_adr_dr(atom()) -> 0.
-min_adr_dr(_Region) -> 0.
-
--spec max_adr_dr(atom()) -> pos_integer().
-max_adr_dr(Region) ->
+adr_sf_range(Region) ->
     case Region of
-        'US915' -> 3;
-        _ -> 5
+        'US915' -> {7, 10};
+        'EU868' -> {7, 12};
+        'AU915' -> {7, 12};
+        'CN470' -> {7, 12};
+        'AS923' -> {7, 12};
+        _ -> {7, 12}
+    end.
+
+adr_datarate_range(Region) ->
+    case Region of
+        'US915' -> {0, 3};
+        'EU868' -> {0, 5};
+        'AU915' -> {0, 5};
+        'CN470' -> {0, 5};
+        'AS923' -> {0, 5};
+        _ -> {0, 5}
     end.
 
 %% ------------------------------------------------------------------

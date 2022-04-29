@@ -228,6 +228,10 @@ append_mask(Region, Idx, {TXPower, DataRate, Chans}, FOptsOut) ->
         end
     ).
 
+%% ------------------------------------------------------------------
+%%
+%% ------------------------------------------------------------------
+
 handle_fopts({Network, Profile, Node}, Gateways, ADR, FOpts) ->
     FOptsIn = parse_fopts(FOpts),
     case FOptsIn of

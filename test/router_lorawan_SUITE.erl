@@ -263,7 +263,7 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for reply resp form router
-    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, CFList} = test_utils:wait_for_join_resp(
+    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, _CFList} = test_utils:wait_for_join_resp(
         PubKeyBin,
         AppKey,
         DevNonce

@@ -1317,7 +1317,7 @@ craft_join_reply(
     CFList =
         case maps:get(cf_list_enabled, Metadata, true) of
             false -> <<>>;
-            true -> lorawan_mac_commands:mk_join_accept_cf_list(Region)
+            true -> lora_chmask:join_cf_list(Region)
         end,
     RxDelaySeconds =
         case lorawan_rxdelay:get(Metadata, default) of
@@ -1866,19 +1866,19 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             {true, false, _} ->
                 case Region of
                     'US915' ->
-                        lorawan_mac_commands:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
                             {0, <<"NoChange">>, [Channels]},
                             []
                         );
                     'AU915' ->
-                        lorawan_mac_commands:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
                             {0, <<"NoChange">>, [Channels]},
                             []
                         );
                     _ ->
-                        lorawan_mac_commands:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
                             {0, erlang:list_to_binary(DataRate), [Channels]},
                             []
@@ -1897,7 +1897,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                     (lora_plan:index_to_datarate(Plan, NewDataRateIdx))
                 ),
                 %% end-needs-refactor
-                lorawan_mac_commands:set_channels(
+                lora_chmask:make_link_adr_req(
                     Region,
                     {NewTxPowerIdx, NewDr, [Channels]},
                     []

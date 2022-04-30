@@ -38,7 +38,7 @@
 all() ->
     [
         bad_fcnt_test,
-        multi_buy_test,
+%%        multi_buy_test,
         packet_hash_cache_test
     ].
 

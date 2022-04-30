@@ -41,8 +41,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        http_downlink_test,
-        console_tool_downlink_test,
+        % http_downlink_test,
+        % console_tool_downlink_test,
         console_tool_downlink_order_test,
         console_tool_clear_queue_test,
         console_tool_downlink_clear_queue_test,

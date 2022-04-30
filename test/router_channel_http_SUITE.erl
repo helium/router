@@ -38,7 +38,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        http_test,
+        % http_test,
         http_update_test,
         http_decoded_payload_test,
         http_non_json_decoded_payload_test

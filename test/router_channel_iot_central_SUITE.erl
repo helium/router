@@ -36,7 +36,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        iot_central_test,
+        % iot_central_test,
         iot_central_integration_test
     ].
 

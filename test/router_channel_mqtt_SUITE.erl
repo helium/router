@@ -38,7 +38,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        mqtt_test,
+        % mqtt_test,
         mqtt_crash_test,
         mqtt_update_test
     ].

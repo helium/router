@@ -392,15 +392,14 @@ find_rxwin(FOptsIn) ->
         FOptsIn
     ).
 
-handle_status(FOptsIn, #network{region = _Region}, Node) ->
+handle_status(FOptsIn, #network{region = Region}, Node) ->
     case find_status(FOptsIn) of
         {Battery, Margin} ->
             % compute a maximal D/L SNR
             {_, DataRate, _} = Node#node.adr_use,
-            {_OffUse, _, _} = Node#node.rxwin_use,
-            DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-            MaxSNR = lora_plan:max_uplink_snr(DataRateAtom),
-            % MaxSNR = lorawan_mac_region:max_downlink_snr(Region, DataRate, OffUse),
+            {Offset, _, _} = Node#node.rxwin_use,
+            Plan = lora_plan:region_to_plan(Region),
+            MaxSNR = lora_plan:max_downlink_snr(Plan, DataRate, Offset),
             lager:debug("DevStatus: battery ~B, margin: ~B (max ~.1f)", [Battery, Margin, MaxSNR]),
             Node#node{
                 devstat_time = calendar:universal_time(),
@@ -482,7 +481,7 @@ auto_adr(_Network, _Profile, Node) ->
 
 calculate_adr(
     #network{
-        region = _Region,
+        region = Region,
         max_datr = NwkMaxDR1,
         max_power = MaxPower,
         min_power = MinPower,
@@ -512,9 +511,9 @@ calculate_adr(
         end,
     % how many SF steps (per Table 13) are between current SNR and current sensitivity?
     % there is 2.5 dB between the DR, so divide by 3 to get more margin
-    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
-    MaxSNR = lora_plan:max_uplink_snr(DataRateAtom),
-    % MaxSNR = lorawan_mac_region:max_uplink_snr(Region, DataRate) + 10,
+    Plan = lora_plan:region_to_plan(Region),
+    DataRateAtom = lora_plan:index_to_datarate(Plan, DataRate),
+    MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
     StepsDR = trunc((AvgSNR - MaxSNR) / 3),
     DataRate2 =
         if

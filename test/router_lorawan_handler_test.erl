@@ -52,6 +52,12 @@ version() ->
 %% ------------------------------------------------------------------
 %% libp2p_framed_stream Function Definitions
 %% ------------------------------------------------------------------
+-spec top_level_region(atom()) -> atom().
+top_level_region('AS923_1') -> 'AS923';
+top_level_region('AS923_2') -> 'AS923';
+top_level_region('AS923_3') -> 'AS923';
+top_level_region('AS923_4') -> 'AS923';
+top_level_region(Region) -> Region.
 
 init(server, _Conn, _Args) ->
     lager:info("server started with ~p", [_Args]),
@@ -63,7 +69,7 @@ init(client, _Conn, [Pid, Pubkeybin, Region] = _Args) ->
         {spawn_executable,
             io_lib:format(
                 "../../../../priv/LoRaMac-classA_~s",
-                [Region]
+                [top_level_region(Region)]
             )},
         [
             {line, 65535},

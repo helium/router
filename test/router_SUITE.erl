@@ -52,14 +52,14 @@ all() ->
     [
         mac_commands_test,
         mac_command_link_check_req_test,
-        % dupes_test,
-        % join_test,
+        dupes_test,
+        join_test,
         us915_join_enabled_cf_list_test,
         us915_join_disabled_cf_list_test,
-        % us915_link_adr_req_timing_test,
-        % adr_test,
-        % adr_downlink_timing_test,
-        % rx_delay_join_test,
+        us915_link_adr_req_timing_test,
+        adr_test,
+        adr_downlink_timing_test,
+        rx_delay_join_test,
         rx_delay_downlink_default_test,
         rx_delay_change_ignored_by_device_downlink_test,
         rx_delay_accepted_by_device_downlink_test,
@@ -430,7 +430,7 @@ dupes_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -870,7 +870,7 @@ join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -1167,7 +1167,7 @@ us915_link_adr_req_timing_test(Config) ->
                 <<"hotspot">> => #{
                     <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                     <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => 27,
+                    <<"rssi">> => 30,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF8BW500">>,
                     <<"frequency">> => fun erlang:is_float/1,
@@ -1552,7 +1552,7 @@ adr_downlink_timing_test(Config) ->
                 <<"hotspot">> => #{
                     <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                     <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => 27,
+                    <<"rssi">> => 30,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF8BW500">>,
                     <<"frequency">> => fun erlang:is_float/1,
@@ -1761,7 +1761,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF10BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -1958,7 +1958,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2151,7 +2151,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2586,7 +2586,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2687,7 +2687,7 @@ rx_delay_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => fun erlang:is_binary/1,
                 <<"name">> => fun erlang:is_binary/1,
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

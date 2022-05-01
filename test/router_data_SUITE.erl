@@ -35,9 +35,9 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        % data_test_1,
-        % data_test_2,
-        % data_test_3
+        data_test_1,
+        data_test_2,
+        data_test_3
     ].
 
 %%--------------------------------------------------------------------
@@ -455,7 +455,7 @@ data_test_3(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 %% RSSI act as power here we are and based on UPLINK RSSI < -80 we should power downlink at 27
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF12BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,

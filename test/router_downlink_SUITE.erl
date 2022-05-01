@@ -41,8 +41,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        % http_downlink_test,
-        % console_tool_downlink_test,
+        http_downlink_test,
+        console_tool_downlink_test,
         console_tool_downlink_order_test,
         console_tool_clear_queue_test,
         console_tool_downlink_clear_queue_test,
@@ -268,7 +268,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

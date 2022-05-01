@@ -48,10 +48,10 @@ all() ->
         device_update_test,
         device_update_app_eui_reset_devaddr_test,
         device_update_dev_eui_reset_devaddr_test,
-        % drop_downlink_test,
+        drop_downlink_test,
         replay_joins_test,
         replay_uplink_test,
-        % device_worker_late_packet_double_charge_test,
+        device_worker_late_packet_double_charge_test,
         offer_cache_test,
         load_offer_cache_test,
         hotspot_bad_region_test
@@ -266,7 +266,7 @@ device_worker_late_packet_double_charge_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

@@ -452,7 +452,7 @@ drop_downlink_test(Config) ->
 
     Plan = lora_plan:region_to_plan('US915'),
     DatarateDown = lora_plan:up_to_down_datarate(Plan, 2, 0),
-    DownAtom = lora_plan:index_to_daterate(Plan, DatarateDown),
+    DownAtom = lora_plan:index_to_datarate(Plan, DatarateDown),
     MaxSize = lora_plan:max_downlink_payload_size(Plan, DownAtom),
     Description = erlang:list_to_binary(
         io_lib:format("Payload too big for DR~p max size is ~p (payload was 243)", [

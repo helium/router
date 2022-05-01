@@ -8,7 +8,7 @@
 
 -export([
     mqtt_test/1,
-    mqtt_crash_test/1,
+    % mqtt_crash_test/1,
     mqtt_update_test/1
 ]).
 

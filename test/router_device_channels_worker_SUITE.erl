@@ -60,7 +60,7 @@ all() ->
     [
         refresh_channels_test,
         crashing_http_channel_test,
-        % late_packet_test,
+        late_packet_test,
         join_sent_to_integration_test,
         join_sent_to_integration_with_decoder_test,
         downlink_clear_queue_test,

@@ -1088,7 +1088,7 @@ us915_join_disabled_cf_list_test(Config) ->
 
 us915_link_adr_req_timing_test(Config) ->
     ok = application:set_env(router, testing, false),
-    Region = proplists:get_value(region, Config),
+
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,

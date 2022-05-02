@@ -60,6 +60,7 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 mqtt_test(Config) ->
+    Region = proplists:get_value(region, Config),
     %% Set console to MQTT channel mode
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
@@ -328,7 +329,7 @@ mqtt_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 30,
+                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

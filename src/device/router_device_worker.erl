@@ -963,7 +963,7 @@ handle_info(
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs),
-        lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
+        lora_plan:max_tx_power(Plan),
         TxTime,
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1673,7 +1673,7 @@ handle_frame_timeout(
             Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
-                lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
+                lora_plan:max_tx_power(Plan),
                 adjust_rx_time(TxTime),
                 TxFreq,
                 binary_to_list(TxDataRate),
@@ -1776,7 +1776,7 @@ handle_frame_timeout(
     Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
-        lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), TxFreq),
+        lora_plan:max_tx_power(Plan),
         adjust_rx_time(TxTime),
         TxFreq,
         binary_to_list(TxDataRate),

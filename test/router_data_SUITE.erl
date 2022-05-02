@@ -458,8 +458,8 @@ data_test_3(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                %% RSSI act as power here.  Based on UPLINK RSSI < -80 we should power downlink at 30
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                %% RSSI act as power here we are and based on UPLINK RSSI < -80 we should power downlink at 27
+                <<"rssi">> => 30,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF12BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,

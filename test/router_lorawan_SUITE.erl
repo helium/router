@@ -304,7 +304,7 @@ lw_join_test(Config) ->
     end,
 
     %% Waiting for data from HTTP channel
-    {ok, #{<<"hotspots">> := [#{<<"frequency">> := _Frequency}]}} = test_utils:wait_channel_data(#{
+    {ok, #{<<"hotspots">> := [#{<<"frequency">> := Frequency}]}} = test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
         <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
@@ -343,8 +343,6 @@ lw_join_test(Config) ->
         }
     }),
 
-    MaxEIRP = lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
-
     %% Waiting for report channel status from console downlink
     test_utils:wait_for_console_event_sub(<<"downlink_confirmed">>, #{
         <<"id">> => fun erlang:is_binary/1,
@@ -362,7 +360,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => MaxEIRP,
+                <<"rssi">> => lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), Frequency),
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -617,7 +615,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => MaxEIRP,
+                <<"rssi">> => lora_plan:downlink_eirp(lora_plan:region_to_plan(Region), Frequency),
                 <<"snr">> => '_',
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

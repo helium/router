@@ -158,7 +158,7 @@ packet_hash_cache_test(Config) ->
 
 multi_buy_test(Config) ->
     meck:delete(router_device_devaddr, allocate, 2, false),
-    Region = proplists:get_value(region, Config),
+
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
     RouterSwarm = blockchain_swarm:swarm(),
@@ -229,7 +229,7 @@ multi_buy_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

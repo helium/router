@@ -62,7 +62,6 @@ end_per_testcase(TestCase, Config) ->
 
 http_test(Config) ->
     Tab = proplists:get_value(ets, Config),
-    Region = proplists:get_value(region, Config),
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,
@@ -288,7 +287,7 @@ http_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

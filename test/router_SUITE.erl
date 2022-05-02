@@ -280,8 +280,6 @@ mac_commands_test(Config) ->
     ok.
 
 dupes_test(Config) ->
-    Region = proplists:get_value(region, Config),
-
     #{
         pubkey_bin := PubKeyBin1,
         stream := Stream,
@@ -432,7 +430,7 @@ dupes_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -753,7 +751,6 @@ dupes2_test(Config) ->
 join_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
     BaseDir = proplists:get_value(base_dir, Config),
-    Region = proplists:get_value(region, Config),
     RouterSwarm = blockchain_swarm:swarm(),
     [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
     {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
@@ -873,7 +870,7 @@ join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -1170,7 +1167,7 @@ us915_link_adr_req_timing_test(Config) ->
                 <<"hotspot">> => #{
                     <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                     <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                    <<"rssi">> => 30,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF8BW500">>,
                     <<"frequency">> => fun erlang:is_float/1,
@@ -1402,7 +1399,6 @@ adr_downlink_timing_test(Config) ->
 
     %% Tell the device to enable adr
     Tab = proplists:get_value(ets, Config),
-    Region = proplists:get_value(region, Config),
     _ = ets:insert(Tab, {adr_allowed, true}),
     #{
         pubkey_bin := PubKeyBin,
@@ -1556,7 +1552,7 @@ adr_downlink_timing_test(Config) ->
                 <<"hotspot">> => #{
                     <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                     <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                    <<"rssi">> => 30,
                     <<"snr">> => 0.0,
                     <<"spreading">> => <<"SF8BW500">>,
                     <<"frequency">> => fun erlang:is_float/1,
@@ -1599,7 +1595,6 @@ adr_downlink_timing_test(Config) ->
     ok.
 
 adr_test(Config) ->
-    Region = proplists:get_value(region, Config),
     #{
         pubkey_bin := PubKeyBin,
         stream := Stream,
@@ -1766,7 +1761,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF10BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -1963,7 +1958,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2156,7 +2151,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2591,7 +2586,7 @@ adr_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -2624,7 +2619,6 @@ adr_test(Config) ->
 rx_delay_join_test(Config) ->
     ExpectedRxDelay = 5,
     Tab = proplists:get_value(ets, Config),
-    Region = proplists:get_value(region, Config),
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
 
     AppKey = proplists:get_value(app_key, Config),
@@ -2693,7 +2687,7 @@ rx_delay_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => fun erlang:is_binary/1,
                 <<"name">> => fun erlang:is_binary/1,
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

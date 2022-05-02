@@ -55,7 +55,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 iot_hub_test(Config) ->
-    Region = proplists:get_value(region, Config),
     meck:new(router_iot_hub_connection, [passthrough]),
     meck:expect(router_iot_hub_connection, fetch_device, fun(_) ->
         {ok, device_map_would_go_here}
@@ -340,7 +339,7 @@ iot_hub_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

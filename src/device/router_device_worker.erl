@@ -1569,7 +1569,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
 maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) ->
     case maps:get({PubKeyBin, PHash}, OfferCache, undefined) of
         undefined ->
-            case application:get_env(router, charge_when_no_offer, true) of
+            case charge_when_no_offer() of
                 false ->
                     Metadata = router_device:metadata(Device),
                     {Balance, Nonce} =
@@ -1585,6 +1585,14 @@ maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) ->
             end;
         _ ->
             router_console_dc_tracker:charge(Device, PayloadSize, Blockchain)
+    end.
+
+-spec charge_when_no_offer() -> boolean().
+charge_when_no_offer() ->
+    case application:get_env(router, charge_when_no_offer, true) of
+        "true" -> true;
+        true -> true;
+        _ -> false
     end.
 
 %%%-------------------------------------------------------------------

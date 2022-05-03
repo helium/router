@@ -235,8 +235,7 @@ store_actual_adr(
 ) ->
     % store parameters
     Plan = lora_plan:region_to_plan(Region),
-    DataRateAtom = lora_plan:datarate_to_atom(RxQ#rxq.datr),
-    DataRate = lora_plan:datarate_to_index(Plan, DataRateAtom),
+    DataRate = lora_plan:datarate_to_index(Plan, RxQ#rxq.datr),
     case Node#node.adr_use of
         {TXPower, DataRate, Chans} when
             is_number(TXPower), is_list(Chans), Node#node.adr_flag == ADR
@@ -428,7 +427,7 @@ find_status(FOptsIn) ->
 
 send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     #rxq{datr = DataRate, lsnr = SNR} = RxQ,
-    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
+    DataRateAtom = binary_to_atom(DataRate),
     MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
     Margin = trunc(SNR - MaxSNR),
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
@@ -512,8 +511,7 @@ calculate_adr(
     % how many SF steps (per Table 13) are between current SNR and current sensitivity?
     % there is 2.5 dB between the DR, so divide by 3 to get more margin
     Plan = lora_plan:region_to_plan(Region),
-    DataRateAtom = lora_plan:index_to_datarate(Plan, DataRate),
-    MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
+    MaxSNR = lora_plan:max_uplink_snr(Plan, DataRate) + 10,
     StepsDR = trunc((AvgSNR - MaxSNR) / 3),
     DataRate2 =
         if

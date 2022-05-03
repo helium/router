@@ -436,9 +436,7 @@ can_queue_payload(Payload, Device) ->
             UpDRIndex = ?MODULE:last_known_datarate(Device),
             Plan = lora_plan:region_to_plan(Region),
             DownDRIndex = lora_plan:up_to_down_datarate(Plan, UpDRIndex, 0),
-            MaxSize = lora_plan:max_downlink_payload_size(
-                Plan, lora_plan:index_to_datarate(Plan, DownDRIndex)
-            ),
+            MaxSize = lora_plan:max_downlink_payload_size(Plan, DownDRIndex),
             Size = erlang:byte_size(Payload),
             {Size =< MaxSize, Size, MaxSize, DownDRIndex}
     end.

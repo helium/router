@@ -1893,9 +1893,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 %% rate in the form of "SFdd?BWddd?" so that's what
                 %% we'll give it.
                 Plan = lora_plan:region_to_plan(Region),
-                NewDr = lora_plan:atom_to_datarate(
-                    (lora_plan:index_to_datarate(Plan, NewDataRateIdx))
-                ),
+                NewDr = lora_plan:datarate_to_binary(Plan, NewDataRateIdx),
                 %% end-needs-refactor
                 lora_chmask:make_link_adr_req(
                     Region,
@@ -1910,8 +1908,9 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
                 DataRateStr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
-                DataRateAtom = lora_plan:datarate_to_atom(DataRateStr),
-                MaxUplinkSNR = lora_plan:max_uplink_snr(DataRateAtom),
+                MaxUplinkSNR = lora_plan:max_uplink_snr(
+                    lora_plan:region_to_plan(Region), DataRateStr
+                ),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                 [{link_check_ans, Margin, Count} | FOpts1];
@@ -2153,8 +2152,7 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         {false, true} ->
             DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
             Plan = lora_plan:region_to_plan(Region),
-            DataRate = lora_plan:datarate_to_atom(DataRateStr),
-            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateStr),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for
@@ -2231,10 +2229,10 @@ packet_datarate(Device, Packet, Region) ->
 ) -> {atom(), integer()}.
 packet_datarate(Datarate, {Region, Region}) ->
     Plan = lora_plan:region_to_plan(Region),
-    {Region, lora_plan:datarate_to_index(Plan, lora_plan:datarate_to_atom(Datarate))};
+    {Region, lora_plan:datarate_to_index(Plan, Datarate)};
 packet_datarate(Datarate, {Region, DeviceRegion}) ->
     Plan = lora_plan:region_to_plan(Region),
-    try lora_plan:datarate_to_index(Plan, lora_plan:datarate_to_atom(Datarate)) of
+    try lora_plan:datarate_to_index(Plan, Datarate) of
         DR ->
             {Region, DR}
     catch
@@ -2245,8 +2243,7 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
                 DeviceRegion
             ]),
             DevicePlan = lora_plan:region_to_plan(DeviceRegion),
-            {DeviceRegion,
-                lora_plan:datarate_to_index(DevicePlan, lora_plan:datarate_to_atom(Datarate))}
+            {DeviceRegion, lora_plan:datarate_to_index(DevicePlan, Datarate)}
     end.
 
 -spec calculate_packet_timeout(

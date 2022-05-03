@@ -1834,7 +1834,7 @@ handle_frame_timeout(
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
     ChannelsCorrected = were_channels_corrected(Frame, Region),
-    DataRate = blockchain_helium_packet_v1:datarate(Packet),
+    DataRateBinary = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     %% begin-needs-refactor
@@ -1880,7 +1880,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                     _ ->
                         lora_chmask:make_link_adr_req(
                             Region,
-                            {0, erlang:list_to_binary(DataRate), [Channels]},
+                            {0, DataRateBinary, [Channels]},
                             []
                         )
                 end;
@@ -1907,9 +1907,8 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
         case lists:member(link_check_req, Frame#frame.fopts) of
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
-                DataRateStr = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
                 MaxUplinkSNR = lora_plan:max_uplink_snr(
-                    lora_plan:region_to_plan(Region), DataRateStr
+                    lora_plan:region_to_plan(Region), DataRateBinary
                 ),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
@@ -2150,9 +2149,9 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% power this packet transmitted at, but that value is
         %% unknowable.
         {false, true} ->
-            DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
+            DataRateBinary = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
             Plan = lora_plan:region_to_plan(Region),
-            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateStr),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateBinary),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for

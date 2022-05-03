@@ -306,7 +306,7 @@ lw_join_test(Config) ->
     end,
 
     %% Waiting for data from HTTP channel
-    {ok, #{<<"hotspots">> := [#{<<"frequency">> := Frequency}]}} = test_utils:wait_channel_data(#{
+    {ok, #{<<"hotspots">> := [#{<<"frequency">> := _Frequency}]}} = test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
         <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,

@@ -263,13 +263,15 @@ lw_join_test(Config) ->
     }),
 
     %% Waiting for reply resp form router
-    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, _CFList} = test_utils:wait_for_join_resp(
+    {_NetID, _DevAddr, _DLSettings, _RxDelay, NwkSKey, AppSKey, CFList} = test_utils:wait_for_join_resp(
         PubKeyBin,
         AppKey,
         DevNonce
     ),
-    % ToDo: Fixme
-    % ?assertEqual(CFList, lora_chmask:join_cf_list(Region)),
+    ct:print(error, ?STD_IMPORTANCE, "CFList = = ~w", [CFList]),
+    ChMaskList = lora_chmask:join_cf_list(Region),
+    ct:print(error, ?STD_IMPORTANCE, "ChMaskList = = ~w", [ChMaskList]),
+    ?assertEqual(CFList, ChMaskList),
 
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),

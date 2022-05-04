@@ -35,13 +35,9 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        data_test_1
-        % data_test_2,
-        %%% router_data_SUITE ==> data_test_2: FAILED
-        %%% router_data_SUITE ==> {test_case_failed,"wait_for_console_event_sub <<\"downlink_ack\">> failed"}
-        % data_test_3
-        %%% router_data_SUITE ==> data_test_3: FAILED
-        %%% router_data_SUITE ==> {test_case_failed,"wait_for_console_event_sub <<\"downlink_ack\">> failed"}
+        data_test_1,
+        data_test_2,
+        data_test_3
     ].
 
 %%--------------------------------------------------------------------
@@ -316,8 +312,8 @@ data_test_2(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                %% RSSI act as power here we are and based on UPLINK RSSI > -80 we should power downlink at 14
-                <<"rssi">> => 14,
+                %% RSSI act as power here we are and based on UPLINK RSSI > -80 we should power downlink at 20
+                <<"rssi">> => 20,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -458,8 +454,8 @@ data_test_3(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                %% RSSI act as power here we are and based on UPLINK RSSI < -80 we should power downlink at 27
-                <<"rssi">> => 30,
+                %% RSSI act as power here we are and based on UPLINK RSSI < -80 we should power downlink at 20
+                <<"rssi">> => 20,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF12BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,

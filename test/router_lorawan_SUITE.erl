@@ -268,9 +268,7 @@ lw_join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ct:print(error, ?STD_IMPORTANCE, "CFList = = ~w", [CFList]),
     ChMaskList = lora_chmask:join_cf_list(Region),
-    ct:print(error, ?STD_IMPORTANCE, "ChMaskList = = ~w", [ChMaskList]),
     ?assertEqual(CFList, ChMaskList),
 
     %% Check that device is in cache now

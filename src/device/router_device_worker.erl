@@ -2149,7 +2149,7 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% power this packet transmitted at, but that value is
         %% unknowable.
         {false, true} ->
-            DataRateBinary = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+            DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
             Plan = lora_plan:region_to_plan(Region),
             DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateBinary),
             TxPowerIdx = 0,

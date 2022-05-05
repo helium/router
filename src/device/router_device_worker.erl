@@ -1834,7 +1834,7 @@ handle_frame_timeout(
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
     ChannelsCorrected = were_channels_corrected(Frame, Region),
-    DataRateBinary = list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+    DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     %% begin-needs-refactor

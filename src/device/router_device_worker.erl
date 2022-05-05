@@ -948,12 +948,13 @@ handle_info(
         lager:pr(Packet, blockchain_helium_packet_v1),
         erlang:length(Packets) + 1
     ]),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:join1_window(
-        Region,
+    } = lora_plan:join1_window(
+        Plan,
         0,
         packet_to_rxq(Packet)
     ),
@@ -962,7 +963,7 @@ handle_info(
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
         craft_join_reply(Device1, JoinAcceptArgs),
-        lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+        lora_plan:max_tx_power(Plan),
         TxTime,
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1308,14 +1309,15 @@ craft_join_reply(
     Device,
     #join_accept_args{region = Region, app_nonce = AppNonce, dev_addr = DevAddr, app_key = AppKey}
 ) ->
-    DR = lorawan_mac_region:window2_dr(lorawan_mac_region:top_level_region(Region)),
+    Plan = lora_plan:region_to_plan(Region),
+    DR = lora_plan:rx2_datarate(Plan),
     DLSettings = <<0:1, 0:3, DR:4/integer-unsigned>>,
     ReplyHdr = <<?JOIN_ACCEPT:3, 0:3, 0:2>>,
     Metadata = router_device:metadata(Device),
     CFList =
         case maps:get(cf_list_enabled, Metadata, true) of
             false -> <<>>;
-            true -> lorawan_mac_region:mk_join_accept_cf_list(Region)
+            true -> lora_chmask:join_cf_list(Region)
         end,
     RxDelaySeconds =
         case lorawan_rxdelay:get(Metadata, default) of
@@ -1665,12 +1667,13 @@ handle_frame_timeout(
                 },
                 Device0
             ),
+            Plan = lora_plan:region_to_plan(Region),
             #txq{
                 time = TxTime,
                 datr = TxDataRate,
                 freq = TxFreq
-            } = lorawan_mac_region:rx1_or_rx2_window(
-                Region,
+            } = lora_plan:rx1_or_rx2_window(
+                Plan,
                 RxDelay,
                 0,
                 packet_to_rxq(Packet0)
@@ -1678,7 +1681,7 @@ handle_frame_timeout(
             Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
-                lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+                lora_plan:max_tx_power(Plan),
                 adjust_rx_time(TxTime),
                 TxFreq,
                 binary_to_list(TxDataRate),
@@ -1767,12 +1770,13 @@ handle_frame_timeout(
         },
         Device0
     ),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx1_or_rx2_window(
-        Region,
+    } = lora_plan:rx1_or_rx2_window(
+        Plan,
         RxDelay,
         0,
         packet_to_rxq(Packet0)
@@ -1780,7 +1784,7 @@ handle_frame_timeout(
     Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
-        lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
+        lora_plan:max_tx_power(Plan),
         adjust_rx_time(TxTime),
         TxFreq,
         binary_to_list(TxDataRate),
@@ -1838,7 +1842,7 @@ handle_frame_timeout(
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
     ChannelsCorrected = were_channels_corrected(Frame, Region),
-    DataRate = blockchain_helium_packet_v1:datarate(Packet),
+    DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     %% begin-needs-refactor
@@ -1870,21 +1874,21 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             {true, false, _} ->
                 case Region of
                     'US915' ->
-                        lorawan_mac_region:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
                             {0, <<"NoChange">>, [Channels]},
                             []
                         );
                     'AU915' ->
-                        lorawan_mac_region:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
                             {0, <<"NoChange">>, [Channels]},
                             []
                         );
                     _ ->
-                        lorawan_mac_region:set_channels(
+                        lora_chmask:make_link_adr_req(
                             Region,
-                            {0, erlang:list_to_binary(DataRate), [Channels]},
+                            {0, DataRateBinary, [Channels]},
                             []
                         )
                 end;
@@ -1896,9 +1900,10 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
                 %% `lorwan_mac_region'.  But `set_channels' wants data
                 %% rate in the form of "SFdd?BWddd?" so that's what
                 %% we'll give it.
-                NewDr = lorawan_mac_region:dr_to_datar(Region, NewDataRateIdx),
+                Plan = lora_plan:region_to_plan(Region),
+                NewDr = lora_plan:datarate_to_binary(Plan, NewDataRateIdx),
                 %% end-needs-refactor
-                lorawan_mac_region:set_channels(
+                lora_chmask:make_link_adr_req(
                     Region,
                     {NewTxPowerIdx, NewDr, [Channels]},
                     []
@@ -1910,8 +1915,8 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
         case lists:member(link_check_req, Frame#frame.fopts) of
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
-                MaxUplinkSNR = lorawan_mac_region:max_uplink_snr(
-                    list_to_binary(blockchain_helium_packet_v1:datarate(Packet))
+                MaxUplinkSNR = lora_plan:max_uplink_snr(
+                    lora_plan:region_to_plan(Region), DataRateBinary
                 ),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
@@ -2016,22 +2021,24 @@ frame_to_packet_payload(Frame, Device) ->
     blockchain_helium_packet_v1:window().
 join2_from_packet(Region, Packet) ->
     Rxq = packet_to_rxq(Packet),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:join2_window(Region, Rxq),
+    } = lora_plan:join2_window(Plan, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet(), number()) ->
     blockchain_helium_packet_v1:window().
 rx2_from_packet(Region, Packet, RxDelay) ->
     Rxq = packet_to_rxq(Packet),
+    Plan = lora_plan:region_to_plan(Region),
     #txq{
         time = TxTime,
         datr = TxDataRate,
         freq = TxFreq
-    } = lorawan_mac_region:rx2_window(Region, RxDelay, Rxq),
+    } = lora_plan:rx2_window(Plan, RxDelay, Rxq),
     blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
 
 -spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().
@@ -2150,8 +2157,9 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% power this packet transmitted at, but that value is
         %% unknowable.
         {false, true} ->
-            DataRateStr = blockchain_helium_packet_v1:datarate(Packet),
-            DataRateIdx = lorawan_mac_region:datar_to_dr(Region, DataRateStr),
+            DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
+            Plan = lora_plan:region_to_plan(Region),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateBinary),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for
@@ -2227,9 +2235,11 @@ packet_datarate(Device, Packet, Region) ->
     {atom(), atom()}
 ) -> {atom(), integer()}.
 packet_datarate(Datarate, {Region, Region}) ->
-    {Region, lorawan_mac_region:datar_to_dr(Region, Datarate)};
+    Plan = lora_plan:region_to_plan(Region),
+    {Region, lora_plan:datarate_to_index(Plan, Datarate)};
 packet_datarate(Datarate, {Region, DeviceRegion}) ->
-    try lorawan_mac_region:datar_to_dr(Region, Datarate) of
+    Plan = lora_plan:region_to_plan(Region),
+    try lora_plan:datarate_to_index(Plan, Datarate) of
         DR ->
             {Region, DR}
     catch
@@ -2239,7 +2249,8 @@ packet_datarate(Datarate, {Region, DeviceRegion}) ->
                 Datarate,
                 DeviceRegion
             ]),
-            {DeviceRegion, lorawan_mac_region:datar_to_dr(DeviceRegion, Datarate)}
+            DevicePlan = lora_plan:region_to_plan(DeviceRegion),
+            {DeviceRegion, lora_plan:datarate_to_index(DevicePlan, Datarate)}
     end.
 
 -spec calculate_packet_timeout(

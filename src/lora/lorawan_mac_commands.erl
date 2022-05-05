@@ -427,9 +427,9 @@ find_status(FOptsIn) ->
 
 send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     #rxq{datr = DataRate, lsnr = SNR} = RxQ,
-    DataRateAtom = binary_to_atom(DataRate),
+    DataRateAtom = erlang:binary_to_atom(DataRate),
     MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
-    Margin = trunc(SNR - MaxSNR),
+    Margin = erlang:trunc(SNR - MaxSNR),
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
     {link_check_ans, Margin, length(Gateways)}.
 

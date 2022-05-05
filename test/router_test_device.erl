@@ -122,7 +122,8 @@ init(Args) ->
         {metadata, maps:merge(DefaultMeta, maps:get(metadata, Args, #{}))}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(DeviceID)),
-    ok = router_console_dc_tracker:refill(OrgID, 1, 100),
+    OrgBalance = maps:get(organization_balance, Args, 100),
+    ok = router_console_dc_tracker:refill(OrgID, 1, OrgBalance),
     {ok,
         #state{
             hotspot_privkey = PrivKey,

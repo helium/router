@@ -3,8 +3,6 @@
 -behaviour(elli_handler).
 -behaviour(elli_websocket_handler).
 
--include("console_test.hrl").
-
 -export([
     init/2,
     handle/2,
@@ -97,7 +95,7 @@ handle(
         <<"api">>,
         <<"router">>,
         <<"devices">>,
-        _DID,
+        _DeviceID,
         <<"event">>
     ],
     Req,
@@ -111,7 +109,7 @@ handle(
     ct:print("Console Event: ~p (~p)~n~n~p", [Cat, SubCat, Data]),
     Pid ! {console_event, Cat, SubCat, Data},
     {200, [], <<>>};
-%% INTEGRATION: Post
+%% HTTP INTEGRATION: Post
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
     Body = elli_request:body(Req),

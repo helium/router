@@ -1,7 +1,8 @@
 -module(router_test_console).
 
 -export([
-    init/0,
+    init/1,
+    stop/1,
     lookup_devices/0,
     lookup_device/1,
     insert_device/2
@@ -10,12 +11,12 @@
 -define(ETS, router_test_console_ets).
 -define(DEVICE_KEY(DeviceID), {device, DeviceID}).
 
-init() ->
+init(ForwardPid) ->
     _ = ets:new(?ETS, [public, set, named_table]),
     ElliOpts = [
         {callback, router_test_console_callback},
         {callback_args, #{
-            forward => self()
+            forward => ForwardPid
         }},
         {port, 3000}
     ],
@@ -23,6 +24,14 @@ init() ->
     application:ensure_all_started(gun),
     lager:info("started @ ~p", [Pid]),
     Pid.
+
+stop(Pid) ->
+    {ok, Acceptors} = elli:get_acceptors(Pid),
+    ok = elli:stop(Pid),
+    timer:sleep(500),
+    [catch erlang:exit(A, kill) || A <- Acceptors],
+    ets:delete(?ETS),
+    ok.
 
 -spec lookup_devices() -> [router_device:device()].
 lookup_devices() ->

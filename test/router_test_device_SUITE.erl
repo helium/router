@@ -127,11 +127,12 @@ data_test_1(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => Freq,
-                <<"channel">> => 105,
+                <<"channel">> => 0,
                 <<"lat">> => fun check_lat/1,
                 <<"long">> => fun check_long/1
             }
-        ]
+        ],
+        <<"dc">> => fun erlang:is_map/1
     }),
 
     test_utils:wait_for_console_event_sub(<<"uplink_unconfirmed">>, #{
@@ -160,7 +161,7 @@ data_test_1(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => Freq,
-                <<"channel">> => 105,
+                <<"channel">> => 0,
                 <<"lat">> => fun check_lat/1,
                 <<"long">> => fun check_long/1
             },

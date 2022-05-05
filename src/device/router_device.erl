@@ -37,6 +37,7 @@
     location/1, location/2,
     metadata/1, metadata/2,
     is_active/1, is_active/2,
+    preferred_hotspots/1, preferred_hotspots/2,
     update/2,
     serialize/1,
     deserialize/1
@@ -57,7 +58,7 @@
 
 -define(QUEUE_SIZE_LIMIT, 20).
 
--type device() :: #device_v6{}.
+-type device() :: #device_v7{}.
 
 -export_type([device/0]).
 
@@ -67,137 +68,137 @@
 
 -spec new(binary()) -> device().
 new(ID) ->
-    #device_v6{
+    #device_v7{
         id = ID,
         ecc_compact = libp2p_crypto:generate_keys(ecc_compact)
     }.
 
 -spec id(device()) -> binary() | undefined.
 id(Device) ->
-    Device#device_v6.id.
+    Device#device_v7.id.
 
 -spec name(device()) -> binary() | undefined.
 name(Device) ->
-    Device#device_v6.name.
+    Device#device_v7.name.
 
 -spec name(binary(), device()) -> device().
 name(Name, Device) ->
-    Device#device_v6{name = Name}.
+    Device#device_v7{name = Name}.
 
 -spec app_eui(device()) -> binary() | undefined.
 app_eui(Device) ->
-    Device#device_v6.app_eui.
+    Device#device_v7.app_eui.
 
 -spec app_eui(binary(), device()) -> device().
 app_eui(EUI, Device) ->
-    Device#device_v6{app_eui = EUI}.
+    Device#device_v7{app_eui = EUI}.
 
 -spec dev_eui(device()) -> binary() | undefined.
 dev_eui(Device) ->
-    Device#device_v6.dev_eui.
+    Device#device_v7.dev_eui.
 
 -spec dev_eui(binary(), device()) -> device().
 dev_eui(EUI, Device) ->
-    Device#device_v6{dev_eui = EUI}.
+    Device#device_v7{dev_eui = EUI}.
 
 -spec keys(device()) -> list({binary() | undefined, binary() | undefined}).
-keys(#device_v6{keys = Keys}) ->
+keys(#device_v7{keys = Keys}) ->
     Keys.
 
 -spec keys(list({binary(), binary()}), device()) -> device().
 keys(Keys, Device) ->
-    Device#device_v6{keys = lists:sublist(Keys, 25)}.
+    Device#device_v7{keys = lists:sublist(Keys, 25)}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
-nwk_s_key(#device_v6{keys = []}) ->
+nwk_s_key(#device_v7{keys = []}) ->
     undefined;
-nwk_s_key(#device_v6{keys = [{NwkSKey, _AppSKey} | _]}) ->
+nwk_s_key(#device_v7{keys = [{NwkSKey, _AppSKey} | _]}) ->
     NwkSKey.
 
 -spec app_s_key(device()) -> binary() | undefined.
-app_s_key(#device_v6{keys = []}) ->
+app_s_key(#device_v7{keys = []}) ->
     undefined;
-app_s_key(#device_v6{keys = [{_NwkSKey, AppSKey} | _]}) ->
+app_s_key(#device_v7{keys = [{_NwkSKey, AppSKey} | _]}) ->
     AppSKey.
 
 -spec devaddr(device()) -> binary() | undefined.
 devaddr(Device) ->
-    Device#device_v6.devaddr.
+    Device#device_v7.devaddr.
 
 -spec devaddr(binary(), device()) -> device().
 devaddr(Devaddr, Device) ->
-    Device#device_v6{devaddr = Devaddr}.
+    Device#device_v7{devaddr = Devaddr}.
 
 -spec dev_nonces(device()) -> [binary()].
 dev_nonces(Device) ->
-    Device#device_v6.dev_nonces.
+    Device#device_v7.dev_nonces.
 
 -spec dev_nonces([binary()], device()) -> device().
 dev_nonces(Nonces, Device) ->
-    Device#device_v6{dev_nonces = lists:sublist(Nonces, 25)}.
+    Device#device_v7{dev_nonces = lists:sublist(Nonces, 25)}.
 
 -spec fcnt(device()) -> non_neg_integer().
 fcnt(Device) ->
-    Device#device_v6.fcnt.
+    Device#device_v7.fcnt.
 
 -spec fcnt(non_neg_integer(), device()) -> device().
 fcnt(Fcnt, Device) ->
-    Device#device_v6{fcnt = Fcnt}.
+    Device#device_v7{fcnt = Fcnt}.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->
-    Device#device_v6.fcntdown.
+    Device#device_v7.fcntdown.
 
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
-    Device#device_v6{fcntdown = Fcnt}.
+    Device#device_v7{fcntdown = Fcnt}.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
-    Device#device_v6.offset.
+    Device#device_v7.offset.
 
 -spec offset(non_neg_integer(), device()) -> device().
 offset(Offset, Device) ->
-    Device#device_v6{offset = Offset}.
+    Device#device_v7{offset = Offset}.
 
 -spec channel_correction(device()) -> boolean().
 channel_correction(Device) ->
-    Device#device_v6.channel_correction.
+    Device#device_v7.channel_correction.
 
 -spec channel_correction(boolean(), device()) -> device().
 channel_correction(Correct, Device) ->
-    Device#device_v6{channel_correction = Correct}.
+    Device#device_v7{channel_correction = Correct}.
 
 -spec queue(device()) -> [#downlink{} | any()].
 queue(Device) ->
-    Device#device_v6.queue.
+    Device#device_v7.queue.
 
 -spec queue([#downlink{}], device()) -> device().
 queue(Q, Device) ->
-    Device#device_v6{queue = Q}.
+    Device#device_v7{queue = Q}.
 
 -spec region(device()) -> atom().
 region(Device) ->
-    Device#device_v6.region.
+    Device#device_v7.region.
 
 -spec region(atom(), device()) -> device().
 region(Region, Device) ->
-    Device#device_v6{region = Region}.
+    Device#device_v7{region = Region}.
 
 -spec last_known_datarate(device()) -> integer().
 last_known_datarate(Device) ->
-    Device#device_v6.last_known_datarate.
+    Device#device_v7.last_known_datarate.
 
 -spec last_known_datarate(integer(), device()) -> device().
 last_known_datarate(DR, Device) ->
-    Device#device_v6{last_known_datarate = DR}.
+    Device#device_v7{last_known_datarate = DR}.
 
 -spec ecc_compact(device()) -> map().
 ecc_compact(Device) ->
     %% NOTE: https://github.com/erlang/otp/commit/37a58368d7876e325710a4c269f0af27b40434c6#diff-b190dfbfb70f8d4c5a3c13699d85f65523bf79dd630117ccf6cd535ee6945996
     %% That commit to OTP/24 added another field to the #'ECPrivateKey'{} record.
     %% Until we can update all of them in our db, let's upgrade to the new record when they're requested.
-    case Device#device_v6.ecc_compact of
+    case Device#device_v7.ecc_compact of
         #{secret := {ecc_compact, {'ECPrivateKey', Version, PrivKey, Params, PubKey}}} = Map ->
             Map#{
                 secret =>
@@ -209,31 +210,39 @@ ecc_compact(Device) ->
 
 -spec ecc_compact(map(), device()) -> device().
 ecc_compact(Keys, Device) ->
-    Device#device_v6{ecc_compact = Keys}.
+    Device#device_v7{ecc_compact = Keys}.
 
 -spec location(device()) -> libp2p_crypto:pubkey_bin() | undefined.
 location(Device) ->
-    Device#device_v6.location.
+    Device#device_v7.location.
 
 -spec location(libp2p_crypto:pubkey_bin() | undefined, device()) -> device().
 location(PubkeyBin, Device) ->
-    Device#device_v6{location = PubkeyBin}.
+    Device#device_v7{location = PubkeyBin}.
 
 -spec metadata(device()) -> map().
 metadata(Device) ->
-    Device#device_v6.metadata.
+    Device#device_v7.metadata.
 
 -spec metadata(map(), device()) -> device().
-metadata(Meta1, #device_v6{metadata = Meta0} = Device) ->
-    Device#device_v6{metadata = maps:merge(Meta0, Meta1)}.
+metadata(Meta1, #device_v7{metadata = Meta0} = Device) ->
+    Device#device_v7{metadata = maps:merge(Meta0, Meta1)}.
 
 -spec is_active(device()) -> boolean().
 is_active(Device) ->
-    Device#device_v6.is_active.
+    Device#device_v7.is_active.
 
 -spec is_active(boolean(), device()) -> device().
 is_active(IsActive, Device) ->
-    Device#device_v6{is_active = IsActive}.
+    Device#device_v7{is_active = IsActive}.
+
+-spec preferred_hotspots(device()) -> [binary()] | [].
+preferred_hotspots(Device) ->
+    Device#device_v7.preferred_hotspots.
+
+-spec preferred_hotspots(list(binary()), device()) -> device().
+preferred_hotspots(Hotspots, Device) ->
+    Device#device_v7{preferred_hotspots = Hotspots}.
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
@@ -271,7 +280,9 @@ update([{location, Value} | T], Device) ->
 update([{metadata, Value} | T], Device) ->
     update(T, ?MODULE:metadata(Value, Device));
 update([{is_active, Value} | T], Device) ->
-    update(T, ?MODULE:is_active(Value, Device)).
+    update(T, ?MODULE:is_active(Value, Device));
+update([{preferred_hotspots, Value} | T], Device) ->
+    update(T, ?MODULE:preferred_hotspots(Value, Device)).
 
 -spec serialize(device()) -> binary().
 serialize(Device) ->
@@ -282,10 +293,32 @@ deserialize(Binary) ->
     case erlang:binary_to_term(Binary) of
         %% TODO promote `rx_delay' out of `metadata', so metadata can
         %% then merely signal when Console changed that value.
+        #device_v7{} = V7 ->
+            V7;
         #device_v6{} = V6 ->
-            V6;
+            #device_v7{
+                id = V6#device_v6.id,
+                name = V6#device_v6.name,
+                dev_eui = V6#device_v6.dev_eui,
+                app_eui = V6#device_v6.app_eui,
+                keys = V6#device_v6.keys,
+                devaddr = V6#device_v6.devaddr,
+                dev_nonces = V6#device_v6.dev_nonces,
+                fcnt = V6#device_v6.fcnt,
+                fcntdown = V6#device_v6.fcntdown,
+                offset = V6#device_v6.offset,
+                channel_correction = V6#device_v6.channel_correction,
+                queue = V6#device_v6.queue,
+                region = undefined,
+                last_known_datarate = undefined,
+                ecc_compact = V6#device_v6.ecc_compact,
+                location = V6#device_v6.location,
+                metadata = V6#device_v6.metadata,
+                is_active = V6#device_v6.is_active,
+                preferred_hotspots = []
+            };
         #device_v5{} = V5 ->
-            #device_v6{
+            #device_v7{
                 id = V5#device_v5.id,
                 name = V5#device_v5.name,
                 dev_eui = V5#device_v5.dev_eui,
@@ -306,7 +339,7 @@ deserialize(Binary) ->
                 is_active = V5#device_v5.is_active
             };
         #device_v4{} = V4 ->
-            #device_v6{
+            #device_v7{
                 id = V4#device_v4.id,
                 name = V4#device_v4.name,
                 dev_eui = V4#device_v4.dev_eui,
@@ -327,7 +360,7 @@ deserialize(Binary) ->
                 is_active = V4#device_v4.is_active
             };
         #device_v3{} = V3 ->
-            #device_v6{
+            #device_v7{
                 id = V3#device_v3.id,
                 name = V3#device_v3.name,
                 dev_eui = V3#device_v3.dev_eui,
@@ -348,7 +381,7 @@ deserialize(Binary) ->
                 is_active = true
             };
         #device_v2{} = V2 ->
-            #device_v6{
+            #device_v7{
                 id = V2#device_v2.id,
                 name = V2#device_v2.name,
                 dev_eui = V2#device_v2.dev_eui,
@@ -374,7 +407,7 @@ deserialize(Binary) ->
                     undefined -> libp2p_crypto:generate_keys(ecc_compact);
                     Key -> Key
                 end,
-            #device_v6{
+            #device_v7{
                 id = V1#device_v1.id,
                 name = V1#device_v1.name,
                 dev_eui = V1#device_v1.dev_eui,
@@ -394,7 +427,7 @@ deserialize(Binary) ->
                 is_active = true
             };
         #device{} = V0 ->
-            #device_v6{
+            #device_v7{
                 id = V0#device.id,
                 name = V0#device.name,
                 dev_eui = V0#device.dev_eui,
@@ -423,7 +456,7 @@ deserialize(Binary) ->
         MaxSize :: non_neg_integer(),
         Datarate :: integer()
     }.
-can_queue_payload(_Payload, #device_v6{region = undefined}) ->
+can_queue_payload(_Payload, #device_v7{region = undefined}) ->
     {error, device_region_unknown};
 can_queue_payload(Payload, Device) ->
     Queue = ?MODULE:queue(Device),
@@ -527,7 +560,7 @@ new_test() ->
     meck:new(libp2p_crypto, [passthrough]),
     meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> Keys end),
 
-    ?assertEqual(#device_v6{id = <<"id">>, ecc_compact = Keys}, new(<<"id">>)),
+    ?assertEqual(#device_v7{id = <<"id">>, ecc_compact = Keys}, new(<<"id">>)),
 
     ?assert(meck:validate(libp2p_crypto)),
     meck:unload(libp2p_crypto).
@@ -626,6 +659,10 @@ ecc_compact_test() ->
     ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, ecc_compact(Device)),
     ?assertEqual({ecc_compact, any}, ecc_compact(ecc_compact({ecc_compact, any}, Device))).
 
+preferred_hotspots_test() ->
+    Device = new(<<"id">>),
+    ?assertMatch([], preferred_hotspots(Device)).
+
 update_test() ->
     Device = new(<<"id">>),
     Updates = [
@@ -645,9 +682,10 @@ update_test() ->
         {ecc_compact, #{}},
         {location, <<"location">>},
         {metadata, #{a => b}},
-        {is_active, false}
+        {is_active, false},
+        {preferred_hotspots, [<<"preferred_1">>]}
     ],
-    UpdatedDevice = #device_v6{
+    UpdatedDevice = #device_v7{
         id = <<"id">>,
         name = <<"name">>,
         app_eui = <<"app_eui">>,
@@ -665,7 +703,8 @@ update_test() ->
         ecc_compact = #{},
         location = <<"location">>,
         metadata = #{a => b},
-        is_active = false
+        is_active = false,
+        preferred_hotspots = [<<"preferred_1">>]
     },
     ?assertEqual(UpdatedDevice, update(Updates, Device)).
 
@@ -699,49 +738,60 @@ upgrade_test() ->
     {ok, DB, [_, CF]} = router_db:get(),
 
     DeviceID = <<"id">>,
-    V6Device = #device_v6{
+    V7Device = #device_v7{
         id = DeviceID,
         keys = [{undefined, undefined}],
         ecc_compact = Keys,
         dev_nonces = [<<>>],
         region = undefined,
-        last_known_datarate = undefined
+        last_known_datarate = undefined,
+        preferred_hotspots = []
     },
 
     V0Device = #device{id = DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V0Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     V1Device = #device_v1{id = DeviceID},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V1Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     V2Device = #device_v2{id = DeviceID, keys = Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V2Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     V3Device = #device_v3{id = DeviceID, keys = Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V3Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     V4Device = #device_v4{id = DeviceID, keys = Keys},
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V4Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     V5Device = #device_v5{
         id = DeviceID,
-        keys = V6Device#device_v6.keys,
+        keys = V7Device#device_v7.keys,
         ecc_compact = Keys,
         dev_nonces = [<<>>]
     },
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V5Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
+
+    V6Device = #device_v6{
+        id = DeviceID,
+        keys = V7Device#device_v7.keys,
+        ecc_compact = Keys,
+        dev_nonces = [<<>>]
+    },
+    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V6Device), []),
+    ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V7Device], get(DB, CF)),
 
     gen_server:stop(Pid),
     ?assert(meck:validate(libp2p_crypto)),

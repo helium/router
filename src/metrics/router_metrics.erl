@@ -514,8 +514,9 @@ record_queues() ->
 -spec record_hotspot_reputations() -> ok.
 record_hotspot_reputations() ->
     lists:foreach(
-        fun({Hotspot, Counter}) ->
+        fun({Hotspot, PacketMissed, PacketUnknownDevice}) ->
             Name = blockchain_utils:addr2name(Hotspot),
+            Counter = PacketMissed + PacketUnknownDevice,
             case Counter >= router_hotspot_reputation:threshold() of
                 true ->
                     _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, [Name], Counter);

@@ -19,6 +19,7 @@
     init/0,
     track_offer/1,
     track_packet/1,
+    track_unknown_device/1,
     reputations/0,
     reputation/1,
     denied/1,
@@ -81,24 +82,31 @@ track_packet(SCPacket) ->
     end),
     ok.
 
+-spec track_unknown_device(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
+track_unknown_device(Hotspot) ->
+    Counter = ets:update_counter(?ETS, Hotspot, {3, 1}, {default, 0, 0}),
+    lager:info("hotspot ~p unknown_device= ~p", [blockchain_utils:addr2name(Hotspot), Counter]),
+    ok.
+
 -spec reputations() -> list().
 reputations() ->
     ets:tab2list(?ETS).
 
--spec reputation(Hotspot :: libp2p_crypto:pubkey_bin()) -> non_neg_integer().
+-spec reputation(Hotspot :: libp2p_crypto:pubkey_bin()) -> {non_neg_integer(), non_neg_integer()}.
 reputation(Hotspot) ->
     case ets:lookup(?ETS, Hotspot) of
-        [] -> 0;
-        [{Hotspot, Reputation}] -> Reputation
+        [] -> {0, 0};
+        [{Hotspot, PacketMissed, PacketUnknownDevice}] -> {PacketMissed, PacketUnknownDevice}
     end.
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
-    ?MODULE:reputation(Hotspot) >= ?MODULE:threshold().
+    {PacketMissed, PacketUnknownDevice} = ?MODULE:reputation(Hotspot),
+    PacketMissed + PacketUnknownDevice >= ?MODULE:threshold().
 
 -spec reset(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
 reset(Hotspot) ->
-    true = ets:insert(?ETS, {Hotspot, 0}),
+    true = ets:insert(?ETS, {Hotspot, 0, 0}),
     ok.
 
 -spec crawl_offers(Timer :: non_neg_integer()) -> ok.
@@ -111,8 +119,8 @@ crawl_offers(Timer) ->
     lists:foreach(
         fun({Hotspot, PHash}) ->
             true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
-            Counter = ets:update_counter(?ETS, Hotspot, {2, 1}, {default, 0}),
-            lager:info("hotspot ~p = ~p", [blockchain_utils:addr2name(Hotspot), Counter])
+            Counter = ets:update_counter(?ETS, Hotspot, {2, 1}, {default, 0, 0}),
+            lager:info("hotspot ~p packet miss= ~p", [blockchain_utils:addr2name(Hotspot), Counter])
         end,
         Expired
     ),
@@ -149,11 +157,11 @@ bad_hotspot_test() ->
     Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
     ok = ?MODULE:track_offer(Offer),
 
-    ?assertEqual(0, ?MODULE:reputation(Hotspot)),
+    ?assertEqual({0, 0}, ?MODULE:reputation(Hotspot)),
     timer:sleep(110),
     ok = ?MODULE:crawl_offers(100),
 
-    ?assertEqual(1, ?MODULE:reputation(Hotspot)),
+    ?assertEqual({1, 0}, ?MODULE:reputation(Hotspot)),
 
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     ?assertEqual([], ets:lookup(?ETS, {Hotspot, PHash})),
@@ -170,14 +178,18 @@ bad_hotspot_test() ->
     timer:sleep(110),
     ok = ?MODULE:crawl_offers(100),
 
-    ?assertEqual(100, ?MODULE:reputation(Hotspot)),
+    ?assertEqual({100, 0}, ?MODULE:reputation(Hotspot)),
     ?assertEqual(true, ?MODULE:denied(Hotspot)),
 
-    ?assertEqual([{Hotspot, 100}], ?MODULE:reputations()),
+    ?assertEqual([{Hotspot, 100, 0}], ?MODULE:reputations()),
+
+    ok = ?MODULE:track_unknown_device(Hotspot),
+    ?assertEqual({100, 1}, ?MODULE:reputation(Hotspot)),
+    ?assertEqual([{Hotspot, 100, 1}], ?MODULE:reputations()),
 
     ok = ?MODULE:reset(Hotspot),
 
-    ?assertEqual(0, ?MODULE:reputation(Hotspot)),
+    ?assertEqual({0, 0}, ?MODULE:reputation(Hotspot)),
     ?assertEqual(false, ?MODULE:denied(Hotspot)),
 
     ets:delete(?ETS),
@@ -203,7 +215,7 @@ good_hotspot_test() ->
 
     ok = ?MODULE:crawl_offers(100),
 
-    ?assertEqual(0, ?MODULE:reputation(Hotspot)),
+    ?assertEqual({0, 0}, ?MODULE:reputation(Hotspot)),
 
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     ?assertEqual([], ets:lookup(?ETS, {Hotspot, PHash})),

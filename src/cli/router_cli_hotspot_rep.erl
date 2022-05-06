@@ -68,8 +68,8 @@ hotspot_rep_get(["hotspot_rep", "ls"], [], []) ->
     c_table(format(List));
 hotspot_rep_get(["hotspot_rep", B58], [], []) ->
     Hotspot = libp2p_crypto:b58_to_bin(B58),
-    Reputation = router_hotspot_reputation:reputation(Hotspot),
-    c_table(format([{Hotspot, Reputation}]));
+    {PacketMissed, UnknownDevice} = router_hotspot_reputation:reputation(Hotspot),
+    c_table(format([{Hotspot, PacketMissed, UnknownDevice}]));
 hotspot_rep_get([_, _, _], [], []) ->
     usage.
 
@@ -113,12 +113,17 @@ hotspot_rep_sc(["hotspot_rep", "sc"], [], Flags) ->
                 lists:map(
                     fun(Summary) ->
                         PubKeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
+                        {PacketMissed, PacketUnknownDevice} = router_hotspot_reputation:reputation(
+                            PubKeyBin
+                        ),
                         [
                             {name, erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin))},
                             {id, erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin))},
                             {dcs, blockchain_state_channel_summary_v1:num_dcs(Summary)},
                             {packets, blockchain_state_channel_summary_v1:num_packets(Summary)},
-                            {reputation, router_hotspot_reputation:reputation(PubKeyBin)},
+                            {reputation, PacketMissed + PacketUnknownDevice},
+                            {packet_missed, PacketMissed},
+                            {packet_unknown_device, PacketUnknownDevice},
                             {sc, erlang:list_to_binary(SCName)},
                             {sc_avg, erlang:round(maps:get(SCName, Avg))}
                         ]
@@ -135,8 +140,8 @@ hotspot_rep_sc(["hotspot_rep", "sc"], [], Flags) ->
     ),
     SortedList = lists:sort(
         fun(A, B) ->
-            proplists:get_value(hotspot_dcs, A) >
-                proplists:get_value(hotspot_dcs, B)
+            proplists:get_value(dcs, A) >
+                proplists:get_value(dcs, B)
         end,
         FilteredList
     ),
@@ -150,15 +155,23 @@ hotspot_rep_sc([_, _, _], [], []) ->
 
 -spec format(list()) -> list(list()).
 format(List) ->
-    lists:map(
-        fun({PubKeyBin, Reputation}) ->
-            [
-                {name, blockchain_utils:addr2name(PubKeyBin)},
-                {b58, libp2p_crypto:bin_to_b58(PubKeyBin)},
-                {reputation, Reputation}
-            ]
+    lists:sort(
+        fun(A, B) ->
+            proplists:get_value(reputation, A) >
+                proplists:get_value(reputation, B)
         end,
-        List
+        lists:map(
+            fun({PubKeyBin, PacketMissed, PacketUnknownDevice}) ->
+                [
+                    {name, blockchain_utils:addr2name(PubKeyBin)},
+                    {b58, libp2p_crypto:bin_to_b58(PubKeyBin)},
+                    {reputation, PacketMissed + PacketUnknownDevice},
+                    {packet_missed, PacketMissed},
+                    {packet_unknown_device, PacketUnknownDevice}
+                ]
+            end,
+            List
+        )
     ).
 
 -spec c_table(list(proplists:proplist()) | proplists:proplist()) -> clique_status:status().

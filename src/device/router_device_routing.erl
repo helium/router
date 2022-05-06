@@ -916,6 +916,7 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
         {error, _} = Error ->
             Error;
         undefined ->
+            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
             {error, {unknown_device, DevAddr}};
         {Device, NwkSKey} ->
             {Device, NwkSKey}

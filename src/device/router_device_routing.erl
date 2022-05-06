@@ -712,7 +712,8 @@ packet(
                         false ->
                             {error, {?DEVADDR_NOT_IN_SUBNET, DevAddr}}
                     end;
-                _ ->
+                _E ->
+                    lager:warning("fail to find routing ~p", [_E]),
                     %% TODO: Should fail here
                     %% no subnets
                     send_to_device_worker(
@@ -728,7 +729,8 @@ packet(
                         Chain
                     )
             catch
-                _:_ ->
+                _E:_S ->
+                    lager:warning("crashed ~p", [{_E, _S}]),
                     %% TODO: Should fail here
                     %% no subnets
                     send_to_device_worker(

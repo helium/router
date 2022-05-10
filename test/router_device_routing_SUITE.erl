@@ -172,7 +172,7 @@ test_packet_offer(Config, PreferredHotspots, ExpectedResult) ->
     %% Device has a preferred hotspot that isn't the one created in init_per_testcase().
     Device1 = router_device:update(
         [
-            {preferred_hotspots, PreferredHotspots}
+            {metadata, #{preferred_hotspots => PreferredHotspots}}
         ],
         Device0
     ),
@@ -243,7 +243,7 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
 
     Device1 = router_device:update(
         [
-            {preferred_hotspots, PreferredHotspots}
+            {metadata, #{preferred_hotspots => PreferredHotspots}}
         ],
         Device0
     ),
@@ -266,7 +266,7 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
     ok.
 
 handle_packet_from_strange_hotspot_test(Config) ->
-    %% Device has preferred hotspots that don't include our defaul hotspot.
+    %% Device has preferred hotspots that don't include our default hotspot.
     %% The packet should be rejected.
 
     test_frame_packet(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
@@ -640,7 +640,8 @@ bad_fcnt_test(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => FCnt,
         <<"reported_at">> => fun erlang:is_integer/1,

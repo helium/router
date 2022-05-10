@@ -195,21 +195,21 @@ export_devaddr_csv_test() ->
     DeviceUpdates0 = [
         {name, <<"Test Device Name 0">>},
         {location, PubKeyBin},
-        {devaddr, <<3, 4, 0, 72>>}
+        {devaddrs, [<<3, 4, 0, 72>>]}
     ],
     Device0 = router_device:update(DeviceUpdates0, router_device:new(<<"test_device_id_0">>)),
     {ok, _} = router_device:save(DB, CF, Device0),
     DeviceUpdates1 = [
         {name, <<"Test Device Name 1">>},
         {location, PubKeyBin},
-        {devaddr, <<3, 4, 0, 72>>}
+        {devaddrs, [<<3, 4, 0, 72>>]}
     ],
     Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"test_device_id_1">>)),
     {ok, _} = router_device:save(DB, CF, Device1),
     DeviceUpdates2 = [
         {name, <<"Test Device Name 2">>},
         {location, PubKeyBin},
-        {devaddr, <<0, 4, 0, 72>>}
+        {devaddrs, [<<0, 4, 0, 72>>]}
     ],
     Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"test_device_id_2">>)),
     {ok, _} = router_device:save(DB, CF, Device2),
@@ -267,7 +267,7 @@ export_devaddr_test() ->
     DeviceUpdates = [
         {name, <<"Test Device Name">>},
         {location, PubKeyBin},
-        {devaddr, <<3, 4, 0, 72>>}
+        {devaddrs, [<<3, 4, 0, 72>>]}
     ],
     Device = router_device:update(DeviceUpdates, router_device:new(<<"test_device_id">>)),
     {ok, _} = router_device:save(DB, CF, Device),

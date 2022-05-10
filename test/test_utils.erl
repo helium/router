@@ -797,14 +797,8 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt) ->
 frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     DevAddr = maps:get(devaddr, Options, <<33554431:25/integer-unsigned-little, $H:7/integer>>),
     Payload1 = frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options),
-    Routing =
-        case maps:get(routing, Options, false) of
-            true ->
-                <<DevNum:32/integer-unsigned-little>> = DevAddr,
-                blockchain_helium_packet_v1:make_routing_info({devaddr, DevNum});
-            false ->
-                undefined
-        end,
+    <<DevNum:32/integer-unsigned-little>> = DevAddr,
+    Routing = blockchain_helium_packet_v1:make_routing_info({devaddr, DevNum}),
     HeliumPacket = #packet_pb{
         type = lorawan,
         payload = Payload1,

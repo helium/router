@@ -882,13 +882,14 @@ trace_test() ->
     application:ensure_all_started(lager),
     application:set_env(lager, log_root, "log"),
     ets:new(router_device_cache_ets, [public, named_table, set]),
+    ets:new(router_device_cache_devaddr_ets, [public, named_table, bag]),
 
     DeviceID = <<"12345678910">>,
     Device = router_device:update(
         [
             {app_eui, <<"app_eui">>},
             {dev_eui, <<"dev_eui">>},
-            {devaddr, <<"devaddr">>}
+            {devaddrs, [<<"devaddr">>]}
         ],
         router_device:new(DeviceID)
     ),
@@ -902,6 +903,7 @@ trace_test() ->
     ?assert([] == get_device_traces(DeviceID)),
 
     ets:delete(router_device_cache_ets),
+    ets:delete(router_device_cache_devaddr_ets),
     application:stop(lager),
     ok.
 

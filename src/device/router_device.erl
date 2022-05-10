@@ -135,7 +135,7 @@ devaddrs(Device) ->
 
 -spec devaddrs([binary()], device()) -> device().
 devaddrs(Devaddrs, Device) ->
-    Device#device_v7{devaddrs = Devaddrs}.
+    Device#device_v7{devaddrs = lists:sublist(Devaddrs, 25)}.
 
 -spec dev_nonces(device()) -> [binary()].
 dev_nonces(Device) ->

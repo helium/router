@@ -710,12 +710,15 @@ handle_cast(
                     {dev_nonces, DevNonces},
                     {devaddrs, [DevAddr1]}
                 ],
-                lager:debug("we got our first uplink after join dev nonce=~p key=~p, DevAddr=~p", [
-                    LastDevNonce,
-                    UsedNwkSKey,
-                    DevAddr1
-                ]),
-                router_device:update(DeviceUpdates, Device0)
+                D1 = router_device:update(DeviceUpdates, Device0),
+                lager:debug(
+                    "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
+                        router_device:dev_nonces(D1),
+                        router_device:keys(D1),
+                        router_device:devaddrs(D1)
+                    ]
+                ),
+                D1
         end,
     case
         validate_frame(

@@ -452,6 +452,9 @@ packet_offer_(Offer, Pid, Chain) ->
                                     ),
                                     {error, ?LATE_PACKET}
                             end;
+                        {ok, _OtherDeviceID, _PacketTime} ->
+                            %% TODO: switch back to other
+                            {ok, Device};
                         {error, not_found} ->
                             check_device_preferred_hotspots(Device, Offer)
                     end;
@@ -841,8 +844,8 @@ send_to_device_worker(
         {error, _Reason1} = Error ->
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
-                "unable to find device for packet [devaddr: ~p] [gateway: ~p]",
-                [DevAddr, libp2p_crypto:bin_to_b58(PubKeyBin)]
+                "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
+                [DevAddr, lorawan_utils:binary_to_hex(DevAddr), libp2p_crypto:bin_to_b58(PubKeyBin)]
             ),
             Error;
         {Device, NwkSKey} ->

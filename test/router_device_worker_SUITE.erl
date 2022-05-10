@@ -798,10 +798,12 @@ replay_joins_test(Config) ->
     ok.
 
 ddos_joins_test(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    _ = test_utils:add_oui(Config),
+
     #{
         app_key := AppKey,
         dev_nonce := DevNonce1,
-        hotspot_name := HotspotName,
         stream := Stream,
         pubkey_bin := PubKeyBin
     } = test_utils:join_device(Config),
@@ -825,90 +827,30 @@ ddos_joins_test(Config) ->
                 PubKeyBin,
                 router_device:nwk_s_key(Device0),
                 router_device:app_s_key(Device0),
-                0
+                0,
+                #{devaddr => router_device:devaddr(Device0)}
             )},
 
     %% Waiting for report channel status
-    {ok, #{<<"id">> := UplinkUUID1}} = test_utils:wait_for_console_event_sub(
-        <<"uplink_unconfirmed">>,
-        #{
-            <<"id">> => fun erlang:is_binary/1,
-            <<"category">> => <<"uplink">>,
-            <<"sub_category">> => <<"uplink_unconfirmed">>,
-            <<"description">> => fun erlang:is_binary/1,
-            <<"reported_at">> => fun erlang:is_integer/1,
-            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-            <<"data">> => #{
-                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-                <<"fcnt">> => fun erlang:is_integer/1,
-                <<"payload_size">> => fun erlang:is_integer/1,
-                <<"payload">> => fun erlang:is_binary/1,
-                <<"raw_packet">> => fun erlang:is_binary/1,
-                <<"port">> => fun erlang:is_integer/1,
-                <<"devaddr">> => fun erlang:is_binary/1,
-                <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                    <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => 0.0,
-                    <<"snr">> => 0.0,
-                    <<"spreading">> => <<"SF8BW125">>,
-                    <<"frequency">> => fun erlang:is_float/1,
-                    <<"channel">> => fun erlang:is_number/1,
-                    <<"lat">> => fun erlang:is_float/1,
-                    <<"long">> => fun erlang:is_float/1
-                },
-                <<"mac">> => [],
-                <<"hold_time">> => fun erlang:is_integer/1
-            }
-        }
-    ),
-
-    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => UplinkUUID1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_integration_req">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
-        ),
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => fun erlang:is_map/1,
+        <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"req">> => #{
-                <<"method">> => <<"POST">>,
-                <<"url">> => <<?CONSOLE_URL/binary, "/channel">>,
-                <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1,
-                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
-            },
-            <<"integration">> => #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"status">> => <<"success">>
-            }
-        }
-    }),
-
-    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => UplinkUUID1,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_integration_res">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
-        ),
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"res">> => #{
-                <<"body">> => <<"success">>,
-                <<"headers">> => fun erlang:is_map/1,
-                <<"code">> => 200
-            },
-            <<"integration">> => #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"status">> => <<"success">>
-            }
-        }
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"raw_packet">> => fun erlang:is_binary/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"dc">> => fun erlang:is_map/1
     }),
 
     {ok, Device1} = router_device_cache:get(DeviceID),
@@ -949,6 +891,8 @@ ddos_joins_test(Config) ->
     DevNonce3 = crypto:strong_rand_bytes(2),
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
 
+    timer:sleep(router_utils:join_timeout() + 1000),
+
     %% We are now making sure that we maintain multiple keys and nonce in
     %% device just in case last join was valid
     {ok, Device2} = router_device_cache:get(DeviceID),
@@ -957,13 +901,61 @@ ddos_joins_test(Config) ->
         router_device:dev_nonces(Device2)
     ),
     ?assertEqual(
-        2,
-        erlang:length(router_device:keys(Device2))
-    ),
-    ?assertEqual(
-        2,
+        3,
         erlang:length(router_device:devaddrs(Device2))
     ),
+    ?assertEqual(
+        3,
+        erlang:length(router_device:keys(Device2))
+    ),
+
+    [_, GoodDevAddr, _] = router_device:devaddrs(Device2),
+    [_, {GoodNwkSKey, GoodAppSKey}, _] = router_device:keys(Device2),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                GoodNwkSKey,
+                GoodAppSKey,
+                0,
+                #{devaddr => GoodDevAddr}
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => fun erlang:is_map/1,
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"raw_packet">> => fun erlang:is_binary/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"dc">> => fun erlang:is_map/1
+    }),
+
+    {ok, Device3} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:devaddrs(Device3))
+    ),
+    ?assertEqual([GoodDevAddr], router_device:devaddrs(Device3)),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device3))
+    ),
+    ?assertEqual([{GoodNwkSKey, GoodAppSKey}], router_device:keys(Device3)),
+
     ok.
 
 replay_uplink_test(Config) ->

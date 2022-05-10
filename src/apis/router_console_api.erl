@@ -1043,7 +1043,11 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         {dev_eui, lorawan_utils:hex_to_binary(kvc:path([<<"dev_eui">>], JSONDevice))},
         {app_eui, lorawan_utils:hex_to_binary(kvc:path([<<"app_eui">>], JSONDevice))},
         {metadata, maps:filter(fun(_K, V) -> V =/= undefined end, Metadata)},
-        {is_active, kvc:path([<<"active">>], JSONDevice)}
+        {is_active, kvc:path([<<"active">>], JSONDevice)},
+        {preferred_hotspots, [
+            lorawan_utils:hex_to_binary(P)
+         || P <- kvc:path([<<"preferred_hotspots">>], JSONDevice)
+        ]}
     ],
     router_device:update(DeviceUpdates, router_device:new(ID)).
 

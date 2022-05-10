@@ -142,6 +142,11 @@ handle('GET', [<<"api">>, <<"router">>, <<"organizations">>], Req, Args) ->
 %% Get Device
 handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
     Tab = maps:get(ets, Args),
+    PreferredHotspots =
+        case ets:lookup(Tab, preferred_hotspots) of
+            [] -> [];
+            [{preferred_hotspots, PH}] -> PH
+        end,
     ChannelType =
         case ets:lookup(Tab, channel_type) of
             [] -> http;
@@ -227,7 +232,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"multi_buy">> => 1,
         <<"adr_allowed">> => ADRAllowed,
         <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled,
-        <<"rx_delay">> => RxDelay
+        <<"rx_delay">> => RxDelay,
+        <<"preferred_hotspots">> => [lorawan_utils:binary_to_hex(P) || P <- PreferredHotspots]
     },
     case NotFound of
         true ->

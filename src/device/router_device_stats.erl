@@ -16,6 +16,7 @@
     init/0,
     track_offer/2,
     track_packet/3,
+    lookup/0,
     lookup_hotspot/1,
     lookup_device/1,
     cleanup_offers/1
@@ -77,7 +78,14 @@ track_packet(Packet, Hotspot, Device) ->
     end),
     ok.
 
--spec lookup_hotspot(Hotspot :: any()) -> list().
+-spec lookup() -> list().
+lookup() ->
+    [
+        {D, blockchain_utils:addr2name(H), libp2p_crypto:bin_to_b58(H), C}
+     || {{D, H}, C} <- ets:tab2list(?ETS)
+    ].
+
+-spec lookup_hotspot(Hotspot :: libp2p_crypto:pubkey_bin()) -> list().
 lookup_hotspot(Hotspot) ->
     MS = [{{{'$1', '$2'}, '$3'}, [{'==', '$2', Hotspot}], ['$_']}],
     [
@@ -136,6 +144,7 @@ ok_test() ->
 
     ?assertEqual([], ?MODULE:lookup_hotspot(Hotspot)),
     ?assertEqual([], ?MODULE:lookup_device(router_device:id(Device))),
+    ?assertEqual([], ?MODULE:lookup()),
 
     ets:delete(?ETS),
     ets:delete(?OFFER_ETS),
@@ -179,6 +188,17 @@ fail_test() ->
         ],
         ?MODULE:lookup_device(router_device:id(Device1))
     ),
+    ?assertEqual(
+        [
+            {
+                router_device:id(Device1),
+                blockchain_utils:addr2name(Hotspot),
+                libp2p_crypto:bin_to_b58(Hotspot),
+                1
+            }
+        ],
+        ?MODULE:lookup()
+    ),
 
     ets:delete(?ETS),
     ets:delete(?OFFER_ETS),
@@ -204,6 +224,7 @@ cleanup_offers_test() ->
 
     ?assertMatch(0, erlang:length(ets:lookup(?OFFER_ETS, {Hotspot, PHash}))),
 
+    ?assertEqual([], ?MODULE:lookup()),
     ?assertEqual([], ?MODULE:lookup_hotspot(Hotspot)),
     ?assertEqual([], ?MODULE:lookup_device(router_device:id(Device))),
 

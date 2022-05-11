@@ -24,6 +24,7 @@
     get_hotspot_location/2,
     to_bin/1,
     b0/4,
+    either/2,
     lager_md/1,
     trace/1,
     stop_trace/1,
@@ -550,6 +551,10 @@ to_bin(_) ->
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0, 0, 0, 0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+
+-spec either(Value :: any(), Default :: any()) -> any().
+either(undefined, Default) -> Default;
+either(Value, _Default) -> Value.
 
 -spec lager_md(router_device:device()) -> ok.
 lager_md(Device) ->

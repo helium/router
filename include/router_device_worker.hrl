@@ -1,3 +1,17 @@
+-define(DOWNLINK_REGIONS, [
+    'US915',
+    'AU915',
+    'EU868',
+    'CN470',
+    'AS923_1',
+    'AS923_2',
+    'AS923_3',
+    'AS923_4'
+]).
+
+-type 'downlink.region'() ::
+    'US915' | 'AU915' | 'EU868' | 'CN470' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4'.
+
 -record(frame, {
     mtype,
     devaddr,
@@ -60,5 +74,6 @@
     confirmed :: boolean(),
     port :: non_neg_integer(),
     payload :: binary(),
-    channel :: router_channel:channel()
+    channel :: router_channel:channel(),
+    region :: 'downlink.region'()
 }).

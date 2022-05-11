@@ -546,7 +546,7 @@ maybe_report_downlink_dropped(DeviceID, Desc, Channel) ->
     end.
 
 -spec downlink_decode(binary() | map()) ->
-    {ok, {boolean(), integer(), binary()} | clear_queue} | {error, any()}.
+    {ok, {boolean(), integer(), atom(), binary()} | clear_queue} | {error, any()}.
 downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
     try jsx:decode(BinaryPayload, [return_maps]) of
         JSON -> downlink_decode(JSON)

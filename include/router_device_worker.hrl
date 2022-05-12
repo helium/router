@@ -9,7 +9,7 @@
     'AS923_4'
 ]).
 
--type 'downlink.region'() ::
+-type downlink_region() ::
     'US915' | 'AU915' | 'EU868' | 'CN470' | 'AS923_1' | 'AS923_2' | 'AS923_3' | 'AS923_4'.
 
 -record(frame, {
@@ -75,5 +75,5 @@
     port :: non_neg_integer(),
     payload :: binary(),
     channel :: router_channel:channel(),
-    region :: 'downlink.region'()
+    region :: downlink_region()
 }).

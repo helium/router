@@ -415,7 +415,7 @@ deserialize(Binary) ->
             }
     end.
 
--spec can_queue_payload(binary(), 'downlink.region'() | undefined, device()) ->
+-spec can_queue_payload(binary(), downlink_region() | undefined, device()) ->
     {error, any()}
     | {
         CanQueue :: boolean(),

@@ -17,10 +17,11 @@
 %% ------------------------------------------------------------------
 -export([
     init/0,
+    get/0, get/1,
+    get_by_devaddr/1,
     save/1,
     delete/1,
-    get/0, get/1,
-    get_by_devaddr/1
+    size/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -83,6 +84,10 @@ save(Device) ->
 delete(DeviceID) ->
     true = ets:delete(?ETS, DeviceID),
     ok.
+
+-spec size() -> non_neg_integer().
+size() ->
+    proplists:get_value(size, ets:info(router_device_cache_ets), 0).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

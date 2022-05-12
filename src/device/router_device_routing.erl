@@ -984,6 +984,7 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
+                    %TODO: X% chance of buying packet
                     lager:debug(
                         "best guess device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
                         [PHash, router_device:id(Device), PubKeyBin]

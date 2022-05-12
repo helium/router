@@ -263,7 +263,8 @@ handle_info(
             ok = record_ets(),
             ok = record_queues(),
             ok = record_grpc_connections(),
-            ok = record_hotspot_reputations()
+            ok = record_hotspot_reputations(),
+            ok = record_devices()
         end,
         [
             {fullsweep_after, 0},
@@ -526,6 +527,13 @@ record_hotspot_reputations() ->
         end,
         router_hotspot_reputation:reputations()
     ).
+
+-spec record_devices() -> ok.
+record_devices() ->
+    Running = proplists:get_value(active, supervisor:count_children(router_devices_sup), 0),
+    _ = prometheus_gauge:set(?METRICS_DEVICE_TOTAL, router_device_cache:size()),
+    _ = prometheus_gauge:set(?METRICS_DEVICE_RUNNING, Running),
+    ok.
 
 -spec get_pid_name(pid()) -> list().
 get_pid_name(Pid) ->

@@ -10,6 +10,7 @@
     http_downlink_test/1,
     console_tool_downlink_test/1,
     console_tool_downlink_order_test/1,
+    console_tool_downlink_region_test/1,
     console_tool_clear_queue_test/1,
     console_tool_downlink_clear_queue_test/1,
     device_queue_size_limit_test/1,
@@ -44,6 +45,7 @@ all() ->
         http_downlink_test,
         console_tool_downlink_test,
         console_tool_downlink_order_test,
+        console_tool_downlink_region_test,
         console_tool_clear_queue_test,
         console_tool_downlink_clear_queue_test,
         device_queue_size_limit_test,
@@ -190,6 +192,76 @@ console_tool_downlink_order_test(Config) ->
     SendPacketAndExpectFun(#{downlink => Downlink2, payload => Payload2, pending => 1, fcnt => 3}),
     SendPacketAndExpectFun(#{downlink => Downlink0, payload => Payload0, pending => 1, fcnt => 4}),
     SendPacketAndExpectFun(#{downlink => Downlink1, payload => Payload1, pending => 0, fcnt => 5}),
+
+    ok = test_utils:ignore_messages(),
+
+    ok.
+
+console_tool_downlink_region_test(Config) ->
+    %% Prepare Data
+    Payload = <<"console_tool_downlink">>,
+
+    %% Add device
+    test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Get Device Default region
+    DefaultRegion = router_device:region(Device0),
+    DefaultRegion = 'US915',
+
+    %% Grab the websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+
+    SendPacketAndExpectFun = fun(DownlinkMessage, ExpectedRegion) ->
+        WSPid ! {downlink, DownlinkMessage},
+
+        %% Wait until Device has downlink
+        ok = test_utils:wait_until(fun() ->
+            1 == erlang:length(test_utils:get_device_queue(?CONSOLE_DEVICE_ID))
+        end),
+
+        [
+            {downlink, false, 1, <<"console_tool_downlink">>,
+                {channel, <<"console_websocket">>, websocket, <<"Console downlink tool">>, #{},
+                    <<"yolo_id">>, _, undefined, undefined, #{}},
+                ExpectedRegion}
+        ] = test_utils:get_device_queue(?CONSOLE_DEVICE_ID),
+
+        WSPid ! clear_queue,
+        ok = test_utils:ignore_messages()
+    end,
+
+    MessageWithoutRegion = #{
+        payload_raw => base64:encode(Payload),
+        from => <<"console_downlink_queue">>
+    },
+    SendPacketAndExpectFun(MessageWithoutRegion, undefined),
+
+    MessageConsoleDefinedRegion = #{
+        payload_raw => base64:encode(Payload),
+        from => <<"console_downlink_queue">>,
+        region => <<"EU868">>
+    },
+    SendPacketAndExpectFun(MessageConsoleDefinedRegion, 'EU868'),
+
+    MessageInvalidRegion = #{
+        payload_raw => base64:encode(Payload),
+        from => <<"console_downlink_queue">>,
+        region => <<"NotaRegion">>
+    },
+    WSPid ! {downlink, MessageInvalidRegion},
+    [] = test_utils:get_device_queue(?CONSOLE_DEVICE_ID),
 
     ok = test_utils:ignore_messages(),
 

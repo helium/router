@@ -51,7 +51,8 @@
         {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
         {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
         {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
-        {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"}
+        {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},
+        {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"}
     ]},
     {grpcbox, [
         {servers, [

@@ -123,12 +123,14 @@ handle_info(
     #{<<"rxpk">> := [JSON]} = jsx:decode(JSONBin, [return_maps]),
     lager:info("got packet ~p", [JSON]),
     State#state.pid ! rx,
+    <<DevNum:32/integer-unsigned-little>> = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
     HeliumPacket = #packet_pb{
         type = lorawan,
         payload = base64:decode(maps:get(<<"data">>, JSON)),
         signal_strength = maps:get(<<"rssi">>, JSON),
         frequency = maps:get(<<"freq">>, JSON),
-        datarate = maps:get(<<"datr">>, JSON)
+        datarate = maps:get(<<"datr">>, JSON),
+        routing = blockchain_helium_packet_v1:make_routing_info({devaddr, DevNum})
     },
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,

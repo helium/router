@@ -699,16 +699,8 @@ handle_cast(
                         false -> router_device:dev_nonces(Device0);
                         true -> [LastDevNonce | router_device:dev_nonces(Device0)]
                     end,
-                DevAddrs =
-                    case blockchain_helium_packet_v1:routing_info(Packet0) of
-                        {devaddr, DevAddr0} ->
-                            DevAddr1 = lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>),
-                            [DevAddr1];
-                        _ ->
-                            %% This is mostly for lorawan SUITE as the C code does not provide routing_info
-                            %% as soon as testing is moved to lora lib we can remove and only pattern match to {devaddr, DevAddr0}
-                            router_device:devaddrs(Device0)
-                    end,
+                {devaddr, DevAddr0} = blockchain_helium_packet_v1:routing_info(Packet0),
+                DevAddr1 = lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>),
                 DeviceUpdates = [
                     {keys,
                         lists:filter(
@@ -716,7 +708,7 @@ handle_cast(
                             router_device:keys(Device0)
                         )},
                     {dev_nonces, DevNonces},
-                    {devaddrs, DevAddrs}
+                    {devaddrs, [DevAddr1]}
                 ],
                 D1 = router_device:update(DeviceUpdates, Device0),
                 lager:debug(

@@ -10,16 +10,18 @@
 -include("router_device.hrl").
 
 -define(ETS, router_device_cache_ets).
+-define(DEVADDR_ETS, router_device_cache_devaddr_ets).
 
 %% ------------------------------------------------------------------
 %% API Exports
 %% ------------------------------------------------------------------
 -export([
     init/0,
+    get/0, get/1,
+    get_by_devaddr/1,
     save/1,
     delete/1,
-    get/0, get/1,
-    get_by_devaddr/1
+    size/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -28,14 +30,20 @@
 
 -spec init() -> ok.
 init() ->
-    Opts = [
+    _ = ets:new(?ETS, [
         public,
         named_table,
         set,
         {write_concurrency, true},
         {read_concurrency, true}
-    ],
-    _ = ets:new(?ETS, Opts),
+    ]),
+    _ = ets:new(?DEVADDR_ETS, [
+        public,
+        named_table,
+        bag,
+        {write_concurrency, true},
+        {read_concurrency, true}
+    ]),
     ok = init_from_db(),
     ok.
 
@@ -52,19 +60,34 @@ get(DeviceID) ->
 
 -spec get_by_devaddr(binary()) -> [router_device:device()].
 get_by_devaddr(DevAddr) ->
-    MS = ets:fun2ms(fun({_, D}) when D#device_v6.devaddr == DevAddr -> D end),
-    ets:select(?ETS, MS).
+    case ets:lookup(?DEVADDR_ETS, DevAddr) of
+        [] -> [];
+        List -> [Device || {_DevAddr, Device} <- List]
+    end.
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
+    % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
+    MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
+    _ = ets:select_delete(?DEVADDR_ETS, MS),
+    lists:foreach(
+        fun(DevAddr) ->
+            true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
+        end,
+        router_device:devaddrs(Device)
+    ),
     {ok, Device}.
 
 -spec delete(binary()) -> ok.
 delete(DeviceID) ->
     true = ets:delete(?ETS, DeviceID),
     ok.
+
+-spec size() -> non_neg_integer().
+size() ->
+    proplists:get_value(size, ets:info(router_device_cache_ets), 0).
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
@@ -88,15 +111,45 @@ init_from_db_test() ->
     {ok, Pid} = router_db:start_link([Dir]),
     ok = init(),
     ID = router_utils:uuid_v4(),
-    Device = router_device:new(ID),
-
+    Device0 = router_device:new(ID),
+    DevAddr0 = <<"devaddr0">>,
+    Updates = [
+        {name, <<"name">>},
+        {app_eui, <<"app_eui">>},
+        {dev_eui, <<"dev_eui">>},
+        {keys, [{<<"nwk_s_key">>, <<"app_s_key">>}]},
+        {devaddrs, [DevAddr0]},
+        {dev_nonces, [<<"1">>]},
+        {fcnt, 1},
+        {fcntdown, 1},
+        {offset, 1},
+        {channel_correction, true},
+        {queue, [a]},
+        {region, 'US915'},
+        {last_known_datarate, 7},
+        {ecc_compact, #{}},
+        {location, <<"location">>},
+        {metadata, #{a => b}},
+        {is_active, false}
+    ],
+    Device1 = router_device:update(Updates, Device0),
     {ok, DB, [_, CF]} = router_db:get(),
-    ?assertEqual({ok, Device}, router_device:save(DB, CF, Device)),
+    ?assertEqual({ok, Device1}, router_device:save(DB, CF, Device1)),
     ?assertEqual(ok, init_from_db()),
-    ?assertEqual({ok, Device}, ?MODULE:get(ID)),
+    ?assertEqual({ok, Device1}, ?MODULE:get(ID)),
+    ?assertEqual([Device1], ?MODULE:get_by_devaddr(DevAddr0)),
+
+    DevAddr1 = <<"devaddr1">>,
+    DevAddr2 = <<"devaddr2">>,
+    Device2 = router_device:devaddrs([DevAddr1, DevAddr2], Device1),
+    ?assertEqual({ok, Device2}, ?MODULE:save(Device2)),
+    ?assertEqual([], ?MODULE:get_by_devaddr(DevAddr0)),
+    ?assertEqual([Device2], ?MODULE:get_by_devaddr(DevAddr1)),
+    ?assertEqual([Device2], ?MODULE:get_by_devaddr(DevAddr2)),
 
     gen_server:stop(Pid),
     ets:delete(?ETS),
+    ets:delete(?DEVADDR_ETS),
     ok.
 
 get_save_delete_test() ->
@@ -106,14 +159,15 @@ get_save_delete_test() ->
     ID = router_utils:uuid_v4(),
     Device = router_device:new(ID),
 
-    ?assertEqual({ok, Device}, save(Device)),
+    ?assertEqual({ok, Device}, ?MODULE:save(Device)),
     ?assertEqual({ok, Device}, ?MODULE:get(ID)),
     ?assertEqual([Device], ?MODULE:get()),
-    ?assertEqual(ok, delete(ID)),
+    ?assertEqual(ok, ?MODULE:delete(ID)),
     ?assertEqual({error, not_found}, ?MODULE:get(ID)),
 
     gen_server:stop(Pid),
     ets:delete(?ETS),
+    ets:delete(?DEVADDR_ETS),
     ok.
 
 -endif.

@@ -12,6 +12,7 @@
     device_update_dev_eui_reset_devaddr_test/1,
     drop_downlink_test/1,
     replay_joins_test/1,
+    ddos_joins_test/1,
     replay_uplink_test/1,
     device_worker_stop_children_test/1,
     device_worker_late_packet_double_charge_test/1,
@@ -50,6 +51,7 @@ all() ->
         device_update_dev_eui_reset_devaddr_test,
         drop_downlink_test,
         replay_joins_test,
+        ddos_joins_test,
         replay_uplink_test,
         device_worker_late_packet_double_charge_test,
         offer_cache_test,
@@ -614,6 +616,10 @@ replay_joins_test(Config) ->
         undefined,
         test_utils:get_last_dev_nonce(DeviceID)
     ),
+    ?assertEqual(
+        router_device:devaddr(Device0),
+        router_device:devaddr(Device1)
+    ),
 
     %% We ignore the channel correction and down messages
     ok = test_utils:ignore_messages(),
@@ -622,9 +628,9 @@ replay_joins_test(Config) ->
     DevNonce2 = crypto:strong_rand_bytes(2),
     %% we are sending another join with an already used nonce to try to DOS the device
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
-    timer:sleep(router_utils:join_timeout()),
+    timer:sleep(router_utils:join_timeout() + 1000),
 
-    %% We are not making sure that we maintain multiple keys and nonce in
+    %% We are now making sure that we maintain multiple keys and nonce in
     %% device just in case last join was valid
     {ok, Device2} = router_device_cache:get(DeviceID),
     ?assertEqual(
@@ -643,6 +649,10 @@ replay_joins_test(Config) ->
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device2)
     ),
+    ?assertEqual(
+        router_device:devaddr(Device0),
+        router_device:devaddr(Device2)
+    ),
 
     %% We repeat again to add a second "bad" attempt
 
@@ -650,7 +660,7 @@ replay_joins_test(Config) ->
     DevNonce3 = crypto:strong_rand_bytes(2),
     %% we are sending another join with an already used nonce to try to DOS the device
     Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
-    timer:sleep(router_utils:join_timeout()),
+    timer:sleep(router_utils:join_timeout() + 1000),
 
     %% We are not making sure that we maintain multiple keys and
     %% nonce in device just in case last join was valid
@@ -784,6 +794,167 @@ replay_joins_test(Config) ->
         router_device:app_s_key(Device0),
         router_device:app_s_key(Device4)
     ),
+
+    ok.
+
+ddos_joins_test(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    _ = test_utils:add_oui(Config),
+
+    #{
+        app_key := AppKey,
+        dev_nonce := DevNonce1,
+        stream := Stream,
+        pubkey_bin := PubKeyBin
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device_cache:get(DeviceID),
+
+    ?assertEqual(
+        DevNonce1,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{devaddr => router_device:devaddr(Device0)}
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => fun erlang:is_map/1,
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"raw_packet">> => fun erlang:is_binary/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"dc">> => fun erlang:is_map/1
+    }),
+
+    {ok, Device1} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device1)
+    ),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device1))
+    ),
+    ?assertEqual(
+        router_device:nwk_s_key(Device0),
+        router_device:nwk_s_key(Device1)
+    ),
+    ?assertEqual(
+        router_device:app_s_key(Device0),
+        router_device:app_s_key(Device1)
+    ),
+    ?assertEqual(
+        undefined,
+        test_utils:get_last_dev_nonce(DeviceID)
+    ),
+    ?assertEqual(
+        router_device:devaddr(Device0),
+        router_device:devaddr(Device1)
+    ),
+
+    %% We ignore the channel correction and down messages
+    ok = test_utils:ignore_messages(),
+
+    %% Sending 2 joins where one  of them is the right one and the other one
+    %% (DevNonce3) coming right after should act as the attacker.
+    DevNonce2 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce2)},
+
+    timer:sleep(10),
+    DevNonce3 = crypto:strong_rand_bytes(2),
+    Stream ! {send, test_utils:join_packet(PubKeyBin, AppKey, DevNonce3)},
+
+    timer:sleep(router_utils:join_timeout() + 1000),
+
+    %% We are now making sure that we maintain multiple keys and nonce in
+    %% device just in case last join was valid
+    {ok, Device2} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        [DevNonce1],
+        router_device:dev_nonces(Device2)
+    ),
+    ?assertEqual(
+        3,
+        erlang:length(router_device:devaddrs(Device2))
+    ),
+    ?assertEqual(
+        3,
+        erlang:length(router_device:keys(Device2))
+    ),
+
+    [_, GoodDevAddr, _] = router_device:devaddrs(Device2),
+    [_, {GoodNwkSKey, GoodAppSKey}, _] = router_device:keys(Device2),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                GoodNwkSKey,
+                GoodAppSKey,
+                0,
+                #{devaddr => GoodDevAddr}
+            )},
+
+    %% Waiting for report channel status
+    test_utils:wait_channel_data(#{
+        <<"type">> => <<"uplink">>,
+        <<"replay">> => false,
+        <<"uuid">> => fun erlang:is_binary/1,
+        <<"id">> => ?CONSOLE_DEVICE_ID,
+        <<"downlink_url">> => fun erlang:is_binary/1,
+        <<"name">> => ?CONSOLE_DEVICE_NAME,
+        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
+        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
+        <<"metadata">> => fun erlang:is_map/1,
+        <<"fcnt">> => 0,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"payload">> => <<>>,
+        <<"payload_size">> => 0,
+        <<"raw_packet">> => fun erlang:is_binary/1,
+        <<"port">> => 1,
+        <<"devaddr">> => '_',
+        <<"hotspots">> => fun erlang:is_list/1,
+        <<"dc">> => fun erlang:is_map/1
+    }),
+
+    {ok, Device3} = router_device_cache:get(DeviceID),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:devaddrs(Device3))
+    ),
+    ?assertEqual([GoodDevAddr], router_device:devaddrs(Device3)),
+    ?assertEqual(
+        1,
+        erlang:length(router_device:keys(Device3))
+    ),
+    ?assertEqual([{GoodNwkSKey, GoodAppSKey}], router_device:keys(Device3)),
 
     ok.
 

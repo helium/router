@@ -304,7 +304,7 @@ handle_call(
             {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
             DeviceUpdates = [
                 {keys, [{NwkSKey, AppSKey}]},
-                {devaddr, DevAddr},
+                {devaddrs, [DevAddr]},
                 {fcntdown, 0},
                 {channel_correction, false}
             ],
@@ -360,7 +360,7 @@ handle_cast(
             lager:info("device updated: ~p", [APIDevice]),
             router_device_channels_worker:refresh_channels(ChannelsWorker),
             IsActive = router_device:is_active(APIDevice),
-            Devaddr =
+            DevAddrs =
                 case
                     {
                         {router_device:app_eui(Device0), router_device:app_eui(APIDevice)},
@@ -368,17 +368,17 @@ handle_cast(
                     }
                 of
                     {{App, App}, {Dev, Dev}} ->
-                        router_device:devaddr(Device0);
+                        [router_device:devaddr(Device0)];
                     _ ->
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),
-                        undefined
+                        []
                 end,
 
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
-                {devaddr, Devaddr},
+                {devaddrs, DevAddrs},
                 {metadata,
                     maps:merge(
                         lorawan_rxdelay:maybe_update(APIDevice, Device0),
@@ -699,19 +699,26 @@ handle_cast(
                         false -> router_device:dev_nonces(Device0);
                         true -> [LastDevNonce | router_device:dev_nonces(Device0)]
                     end,
+                {devaddr, DevAddr0} = blockchain_helium_packet_v1:routing_info(Packet0),
+                DevAddr1 = lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>),
                 DeviceUpdates = [
                     {keys,
                         lists:filter(
                             fun({NwkSKey, _}) -> NwkSKey == UsedNwkSKey end,
                             router_device:keys(Device0)
                         )},
-                    {dev_nonces, DevNonces}
+                    {dev_nonces, DevNonces},
+                    {devaddrs, [DevAddr1]}
                 ],
-                lager:debug("we got our first uplink after join dev nonce=~p and key=~p", [
-                    LastDevNonce,
-                    UsedNwkSKey
-                ]),
-                router_device:update(DeviceUpdates, Device0)
+                D1 = router_device:update(DeviceUpdates, Device0),
+                lager:debug(
+                    "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
+                        router_device:dev_nonces(D1),
+                        router_device:keys(D1),
+                        router_device:devaddrs(D1)
+                    ]
+                ),
+                D1
         end,
     case
         validate_frame(
@@ -1273,7 +1280,7 @@ handle_join(
         {dev_eui, DevEUI},
         {app_eui, AppEUI},
         {keys, [{NwkSKey, AppSKey} | router_device:keys(Device0)]},
-        {devaddr, DevAddr},
+        {devaddrs, [DevAddr | router_device:devaddrs(Device0)]},
         {fcntdown, 0},
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},

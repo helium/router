@@ -142,7 +142,9 @@ handle_call(
             {error, _} -> h3:from_geo({0.0, 0.0}, 12);
             {ok, IA} -> IA
         end,
-    Parent = h3:to_geo(h3:parent(Index, 1)),
+    Parent = h3:to_geo(
+        h3:parent(Index, router_utils:get_env_int(devaddr_allocate_resolution, 3))
+    ),
     {NthSubnet, DevaddrBase} =
         case maps:get(Parent, Used, undefined) of
             undefined ->

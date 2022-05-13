@@ -41,7 +41,7 @@ test: | $(grpc_services_directory)
 	$(REBAR) fmt --verbose --check "config/{test,sys}.{config,config.src}"
 	$(REBAR) xref
 	$(REBAR) eunit
-	$(REBAR) ct --suite=$(TEST_SUITES)
+	$(REBAR) ct --readable=true --suite=$(TEST_SUITES)
 	$(REBAR) dialyzer
 
 rel: | $(grpc_services_directory)

@@ -133,8 +133,9 @@ handle_offer(Offer, HandlerPid) ->
         ok = handle_offer_metrics(Routing, Resp, End - Start)
     end),
     case Resp of
-        {ok, _} ->
+        {ok, Device} ->
             ok = router_hotspot_reputation:track_offer(Offer),
+            ok = router_device_stats:track_offer(Offer, Device),
             ok;
         {error, _} = Error ->
             Error
@@ -452,6 +453,25 @@ packet_offer_(Offer, Pid, Chain) ->
                                     ),
                                     {error, ?LATE_PACKET}
                             end;
+                        {ok, OtherDeviceID, PacketTime} ->
+                            lager:info(LagerOpts, "this packet was intended for ~p", [OtherDeviceID]),
+                            case erlang:system_time(millisecond) - PacketTime > ?RX2_WINDOW of
+                                true ->
+                                    lager:debug(
+                                        [{device_id, OtherDeviceID}],
+                                        "most likely a replay packet buying"
+                                    ),
+                                    router_device_cache:get(OtherDeviceID);
+                                false ->
+                                    lager:debug(
+                                        [{device_id, OtherDeviceID}],
+                                        "most likely a late packet for ~p multi buying",
+                                        [
+                                            OtherDeviceID
+                                        ]
+                                    ),
+                                    {error, ?LATE_PACKET}
+                            end;
                         {error, not_found} ->
                             check_device_preferred_hotspots(Device, Offer)
                     end;
@@ -712,7 +732,8 @@ packet(
                         false ->
                             {error, {?DEVADDR_NOT_IN_SUBNET, DevAddr}}
                     end;
-                _ ->
+                _E ->
+                    lager:warning("fail to find routing ~p", [_E]),
                     %% TODO: Should fail here
                     %% no subnets
                     send_to_device_worker(
@@ -728,7 +749,8 @@ packet(
                         Chain
                     )
             catch
-                _:_ ->
+                _E:_S ->
+                    lager:warning("crashed ~p", [{_E, _S}]),
                     %% TODO: Should fail here
                     %% no subnets
                     send_to_device_worker(
@@ -839,11 +861,12 @@ send_to_device_worker(
         {error, _Reason1} = Error ->
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
-                "unable to find device for packet [devaddr: ~p] [gateway: ~p]",
-                [DevAddr, libp2p_crypto:bin_to_b58(PubKeyBin)]
+                "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
+                [DevAddr, lorawan_utils:binary_to_hex(DevAddr), libp2p_crypto:bin_to_b58(PubKeyBin)]
             ),
             Error;
         {Device, NwkSKey} ->
+            ok = router_device_stats:track_packet(Packet, PubKeyBin, Device),
             case router_device:preferred_hotspots(Device) of
                 [] ->
                     send_to_device_worker_(
@@ -916,6 +939,7 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
         {error, _} = Error ->
             Error;
         undefined ->
+            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
             {error, {unknown_device, DevAddr}};
         {Device, NwkSKey} ->
             {Device, NwkSKey}
@@ -960,6 +984,7 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
+                    %TODO: X% chance of buying packet
                     lager:debug(
                         "best guess device for offer [hash: ~p] [device_id: ~p] [pubkeybin: ~p]",
                         [PHash, router_device:id(Device), PubKeyBin]

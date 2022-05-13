@@ -42,7 +42,7 @@
     deserialize/1
 ]).
 -export([
-    can_queue_payload/2
+    can_queue_payload/3
 ]).
 
 %% ------------------------------------------------------------------
@@ -415,7 +415,7 @@ deserialize(Binary) ->
             }
     end.
 
--spec can_queue_payload(binary(), device()) ->
+-spec can_queue_payload(binary(), downlink_region() | undefined, device()) ->
     {error, any()}
     | {
         CanQueue :: boolean(),
@@ -423,16 +423,16 @@ deserialize(Binary) ->
         MaxSize :: non_neg_integer(),
         Datarate :: integer()
     }.
-can_queue_payload(_Payload, #device_v6{region = undefined}) ->
+can_queue_payload(_Payload, undefined, #device_v6{region = undefined}) ->
     {error, device_region_unknown};
-can_queue_payload(Payload, Device) ->
+can_queue_payload(Payload, DownlinkRegion, Device) ->
     Queue = ?MODULE:queue(Device),
     Limit = get_queue_size_limit(),
     case erlang:length(Queue) >= Limit of
         true ->
             {error, queue_size_limit};
         false ->
-            Region = ?MODULE:region(Device),
+            Region = router_utils:either(DownlinkRegion, ?MODULE:region(Device)),
             UpDRIndex = ?MODULE:last_known_datarate(Device),
             Plan = lora_plan:region_to_plan(Region),
             DownDRIndex = lora_plan:up_to_down_datarate(Plan, UpDRIndex, 0),

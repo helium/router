@@ -181,7 +181,8 @@ device_queue_cmd() ->
                 {confirmed, [{longname, "ack"}, {datatype, boolean}]},
                 {port, [{longname, "port"}, {datatype, integer}]},
                 {channel_name, [{longname, "channel-name"}, {datatype, string}]},
-                {payload, [{longname, "payload"}, {datatype, string}]}
+                {payload, [{longname, "payload"}, {datatype, string}]},
+                {region, [{longname, "region"}, {datatype, string}]}
             ],
             prepend_device_id(fun device_queue_add_front/4)
         ]
@@ -316,7 +317,8 @@ device_queue_add_front(ID, ["device", "queue", "add"], [], Flags) ->
         confirmed = maps:is_key(confirmed, Options),
         port = maps:get(port, Options, 1),
         payload = router_utils:to_bin(Payload),
-        channel = Channel
+        channel = Channel,
+        region = maps:get(region, Options, undefined)
     },
 
     ok = router_device_worker:queue_downlink(WorkerPid, Msg),

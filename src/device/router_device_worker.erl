@@ -425,7 +425,8 @@ handle_cast(
     ok = maybe_send_queue_update(Device1, State),
     {noreply, State#state{device = Device1}};
 handle_cast(
-    {queue_downlink, #downlink{port = Port, payload = Payload, channel = Channel} = Downlink,
+    {queue_downlink,
+        #downlink{port = Port, payload = Payload, channel = Channel, region = Region} = Downlink,
         Position},
     #state{
         db = DB,
@@ -434,7 +435,7 @@ handle_cast(
         channels_worker = ChannelsWorker
     } = State
 ) ->
-    case router_device:can_queue_payload(Payload, Device0) of
+    case router_device:can_queue_payload(Payload, Region, Device0) of
         {false, Size, MaxSize, Datarate} ->
             Desc = io_lib:format(
                 "Payload too big for DR~p max size is ~p (payload was ~p)",
@@ -2298,7 +2299,8 @@ channel_record_update_test() ->
             _Confirmed,
             _Port,
             _Payload,
-            _Channel
+            _Channel,
+            _Region
         },
         #downlink{}
     ).

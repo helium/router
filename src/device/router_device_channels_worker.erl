@@ -118,7 +118,7 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                 {ok, clear_queue} ->
                     lager:info("clearing device queue because downlink payload from console"),
                     router_device_worker:clear_queue(Pid);
-                {ok, {Confirmed, Port, Payload}} ->
+                {ok, {Confirmed, Port, Region, Payload}} ->
                     ok = router_metrics:downlink_inc(ChannelHandler, ok),
                     router_device_worker:queue_downlink(
                         Pid,
@@ -126,7 +126,8 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                             confirmed = Confirmed,
                             port = Port,
                             payload = Payload,
-                            channel = Channel
+                            channel = Channel,
+                            region = Region
                         },
                         Position
                     );
@@ -274,13 +275,14 @@ handle_cast(
         {ok, clear_queue} ->
             lager:info("clearing device queue because downlink payload"),
             router_device_worker:clear_queue(DeviceWorker);
-        {ok, {Confirmed, Port, Payload}} ->
+        {ok, {Confirmed, Port, Region, Payload}} ->
             ok = router_metrics:downlink_inc(ChannelHandler, ok),
             ok = router_device_worker:queue_downlink(DeviceWorker, #downlink{
                 confirmed = Confirmed,
                 port = Port,
                 payload = Payload,
-                channel = Channel
+                channel = Channel,
+                region = Region
             });
         {error, _Reason} ->
             ok = router_metrics:downlink_inc(ChannelHandler, error),
@@ -544,7 +546,7 @@ maybe_report_downlink_dropped(DeviceID, Desc, Channel) ->
     end.
 
 -spec downlink_decode(binary() | map()) ->
-    {ok, {boolean(), integer(), binary()} | clear_queue} | {error, any()}.
+    {ok, {boolean(), integer(), downlink_region(), binary()} | clear_queue} | {error, any()}.
 downlink_decode(BinaryPayload) when is_binary(BinaryPayload) ->
     try jsx:decode(BinaryPayload, [return_maps]) of
         JSON -> downlink_decode(JSON)
@@ -574,11 +576,24 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
                     _ ->
                         false
                 end,
+            Region =
+                case maps:find(<<"region">>, MapPayload) of
+                    {ok, R} when is_binary(R) ->
+                        R1 = binary_to_atom(R),
+                        case lists:member(R1, ?DOWNLINK_REGIONS) of
+                            true ->
+                                R1;
+                            false ->
+                                {error, incompatible_region}
+                        end;
+                    _ ->
+                        undefined
+                end,
             try base64:decode(Payload) of
                 ?CLEAR_QUEUE_PAYLOAD ->
                     {ok, clear_queue};
                 Decoded ->
-                    {ok, {Confirmed, Port, Decoded}}
+                    {ok, {Confirmed, Port, Region, Decoded}}
             catch
                 _:_ ->
                     {error, failed_to_decode_base64}

@@ -808,16 +808,6 @@ upgrade_test() ->
     ?assertEqual({ok, V7Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([V7Device], get(DB, CF)),
 
-    V6Device = #device_v6{
-        id = DeviceID,
-        keys = V6Device#device_v6.keys,
-        ecc_compact = Keys,
-        dev_nonces = [<<>>]
-    },
-    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V6Device), []),
-    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
-    ?assertEqual([V6Device], get(DB, CF)),
-
     gen_server:stop(Pid),
     ?assert(meck:validate(libp2p_crypto)),
     meck:unload(libp2p_crypto).

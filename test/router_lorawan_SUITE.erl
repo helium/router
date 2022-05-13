@@ -484,7 +484,8 @@ lw_join_test(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => true,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => 2,
         <<"downlink_url">> => fun erlang:is_binary/1,

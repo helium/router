@@ -9,7 +9,19 @@
 -export([
     bad_fcnt_test/1,
     multi_buy_test/1,
-    packet_hash_cache_test/1
+    packet_hash_cache_test/1,
+    join_offer_from_strange_hotspot_test/1,
+    join_offer_from_preferred_hotspot_test/1,
+    join_offer_with_no_preferred_hotspot_test/1,
+    packet_offer_from_strange_hotspot_test/1,
+    packet_offer_from_preferred_hotspot_test/1,
+    packet_offer_with_no_preferred_hotspot_test/1,
+    handle_packet_from_strange_hotspot_test/1,
+    handle_packet_from_preferred_hotspot_test/1,
+    handle_packet_with_no_preferred_hotspot_test/1,
+    handle_join_packet_from_strange_hotspot_test/1,
+    handle_join_packet_from_preferred_hotspot_test/1,
+    handle_join_packet_with_no_preferred_hotspot_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -19,6 +31,7 @@
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
+-include("include/router_device.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
@@ -39,7 +52,19 @@ all() ->
     [
         bad_fcnt_test,
         multi_buy_test,
-        packet_hash_cache_test
+        packet_hash_cache_test,
+        join_offer_from_strange_hotspot_test,
+        join_offer_from_preferred_hotspot_test,
+        join_offer_with_no_preferred_hotspot_test,
+        packet_offer_from_strange_hotspot_test,
+        packet_offer_from_preferred_hotspot_test,
+        packet_offer_with_no_preferred_hotspot_test,
+        handle_packet_from_strange_hotspot_test,
+        handle_packet_from_preferred_hotspot_test,
+        handle_packet_with_no_preferred_hotspot_test,
+        handle_join_packet_from_strange_hotspot_test,
+        handle_join_packet_from_preferred_hotspot_test,
+        handle_join_packet_with_no_preferred_hotspot_test
     ].
 
 %%--------------------------------------------------------------------
@@ -57,6 +82,270 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+%%
+%% Preferred Hotspots: join offers and handle_offer/2
+%%
+
+test_join_offer(Config, PreferredHotspots, ExpectedResult) ->
+    MultibuyFun =
+        case PreferredHotspots of
+            [] -> fun(_, _) -> ok end;
+            _ -> fun(_, _) -> throw("Multibuy isn't allowed here!") end
+        end,
+
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
+    meck:new(router_device_multibuy, [passthrough]),
+    meck:expect(router_device_multibuy, maybe_buy, MultibuyFun),
+
+    test_utils:add_oui(Config),
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {preferred_hotspots, PreferredHotspots}),
+
+    DevNonce = crypto:strong_rand_bytes(2),
+    AppKey = proplists:get_value(app_key, Config),
+
+    SCPacket0 = test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{
+        dont_encode => true, routing => true
+    }),
+    Offer0 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket0),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket0),
+        blockchain_state_channel_packet_v1:region(SCPacket0)
+    ),
+
+    ?assertEqual(
+        ExpectedResult, router_device_routing:handle_offer(Offer0, self())
+    ),
+
+    meck:unload(router_device_multibuy),
+    ok.
+
+join_offer_from_strange_hotspot_test(Config) ->
+    %% Device has preferred hotspots that don't include our default hotspot.
+    %% The offer should be rejected.
+
+    test_join_offer(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
+
+join_offer_from_preferred_hotspot_test(Config) ->
+    %% Device has preferred hotspots that do include our default hotspot.
+    %% The offer should be accepted.
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    test_join_offer(Config, [PubKeyBin], ok).
+
+join_offer_with_no_preferred_hotspot_test(Config) ->
+    %% Device has no preferred hotspots.
+    %% The offer should be accepted and multibuy is allowed.
+
+    test_join_offer(Config, [], ok).
+
+%%
+%% Preferred Hotspots: packet offers and handle_offer/2
+%%
+
+test_packet_offer(Config, PreferredHotspots, ExpectedResult) ->
+    MultiBuyFun =
+        case PreferredHotspots of
+            [] -> fun(_, _) -> ok end;
+            _ -> fun(_, _) -> throw("MultiBuy shouldn't happen here!") end
+        end,
+
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    meck:new(router_device_multibuy, [passthrough]),
+    meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
+
+    test_utils:add_oui(Config),
+
+    #{pubkey_bin := StrangerPubKeyBin} = test_utils:join_device(Config),
+    test_utils:wait_state_channel_message(1250),
+
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Device has a preferred hotspot that isn't the one created in init_per_testcase().
+    Device1 = router_device:update(
+        [
+            {metadata, #{preferred_hotspots => PreferredHotspots}}
+        ],
+        Device0
+    ),
+    {ok, _} = router_device_cache:save(Device1),
+
+    NwkSKey = router_device:nwk_s_key(Device1),
+    AppSKey = router_device:app_s_key(Device1),
+
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, StrangerPubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true, routing => true, devaddr => router_device:devaddr(Device1)
+    }),
+    Offer0 = blockchain_state_channel_offer_v1:from_packet(
+        blockchain_state_channel_packet_v1:packet(SCPacket0),
+        blockchain_state_channel_packet_v1:hotspot(SCPacket0),
+        blockchain_state_channel_packet_v1:region(SCPacket0)
+    ),
+
+    ?assertEqual(
+        ExpectedResult, router_device_routing:handle_offer(Offer0, self())
+    ),
+
+    meck:unload(router_device_multibuy),
+    ok.
+
+packet_offer_from_strange_hotspot_test(Config) ->
+    %% Device has preferred hotspots that don't include our default hotspot.
+    %% The offer should be rejected.
+
+    test_packet_offer(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
+
+packet_offer_from_preferred_hotspot_test(Config) ->
+    %% Device has preferred hotspots that do include our default hotspot.
+    %% The offer should be accepted.
+
+    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
+    test_utils:wait_state_channel_message(1250),
+    test_packet_offer(Config, [PubKeyBin], ok).
+
+packet_offer_with_no_preferred_hotspot_test(Config) ->
+    %% Device has no preferred hotspots.
+    %% The offer should be accepted.
+
+    test_packet_offer(Config, [], ok).
+
+%%
+%% Preferred Hotspots: frame packets and handle_packet/3
+%%
+
+test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
+    MultiBuyFun =
+        case PreferredHotspots of
+            [] -> fun(_, _) -> ok end;
+            _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
+        end,
+
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    meck:new(router_device_multibuy, [passthrough]),
+    meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
+
+    test_utils:add_oui(Config),
+
+    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
+    test_utils:wait_state_channel_message(1250),
+
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    Device1 = router_device:update(
+        [
+            {metadata, #{preferred_hotspots => PreferredHotspots}}
+        ],
+        Device0
+    ),
+    {ok, _} = router_device_cache:save(Device1),
+
+    NwkSKey = router_device:nwk_s_key(Device1),
+    AppSKey = router_device:app_s_key(Device1),
+
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true, routing => true, devaddr => router_device:devaddr(Device1)
+    }),
+
+    ?assertEqual(
+        ExpectedResult,
+        router_device_routing:handle_packet(SCPacket0, erlang:system_time(millisecond), self())
+    ),
+
+    ?assert(meck:validate(router_device_multibuy)),
+    meck:unload(router_device_multibuy),
+    ok.
+
+handle_packet_from_strange_hotspot_test(Config) ->
+    %% Device has preferred hotspots that don't include our default hotspot.
+    %% The packet should be rejected.
+
+    test_frame_packet(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
+
+handle_packet_from_preferred_hotspot_test(Config) ->
+    %% Device has preferred hotspots that do include our default hotspot.
+    %% The packet should be accepted.
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    test_frame_packet(Config, [PubKeyBin], ok).
+
+handle_packet_with_no_preferred_hotspot_test(Config) ->
+    %% Device has no preferred hotspots.
+    %% The packet should be accepted.
+
+    test_frame_packet(Config, [], ok).
+
+%%
+%% Preferred Hotspots: join packets and handle_packet/3
+%%
+
+test_join_packet(Config, PreferredHotspots, ExpectedResult) ->
+    MultiBuyFun =
+        case PreferredHotspots of
+            [] -> fun(_, _) -> ok end;
+            _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
+        end,
+
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    meck:new(router_device_multibuy, [passthrough]),
+    meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
+
+    test_utils:add_oui(Config),
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {preferred_hotspots, PreferredHotspots}),
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    AppKey = proplists:get_value(app_key, Config),
+    DevNonce = crypto:strong_rand_bytes(2),
+
+    SCPacket0 = test_utils:join_packet(PubKeyBin, AppKey, DevNonce, #{
+        dont_encode => true, routing => true
+    }),
+
+    ?assertEqual(
+        ExpectedResult,
+        router_device_routing:handle_packet(SCPacket0, erlang:system_time(millisecond), self())
+    ),
+
+    ?assert(meck:validate(router_device_multibuy)),
+    meck:unload(router_device_multibuy),
+    ok.
+
+handle_join_packet_from_strange_hotspot_test(Config) ->
+    %% Device has preferred hotspots that don't include our default hotspot.
+    %% The join packet should be rejected.
+
+    test_join_packet(Config, [<<"SomeOtherPubkeyBin">>], {error, not_preferred_hotspot}).
+
+handle_join_packet_from_preferred_hotspot_test(Config) ->
+    %% Device has preferred hotspots that do include our default hotspot.
+    %% The join packet should be accepted.
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    test_join_packet(Config, [PubKeyBin], ok).
+
+handle_join_packet_with_no_preferred_hotspot_test(Config) ->
+    %% Device has no preferred hotspots.
+    %% The join packet should be accepted.
+
+    test_join_packet(Config, [], ok).
+
+%%
+%% End of Preferred Hotspots
+%%
 
 packet_hash_cache_test(Config) ->
     %% -------------------------------------------------------------------
@@ -351,7 +640,8 @@ bad_fcnt_test(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => FCnt,
         <<"reported_at">> => fun erlang:is_integer/1,

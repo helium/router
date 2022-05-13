@@ -754,8 +754,8 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
     join_packet(PubKeyBin, AppKey, DevNonce, #{}).
 
 join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
-    %% THIS IS WRONG
-    RoutingInfo = {devaddr, 1},
+    RoutingInfo =
+        {eui, binary:decode_unsigned(?APPEUI), binary:decode_unsigned(?DEVEUI)},
     RSSI = maps:get(rssi, Options, 0),
     HeliumPacket = blockchain_helium_packet_v1:new(
         lorawan,

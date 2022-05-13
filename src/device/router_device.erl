@@ -37,6 +37,7 @@
     location/1, location/2,
     metadata/1, metadata/2,
     is_active/1, is_active/2,
+    preferred_hotspots/1,
     update/2,
     serialize/1,
     deserialize/1
@@ -234,6 +235,10 @@ is_active(Device) ->
 -spec is_active(boolean(), device()) -> device().
 is_active(IsActive, Device) ->
     Device#device_v6{is_active = IsActive}.
+
+-spec preferred_hotspots(device()) -> [libp2p_crypto:pubkey_bin()].
+preferred_hotspots(Device) ->
+    maps:get(preferred_hotspots, Device#device_v6.metadata, []).
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->
@@ -740,6 +745,16 @@ upgrade_test() ->
         dev_nonces = [<<>>]
     },
     ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V5Device), []),
+    ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
+    ?assertEqual([V6Device], get(DB, CF)),
+
+    V6Device = #device_v6{
+        id = DeviceID,
+        keys = V6Device#device_v6.keys,
+        ecc_compact = Keys,
+        dev_nonces = [<<>>]
+    },
+    ok = rocksdb:put(DB, CF, <<DeviceID/binary>>, ?MODULE:serialize(V6Device), []),
     ?assertEqual({ok, V6Device}, get_by_id(DB, CF, DeviceID)),
     ?assertEqual([V6Device], get(DB, CF)),
 

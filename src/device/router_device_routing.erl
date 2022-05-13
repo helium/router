@@ -302,15 +302,15 @@ join_offer(Offer, Pid) ->
     Resp = join_offer_(Offer, Pid),
     erlang:spawn(fun() ->
         case Resp of
+            {error, _} ->
+                ok;
             {ok, Device} ->
                 case maybe_start_worker(router_device:id(Device)) of
                     {error, _} ->
                         ok;
                     {ok, WorkerPid} ->
                         router_device_worker:handle_offer(WorkerPid, Offer)
-                end;
-            _ ->
-                ok
+                end
         end
     end),
     Resp.
@@ -354,17 +354,14 @@ join_offer_(Offer, _Pid) ->
                     AppEUI1
                 ]
             ),
-            case maybe_buy_join_offer(Offer, _Pid, Device) of
-                ok -> {ok, Device};
-                {error, _} = Error -> Error
-            end
+            maybe_buy_join_offer(Offer, _Pid, Device)
     end.
 
 -spec maybe_buy_join_offer(
     blockchain_state_channel_offer_v1:offer(),
     pid(),
     router_device:device()
-) -> ok | {error, any()}.
+) -> {ok, router_device:device()} | {error, any()}.
 maybe_buy_join_offer(Offer, _Pid, Device) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
     PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
@@ -377,9 +374,31 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    DeviceID = router_device:id(Device),
-                    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-                    router_device_multibuy:maybe_buy(DeviceID, PHash)
+                    check_device_preferred_hotspots(Device, Offer)
+            end
+    end.
+
+-spec check_device_preferred_hotspots(
+    router_device:device(), blockchain_state_channel_offer_v1:offer()
+) -> {ok, router_device:device()} | {error, any()}.
+check_device_preferred_hotspots(Device, Offer) ->
+    case router_device:preferred_hotspots(Device) of
+        [] ->
+            % No preferred hotspots means multibuy is allowed.
+            DeviceID = router_device:id(Device),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            case router_device_multibuy:maybe_buy(DeviceID, PHash) of
+                ok -> {ok, Device};
+                {error, _} = Error -> Error
+            end;
+        PreferredHotspots when is_list(PreferredHotspots) ->
+            % Device has preferred hotspots, so multibuy is not allowed.
+            OfferHotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+            case lists:member(OfferHotspot, PreferredHotspots) of
+                true ->
+                    {ok, Device};
+                _ ->
+                    {error, not_preferred_hotspot}
             end
     end.
 
@@ -422,7 +441,7 @@ packet_offer_(Offer, Pid, Chain) ->
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(LagerOpts, "most likely a replay packet buying"),
-                                    {ok, Device};
+                                    check_device_preferred_hotspots(Device, Offer);
                                 false ->
                                     lager:debug(
                                         LagerOpts,
@@ -434,17 +453,11 @@ packet_offer_(Offer, Pid, Chain) ->
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
-                            case router_device_multibuy:maybe_buy(DeviceID, PHash) of
-                                ok -> {ok, Device};
-                                {error, _} = Error -> Error
-                            end
+                            check_device_preferred_hotspots(Device, Offer)
                     end;
                 false ->
                     lager:debug(LagerOpts, "buying 1st packet for ~p", [PHash]),
-                    case router_device_multibuy:maybe_buy(DeviceID, PHash) of
-                        ok -> {ok, Device};
-                        {error, _} = Error -> Error
-                    end
+                    check_device_preferred_hotspots(Device, Offer)
             end
     end.
 
@@ -605,22 +618,27 @@ packet(
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
         {ok, APIDevice, AppKey} ->
-            DeviceID = router_device:id(APIDevice),
-            case maybe_start_worker(DeviceID) of
-                {error, _Reason} = Error ->
-                    Error;
-                {ok, WorkerPid} ->
-                    router_device_worker:handle_join(
-                        WorkerPid,
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        PubKeyBin,
-                        Region,
-                        APIDevice,
-                        AppKey,
-                        Pid
-                    )
+            case router_device:preferred_hotspots(APIDevice) of
+                [] ->
+                    maybe_start_worker_and_handle_join(
+                        APIDevice, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
+                    );
+                PreferredHotspots when is_list(PreferredHotspots) ->
+                    case lists:member(PubKeyBin, PreferredHotspots) of
+                        true ->
+                            maybe_start_worker_and_handle_join(
+                                APIDevice,
+                                Packet,
+                                PacketTime,
+                                HoldTime,
+                                PubKeyBin,
+                                Region,
+                                AppKey,
+                                Pid
+                            );
+                        _ ->
+                            {error, not_preferred_hotspot}
+                    end
             end;
         {error, api_not_found} ->
             router_metrics:packet_routing_error(join, api_not_found),
@@ -733,6 +751,27 @@ packet(
 packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
+maybe_start_worker_and_handle_join(
+    Device, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
+) ->
+    DeviceID = router_device:id(Device),
+    case maybe_start_worker(DeviceID) of
+        {error, _Reason} = Error ->
+            Error;
+        {ok, WorkerPid} ->
+            router_device_worker:handle_join(
+                WorkerPid,
+                Packet,
+                PacketTime,
+                HoldTime,
+                PubKeyBin,
+                Region,
+                Device,
+                AppKey,
+                Pid
+            )
+    end.
+
 -spec get_devices(DevEUI :: binary(), AppEUI :: binary()) ->
     {ok, [router_device:device()]} | {error, api_not_found}.
 get_devices(DevEUI, AppEUI) ->
@@ -805,35 +844,61 @@ send_to_device_worker(
             ),
             Error;
         {Device, NwkSKey} ->
-            DeviceID = router_device:id(Device),
-            case maybe_start_worker(DeviceID) of
-                {error, _Reason} = Error ->
-                    Error;
-                {ok, WorkerPid} ->
-                    % TODO: I dont think we should be doing this? let the device worker decide
-                    case
-                        router_device_worker:accept_uplink(
-                            WorkerPid,
-                            Packet,
-                            PacketTime,
-                            HoldTime,
-                            PubKeyBin
-                        )
-                    of
-                        false ->
-                            lager:info("device worker refused to pick up the packet");
+            case router_device:preferred_hotspots(Device) of
+                [] ->
+                    send_to_device_worker_(
+                        Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey
+                    );
+                PreferredHotspots when
+                    is_list(PreferredHotspots)
+                ->
+                    case lists:member(PubKeyBin, PreferredHotspots) of
                         true ->
-                            router_device_worker:handle_frame(
-                                WorkerPid,
-                                NwkSKey,
+                            send_to_device_worker_(
                                 Packet,
                                 PacketTime,
                                 HoldTime,
+                                Pid,
                                 PubKeyBin,
                                 Region,
-                                Pid
-                            )
+                                Device,
+                                NwkSKey
+                            );
+                        _ ->
+                            {error, not_preferred_hotspot}
                     end
+            end
+    end.
+
+send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey) ->
+    DeviceID = router_device:id(Device),
+    case maybe_start_worker(DeviceID) of
+        {error, _Reason} = Error ->
+            Error;
+        {ok, WorkerPid} ->
+            % TODO: I dont think we should be doing this? let the device worker decide
+            case
+                router_device_worker:accept_uplink(
+                    WorkerPid,
+                    Packet,
+                    PacketTime,
+                    HoldTime,
+                    PubKeyBin
+                )
+            of
+                false ->
+                    lager:info("device worker refused to pick up the packet");
+                true ->
+                    router_device_worker:handle_frame(
+                        WorkerPid,
+                        NwkSKey,
+                        Packet,
+                        PacketTime,
+                        HoldTime,
+                        PubKeyBin,
+                        Region,
+                        Pid
+                    )
             end
     end.
 

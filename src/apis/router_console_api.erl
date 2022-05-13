@@ -1036,7 +1036,11 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         multi_buy => kvc:path([<<"multi_buy">>], JSONDevice, undefined),
         adr_allowed => kvc:path([<<"adr_allowed">>], JSONDevice, ADRDefault),
         cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault),
-        rx_delay => kvc:path([<<"rx_delay">>], JSONDevice, RxDelayDefault)
+        rx_delay => kvc:path([<<"rx_delay">>], JSONDevice, RxDelayDefault),
+        preferred_hotspots => [
+            lorawan_utils:hex_to_binary(P)
+         || P <- kvc:path([<<"preferred_hotspots">>], JSONDevice)
+        ]
     },
     DeviceUpdates = [
         {name, kvc:path([<<"name">>], JSONDevice)},

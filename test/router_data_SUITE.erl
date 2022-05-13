@@ -117,7 +117,8 @@ data_test_1(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,
@@ -260,7 +261,8 @@ data_test_2(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,
@@ -402,7 +404,8 @@ data_test_3(Config) ->
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => ReportedAtCheck,

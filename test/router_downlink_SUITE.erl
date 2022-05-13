@@ -374,7 +374,8 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0
+            <<"rx_delay">> => 0,
+            <<"preferred_hotspots">> => fun erlang:is_list/1
         },
         <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,

@@ -246,7 +246,7 @@ is_active(IsActive, Device) ->
 
 -spec preferred_hotspots(device()) -> [libp2p_crypto:pubkey_bin()].
 preferred_hotspots(Device) ->
-    maps:get(preferred_hotspots, Device#device_v6.metadata, []).
+    maps:get(preferred_hotspots, Device#device_v7.metadata, []).
 
 -spec update([{atom(), any()}], device()) -> device().
 update([], Device) ->

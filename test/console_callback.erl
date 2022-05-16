@@ -233,7 +233,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"adr_allowed">> => ADRAllowed,
         <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled,
         <<"rx_delay">> => RxDelay,
-        <<"preferred_hotspots">> => [lorawan_utils:binary_to_hex(P) || P <- PreferredHotspots]
+        <<"preferred_hotspots">> => [libp2p_crypto:bin_to_b58(P) || P <- PreferredHotspots]
     },
     case NotFound of
         true ->

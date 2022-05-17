@@ -1,4 +1,4 @@
-FROM erlang:24
+FROM erlang:24.3.3
 ENV DEBIAN_FRONTEND noninteractive
 
 RUN apt update

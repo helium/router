@@ -1038,7 +1038,7 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault),
         rx_delay => kvc:path([<<"rx_delay">>], JSONDevice, RxDelayDefault),
         preferred_hotspots => [
-            lorawan_utils:hex_to_binary(P)
+            libp2p_crypto:b58_to_bin(P)
          || P <- kvc:path([<<"preferred_hotspots">>], JSONDevice)
         ]
     },

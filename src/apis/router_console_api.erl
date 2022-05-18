@@ -1038,7 +1038,7 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         cf_list_enabled => kvc:path([<<"cf_list_enabled">>], JSONDevice, US915CFListDefault),
         rx_delay => kvc:path([<<"rx_delay">>], JSONDevice, RxDelayDefault),
         preferred_hotspots => [
-            libp2p_crypto:b58_to_bin(P)
+            hotspot_to_pubkey_bin(P)
          || P <- kvc:path([<<"preferred_hotspots">>], JSONDevice)
         ]
     },
@@ -1050,6 +1050,11 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         {is_active, kvc:path([<<"active">>], JSONDevice)}
     ],
     router_device:update(DeviceUpdates, router_device:new(ID)).
+
+-spec hotspot_to_pubkey_bin(B58Bin :: binary()) -> libp2p_crypto:pubkey_bin().
+hotspot_to_pubkey_bin(B58Bin) ->
+    B58Str = binary_to_list(B58Bin),
+    libp2p_crypto:b58_to_bin(B58Str).
 
 -spec downlink_token_lookup() -> {DownlinkEndpoint :: binary(), Token :: binary()}.
 downlink_token_lookup() ->

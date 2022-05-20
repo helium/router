@@ -66,6 +66,7 @@ start_link() ->
 init([]) ->
     BaseDir = application:get_env(blockchain, base_dir, "data"),
     ok = router_decoder:init_ets(),
+    ok = router_console_dc_tracker:init_ets(),
     ok = router_hotspot_reputation:init(),
     ok = router_device_stats:init(),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),

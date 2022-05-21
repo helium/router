@@ -11,6 +11,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
+    init_ets/0,
     refill/3,
     has_enough_dc/3,
     charge/3,
@@ -62,6 +63,11 @@
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+-spec init_ets() -> ok.
+init_ets() ->
+    ?ETS = ets:new(?ETS, [public, named_table, set]),
+    ok.
 
 -spec refill(OrgID :: binary(), Nonce :: non_neg_integer(), Balance :: non_neg_integer()) -> ok.
 refill(OrgID, Nonce, Balance) ->
@@ -148,7 +154,6 @@ current_balance(OrgID) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ?ETS = ets:new(?ETS, [public, named_table, set]),
     ok = blockchain_event:add_handler(self()),
     {ok, PubKey, _, _} = blockchain_swarm:keys(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),

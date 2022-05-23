@@ -219,14 +219,14 @@
     %% Table of region-specific DataRate parameters.
     datarates :: regional_datarates(),
     %% Table of region-specific uplink power.
-    txpowers :: lora_plan:tx_power_table(),
+    txpowers :: lorawan_mac_region:tx_power_table(),
     %% Slowest DataRate available in this device's `datarates'.
     %%
     %% The word DataRate, as used by the regional parameters document,
     %% is essentially an index into a table. It is probably safe to
     %% remove this and assume 0, but let's track it for completeness
     %% sake for the time being.
-    min_datarate :: integer(),
+    min_datarate :: pos_integer(),
     %% Spreading factor for corresponding `min_datarate'.
     %%
     %% Q: Why would a `max_spreading' correspond to `min_datarate'?
@@ -291,11 +291,19 @@
 -spec new(Region :: atom()) -> handle().
 new(Region) ->
     %% Filter gotthardp's table down to only 125kHz uplink DataRates.
-    {MinSF, MaxSF} = adr_sf_range(Region),
-    {MinDataRate, MaxDataRate} = adr_datarate_range(Region),
-    Datarates = adr_datarates(Region),
-    Plan = lora_plan:region_to_plan(Region),
-    TxPowers = lora_plan:tx_power_table(Plan),
+    FilterMapFn = fun
+        ({_, _, down}) ->
+            false;
+        ({DataRate, {Spreading, 125 = Bandwidth}, _Direction}) ->
+            {true, {DataRate, {Spreading, Bandwidth}}};
+        (_) ->
+            false
+    end,
+    Datarates = lists:filtermap(FilterMapFn, lorawan_mac_region:datars(Region)),
+    %% min-max refer to #device.min_datarate docs
+    [{MinDataRate, {MaxSpreading, _}} | _] = Datarates,
+    {MaxDataRate, {MinSpreading, _}} = lists:last(Datarates),
+    TxPowers = lorawan_mac_region:uplink_power_table(Region),
     [{MaxTxPowerIdx, MaxTxPowerDBm} | _] = TxPowers,
     {MinTxPowerIdx, MinTxPowerDBm} = lists:last(TxPowers),
     #device{
@@ -307,85 +315,14 @@ new(Region) ->
         datarates = Datarates,
         txpowers = TxPowers,
         min_datarate = MinDataRate,
-        max_spreading = MaxSF,
+        max_spreading = MaxSpreading,
         max_datarate = MaxDataRate,
-        min_spreading = MinSF,
+        min_spreading = MinSpreading,
         max_txpower_idx = MaxTxPowerIdx,
         max_txpower_dbm = MaxTxPowerDBm,
         min_txpower_idx = MinTxPowerIdx,
         min_txpower_dbm = MinTxPowerDBm
     }.
-
-adr_datarates(Region) ->
-    case Region of
-        'US915' ->
-            [{0, {10, 125}}, {1, {9, 125}}, {2, {8, 125}}, {3, {7, 125}}];
-        'EU868' ->
-            [
-                {0, {12, 125}},
-                {1, {11, 125}},
-                {2, {10, 125}},
-                {3, {9, 125}},
-                {4, {8, 125}},
-                {5, {7, 125}}
-            ];
-        'AU915' ->
-            [
-                {0, {12, 125}},
-                {1, {11, 125}},
-                {2, {10, 125}},
-                {3, {9, 125}},
-                {4, {8, 125}},
-                {5, {7, 125}}
-            ];
-        'CN470' ->
-            [
-                {0, {12, 125}},
-                {1, {11, 125}},
-                {2, {10, 125}},
-                {3, {9, 125}},
-                {4, {8, 125}},
-                {5, {7, 125}}
-            ];
-        'AS923' ->
-            [
-                {0, {12, 125}},
-                {1, {11, 125}},
-                {2, {10, 125}},
-                {3, {9, 125}},
-                {4, {8, 125}},
-                {5, {7, 125}}
-            ];
-        _ ->
-            [
-                {0, {12, 125}},
-                {1, {11, 125}},
-                {2, {10, 125}},
-                {3, {9, 125}},
-                {4, {8, 125}},
-                {5, {7, 125}}
-            ]
-    end.
-
-adr_sf_range(Region) ->
-    case Region of
-        'US915' -> {7, 10};
-        'EU868' -> {7, 12};
-        'AU915' -> {7, 12};
-        'CN470' -> {7, 12};
-        'AS923' -> {7, 12};
-        _ -> {7, 12}
-    end.
-
-adr_datarate_range(Region) ->
-    case Region of
-        'US915' -> {0, 3};
-        'EU868' -> {0, 5};
-        'AU915' -> {0, 5};
-        'CN470' -> {0, 5};
-        'AS923' -> {0, 5};
-        _ -> {0, 5}
-    end.
 
 %% ------------------------------------------------------------------
 %% @doc Returns a new ADR handle for the specified region.
@@ -847,7 +784,7 @@ adjust_uplink_params(_, DataRate, _, _, TxPowerDBm, _, _) ->
     WantsADRAck :: boolean(),
     ConfiguredAdrHistoryLen :: pos_integer(),
     ConfiguredSNRHeadroom :: number(),
-    TxPowerTable :: lora_plan:tx_power_table(),
+    TxPowerTable :: lorawan_mac_region:tx_power_table(),
     TxPowerAdjustmentDBmStepSize :: number(),
     CurrentTxPowerIdx :: number()
 ) -> adjustment().

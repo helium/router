@@ -74,6 +74,7 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
 device_worker_late_packet_double_charge_test(Config) ->
     #{
         stream := Stream,
@@ -269,7 +270,7 @@ device_worker_late_packet_double_charge_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(HotspotName1),
-                <<"rssi">> => 30,
+                <<"rssi">> => 27,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -453,9 +454,8 @@ drop_downlink_test(Config) ->
     Msg = #downlink{confirmed = true, port = 2, payload = Payload, channel = Channel},
     ok = router_device_worker:queue_downlink(DeviceWorkerPid, Msg),
 
-    Plan = lora_plan:region_to_plan('US915'),
-    DatarateDown = lora_plan:up_to_down_datarate(Plan, 2, 0),
-    MaxSize = lora_plan:max_downlink_payload_size(Plan, DatarateDown),
+    DatarateDown = lorawan_mac_region:dr_to_down('US915', 2, 0),
+    MaxSize = lorawan_mac_region:max_payload_size('US915', DatarateDown),
     Description = erlang:list_to_binary(
         io_lib:format("Payload too big for DR~p max size is ~p (payload was 243)", [
             DatarateDown,

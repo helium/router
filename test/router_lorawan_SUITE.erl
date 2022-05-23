@@ -268,8 +268,7 @@ lw_join_test(Config) ->
         AppKey,
         DevNonce
     ),
-    ChMaskList = lora_chmask:join_cf_list(Region),
-    ?assertEqual(CFList, ChMaskList),
+    ?assertEqual(CFList, lorawan_mac_region:mk_join_accept_cf_list(Region)),
 
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
@@ -304,7 +303,7 @@ lw_join_test(Config) ->
     end,
 
     %% Waiting for data from HTTP channel
-    {ok, #{<<"hotspots">> := [#{<<"frequency">> := _Frequency}]}} = test_utils:wait_channel_data(#{
+    {ok, #{<<"hotspots">> := [#{<<"frequency">> := Frequency}]}} = test_utils:wait_channel_data(#{
         <<"type">> => <<"uplink">>,
         <<"replay">> => false,
         <<"uuid">> => fun erlang:is_binary/1,
@@ -360,7 +359,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => 0.0,
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -616,7 +615,7 @@ lw_join_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => lora_plan:max_tx_power(lora_plan:region_to_plan(Region)),
+                <<"rssi">> => lorawan_mac_region:downlink_signal_strength(Region, Frequency),
                 <<"snr">> => '_',
                 <<"spreading">> => fun erlang:is_binary/1,
                 <<"frequency">> => fun erlang:is_float/1,

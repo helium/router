@@ -253,7 +253,7 @@ handle_info(
         packet_duration = PD
     } = State
 ) ->
-    lager:info("running metrcis"),
+    lager:info("running metrics"),
     erlang:spawn_opt(
         fun() ->
             ok = record_dc_balance(Chain, PubkeyBin),

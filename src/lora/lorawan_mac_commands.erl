@@ -234,8 +234,7 @@ store_actual_adr(
     Node
 ) ->
     % store parameters
-    Plan = lora_plan:region_to_plan(Region),
-    DataRate = lora_plan:datarate_to_index(Plan, RxQ#rxq.datr),
+    DataRate = lorawan_mac_region:datar_to_dr(Region, RxQ#rxq.datr),
     case Node#node.adr_use of
         {TXPower, DataRate, Chans} when
             is_number(TXPower), is_list(Chans), Node#node.adr_flag == ADR
@@ -396,9 +395,8 @@ handle_status(FOptsIn, #network{region = Region}, Node) ->
         {Battery, Margin} ->
             % compute a maximal D/L SNR
             {_, DataRate, _} = Node#node.adr_use,
-            {Offset, _, _} = Node#node.rxwin_use,
-            Plan = lora_plan:region_to_plan(Region),
-            MaxSNR = lora_plan:max_downlink_snr(Plan, DataRate, Offset),
+            {OffUse, _, _} = Node#node.rxwin_use,
+            MaxSNR = lorawan_mac_region:max_downlink_snr(Region, DataRate, OffUse),
             lager:debug("DevStatus: battery ~B, margin: ~B (max ~.1f)", [Battery, Margin, MaxSNR]),
             Node#node{
                 devstat_time = calendar:universal_time(),
@@ -427,9 +425,7 @@ find_status(FOptsIn) ->
 
 send_link_check([{_MAC, RxQ} | _] = Gateways) ->
     #rxq{datr = DataRate, lsnr = SNR} = RxQ,
-    DataRateAtom = erlang:binary_to_atom(DataRate),
-    MaxSNR = lora_plan:max_uplink_snr(DataRateAtom) + 10,
-    Margin = erlang:trunc(SNR - MaxSNR),
+    Margin = trunc(SNR - lorawan_mac_region:max_uplink_snr(DataRate)),
     lager:debug("LinkCheckAns: margin: ~B, gateways: ~B", [Margin, length(Gateways)]),
     {link_check_ans, Margin, length(Gateways)}.
 
@@ -510,8 +506,7 @@ calculate_adr(
         end,
     % how many SF steps (per Table 13) are between current SNR and current sensitivity?
     % there is 2.5 dB between the DR, so divide by 3 to get more margin
-    Plan = lora_plan:region_to_plan(Region),
-    MaxSNR = lora_plan:max_uplink_snr(Plan, DataRate) + 10,
+    MaxSNR = lorawan_mac_region:max_uplink_snr(Region, DataRate) + 10,
     StepsDR = trunc((AvgSNR - MaxSNR) / 3),
     DataRate2 =
         if
@@ -583,7 +578,7 @@ send_adr(
 ->
     Set = merge_adr(Node#node.adr_set, Node#node.adr_use),
     lager:debug("LinkADRReq ~w", [Set]),
-    lora_chmask:make_link_adr_req(Region, Set, FOptsOut);
+    lorawan_mac_region:set_channels(Region, Set, FOptsOut);
 send_adr(_Network, _Node, FOptsOut) ->
     % the device has disabled ADR
     FOptsOut.

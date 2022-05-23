@@ -1,4 +1,93 @@
 [
+    {router, [
+        {max_v8_context, 1000},
+        {oui, "${ROUTER_OUI}"},
+        {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
+        {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
+        {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},
+        {router_console_api, [
+            {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
+            {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
+            {downlink_endpoint, <<"${ROUTER_CONSOLE_DOWNLINK_ENDPOINT}">>},
+            {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
+        ]},
+        {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
+        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
+        {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
+        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
+        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
+        {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
+        {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
+        {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
+        {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},
+        {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"},
+        {seed_validators, [
+            %% ireland
+            {"11tk4zzbyfMPYYHYda255ACoqfYFVdrUSoCWrCYfn8BoyuYrERK", "52.49.199.40"},
+            %% ohio
+            {"115PmCR6fpFihdjw626JXYdUEdzwjh66yoWzWkMvB9CRGEx1U6G", "3.132.190.192"},
+            %% oregon
+            {"11aZEJnSduAXG8r3r9vzw3QD5k1KWXUJSVc2SxmwxPBuNmMW6UY", "44.229.159.157"},
+            %% seoul
+            {"11yJXQPG9deHqvw2ac6VWtNP7gZj8X3t3Qb3Gqm9j729p4AsdaA", "3.38.70.101"},
+            %% singapore
+            {"11Gx2yPEmBGUrbHUiUWQs9vV7JDHQLZSddQs6e3WB2uvqSMUDBW", "54.251.77.229"},
+            %% frankfurt1
+            {"1123BGjiBwxdTHHjEuvF5mTQpHWwy9KP1JbgS8N4UKUa3Q2ya1W6", "3.122.38.248"},
+            %% saopaulo1
+            {"11BL23u2PbpTjuCyHQ6n35xD5a1QyhyuepCJYrqLVgD3fFewkJ2", "18.228.115.118"},
+            %% sydney1
+            {"11EQ9yjSuqBG1yV73YL1YRSX4QVwdQiiF9MJ1Bqngf9JwS2TGBi", "13.237.155.172"},
+            %% frankfurt2
+            {"11pGEgAb8YhhFw64pxDLDsoaLQyQG1cijQjR1Ko6A2Q7EtwBcy9", "3.72.143.228"},
+            %% ireland2
+            {"112qiiykzk7kTrnxNwnzf2EUsG9qoFPHG4Mau5hNsok8dLGf8ufB", "52.30.1.39"},
+            %% ohio2
+            {"11fHGw18ySqmiBRhgBEXHS9xfSvBpmES5aeL1HNb5G79fQc67Ch", "3.137.92.200"},
+            %% oregon2
+            {"112LdZBP1vtz3gdhVPRuQYGx1fLuBP5nqFWcE4L1dYXdNiMJRdF6", "35.82.239.134"},
+            %% saopaulo2
+            {"11WUPL9y8pUfQg8wYvyJWbqEjnN7AzVGVWwHD8hmFFsXdaE3yh6", "18.228.158.83"},
+            %% seoul2
+            {"11Gn8cr7tNDVv7GSnuDpJAqEjnDWRWkfEzW8zph7EQ9rr8MLhPJ", "13.209.94.225"},
+            %% singapore2
+            {"112fVSokVAUxmD672gKbS86SuqKX3bTzu2SGNaGuq6vxESMGBqCN", "52.220.227.216"},
+            %% sydney2
+            {"112Go1gHKBNBjSJztRD1x9m4H9krFiawrU444VC6PbEiwmWvFAUu", "3.24.161.210"},
+            %% frankfurt3
+            {"11NeSZjVWK9SvXxfwaWc3vZU8df17TYbKQekywYktbUyow3efUm", "3.70.55.231"},
+            %% ireland3
+            {"11vBe5pfSxH5QoEgFMVedA631YMEeBHipktJ2nybDe1EjkiKRXo", "52.30.111.82"},
+            %% ohio3
+            {"112HUu9fVtpcNJtnnAwXTNPBPZjWZxV63angT5UJY529APS5hMDa", "3.13.130.184"},
+            %% oregon3
+            {"112mjDiAz72CFxkjxBgwieP1LxAhV8oadqHNP2AyaiQQom4VN27", "54.70.239.5"},
+            %% saopaulo3
+            {"11rfZwFwdDDtxYo34uYTXUKbkPhZofxJ2LbkduBZHPksHUsUdw8", "18.230.8.198"},
+            %% seoul3
+            {"11BgGQp83rWWE8PHimZQPYxwMVD3oQw9JaVW7u3EUom6toh9568", "13.125.32.225"},
+            %% singapore3
+            {"112fVGeUJf6aNc5z6d8rFDsgBnRj45BAxhdxaEVpQ58SGFJ1abk4", "13.215.75.202"},
+            %% syndey3
+            {"11FiQQ2dGuwRi3XAWfGboPwgxH7JiNzak8BfGWpJTJ3NXHG3N6i", "3.104.32.11"},
+            %% frankfurt4
+            {"112pcepAfZ8CWGFcRAq8hPP8dNcppRK8APSNfrKvqufyH3Keyhjb", "3.72.215.7"},
+            %% ireland4
+            {"112wJBZBZH34G2NZ8XQx8ZpFXAhZf5FUhyKwbobknkBraP9pH2j8", "52.210.14.128"},
+            %% ohio4
+            {"112hyDbnmq41LwyNynmSkcjoH414oEdANHiYduFygbLbJWBoLjsZ", "3.131.232.233"},
+            %% oregon4
+            {"112N96HhzTGGwVeCengwf7CUoGK73GgLquZskDvRzrTqSQvsU3rM", "52.89.130.114"},
+            %% saopaulo4
+            {"11Ka5aFf1heCuQLQWt3D2itZX89QJNetPHUeUdNcC55Jtp6SRaV", "54.207.131.103"},
+            %% seoul4
+            {"112iJa3Ckk34eFiWSfDUkLz12qwdcJS4V3794zgCw2rJDHi4naiL", "3.39.165.144"},
+            %% singapore4
+            {"112USfBeZqQwhQtgeTRwREauyxxFQdCw5eFw23GUa3eMqTRqyhXt", "13.215.29.4"},
+            %% sydney4
+            {"112q3CB7MsFpi7Y3JuiHzF9h2ndH88KeZ3LUL6juJwMdo4g4Lsoq", "13.211.55.217"}
+        ]}
+    ]},
     {libp2p, [
         {use_dns_for_seeds, true},
         {seed_dns_cname, "seed.helium.io"},
@@ -30,29 +119,6 @@
         {sc_packet_handler, router_device_routing},
         {sc_sup_type, server},
         {sc_hook_close_submit, router_sc_worker}
-    ]},
-    {router, [
-        {max_v8_context, 1000},
-        {oui, "${ROUTER_OUI}"},
-        {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
-        {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
-        {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},
-        {router_console_api, [
-            {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
-            {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
-            {downlink_endpoint, <<"${ROUTER_CONSOLE_DOWNLINK_ENDPOINT}">>},
-            {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
-        ]},
-        {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
-        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
-        {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
-        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
-        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
-        {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
-        {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
-        {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
-        {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},
-        {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"}
     ]},
     {grpcbox, [
         {servers, [

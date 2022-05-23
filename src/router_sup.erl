@@ -41,6 +41,7 @@
 }).
 
 -define(FLAGS, #{
+    %% TODO: this should be updated to one_for_one once Router is decoupled from chain
     strategy => rest_for_one,
     intensity => 1,
     period => 5
@@ -109,6 +110,7 @@ init([]) ->
     {ok,
         {?FLAGS, [
             ?SUP(blockchain_sup, [BlockchainOpts]),
+            ?SUP(router_chain_sup, []),
             ?WORKER(router_metrics, [MetricsOpts]),
             ?WORKER(router_db, [DBOpts]),
             ?SUP(router_devices_sup, []),

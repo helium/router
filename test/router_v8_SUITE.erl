@@ -9,7 +9,7 @@
 -export([
     invalid_context_test/1,
     browan_decoder_test/1,
-    cayenne_decoder_test/1,
+    cayenne_decoder_test/1
 ]).
 
 -include_lib("common_test/include/ct.hrl").

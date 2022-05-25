@@ -124,7 +124,7 @@ decode_lpp(
             channel => Channel,
             type => ?TEMPERATURE,
             value => Value / 10,
-            unit => celcius,
+            unit => celsius,
             name => temperature
         }
         | Acc

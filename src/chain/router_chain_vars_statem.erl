@@ -164,14 +164,7 @@ setup(info, connect_validator, #data{validator = Validator} = Data) ->
 setup(info, fetch_config, #data{validator = Validator} = Data) ->
     %% get necessary config data from our durable validator
     case fetch_config(?CONFIG_VARS, Validator) of
-        {ok, Vars} ->
-            lager:info("got vars ~p", [Vars]),
-            lists:foreach(
-                fun({Key, Value}) ->
-                    ok = persistent_term:put(Key, Value)
-                end,
-                Vars
-            ),
+        ok ->
             {next_state, connected, Data};
         {error, _} ->
             {repeat_state, Data}
@@ -185,6 +178,20 @@ setup(_EventType, _Msg, Data) ->
 
 connected(enter, _OldState, Data) ->
     {keep_state, Data};
+connected(
+    cast,
+    {handle_msg, #gateway_resp_v1_pb{
+        msg = {config_update_streamed_resp, Payload}
+    }} = _Msg,
+    Data
+) ->
+    lager:info("received config_update_streamed_resp msg ~p", [_Msg]),
+    #gateway_config_update_streamed_resp_v1_pb{keys = UpdatedKeys} = Payload,
+    self() ! {fetch_config, UpdatedKeys},
+    {keep_state, Data};
+connected(info, {fetch_config, UpdatedKeys}, #data{validator = Validator} = Data) ->
+    _ = fetch_config(UpdatedKeys, Validator),
+    {repeat_state, Data};
 connected(_EventType, _Msg, Data) ->
     lager:debug(
         "unhandled event while in ~p state: type: ~p, msg: ~p",
@@ -284,21 +291,37 @@ connect_validator(#validator{ip = IP, port = Port, p2p_addr = Addr}) ->
             {error, connect_validator_failed}
     end.
 
--spec fetch_config(Keys :: [string()], Validator :: validator()) ->
-    {error, any()} | {ok, map()}.
-fetch_config(Keys, #validator{ip = IP, port = Port}) ->
-    Req2 = build_config_req(Keys),
-    case send_grpc_unary_req(IP, Port, Req2, config) of
-        {error, _} = Error ->
-            lager:warning("request to fetch_config failed: ~p", [Error]),
-            {error, Error};
-        {ok, #{
-            http_status := 200,
-            result := #gateway_resp_v1_pb{
-                msg = {_RespType, #gateway_config_resp_v1_pb{result = Vars}}
-            }
-        }} ->
-            {ok, [blockchain_txn_vars_v1:from_var(Var) || #blockchain_var_v1_pb{} = Var <- Vars]}
+-spec fetch_config(UpdatedKeys :: [string()], Validator :: validator()) -> ok.
+fetch_config(UpdatedKeys, #validator{ip = IP, port = Port}) ->
+    %% filter out keys we are not interested in
+    %% and then ask our validator for current values
+    %% for remaining keys
+    FilteredKeys = lists:filter(fun(K) -> lists:member(K, ?CONFIG_VARS) end, UpdatedKeys),
+    case FilteredKeys of
+        [] ->
+            ok;
+        _ ->
+            Req2 = build_config_req(UpdatedKeys),
+            case send_grpc_unary_req(IP, Port, Req2, config) of
+                {error, _} = Error ->
+                    lager:warning("request to fetch_config failed: ~p", [Error]),
+                    ok;
+                {ok, #{
+                    http_status := 200,
+                    result := #gateway_resp_v1_pb{
+                        msg = {_RespType, #gateway_config_resp_v1_pb{result = Vars}}
+                    }
+                }} ->
+                    lager:info("got vars ~p", [Vars]),
+                    lists:foreach(
+                        fun(Var) ->
+                            {Key, Value} = blockchain_txn_vars_v1:from_var(Var),
+                            ok = persistent_term:put(Key, Value)
+                        end,
+                        Vars
+                    ),
+                    ok
+            end
     end.
 
 -spec build_validators_req(Quantity :: pos_integer()) -> #gateway_validators_req_v1_pb{}.

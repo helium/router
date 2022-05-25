@@ -169,7 +169,7 @@ decode_lpp(
             type => ?BAROMETER,
             value => Value / 10,
             unit => 'hPa',
-            name => humidity
+            name => barometer
         }
         | Acc
     ]);

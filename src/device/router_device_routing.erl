@@ -859,6 +859,7 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
+            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -939,7 +940,6 @@ find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
         {error, _} = Error ->
             Error;
         undefined ->
-            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
             {error, {unknown_device, DevAddr}};
         {Device, NwkSKey} ->
             {Device, NwkSKey}

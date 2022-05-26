@@ -2719,7 +2719,7 @@
             ],
             "thresholds": [],
             "timeRegions": [],
-            "title": "Console Webscoket",
+            "title": "Console Websocket",
             "tooltip": {
               "shared": true,
               "sort": 0,

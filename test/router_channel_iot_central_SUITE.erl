@@ -345,7 +345,7 @@ iot_central_test(Config) ->
             <<"hotspot">> => #{
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"rssi">> => 27,
+                <<"rssi">> => 30,
                 <<"snr">> => 0.0,
                 <<"spreading">> => <<"SF8BW500">>,
                 <<"frequency">> => fun erlang:is_float/1,

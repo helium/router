@@ -100,6 +100,8 @@
 
 -type stream_option() ::
     {metadata, metadata()}
+    | {type, atom()}
+    | {callback_mod, atom()}
     | {compression, compression_method()}
     | {http2_options, [term()]}.
 

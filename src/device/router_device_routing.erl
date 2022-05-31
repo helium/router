@@ -977,8 +977,7 @@ send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Dev
 ) -> {router_device:device(), binary()} | {error, any()}.
 find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin, Chain),
-    B0 = b0_from_payload(Payload, 16),
-    case get_device_by_mic(B0, MIC, Payload, Devices) of
+    case get_device_by_mic(MIC, Payload, Devices) of
         {error, _} = Error ->
             Error;
         undefined ->
@@ -1054,11 +1053,13 @@ get_and_sort_devices(DevAddr, PubKeyBin, Chain) ->
     Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin, Chain),
     Devices1.
 
--spec get_device_by_mic(binary(), binary(), binary(), [router_device:device()]) ->
+-spec get_device_by_mic(binary(), binary(), [router_device:device()]) ->
     {router_device:device(), binary()} | undefined | {error, any()}.
-get_device_by_mic(_B0, _MIC, _Payload, []) ->
+get_device_by_mic(_MIC, _Payload, []) ->
     undefined;
-get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
+get_device_by_mic(ExpectedMIC, Payload, [Device | Devices]) ->
+    ExpectedFCnt = router_device:fcnt_next_val(Device),
+    B0 = b0_from_payload(Payload, ExpectedFCnt),
     case router_device:nwk_s_key(Device) of
         undefined ->
             DeviceID = router_device:id(Device),
@@ -1067,21 +1068,19 @@ get_device_by_mic(B0, MIC, Payload, [Device | Devices]) ->
             DeviceID = router_device:id(Device),
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
-            get_device_by_mic(B0, MIC, Payload, Devices);
+            get_device_by_mic(ExpectedMIC, Payload, Devices);
         NwkSKey ->
-            case brute_force_mic(NwkSKey, B0, MIC, Payload, Device) of
+            case key_matches_mic(NwkSKey, B0, ExpectedMIC) of
                 true ->
                     {Device, NwkSKey};
                 false ->
                     Keys = router_device:keys(Device),
-                    case find_right_key(B0, MIC, Payload, Device, Keys) of
+                    case find_right_key(B0, ExpectedMIC, Payload, Device, Keys) of
                         false ->
-                            get_device_by_mic(B0, MIC, Payload, Devices);
+                            get_device_by_mic(ExpectedMIC, Payload, Devices);
                         Else ->
                             Else
-                    end;
-                {error, _} = Error ->
-                    Error
+                    end
             end
     end.
 
@@ -1097,64 +1096,25 @@ find_right_key(_B0, _MIC, _Payload, _Device, []) ->
 find_right_key(B0, MIC, Payload, Device, [{undefined, _} | Keys]) ->
     find_right_key(B0, MIC, Payload, Device, Keys);
 find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
-    case brute_force_mic(NwkSKey, B0, MIC, Payload, Device) of
+    case key_matches_mic(NwkSKey, B0, MIC) of
         true -> {Device, NwkSKey};
-        false -> find_right_key(B0, MIC, Payload, Device, Keys);
-        {error, _} = Error -> Error
+        false -> find_right_key(B0, MIC, Payload, Device, Keys)
     end.
 
--spec brute_force_mic(
-    NwkSKey :: binary(),
-    B0 :: binary(),
-    MIC :: binary(),
-    Payload :: binary(),
-    Device :: router_device:device()
-) -> boolean() | {error, any()}.
-brute_force_mic(NwkSKey, B0, MIC, Payload, Device) ->
-    DeviceID = router_device:id(Device),
-    try
-        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4) of
-            MIC ->
-                true;
-            _ ->
-                %% Try 32 bits b0 if fcnt close to 65k
-                case router_device:fcnt(Device) > ?MAX_16_BITS - 100 of
-                    true ->
-                        B0_32 = b0_from_payload(Payload, 32),
-                        case crypto:macN(cmac, aes_128_cbc, NwkSKey, B0_32, 4) of
-                            MIC ->
-                                lager:warning(
-                                    [{device_id, DeviceID}],
-                                    "device went over max 16bits fcnt size"
-                                ),
-                                {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-                                ok = router_device:delete(DB, CF, DeviceID),
-                                ok = router_device_cache:delete(DeviceID),
-                                {error, {unsupported_fcnt, DeviceID}};
-                            _ ->
-                                false
-                        end;
-                    false ->
-                        false
-                end
-        end
-    catch
-        _:_ ->
-            lager:warning([{device_id, DeviceID}], "skipping invalid device ~p", [Device]),
-            false
-    end.
+key_matches_mic(Key, B0, ExpectedMIC) ->
+    ComputedMIC = crypto:macN(cmac, aes_128_cbc, Key, B0, 4),
+    ComputedMIC =:= ExpectedMIC.
 
 -spec b0_from_payload(binary(), non_neg_integer()) -> binary().
-b0_from_payload(Payload, FCntSize) ->
-    <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
-        FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, _FOpts:FOptsLen/binary,
-        _PayloadAndMIC/binary>> = Payload,
+b0_from_payload(Payload, ExpectedFCnt) ->
+    <<MType:3, _:5, DevAddr:4/binary, _:4, FOptsLen:4, _:16, _FOpts:FOptsLen/binary, _/binary>> =
+        Payload,
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     <<
         (router_utils:b0(
             MType band 1,
             <<DevAddr:4/binary>>,
-            FCnt,
+            ExpectedFCnt,
             erlang:byte_size(Msg)
         ))/binary,
         Msg/binary

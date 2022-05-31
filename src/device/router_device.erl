@@ -28,6 +28,7 @@
     devaddrs/1, devaddrs/2,
     dev_nonces/1, dev_nonces/2,
     fcnt/1, fcnt/2,
+    fcnt_next_val/1,
     fcntdown/1, fcntdown/2,
     offset/1, offset/2,
     channel_correction/1, channel_correction/2,
@@ -58,6 +59,7 @@
 ]).
 
 -define(QUEUE_SIZE_LIMIT, 20).
+-define(MAX_32_BITS, 16#100000000).
 
 -type device() :: #device_v7{}.
 
@@ -152,6 +154,10 @@ fcnt(Device) ->
 -spec fcnt(non_neg_integer(), device()) -> device().
 fcnt(Fcnt, Device) ->
     Device#device_v7{fcnt = Fcnt}.
+
+-spec fcnt_next_val(device()) -> non_neg_integer().
+fcnt_next_val(#device_v7{fcnt = FCnt}) ->
+    (FCnt + 1) rem ?MAX_32_BITS.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->

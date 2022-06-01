@@ -1132,15 +1132,7 @@ maybe_start_worker(DeviceID) ->
 
 -spec get_chain() -> blockchain:blockchain().
 get_chain() ->
-    Key = blockchain,
-    case ets:lookup(?ETS, Key) of
-        [] ->
-            Chain = blockchain_worker:blockchain(),
-            true = ets:insert(?ETS, {Key, Chain}),
-            Chain;
-        [{Key, Chain}] ->
-            Chain
-    end.
+    router_utils:get_blockchain().
 
 -spec handle_offer_metrics(
     #routing_information_pb{},

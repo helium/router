@@ -163,7 +163,7 @@ verify_signature(Hotspot, HotspotPubKeyBin, Sig) ->
 -spec get_hotspot_owner(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
     {ok, libp2p_crypto:pubkey_bin()} | {error, any()}.
 get_hotspot_owner(PubKeyBin) ->
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     Ledger = blockchain:ledger(Chain),
     blockchain_ledger_v1:find_gateway_owner(PubKeyBin, Ledger).
 

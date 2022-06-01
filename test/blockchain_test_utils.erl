@@ -73,7 +73,7 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
     GenesisBlock = blockchain_block:new_genesis_block(Txs),
     ok = blockchain_worker:integrate_genesis_block(GenesisBlock),
 
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     {ok, HeadBlock} = blockchain:head_block(Chain),
     ?assertEqual(blockchain_block:hash_block(GenesisBlock), blockchain_block:hash_block(HeadBlock)),
     ?assertEqual({ok, GenesisBlock}, blockchain:head_block(Chain)),
@@ -119,7 +119,7 @@ create_block(ConsensusMembers, Txs) ->
     create_block(ConsensusMembers, Txs, #{}).
 
 create_block(ConsensusMembers, Txs, Override) ->
-    Blockchain = blockchain_worker:blockchain(),
+    Blockchain = router_utils:get_blockchain(),
     {ok, PrevHash} = blockchain:head_hash(Blockchain),
     {ok, HeadBlock} = blockchain:head_block(Blockchain),
     Height = blockchain_block:height(HeadBlock) + 1,

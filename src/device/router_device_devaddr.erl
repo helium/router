@@ -199,7 +199,7 @@ handle_info(
             {noreply, State#state{subnets = Subnets}}
     end;
 handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{oui = OUI} = State) ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
@@ -208,7 +208,7 @@ handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{ou
             {noreply, State#state{chain = Chain, subnets = Subnets}}
     end;
 handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};

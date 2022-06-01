@@ -38,6 +38,7 @@
 %% ------------------------------------------------------------------
 -export([
     init/1,
+    handle_continue/2,
     handle_call/3,
     handle_cast/2,
     handle_info/2,
@@ -46,6 +47,8 @@
 ]).
 
 -define(SERVER, ?MODULE).
+-define(INIT_ASYNC, init_async).
+-define(INIT_BLOKCHAIN, init_blockchain).
 -define(BACKOFF_MAX, timer:minutes(5)).
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
@@ -59,22 +62,22 @@
 -define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
-    chain :: blockchain:blockchain(),
+    chain :: blockchain:blockchain() | undefined,
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
     frame_timeout :: non_neg_integer(),
-    device :: router_device:device(),
+    device :: router_device:device() | undefined,
     downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
     queue_updates :: undefined | {pid(), undefined | binary(), reference()},
-    fcnt = -1 :: integer(),
+    fcnt = -1 :: integer() | undefined,
     oui :: undefined | non_neg_integer(),
-    channels_worker :: pid(),
+    channels_worker :: pid() | undefined,
     last_dev_nonce = undefined :: binary() | undefined,
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
     adr_engine :: undefined | lorawan_adr:handle(),
-    is_active = true :: boolean(),
+    is_active = true :: boolean() | undefined,
     discovery = false :: boolean()
 }).
 
@@ -172,32 +175,53 @@ init(#{db := DB, cf := CF, id := ID} = Args) ->
             _ ->
                 false
         end,
-    Blockchain = blockchain_worker:blockchain(),
+    DefaultFrameTimeout = maps:get(frame_timeout, Args, router_utils:frame_timeout()),
     OUI = router_utils:get_oui(),
+    lager:info("~p init with ~p (frame timeout=~p)", [?SERVER, Args, DefaultFrameTimeout]),
+    {ok,
+        #state{
+            db = DB,
+            cf = CF,
+            frame_timeout = DefaultFrameTimeout,
+            oui = OUI,
+            discovery = Discovery
+        },
+        {continue, {?INIT_ASYNC, ID}}}.
+
+handle_continue({?INIT_ASYNC, ID}, #state{db = DB, cf = CF} = State) ->
     Device = get_device(DB, CF, ID),
-    {ok, Pid} =
-        router_device_channels_worker:start_link(#{
-            blockchain => Blockchain,
-            device_worker => self(),
-            device => Device
-        }),
     IsActive = router_device:is_active(Device),
     ok = router_utils:lager_md(Device),
     ok = ?MODULE:device_update(self()),
-    DefaultFrameTimeout = maps:get(frame_timeout, Args, router_utils:frame_timeout()),
-    lager:info("~p init with ~p (frame timeout=~p)", [?SERVER, Args, DefaultFrameTimeout]),
-    {ok, #state{
-        chain = Blockchain,
-        db = DB,
-        cf = CF,
-        frame_timeout = DefaultFrameTimeout,
-        device = Device,
-        fcnt = router_device:fcnt(Device),
-        oui = OUI,
-        channels_worker = Pid,
-        is_active = IsActive,
-        discovery = Discovery
-    }}.
+    {noreply,
+        State#state{
+            db = DB,
+            cf = CF,
+            device = Device,
+            fcnt = router_device:fcnt(Device),
+            is_active = IsActive
+        },
+        {continue, ?INIT_BLOKCHAIN}};
+handle_continue(?INIT_BLOKCHAIN, #state{device = Device} = State) ->
+    case router_utils:get_blockchain() of
+        undefined ->
+            ok = timer:sleep(500),
+            {noreply, State, {continue, ?INIT_BLOKCHAIN}};
+        Blockchain ->
+            {ok, Pid} =
+                router_device_channels_worker:start_link(#{
+                    blockchain => Blockchain,
+                    device_worker => self(),
+                    device => Device
+                }),
+            {noreply, State#state{
+                chain = Blockchain,
+                channels_worker = Pid
+            }}
+    end;
+handle_continue(_Msg, State) ->
+    lager:warning("rcvd unknown continue msg: ~p", [_Msg]),
+    {noreply, State}.
 
 handle_call(
     {accept_uplink, Packet, PacketTime, HoldTime, PubKeyBin},
@@ -2089,7 +2113,6 @@ get_device(DB, CF, DeviceID) ->
                 Device0;
             {ok, APIDevice} ->
                 lager:info("got device: ~p", [APIDevice]),
-
                 IsActive = router_device:is_active(APIDevice),
                 DeviceUpdates = [
                     {name, router_device:name(APIDevice)},

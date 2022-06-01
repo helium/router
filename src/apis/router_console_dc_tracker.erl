@@ -169,7 +169,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(post_init, #state{chain = undefined} = State) ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};

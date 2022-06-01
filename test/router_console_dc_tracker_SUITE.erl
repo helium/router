@@ -274,7 +274,7 @@ burned_test(Config) ->
 
     Swarm = proplists:get_value(swarm, Config),
     ConsensusMembers = proplists:get_value(consensus_member, Config),
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
 
     PayerPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     #{secret := PrivKey} = proplists:get_value(keys, Config),

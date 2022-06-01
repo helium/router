@@ -79,7 +79,7 @@ csv_format(Devices) ->
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.
 export_devaddr() ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             {error, <<"undefined_blockchain">>};
         Chain ->

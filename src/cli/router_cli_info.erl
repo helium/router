@@ -54,7 +54,7 @@ info_cmd() ->
     ].
 
 info_height(["info", "height"], [], []) ->
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     {ok, Height} = blockchain:height(Chain),
     {ok, SyncHeight} = blockchain:sync_height(Chain),
     {ok, HeadBlock} = blockchain:head_block(Chain),
@@ -87,7 +87,7 @@ info_name([_, _, _], [], []) ->
     usage.
 
 info_block_age(["info", "block_age"], [], []) ->
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     {ok, Block} = blockchain:head_block(Chain),
     Age = erlang:system_time(seconds) - blockchain_block:time(Block),
     [clique_status:text(integer_to_list(Age))];

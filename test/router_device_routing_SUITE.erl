@@ -404,7 +404,7 @@ packet_hash_cache_test(Config) ->
 
     %% -------------------------------------------------------------------
     %% Query for devices
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     DevAddr = router_device:devaddr(Device1),
 
     %% make sure things go wrong first

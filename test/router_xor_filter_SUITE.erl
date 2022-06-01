@@ -90,7 +90,7 @@ init_per_testcase(TestCase, Config0) ->
     ConsensusMembers = proplists:get_value(consensus_member, Config),
 
     test_utils:wait_until(fun() ->
-        blockchain_worker:blockchain() =/= undefined
+        router_utils:get_blockchain() =/= undefined
     end),
 
     meck:new(blockchain_worker, [passthrough, no_history]),
@@ -101,7 +101,7 @@ init_per_testcase(TestCase, Config0) ->
             {ok, Block} ->
                 _ = blockchain_test_utils:add_block(
                     Block,
-                    blockchain_worker:blockchain(),
+                    router_utils:get_blockchain(),
                     self(),
                     blockchain_swarm:tid()
                 ),
@@ -110,7 +110,7 @@ init_per_testcase(TestCase, Config0) ->
         ok
     end),
 
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     Config2 = test_utils:add_oui(Config),
 
     [{chain, Chain} | Config2].

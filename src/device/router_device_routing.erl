@@ -580,7 +580,7 @@ check_device_is_active(Device, PubKeyBin) ->
     Chain :: blockchain:blockchain()
 ) -> ok | {error, ?DEVICE_NO_DC}.
 check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
-    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+    try router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
             ok = router_utils:event_uplink_dropped_not_enough_dc(
                 erlang:system_time(millisecond),
@@ -591,6 +591,10 @@ check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
             {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} ->
             ok
+    catch
+        What:Why ->
+            lager:info("failed to check_device_balance", [{What, Why}]),
+            {error, dc_tracker_crashed}
     end.
 
 -spec eui_to_bin(EUI :: undefined | non_neg_integer()) -> binary().

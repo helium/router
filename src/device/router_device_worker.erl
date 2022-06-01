@@ -965,7 +965,14 @@ handle_info(
         0,
         packet_to_rxq(Packet)
     ),
-    Rx2Window = join2_from_packet(Region, Packet),
+    Rx2Window =
+        try join2_from_packet(Region, Packet) of
+            V -> V
+        catch
+            _:_ ->
+                lager:warning("could not get join_rx2 [region: ~p]", [Region]),
+                undefined
+        end,
     Metadata = lorawan_rxdelay:adjust_on_join(Device),
     Device1 = router_device:metadata(Metadata, Device),
     DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
@@ -1683,7 +1690,14 @@ handle_frame_timeout(
                 0,
                 packet_to_rxq(Packet0)
             ),
-            Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
+            Rx2Window =
+                try rx2_from_packet(Region, Packet0, RxDelay) of
+                    V -> V
+                catch
+                    _:_ ->
+                        lager:warning("could not get rx2 [region: ~p]", [Region]),
+                        undefined
+                end,
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
                 lorawan_mac_region:downlink_signal_strength(Region, TxFreq),
@@ -1785,7 +1799,14 @@ handle_frame_timeout(
         0,
         packet_to_rxq(Packet0)
     ),
-    Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
+    Rx2Window =
+        try rx2_from_packet(Region, Packet0, RxDelay) of
+            V -> V
+        catch
+            _:_ ->
+                lager:warning("could not get rx2 [region: ~p]", [Region]),
+                undefined
+        end,
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
         lorawan_mac_region:downlink_signal_strength(Region, TxFreq),

@@ -42,8 +42,6 @@
 -define(BITS_23, 8388607).
 -define(MAX_16_BITS, erlang:trunc(math:pow(2, 16) - 1)).
 
--define(ETS, router_device_routing_ets).
-
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_KEY, bloom_key).
 %% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
@@ -90,7 +88,6 @@ init() ->
         {write_concurrency, true},
         {read_concurrency, true}
     ],
-    ets:new(?ETS, Options),
     ets:new(?BF_ETS, Options),
     ets:new(?REPLAY_ETS, Options),
     {ok, BloomJoinRef} = bloom:new_forgetful(
@@ -1279,7 +1276,6 @@ handle_join_offer_test() ->
     meck:unload(router_metrics),
     ?assert(meck:validate(router_devices_sup)),
     meck:unload(router_devices_sup),
-    ets:delete(?ETS),
     ets:delete(?BF_ETS),
     ets:delete(?REPLAY_ETS),
     _ = catch ets:delete(router_device_multibuy_ets),

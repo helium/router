@@ -73,7 +73,7 @@ init_chain(Balance, GenesisMembers, ExtraVars) when is_list(GenesisMembers), is_
     GenesisBlock = blockchain_block:new_genesis_block(Txs),
     ok = blockchain_worker:integrate_genesis_block(GenesisBlock),
 
-    Chain = router_utils:get_blockchain(),
+    Chain = blockchain_worker:blockchain(),
     {ok, HeadBlock} = blockchain:head_block(Chain),
     ?assertEqual(blockchain_block:hash_block(GenesisBlock), blockchain_block:hash_block(HeadBlock)),
     ?assertEqual({ok, GenesisBlock}, blockchain:head_block(Chain)),

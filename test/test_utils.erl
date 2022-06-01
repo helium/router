@@ -172,6 +172,7 @@ init_per_testcase(TestCase, Config) ->
     ].
 
 end_per_testcase(_TestCase, Config) ->
+    _ = persistent_term:erase(router_blockchain),
     catch libp2p_swarm:stop(proplists:get_value(swarm, Config)),
     Pid = proplists:get_value(elli, Config),
     {ok, Acceptors} = elli:get_acceptors(Pid),

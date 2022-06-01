@@ -57,7 +57,7 @@
     {?METRICS_GRPC_CONNECTION_COUNT, prometheus_gauge, [], "Number of active GRPC Connections"},
     {?METRICS_SC_CLOSE_SUBMIT, prometheus_counter, [status],
         "Router state channels close txn status"},
-    {?METRICS_HOTSPOT_REPUTATION, prometheus_gauge, [hotspot], "Reputation gauge for hotspot"},
+    {?METRICS_HOTSPOT_REPUTATION, prometheus_gauge, [], "Reputation gauge"},
     {?METRICS_DEVICE_TOTAL, prometheus_gauge, [], "Device total gauge"},
     {?METRICS_DEVICE_RUNNING, prometheus_gauge, [], "Device running gauge"}
 ]).

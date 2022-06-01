@@ -149,7 +149,6 @@ handle_offer(Offer, HandlerPid) ->
 ) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
-    ok = router_hotspot_reputation:track_packet(SCPacket),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
@@ -157,10 +156,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
+            ok = router_hotspot_reputation:track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
+
             E;
         ok ->
+            ok = router_hotspot_reputation:track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -859,7 +861,7 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
-            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
+            ok = router_hotspot_reputation:track_unknown_device(Packet, PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",

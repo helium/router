@@ -88,17 +88,16 @@ track_packet(SCPacket) ->
 track_unknown_device(Packet, Hotspot) ->
     erlang:spawn(fun() ->
         PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        % MS = ets:fun2ms(fun({Key, _Time}) when Key =:= {Hotspot, PHash} -> true end)
-        MS = [{{'$1', '$2'}, [{'=:=', '$1', {{Hotspot, PHash}}}], [true]}],
-        case ets:select_delete(?OFFER_ETS, MS) of
-            X when X > 0 ->
+        case ets:lookup(?OFFER_ETS, {Hotspot, PHash}) of
+            [] ->
+                %% if we have no offer for this packet lets assume only the packet was sent
+                ok;
+            [{{Hotspot, PHash}, _} | _] ->
+                true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
                 Counter = ets:update_counter(?ETS, Hotspot, {3, 1}, {default, 0, 0}),
                 lager:info("hotspot ~p unknown_device= ~p", [
                     blockchain_utils:addr2name(Hotspot), Counter
-                ]);
-            _ ->
-                %% if we have no offer for this packet lets assume only the packet was sent
-                ok
+                ])
         end
     end),
     ok.

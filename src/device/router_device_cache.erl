@@ -69,15 +69,17 @@ get_by_devaddr(DevAddr) ->
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
-    % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
-    MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
-    _ = ets:select_delete(?DEVADDR_ETS, MS),
-    lists:foreach(
-        fun(DevAddr) ->
-            true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
-        end,
-        router_device:devaddrs(Device)
-    ),
+    _ = erlang:spawn(fun() ->
+        % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
+        MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
+        _ = ets:select_delete(?DEVADDR_ETS, MS),
+        lists:foreach(
+            fun(DevAddr) ->
+                true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
+            end,
+            router_device:devaddrs(Device)
+        )
+    end),
     {ok, Device}.
 
 -spec delete(binary()) -> ok.

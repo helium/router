@@ -210,7 +210,7 @@ add_oui(Config) ->
     {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
-    Chain = router_utils:get_blockchain(),
+    Chain = blockchain_worker:blockchain(),
     Ledger = blockchain:ledger(Chain),
     ConsensusMembers = proplists:get_value(consensus_member, Config),
 

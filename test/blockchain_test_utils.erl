@@ -119,7 +119,7 @@ create_block(ConsensusMembers, Txs) ->
     create_block(ConsensusMembers, Txs, #{}).
 
 create_block(ConsensusMembers, Txs, Override) ->
-    Blockchain = router_utils:get_blockchain(),
+    Blockchain = blockchain_worker:blockchain(),
     {ok, PrevHash} = blockchain:head_hash(Blockchain),
     {ok, HeadBlock} = blockchain:head_block(Blockchain),
     Height = blockchain_block:height(HeadBlock) + 1,

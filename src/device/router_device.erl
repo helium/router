@@ -147,15 +147,17 @@ dev_nonces(Device) ->
 dev_nonces(Nonces, Device) ->
     Device#device_v7{dev_nonces = lists:sublist(Nonces, 25)}.
 
--spec fcnt(device()) -> non_neg_integer().
+-spec fcnt(device()) -> undefined | non_neg_integer().
 fcnt(Device) ->
     Device#device_v7.fcnt.
 
--spec fcnt(non_neg_integer(), device()) -> device().
+-spec fcnt(non_neg_integer() | undefined, device()) -> device().
 fcnt(Fcnt, Device) ->
     Device#device_v7{fcnt = Fcnt}.
 
 -spec fcnt_next_val(device()) -> non_neg_integer().
+fcnt_next_val(#device_v7{fcnt = undefined}) ->
+    0;
 fcnt_next_val(#device_v7{fcnt = FCnt}) ->
     (FCnt + 1) rem ?MAX_32_BITS.
 
@@ -643,7 +645,8 @@ dev_nonces_test() ->
 
 fcnt_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(0, fcnt(Device)),
+    ?assertEqual(undefined, fcnt(Device)),
+    ?assertEqual(0, fcnt(fcnt(0, Device))),
     ?assertEqual(1, fcnt(fcnt(1, Device))).
 
 fcntdown_test() ->

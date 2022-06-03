@@ -808,7 +808,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
         type = lorawan,
         payload = Payload1,
         frequency = 923.3,
-        datarate = maps:get(datarate, Options, <<"SF8BW125">>),
+        datarate = maps:get(datarate, Options, "SF8BW125"),
         signal_strength = maps:get(rssi, Options, 0.0),
         snr = maps:get(snr, Options, 0.0),
         routing = Routing

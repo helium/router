@@ -1107,6 +1107,24 @@ offer_cache_test(Config) ->
     DeviceID = ?CONSOLE_DEVICE_ID,
     {ok, Device0} = router_device_cache:get(DeviceID),
 
+    %% First, we need the device's FCnt to be 0.
+    SCPacket0 = test_utils:frame_packet(
+        ?UNCONFIRMED_UP,
+        PubKeyBin1,
+        router_device:nwk_s_key(Device0),
+        router_device:app_s_key(Device0),
+        0,
+        #{
+            dont_encode => true,
+            routing => true
+        }
+    ),
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket0, erlang:system_time(millisecond), self())
+    ),
+
+    %% Now we can test...
+
     %% Testing with 2 offers / packets
     SCPacket1 = test_utils:frame_packet(
         ?UNCONFIRMED_UP,
@@ -1161,6 +1179,7 @@ offer_cache_test(Config) ->
     ?assert(
         router_device_worker:accept_uplink(
             DeviceWorkerPid,
+            1,
             blockchain_state_channel_packet_v1:packet(SCPacket1),
             1,
             2,
@@ -1170,6 +1189,7 @@ offer_cache_test(Config) ->
     ?assert(
         router_device_worker:accept_uplink(
             DeviceWorkerPid,
+            1,
             blockchain_state_channel_packet_v1:packet(SCPacket2),
             1,
             2,
@@ -1192,6 +1212,7 @@ offer_cache_test(Config) ->
     ?assert(
         router_device_worker:accept_uplink(
             DeviceWorkerPid,
+            0,
             blockchain_state_channel_packet_v1:packet(SCPacket3),
             1,
             2,
@@ -1221,6 +1242,7 @@ offer_cache_test(Config) ->
     ?assertNot(
         router_device_worker:accept_uplink(
             DeviceWorkerPid,
+            0,
             blockchain_state_channel_packet_v1:packet(SCPacket4),
             1,
             2,
@@ -1268,6 +1290,7 @@ offer_cache_test(Config) ->
     ?assert(
         router_device_worker:accept_uplink(
             DeviceWorkerPid,
+            1,
             blockchain_state_channel_packet_v1:packet(SCPacket5),
             1,
             2,

@@ -900,20 +900,24 @@ send_to_device_worker(
     Chain
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
-        {error, _Reason1} = Error ->
+        {error, unknown_device} ->
             ok = router_hotspot_reputation:track_unknown_device(Packet, PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
-                [DevAddr, lorawan_utils:binary_to_hex(DevAddr), libp2p_crypto:bin_to_b58(PubKeyBin)]
+                [
+                    DevAddr,
+                    lorawan_utils:binary_to_hex(DevAddr),
+                    libp2p_crypto:bin_to_b58(PubKeyBin)
+                ]
             ),
-            Error;
-        {Device, NwkSKey} ->
+            {error, unknown_device};
+        {ok, {Device, NwkSKey, FCnt}} ->
             ok = router_device_stats:track_packet(Packet, PubKeyBin, Device),
             case router_device:preferred_hotspots(Device) of
                 [] ->
                     send_to_device_worker_(
-                        Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey
+                        FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey
                     );
                 PreferredHotspots when
                     is_list(PreferredHotspots)
@@ -921,6 +925,7 @@ send_to_device_worker(
                     case lists:member(PubKeyBin, PreferredHotspots) of
                         true ->
                             send_to_device_worker_(
+                                FCnt,
                                 Packet,
                                 PacketTime,
                                 HoldTime,
@@ -936,7 +941,7 @@ send_to_device_worker(
             end
     end.
 
-send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey) ->
+send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey) ->
     DeviceID = router_device:id(Device),
     case maybe_start_worker(DeviceID) of
         {error, _Reason} = Error ->
@@ -946,6 +951,7 @@ send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Dev
             case
                 router_device_worker:accept_uplink(
                     WorkerPid,
+                    FCnt,
                     Packet,
                     PacketTime,
                     HoldTime,
@@ -955,18 +961,29 @@ send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Dev
                 false ->
                     lager:info("device worker refused to pick up the packet");
                 true ->
-                    router_device_worker:handle_frame(
+                    ok = router_device_worker:handle_frame(
                         WorkerPid,
                         NwkSKey,
+                        FCnt,
                         Packet,
                         PacketTime,
                         HoldTime,
                         PubKeyBin,
                         Region,
                         Pid
-                    )
+                    ),
+                    Device1 = router_device:update([{fcnt, FCnt}], Device),
+                    ok = save_device(Device1),
+                    ok
             end
     end.
+
+save_device(Device) ->
+    {ok, DB, CF} = router_db:get_devices(),
+    {ok, _} = router_device_cache:save(Device),
+    {ok, _} = router_device:save(DB, CF, Device),
+    %% ok = router_device_channels_worker:handle_device_update(...)
+    ok.
 
 -spec find_device(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
@@ -974,16 +991,14 @@ send_to_device_worker_(Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Dev
     MIC :: binary(),
     Payload :: binary(),
     Chain :: blockchain:blockchain()
-) -> {router_device:device(), binary()} | {error, any()}.
+) -> {ok, {router_device:device(), binary(), non_neg_integer()}} | {error, unknown_device}.
 find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin, Chain),
     case get_device_by_mic(MIC, Payload, Devices) of
-        {error, _} = Error ->
-            Error;
         undefined ->
-            {error, {unknown_device, DevAddr}};
-        {Device, NwkSKey} ->
-            {Device, NwkSKey}
+            {error, unknown_device};
+        {Device, NwkSKey, FCnt} ->
+            {ok, {Device, NwkSKey, FCnt}}
     end.
 
 %%%-------------------------------------------------------------------
@@ -1054,32 +1069,42 @@ get_and_sort_devices(DevAddr, PubKeyBin, Chain) ->
     Devices1.
 
 -spec get_device_by_mic(binary(), binary(), [router_device:device()]) ->
-    {router_device:device(), binary()} | undefined | {error, any()}.
+    {router_device:device(), binary(), non_neg_integer()} | undefined.
 get_device_by_mic(_MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(ExpectedMIC, Payload, [Device | Devices]) ->
-    ExpectedFCnt = router_device:fcnt_next_val(Device),
+    ExpectedFCnt = expected_fcnt(Device, Payload),
     B0 = b0_from_payload(Payload, ExpectedFCnt),
+    DeviceID = router_device:id(Device),
     case router_device:nwk_s_key(Device) of
         undefined ->
-            DeviceID = router_device:id(Device),
             lager:warning([{device_id, DeviceID}], "device did not have a nwk_s_key, deleting"),
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
-            DeviceID = router_device:id(Device),
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             get_device_by_mic(ExpectedMIC, Payload, Devices);
         NwkSKey ->
             case key_matches_mic(NwkSKey, B0, ExpectedMIC) of
                 true ->
-                    {Device, NwkSKey};
+                    lager:debug("device ~p NwkSKey matches FCnt ~b.", [DeviceID, ExpectedFCnt]),
+                    {Device, NwkSKey, ExpectedFCnt};
                 false ->
+                    lager:debug(
+                        "device ~p NwkSKey does not match FCnt ~b.  Searching device's other keys.",
+                        [DeviceID, ExpectedFCnt]
+                    ),
                     Keys = router_device:keys(Device),
                     case find_right_key(B0, ExpectedMIC, Payload, Device, Keys) of
                         false ->
+                            lager:debug("Device does not match FCnt ~b.  Searching next device.", [
+                                ExpectedFCnt
+                            ]),
                             get_device_by_mic(ExpectedMIC, Payload, Devices);
-                        Else ->
-                            Else
+                        {D, K} ->
+                            lager:debug("Device ~p matches FCnt ~b.", [
+                                router_device:id(D), ExpectedFCnt
+                            ]),
+                            {D, K, ExpectedFCnt}
                     end
             end
     end.
@@ -1101,9 +1126,65 @@ find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
         false -> find_right_key(B0, MIC, Payload, Device, Keys)
     end.
 
+-spec key_matches_mic(binary(), binary(), binary()) -> boolean().
 key_matches_mic(Key, B0, ExpectedMIC) ->
     ComputedMIC = crypto:macN(cmac, aes_128_cbc, Key, B0, 4),
     ComputedMIC =:= ExpectedMIC.
+
+-spec payload_fcnt_low(binary()) -> non_neg_integer().
+payload_fcnt_low(Payload) ->
+    <<_Mhdr:1/binary, _DevAddr:4/binary, _FCtrl:1/binary, FCntLow:16/integer-unsigned-little,
+        _/binary>> = Payload,
+    FCntLow.
+
+-spec expected_fcnt(
+    Device :: router_device:device(),
+    Payload :: binary()
+) -> non_neg_integer().
+expected_fcnt(Device, Payload) ->
+    %% This is a heuristic for handling replayed packets and one
+    %% (arguably incorrect) edge case.
+
+    %% We need a 32-bit frame counter in order to compute the MIC.
+
+    %% The payload contains only the 16 low-order bits of the the frame counter.
+
+    %% If the bits from the payload match the low order bits of our
+    %% device's frame counter, then this is /probably/ the "previous"
+    %% packet.  We'll use device's current frame counter.
+
+    %% If they don't match, we'll assume this is the "next" packet
+    %% and we'll use the device's "next" frame counter value.
+
+    PayloadFCntLow = payload_fcnt_low(Payload),
+    {DeviceFCnt, DeviceFCntLow} =
+        case router_device:fcnt(Device) of
+            undefined ->
+                {undefined, undefined};
+            I when is_integer(I) ->
+                <<IL:16/integer-unsigned-little, _:16>> = <<I:32/integer-unsigned-little>>,
+                {I, IL}
+        end,
+    lager:debug("PayloadFCntLow = ~b, DeviceFCntLow = ~b. DeviceFCnt = ~b.~n", [
+        PayloadFCntLow, DeviceFCntLow, DeviceFCnt
+    ]),
+
+    case {DeviceFCnt, PayloadFCntLow, DeviceFCntLow} of
+        {undefined, 1, undefined} ->
+            %% This case applies only to the first packet after a
+            %% successful join.  It happens when a device erroneously
+            %% begins counting packets at 1 instead of 0.  Most
+            %% notably, the LoRaMac simulator in c_src/ behaves this
+            %% way.  We're going to accommodate it.
+            1;
+        {LastSeenFCnt, LowBits, LowBits} when is_integer(LastSeenFCnt) ->
+            %% This case happens when we receive a retransmission of
+            %% the most recent packet.
+            LastSeenFCnt;
+        _ ->
+            %% This is the "normal" case.
+            router_device:fcnt_next_val(Device)
+    end.
 
 -spec b0_from_payload(binary(), non_neg_integer()) -> binary().
 b0_from_payload(Payload, ExpectedFCnt) ->

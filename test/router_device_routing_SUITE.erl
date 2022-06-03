@@ -627,6 +627,7 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
 
     ?assertEqual(16#FFFFFFFF, FCnt),
 
+    %% Let's try sending the highest possible FCnt.
     SCPacket = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
         dont_encode => true,
         routing => true,
@@ -636,6 +637,37 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
     ?assertEqual(
         ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
     ),
+
+    %% Packet was routed.
+    %% fcnt should now be 16#FFFFFFFF
+    %% next fcnt should now be 0
+
+    {ok, Device2} = router_device:get_by_id(DB, CF, WorkerID),
+    ?assertEqual(16#FFFFFFFF, router_device:fcnt(Device2)),
+    ?assertEqual(0, router_device:fcnt_next_val(Device2)),
+
+    %% If we send 16#FFFFFFFF again, that should work because it's a legitimate replay.
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
+    ),
+
+    %% Now, let's try sending 0.
+    SCPacket2 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device1)
+    }),
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket2, erlang:system_time(millisecond), self())
+    ),
+
+    %% That worked.
+    %% fcnt should now be 0
+    %% next fcnt should now be 1
+
+    {ok, Device3} = router_device:get_by_id(DB, CF, WorkerID),
+    ?assertEqual(0, router_device:fcnt(Device3)),
+    ?assertEqual(1, router_device:fcnt_next_val(Device3)),
     ok.
 
 handle_packet_wrong_fcnt_test(Config) ->

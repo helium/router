@@ -427,7 +427,7 @@ data_test_3(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => 904.2999877929688,
-                <<"channel">> => 2,
+                <<"channel">> => 7,
                 <<"lat">> => 36.999918858583605,
                 <<"long">> => fun check_long/1
             }

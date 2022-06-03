@@ -140,7 +140,7 @@ data_test_1(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => 923.2999877929688,
-                <<"channel">> => 0,
+                <<"channel">> => 8,
                 <<"lat">> => 36.999918858583605,
                 <<"long">> => fun check_long/1
             }
@@ -177,7 +177,7 @@ data_test_1(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => 923.2999877929688,
-                <<"channel">> => 0,
+                <<"channel">> => 8,
                 <<"lat">> => 36.999918858583605,
                 <<"long">> => fun check_long/1
             },
@@ -284,7 +284,7 @@ data_test_2(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => 923.2999877929688,
-                <<"channel">> => 0,
+                <<"channel">> => 7,
                 <<"lat">> => 36.999918858583605,
                 <<"long">> => fun check_long/1
             }
@@ -427,7 +427,7 @@ data_test_3(Config) ->
                 <<"snr">> => SNR,
                 <<"spreading">> => DataRate,
                 <<"frequency">> => 923.2999877929688,
-                <<"channel">> => 0,
+                <<"channel">> => 7,
                 <<"lat">> => 36.999918858583605,
                 <<"long">> => fun check_long/1
             }

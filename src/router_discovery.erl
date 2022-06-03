@@ -48,7 +48,7 @@ start(Map) ->
                                 #{body => <<1:8, Body/binary>>}
                             )
                         end,
-                        lists:seq(1, 10)
+                        lists:seq(0, 9)
                     ),
                     case send(PubKeyBin, DeviceID, Packets, Sig, 10) of
                         ok ->
@@ -122,6 +122,7 @@ send_error(WorkerPid, Device, TxnID, PubKeyBin, Error) ->
     router_device_worker:handle_frame(
         WorkerPid,
         router_device:nwk_s_key(Device),
+        1,
         blockchain_helium_packet_v1:new(
             lorawan,
             Payload,
@@ -188,10 +189,10 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Data = lorawan_utils:reverse(
         lorawan_utils:cipher(Body, AppSessionKey, MType band 1, DevAddr, FCnt)
     ),
-    FCntSize = maps:get(fcnt_size, Options, 16),
+    <<FCntLow:16/integer-unsigned-little, _:16>> = <<FCnt:32/integer-unsigned-little>>,
     Payload0 =
         <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-            FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, FOptsBin:FOptsLen/binary,
+            FOptsLen:4, FCntLow:16/little-unsigned-integer, FOptsBin:FOptsLen/binary,
             Port:8/integer, Data/binary>>,
     B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:macN(cmac, aes_128_cbc, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),

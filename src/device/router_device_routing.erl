@@ -1165,7 +1165,7 @@ expected_fcnt(Device, Payload) ->
                 <<IL:16/integer-unsigned-little, _:16>> = <<I:32/integer-unsigned-little>>,
                 {I, IL}
         end,
-    lager:debug("PayloadFCntLow = ~b, DeviceFCntLow = ~b. DeviceFCnt = ~b.~n", [
+    lager:debug("PayloadFCntLow = ~p, DeviceFCntLow = ~p. DeviceFCnt = ~p.~n", [
         PayloadFCntLow, DeviceFCntLow, DeviceFCnt
     ]),
 

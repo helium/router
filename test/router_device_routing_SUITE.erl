@@ -662,7 +662,7 @@ handle_packet_wrong_fcnt_test(Config) ->
         devaddr => router_device:devaddr(Device1)
     }),
 
-    {error, {unknown_device, _}} = router_device_routing:handle_packet(
+    {error, unknown_device} = router_device_routing:handle_packet(
         SCPacket, erlang:system_time(millisecond), self()
     ),
     ok.

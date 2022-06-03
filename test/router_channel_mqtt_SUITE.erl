@@ -444,11 +444,11 @@ mqtt_test(Config) ->
     ok.
 
 mqtt_crash_test(Config) ->
-    %% setup device to start with mqtt channel ===========================
+    %% setup device to start with mqtt channel
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {channel_type, mqtt}),
 
-    %% setup bad repsonse ================================================
+    %% setup bad repsonse
     BadResponse =
         <<"HTTP/1.1 400 Bad Request\r\nServer: nginx\r\nDate: Day, DD MMM YYYY HH:MM:SS GMT\r\nContent-">>,
 
@@ -459,20 +459,27 @@ mqtt_crash_test(Config) ->
         meck:passthrough([BadResponse, ParseState])
     end),
 
-    %% start device ======================================================
+    %% start device
     {ok, _DeviceWorkerPid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
     DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
 
-    %% immediate connection failure should trigger backoff ===============
-    State = sys:get_state(DeviceChannelsWorkerPid),
-    %% NOTE: With no backoff handling, the test fails here because the handler was never successfully added
-    EventMgrSlot = 3,
-    [{router_mqtt_channel, _Name, ChannelState}] = sys:get_state(element(EventMgrSlot, State)),
+    %% We do this because the channels_workers does not start right away on device_worker init
+    ok = test_utils:wait_until(fun() ->
+        %% immediate connection failure should trigger backoff
+        State = sys:get_state(DeviceChannelsWorkerPid),
 
-    Backoff = element(6, ChannelState),
-    ?assertNotEqual(?BACKOFF_MIN, backoff:get(Backoff)),
+        %% NOTE: With no backoff handling, the test fails here because the handler was never successfully added
+        EventMgrSlot = 3,
+        case sys:get_state(element(EventMgrSlot, State)) of
+            [{router_mqtt_channel, _Name, ChannelState}] ->
+                Backoff = element(6, ChannelState),
+                ?BACKOFF_MIN =/= backoff:get(Backoff);
+            [] ->
+                false
+        end
+    end),
 
-    %% cleanup ===========================================================
+    %% cleanup
     meck:unload(emqtt_frame),
     ok.
 

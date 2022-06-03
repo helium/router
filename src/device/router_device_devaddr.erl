@@ -175,6 +175,24 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
+    case router_utils:get_blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        Chain ->
+            Subnets = subnets(OUI, Chain),
+            {noreply, State#state{chain = Chain, subnets = Subnets}}
+    end;
+handle_info(post_init, State) ->
+    {noreply, State};
+handle_info(
+    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
+    #state{chain = undefined} = State
+) ->
+    lager:info("got block ~p with not chain", [_BlockHash]),
+    erlang:send_after(500, self(), post_init),
+    {noreply, State};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
     #state{chain = Chain, oui = OUI} = State
@@ -198,26 +216,6 @@ handle_info(
             Subnets = subnets(OUI, Chain),
             {noreply, State#state{subnets = Subnets}}
     end;
-handle_info({blockchain_event, {integrate_genesis_block, _BlockHash}}, #state{oui = OUI} = State) ->
-    case router_utils:get_blockchain() of
-        undefined ->
-            erlang:send_after(500, self(), post_init),
-            {noreply, State};
-        Chain ->
-            Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain = Chain, subnets = Subnets}}
-    end;
-handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
-    case router_utils:get_blockchain() of
-        undefined ->
-            erlang:send_after(500, self(), post_init),
-            {noreply, State};
-        Chain ->
-            Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain = Chain, subnets = Subnets}}
-    end;
-handle_info(post_init, State) ->
-    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

@@ -236,6 +236,7 @@ handle_info(
     {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
     #state{chain = undefined} = State
 ) ->
+    lager:info("got block ~p with not chain", [_BlockHash]),
     erlang:send_after(500, self(), post_init),
     {noreply, State};
 handle_info(

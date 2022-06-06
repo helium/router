@@ -67,9 +67,11 @@
     cf :: rocksdb:cf_handle(),
     frame_timeout :: non_neg_integer(),
     device :: router_device:device() | undefined,
-    downlink_handled_at = {-1, erlang:system_time(millisecond)} :: {integer(), integer()},
+    downlink_handled_at = {undefined, erlang:system_time(millisecond)} :: {
+        undefined | non_neg_integer(), integer()
+    },
     queue_updates :: undefined | {pid(), undefined | binary(), reference()},
-    fcnt = -1 :: integer() | undefined,
+    fcnt = undefined :: undefined | non_neg_integer(),
     oui :: undefined | non_neg_integer(),
     channels_worker :: pid() | undefined,
     last_dev_nonce = undefined :: binary() | undefined,
@@ -337,8 +339,8 @@ handle_call(
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {reply, {ok, Device1}, State#state{
                 device = Device1,
-                downlink_handled_at = {-1, erlang:system_time(millisecond)},
-                fcnt = -1
+                downlink_handled_at = {undefined, erlang:system_time(millisecond)},
+                fcnt = undefined
             }}
     end;
 handle_call(_Msg, _From, State) ->
@@ -589,8 +591,8 @@ handle_cast(
                         device = Device1,
                         join_cache = Cache1,
                         adr_engine = undefined,
-                        downlink_handled_at = {-1, erlang:system_time(millisecond)},
-                        fcnt = -1
+                        downlink_handled_at = {undefined, erlang:system_time(millisecond)},
+                        fcnt = undefined
                     }};
                 #join_cache{
                     uuid = UUID,
@@ -666,6 +668,9 @@ handle_cast(
     {frame, _NwkSKey, PacketFCnt, Packet, PacketTime, HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
+        db = DB,
+        cf = CF,
+        channels_worker = ChannelsWorker,
         is_active = false
     } = State
 ) ->
@@ -678,6 +683,8 @@ handle_cast(
         Device,
         PubKeyBin
     ),
+    Device1 = router_device:update([{fcnt, PacketFCnt}], Device),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
     {noreply, State};
 handle_cast(
     {frame, UsedNwkSKey, PacketFCnt, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
@@ -692,7 +699,9 @@ handle_cast(
         channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce,
         discovery = Disco,
-        adr_engine = ADREngine
+        adr_engine = ADREngine,
+        db = DB,
+        cf = CF
     } = State
 ) ->
     ok = router_metrics:packet_hold_time_observe(packet, HoldTime),
@@ -711,7 +720,9 @@ handle_cast(
     Device1 =
         case LastDevNonce == undefined of
             true ->
-                Device0;
+                D1 = router_device:update([{fcnt, PacketFCnt}], Device0),
+                ok = save_and_update(DB, CF, ChannelsWorker, D1),
+                D1;
             %% this is our first good uplink after join lets cleanup keys and update dev_nonces
             false ->
                 %% if our keys are not matching we can assume that last dev nonce is bad
@@ -730,9 +741,11 @@ handle_cast(
                             router_device:keys(Device0)
                         )},
                     {dev_nonces, DevNonces},
-                    {devaddrs, [DevAddr1]}
+                    {devaddrs, [DevAddr1]},
+                    {fcnt, PacketFCnt}
                 ],
                 D1 = router_device:update(DeviceUpdates, Device0),
+                ok = save_and_update(DB, CF, ChannelsWorker, D1),
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
                         router_device:dev_nonces(D1),
@@ -820,6 +833,7 @@ handle_cast(
             {UUID, State1} =
                 case maps:get(PacketFCnt, Cache0, undefined) of
                     undefined ->
+                        lager:debug("frame ~p not found in packet cache.", [PacketFCnt]),
                         ok = router_utils:event_uplink(
                             NewFrameCache#frame_cache.uuid,
                             PacketTime,
@@ -870,6 +884,7 @@ handle_cast(
                         count = OldCount,
                         pubkey_bins = PubkeyBins
                     } = OldFrameCache ->
+                        lager:debug("frame ~p found in frame cache.", [PacketFCnt]),
                         case lists:member(PubKeyBin, PubkeyBins) of
                             true ->
                                 ok;
@@ -1442,7 +1457,7 @@ validate_frame(
             validate_frame_(
                 PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false
             );
-        undefined when FrameAck == 0 andalso PacketFCnt =< LastSeenFCnt ->
+        undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
             lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
                 PacketFCnt,
                 LastSeenFCnt

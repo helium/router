@@ -608,6 +608,9 @@ multi_buy_test(Config) ->
     ok.
 
 handle_packet_fcnt_32_bit_rollover_test(Config) ->
+    WaitForDeviceWorker = fun() ->
+        timer:sleep(500)
+    end,
     meck:delete(router_device_devaddr, allocate, 2, false),
     test_utils:add_oui(Config),
 
@@ -638,6 +641,8 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
         ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
     ),
 
+    WaitForDeviceWorker(),
+
     %% Packet was routed.
     %% fcnt should now be 16#FFFFFFFF
     %% next fcnt should now be 0
@@ -651,6 +656,15 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
         ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
     ),
 
+    %% Fun fact: there exists a race condition here where the worker
+    %% may reject our replayed packet because the frame cache TTL is
+    %% set very low during testing.  The worker is expected to save
+    %% the device record with the updated fcnt in any case.  That's
+    %% why we sleep instead of waiting for a console message
+    %% indicating the worker has processed the frame: because we don't
+    %% know what to expect here, an `uplink` or an `uplink_dropped`.
+    WaitForDeviceWorker(),
+
     %% Now, let's try sending 0.
     SCPacket2 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
         dont_encode => true,
@@ -660,6 +674,8 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
     ?assertEqual(
         ok, router_device_routing:handle_packet(SCPacket2, erlang:system_time(millisecond), self())
     ),
+
+    WaitForDeviceWorker(),
 
     %% That worked.
     %% fcnt should now be 0

@@ -972,18 +972,9 @@ send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Regio
                         Region,
                         Pid
                     ),
-                    Device1 = router_device:update([{fcnt, FCnt}], Device),
-                    ok = save_device(Device1),
                     ok
             end
     end.
-
-save_device(Device) ->
-    {ok, DB, CF} = router_db:get_devices(),
-    {ok, _} = router_device_cache:save(Device),
-    {ok, _} = router_device:save(DB, CF, Device),
-    %% ok = router_device_channels_worker:handle_device_update(...)
-    ok.
 
 -spec find_device(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),

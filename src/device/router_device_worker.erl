@@ -1559,7 +1559,7 @@ validate_frame_(
                         case {ACK, router_device:queue(Device0)} of
                             %% Check if acknowledging confirmed downlink
                             {1, [#downlink{confirmed = true} | T]} ->
-                                [{queue, T}, {fcntdown, router_device:fcntdown(Device0) + 1}];
+                                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
                             {1, _} ->
                                 lager:warning("got ack when no confirmed downlinks in queue"),
                                 [];
@@ -1625,7 +1625,7 @@ validate_frame_(
                         case {ACK, router_device:queue(Device0)} of
                             %% Check if acknowledging confirmed downlink
                             {1, [#downlink{confirmed = true} | T]} ->
-                                [{queue, T}, {fcntdown, router_device:fcntdown(Device0) + 1}];
+                                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
                             {1, _} ->
                                 lager:warning("got ack when no confirmed downlinks in queue"),
                                 [];
@@ -1781,7 +1781,7 @@ handle_frame_timeout(
             ),
             DeviceUpdates = [
                 {channel_correction, ChannelsCorrected},
-                {fcntdown, (FCntDown + 1)},
+                {fcntdown, router_device:fcntdown_next_val(Device0)},
                 {metadata, Metadata}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
@@ -1894,7 +1894,7 @@ handle_frame_timeout(
                 DeviceUpdateMetadata,
                 {queue, T},
                 {channel_correction, ChannelsCorrected},
-                {fcntdown, (FCntDown + 1)}
+                {fcntdown, router_device:fcntdown_next_val(Device0)}
             ],
             Device1 = router_device:update(DeviceUpdates, Device0),
             {send, Device1, Packet1, EventTuple}

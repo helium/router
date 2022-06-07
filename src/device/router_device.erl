@@ -30,6 +30,7 @@
     fcnt/1, fcnt/2,
     fcnt_next_val/1,
     fcntdown/1, fcntdown/2,
+    fcntdown_next_val/1,
     offset/1, offset/2,
     channel_correction/1, channel_correction/2,
     queue/1, queue/2,
@@ -168,6 +169,10 @@ fcntdown(Device) ->
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
     Device#device_v7{fcntdown = Fcnt}.
+
+-spec fcntdown_next_val(device()) -> non_neg_integer().
+fcntdown_next_val(#device_v7{fcntdown = FD}) ->
+    (FD + 1) rem ?MAX_32_BITS.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
@@ -653,6 +658,12 @@ fcntdown_test() ->
     Device = new(<<"id">>),
     ?assertEqual(0, fcntdown(Device)),
     ?assertEqual(1, fcntdown(fcntdown(1, Device))).
+
+fcntdown_next_val_test() ->
+    ?assertEqual(1, fcntdown_next_val(#device_v7{})),
+    ?assertEqual(1, fcntdown_next_val(#device_v7{fcntdown = 0})),
+    ?assertEqual(2, fcntdown_next_val(#device_v7{fcntdown = 1})),
+    ?assertEqual(0, fcntdown_next_val(#device_v7{fcntdown = 16#FFFFFFFF})).
 
 offset_test() ->
     Device = new(<<"id">>),

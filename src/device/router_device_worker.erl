@@ -1861,10 +1861,10 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             %% so we may need to do that there as well
             {true, false, _} ->
                 Plan = lora_plan:region_to_plan(Region),
-                lora_chmask:build_link_addr_req(Plan, {0, DataRateBinary}, []);
+                lora_chmask:build_link_adr_req(Plan, {0, DataRateBinary}, []);
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
                 Plan = lora_plan:region_to_plan(Region),
-                lora_chmask:build_link_addr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
+                lora_chmask:build_link_adr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
             _ ->
                 []
         end,

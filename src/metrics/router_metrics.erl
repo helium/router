@@ -152,11 +152,10 @@ init(Args) ->
     erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = declare_metrics(),
-    MetricsEnv = application:get_env(router, metrics, []),
     ElliOpts = [
         {callback, router_metrics_reporter},
         {callback_args, #{}},
-        {port, proplists:get_value(port, MetricsEnv, 3000)}
+        {port, router_utils:get_env_int(metrics_port, 3000)}
     ],
     {ok, _Pid} = elli:start_link(ElliOpts),
     ok = blockchain_event:add_handler(self()),

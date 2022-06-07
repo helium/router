@@ -1853,26 +1853,6 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
     DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
-    %% begin-needs-refactor
-    %%
-    %% TODO: I don't know if we track these channel lists elsewhere,
-    %%       but since they were already hardcoded for 'US915' below,
-    %%       here's a few more.
-    Channels =
-        case Region of
-            'US915' ->
-                {8, 15};
-            'AU915' ->
-                {8, 15};
-            _ ->
-                AssumedChannels = {0, 7},
-                lager:warning("confirm channel plan for region ~p, assuming ~p", [
-                    Region,
-                    AssumedChannels
-                ]),
-                AssumedChannels
-        end,
-    %% end-needs-refactor
     FOpts1 =
         case {ChannelCorrectionNeeded, ChannelsCorrected, ADRAdjustment} of
             %% TODO this is going to be different for each region,
@@ -1880,8 +1860,10 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             %% Some regions allow the channel list to be sent in the join response as well,
             %% so we may need to do that there as well
             {true, false, _} ->
+                Plan = lora_plan:region_to_plan(Region),
                 lora_chmask:build_link_addr_req(Plan, {0, DataRateBinary}, []);
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
+                Plan = lora_plan:region_to_plan(Region),
                 lora_chmask:build_link_addr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
             _ ->
                 []

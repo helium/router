@@ -1880,42 +1880,9 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
             %% Some regions allow the channel list to be sent in the join response as well,
             %% so we may need to do that there as well
             {true, false, _} ->
-                case Region of
-                    'US915' ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    'AU915' ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    _ ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, DataRateBinary, [Channels]},
-                            []
-                        )
-                end;
+                lora_chmask:build_link_addr_req(Plan, {0, DataRateBinary}, []);
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
-                %% begin-needs-refactor
-                %%
-                %% This is silly because `NewDr' is converted right
-                %% back to the value `NewDataRateIdx' inside
-                %% `lorwan_mac_region'.  But `set_channels' wants data
-                %% rate in the form of "SFdd?BWddd?" so that's what
-                %% we'll give it.
-                Plan = lora_plan:region_to_plan(Region),
-                NewDr = lora_plan:datarate_to_binary(Plan, NewDataRateIdx),
-                %% end-needs-refactor
-                lora_chmask:make_link_adr_req(
-                    Region,
-                    {NewTxPowerIdx, NewDr, [Channels]},
-                    []
-                );
+                lora_chmask:build_link_addr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
             _ ->
                 []
         end,

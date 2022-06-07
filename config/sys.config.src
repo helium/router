@@ -52,7 +52,8 @@
         {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
         {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
         {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},
-        {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"}
+        {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"},
+        {metrics_port, "${ROUTER_METRICS_PORT}"}
     ]},
     {grpcbox, [
         {servers, [

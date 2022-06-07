@@ -582,7 +582,8 @@ send_adr(
     (Failed == undefined orelse Failed == [])
 ->
     {TxIdx, DRIdx, _} = merge_adr(Node#node.adr_set, Node#node.adr_use),
-    lager:debug("LinkADRReq ~w", [Set]),
+    lager:debug("LinkADRReq ~w", [{TxIdx, DrIdx}]),
+    Plan = lora_plan:region_to_plan(Region),
     lora_chmask:build_link_addr_req(Plan, {TxIdx, DRIdx}, FOptsOut);
 send_adr(_Network, _Node, FOptsOut) ->
     % the device has disabled ADR

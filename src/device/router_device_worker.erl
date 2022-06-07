@@ -1849,21 +1849,16 @@ handle_frame_timeout(
     lorawan_adr:adjustment()
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
+    Plan = lora_plan:region_to_plan(Region),
     ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
     FOpts1 =
         case {ChannelCorrectionNeeded, ChannelsCorrected, ADRAdjustment} of
-            %% TODO this is going to be different for each region,
-            %% we can't simply pass the region into this function
-            %% Some regions allow the channel list to be sent in the join response as well,
-            %% so we may need to do that there as well
             {true, false, _} ->
-                Plan = lora_plan:region_to_plan(Region),
                 lora_chmask:build_link_adr_req(Plan, {0, DataRateBinary}, []);
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
-                Plan = lora_plan:region_to_plan(Region),
                 lora_chmask:build_link_adr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
             _ ->
                 []
@@ -1872,9 +1867,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
         case lists:member(link_check_req, Frame#frame.fopts) of
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
-                MaxUplinkSNR = lora_plan:max_uplink_snr(
-                    lora_plan:region_to_plan(Region), DataRateBinary
-                ),
+                MaxUplinkSNR = lora_plan:max_uplink_snr(Plan, DataRateBinary),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                 [{link_check_ans, Margin, Count} | FOpts1];

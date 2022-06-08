@@ -1873,73 +1873,17 @@ handle_frame_timeout(
     lorawan_adr:adjustment()
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
+    Plan = lora_plan:region_to_plan(Region),
     ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
     ChannelCorrection = router_device:channel_correction(Device),
     ChannelCorrectionNeeded = ChannelCorrection == false,
-    %% begin-needs-refactor
-    %%
-    %% TODO: I don't know if we track these channel lists elsewhere,
-    %%       but since they were already hardcoded for 'US915' below,
-    %%       here's a few more.
-    Channels =
-        case Region of
-            'US915' ->
-                {8, 15};
-            'AU915' ->
-                {8, 15};
-            _ ->
-                AssumedChannels = {0, 7},
-                lager:warning("confirm channel plan for region ~p, assuming ~p", [
-                    Region,
-                    AssumedChannels
-                ]),
-                AssumedChannels
-        end,
-    %% end-needs-refactor
     FOpts1 =
         case {ChannelCorrectionNeeded, ChannelsCorrected, ADRAdjustment} of
-            %% TODO this is going to be different for each region,
-            %% we can't simply pass the region into this function
-            %% Some regions allow the channel list to be sent in the join response as well,
-            %% so we may need to do that there as well
             {true, false, _} ->
-                case Region of
-                    'US915' ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    'AU915' ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, <<"NoChange">>, [Channels]},
-                            []
-                        );
-                    _ ->
-                        lora_chmask:make_link_adr_req(
-                            Region,
-                            {0, DataRateBinary, [Channels]},
-                            []
-                        )
-                end;
+                lora_chmask:build_link_adr_req(Plan, {0, DataRateBinary}, []);
             {false, _, {NewDataRateIdx, NewTxPowerIdx}} ->
-                %% begin-needs-refactor
-                %%
-                %% This is silly because `NewDr' is converted right
-                %% back to the value `NewDataRateIdx' inside
-                %% `lorwan_mac_region'.  But `set_channels' wants data
-                %% rate in the form of "SFdd?BWddd?" so that's what
-                %% we'll give it.
-                Plan = lora_plan:region_to_plan(Region),
-                NewDr = lora_plan:datarate_to_binary(Plan, NewDataRateIdx),
-                %% end-needs-refactor
-                lora_chmask:make_link_adr_req(
-                    Region,
-                    {NewTxPowerIdx, NewDr, [Channels]},
-                    []
-                );
+                lora_chmask:build_link_adr_req(Plan, {NewTxPowerIdx, NewDataRateIdx}, []);
             _ ->
                 []
         end,
@@ -1947,9 +1891,7 @@ channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment
         case lists:member(link_check_req, Frame#frame.fopts) of
             true ->
                 SNR = blockchain_helium_packet_v1:snr(Packet),
-                MaxUplinkSNR = lora_plan:max_uplink_snr(
-                    lora_plan:region_to_plan(Region), DataRateBinary
-                ),
+                MaxUplinkSNR = lora_plan:max_uplink_snr(Plan, DataRateBinary),
                 Margin = trunc(SNR - MaxUplinkSNR),
                 lager:debug("respond to link_check_req with link_check_ans ~p ~p", [Margin, Count]),
                 [{link_check_ans, Margin, Count} | FOpts1];

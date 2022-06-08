@@ -581,9 +581,10 @@ send_adr(
     (is_integer(TxPower) or is_integer(DataRate) or is_list(Chans)),
     (Failed == undefined orelse Failed == [])
 ->
-    Set = merge_adr(Node#node.adr_set, Node#node.adr_use),
-    lager:debug("LinkADRReq ~w", [Set]),
-    lora_chmask:make_link_adr_req(Region, Set, FOptsOut);
+    {TxIdx, DRIdx, _} = merge_adr(Node#node.adr_set, Node#node.adr_use),
+    lager:debug("LinkADRReq ~w", [{TxIdx, DRIdx}]),
+    Plan = lora_plan:region_to_plan(Region),
+    lora_chmask:build_link_adr_req(Plan, {TxIdx, DRIdx}, FOptsOut);
 send_adr(_Network, _Node, FOptsOut) ->
     % the device has disabled ADR
     FOptsOut.

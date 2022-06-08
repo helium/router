@@ -374,18 +374,28 @@ handle_cast(
                         []
                 end,
 
-            DeviceUpdates = [
-                {name, router_device:name(APIDevice)},
-                {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
-                {devaddrs, DevAddrs},
-                {metadata,
-                    maps:merge(
-                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
-                        router_device:metadata(APIDevice)
-                    )},
-                {is_active, IsActive}
-            ],
+            ECCUpdate =
+                case router_device:ecc_compact(APIDevice) of
+                    undefined ->
+                        [];
+                    ECC ->
+                        DecodeECC = base64:decode(ECC),
+                        [{ecc_compact, libp2p_crypto:bin_to_pubkey(DecodeECC)}]
+                end,
+
+            DeviceUpdates =
+                [
+                    {name, router_device:name(APIDevice)},
+                    {dev_eui, router_device:dev_eui(APIDevice)},
+                    {app_eui, router_device:app_eui(APIDevice)},
+                    {devaddrs, DevAddrs},
+                    {metadata,
+                        maps:merge(
+                            lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                            router_device:metadata(APIDevice)
+                        )},
+                    {is_active, IsActive}
+                ] ++ ECCUpdate,
             Device1 = router_device:update(DeviceUpdates, Device0),
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
             ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),

@@ -346,13 +346,22 @@ update_device_record(DB, CF, DeviceID) ->
                     {ok, D} -> D;
                     {error, _} -> router_device:new(DeviceID)
                 end,
-            DeviceUpdates = [
-                {name, router_device:name(APIDevice)},
-                {dev_eui, router_device:dev_eui(APIDevice)},
-                {app_eui, router_device:app_eui(APIDevice)},
-                {metadata, router_device:metadata(APIDevice)},
-                {is_active, router_device:is_active(APIDevice)}
-            ],
+            ECCUpdate =
+                case router_device:ecc_compact(APIDevice) of
+                    undefined ->
+                        [];
+                    ECC ->
+                        DecodeECC = base64:decode(ECC),
+                        [{ecc_compact, libp2p_crypto:bin_to_pubkey(DecodeECC)}]
+                end,
+            DeviceUpdates =
+                [
+                    {name, router_device:name(APIDevice)},
+                    {dev_eui, router_device:dev_eui(APIDevice)},
+                    {app_eui, router_device:app_eui(APIDevice)},
+                    {metadata, router_device:metadata(APIDevice)},
+                    {is_active, router_device:is_active(APIDevice)}
+                ] ++ ECCUpdate,
             Device = router_device:update(DeviceUpdates, Device0),
             {ok, _} = router_device_cache:save(Device),
             {ok, _} = router_device:save(DB, CF, Device),

@@ -14,7 +14,7 @@
     queue = [] :: [any()],
     region :: atom() | undefined,
     last_known_datarate :: integer() | undefined,
-    ecc_compact :: map(),
+    ecc_compact :: map() | undefined,
     location :: libp2p_crypto:pubkey_bin() | undefined,
     metadata = #{} :: map(),
     is_active = true :: boolean()

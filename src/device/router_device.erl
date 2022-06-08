@@ -70,8 +70,7 @@
 -spec new(binary()) -> device().
 new(ID) ->
     #device_v7{
-        id = ID,
-        ecc_compact = libp2p_crypto:generate_keys(ecc_compact)
+        id = ID
     }.
 
 -spec id(device()) -> binary() | undefined.
@@ -576,16 +575,6 @@ get_fold(_DB, _CF, _Itr, {error, _}, _FilterFun, Acc) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-new_test() ->
-    Keys = libp2p_crypto:generate_keys(ecc_compact),
-    meck:new(libp2p_crypto, [passthrough]),
-    meck:expect(libp2p_crypto, generate_keys, fun(ecc_compact) -> Keys end),
-
-    ?assertEqual(#device_v7{id = <<"id">>, ecc_compact = Keys}, new(<<"id">>)),
-
-    ?assert(meck:validate(libp2p_crypto)),
-    meck:unload(libp2p_crypto).
-
 name_test() ->
     Device = new(<<"id">>),
     ?assertEqual(undefined, name(Device)),
@@ -677,7 +666,7 @@ location_test() ->
 
 ecc_compact_test() ->
     Device = new(<<"id">>),
-    ?assertMatch(#{secret := {ecc_compact, _}, public := {ecc_compact, _}}, ecc_compact(Device)),
+    ?assertMatch(undefined, ecc_compact(Device)),
     ?assertEqual({ecc_compact, any}, ecc_compact(ecc_compact({ecc_compact, any}, Device))).
 
 update_test() ->

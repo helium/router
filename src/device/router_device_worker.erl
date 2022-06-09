@@ -1316,6 +1316,20 @@ handle_join(
         app_key = AppKey
     }}.
 
+%% Dual-Plan Code
+%% Start
+-spec determine_region(
+    Packet :: blockchain_helium_packet_v1:packet() | atom(),
+    Region :: atom()
+) -> {atom()}.
+determine_region(Packet, HotspotRegion) ->
+    Frequency = blockchain_helium_packet_v1:frequency(Packet),
+    Datarate = blockchain_helium_packet_v1:datarate(Packet),
+    DeviceRegion = lora_plan:device_region(HotspotRegion, Frequency, Datarate),
+    DeviceRegion.
+%% End
+%% Dual-Plan Code
+
 -spec craft_join_reply(router_device:device(), #join_accept_args{}) -> binary().
 craft_join_reply(
     Device,
@@ -1468,8 +1482,8 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Region = router_device:region(Device),
+                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     Datarate = blockchain_helium_packet_v1:datarate(Packet),
                     DRIdx = lora_plan:datarate_to_index(Plan, BinaryDatarate),
@@ -1538,8 +1552,8 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Region = router_device:region(Device),
+                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     DataRate = blockchain_helium_packet_v1:datarate(Packet),
                     DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
@@ -2179,26 +2193,6 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                 AdrPacket
             )
     end.
-
--spec determine_region(
-    Packet :: blockchain_helium_packet_v1:packet() | atom(),
-    Region :: atom()
-) -> {atom()}.
-determine_region(Packet, HotspotRegion) ->
-    Frequency = blockchain_helium_packet_v1:frequency(Packet),
-    Datarate = blockchain_helium_packet_v1:datarate(Packet),
-    DeviceRegion = lora_plan:device_region(HotspotRegion, Frequency, Datarate),
-    DeviceRegion.
-
--spec determine_region(
-    Device :: router_device:device() | binary(),
-    Packet :: blockchain_helium_packet_v1:packet() | atom(),
-    Region :: atom()
-) -> {atom()}.
-determine_region(Device, Packet, HotspotRegion) ->
-    Frequency = blockchain_helium_packet_v1:frequency(Packet),
-    Datarate = blockchain_helium_packet_v1:datarate(Packet),
-    router_device:region(Device).
 
 -ifdef(DEAD_CODE).
 -spec packet_datarate(

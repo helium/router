@@ -208,6 +208,12 @@ refresh_channels_test(Config) ->
     ok.
 
 remove_channel_backoff_when_channel_changed_test(Config) ->
+    dbg:start(),
+    dbg:tracer(),
+    dbg:p(all, call),
+    dbg:tpl(gen_udp, [{'_', [], [{return_trace}]}]),
+    
+    
     BackoffMin = 2000,
     BackoffMax = 5000,
     application:set_env(router, channels_backoff_min, BackoffMin),

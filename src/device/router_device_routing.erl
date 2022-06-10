@@ -40,7 +40,7 @@
 
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
--define(MAX_16_BITS, erlang:trunc(math:pow(2, 16) - 1)).
+-define(MODULO_16_BITS, 16#10000).
 
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_KEY, bloom_key).
@@ -1140,42 +1140,91 @@ expected_fcnt(Device, Payload) ->
 
     %% The payload contains only the 16 low-order bits of the the frame counter.
 
-    %% If the bits from the payload match the low order bits of our
-    %% device's frame counter, then this is /probably/ the "previous"
-    %% packet.  We'll use device's current frame counter.
+    %% If the bits from the payload are slightly less than, equal to,
+    %% or greater than the low order bits of our device's frame
+    %% counter, then our device's high bits are /probably/ the same as
+    %% the ones held by the end device.  We will join our high bits to
+    %% the packets's low bits and hope that is the correct FCntUp.
 
-    %% If they don't match, we'll assume this is the "next" packet
-    %% and we'll use the device's "next" frame counter value.
+    %% On the other hand, if the bits from the payload are
+    %% significantly less than the low order bits from the device's
+    %% frame counter, then there's a good chance the end device's low
+    %% bits have rolled back to zero.  In this case, we're going to
+    %% increment our internal counter's high bits by one and join them
+    %% to the packet's low bits.
 
     PayloadFCntLow = payload_fcnt_low(Payload),
-    {DeviceFCnt, DeviceFCntLow} =
+    {PrevFCntLow, PrevFCntHigh, LowDiff} =
         case router_device:fcnt(Device) of
             undefined ->
-                {undefined, undefined};
+                {undefined, undefined, undefined};
             I when is_integer(I) ->
-                <<IL:16/integer-unsigned-little, _:16>> = <<I:32/integer-unsigned-little>>,
-                {I, IL}
+                <<Low:16/integer-unsigned-little, High:16/integer-unsigned-little>> = <<
+                    I:32/integer-unsigned-little
+                >>,
+                {Low, High, abs(Low - PayloadFCntLow)}
         end,
-    lager:debug("PayloadFCntLow = ~p, DeviceFCntLow = ~p. DeviceFCnt = ~p.~n", [
-        PayloadFCntLow, DeviceFCntLow, DeviceFCnt
-    ]),
 
-    case {DeviceFCnt, PayloadFCntLow, DeviceFCntLow} of
-        {undefined, 1, undefined} ->
-            %% This case applies only to the first packet after a
-            %% successful join.  It happens when a device erroneously
-            %% begins counting packets at 1 instead of 0.  Most
-            %% notably, the LoRaMac simulator in c_src/ behaves this
-            %% way.  We're going to accommodate it.
-            1;
-        {LastSeenFCnt, LowBits, LowBits} when is_integer(LastSeenFCnt) ->
-            %% This case happens when we receive a retransmission of
-            %% the most recent packet.
-            LastSeenFCnt;
-        _ ->
-            %% This is the "normal" case.
-            router_device:fcnt_next_val(Device)
+    if
+        PrevFCntLow =:= undefined andalso LowDiff =:= undefined ->
+            %% This is the first frame we've seen, so we're going to
+            %% assume the upper bits of the frame counter are all 0
+            %% and we'll take the lower bits as-is; this will be the
+            %% new FCntUp.
+            PayloadFCntLow;
+        
+        PayloadFCntLow >= PrevFCntLow ->
+            %% The FCnt on this packet is gte the last packet, meaning
+            %% it hasn't rolled back to 0.  We're going to prepend the
+            %% high bits from our internal counter and assume that is
+            %% the correct FCntUp.
+            binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
+        
+        PayloadFCntLow < PrevFCntLow andalso LowDiff =< 10 ->
+            %% The FCnt on this packet appears to be slightly lower
+            %% than our internal counter.  We're going to append the
+            %% upper bits of our internal counter to the packet's
+            %% lower bits and take that as the new FCntUp.
+            binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
+        
+        PayloadFCntLow < PrevFCntLow andalso LowDiff > 10 ->
+            %% The FCnt on this packets is significantly less than our
+            %% internal counter.  We're goint to assume the lower 16
+            %% bits have rolled back to zero.  We'll increment the
+            %% upper bits and append them to the lower bits and take
+            %% that as the new FCntUp.
+            NewHigh = (PrevFCntHigh + 1) rem ?MODULO_16_BITS,
+            binary:decode_unsigned(<<NewHigh:16, PayloadFCntLow:16>>)
     end.
+
+%% {DeviceFCnt, DeviceFCntLow} =
+%%     case router_device:fcnt(Device) of
+%%         undefined ->
+%%             {undefined, undefined};
+%%         I when is_integer(I) ->
+%%             <<IL:16/integer-unsigned-little, _:16>> = <<I:32/integer-unsigned-little>>,
+%%             {I, IL}
+%%     end,
+%% lager:debug("PayloadFCntLow = ~p, DeviceFCntLow = ~p. DeviceFCnt = ~p.~n", [
+%%     PayloadFCntLow, DeviceFCntLow, DeviceFCnt
+%% ]),
+
+%% case {DeviceFCnt, PayloadFCntLow, DeviceFCntLow} of
+%%     {undefined, 1, undefined} ->
+%%         %% This case applies only to the first packet after a
+%%         %% successful join.  It happens when a device erroneously
+%%         %% begins counting packets at 1 instead of 0.  Most
+%%         %% notably, the LoRaMac simulator in c_src/ behaves this
+%%         %% way.  We're going to accommodate it.
+%%         1;
+%%     {LastSeenFCnt, LowBits, LowBits} when is_integer(LastSeenFCnt) ->
+%%         %% This case happens when we receive a retransmission of
+%%         %% the most recent packet.
+%%         LastSeenFCnt;
+%%     _ ->
+%%         %% This is the "normal" case.
+%%         router_device:fcnt_next_val(Device)
+%% end.
 
 -spec b0_from_payload(binary(), non_neg_integer()) -> binary().
 b0_from_payload(Payload, ExpectedFCnt) ->

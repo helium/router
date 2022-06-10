@@ -697,21 +697,33 @@ handle_packet_wrong_fcnt_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    Device1 = router_device:update([{fcnt, 16#FFFFFFFE}], Device0),
+    NwkSKey = router_device:nwk_s_key(Device0),
+    AppSKey = router_device:app_s_key(Device0),
+
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device0)
+    }),
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket0, erlang:system_time(millisecond), self())
+    ),
+
+    Device1 = router_device:update([{fcnt, 200}], Device0),
     {ok, _} = router_device_cache:save(Device1),
+    BadFCnt = 99,
 
-    NwkSKey = router_device:nwk_s_key(Device1),
-    AppSKey = router_device:app_s_key(Device1),
-    FCnt = 99,
-
-    SCPacket = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
+    SCPacket1 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, BadFCnt, #{
         dont_encode => true,
         routing => true,
         devaddr => router_device:devaddr(Device1)
     }),
 
-    {error, unknown_device} = router_device_routing:handle_packet(
-        SCPacket, erlang:system_time(millisecond), self()
+    ?assertEqual(
+        {error, unknown_device},
+        router_device_routing:handle_packet(
+            SCPacket1, erlang:system_time(millisecond), self()
+        )
     ),
     ok.
 

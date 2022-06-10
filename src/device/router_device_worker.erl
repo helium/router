@@ -1277,8 +1277,10 @@ handle_join(
     %% ToDo: Our goal is for Plan data to be retrieved from blockchain var
     Region = dualplan_region(Packet, HotspotRegion),
     Plan = lora_plan:region_to_plan(Region),
-    Datarate = blockchain_helium_packet_v1:datarate(Packet),
-    DRIdx = lora_plan:datarate_to_index(Plan, Datarate),
+    DataRate = erlang:list_to_binary(
+        blockchain_helium_packet_v1:datarate(Packet)
+    ),
+    DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
@@ -1323,12 +1325,14 @@ handle_join(
 %% Start
 -spec dualplan_region(
     Packet :: blockchain_helium_packet_v1:packet() | atom(),
-    Region :: atom()
-) -> {atom()}.
+    HotspotRegion :: atom()
+) -> atom().
 dualplan_region(Packet, HotspotRegion) ->
     Frequency = blockchain_helium_packet_v1:frequency(Packet),
-    Datarate = blockchain_helium_packet_v1:datarate(Packet),
-    DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, Datarate),
+    DataRate = erlang:list_to_binary(
+        blockchain_helium_packet_v1:datarate(Packet)
+    ),
+    DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
     DeviceRegion.
 %% End
 %% Dual-Plan Code
@@ -1489,8 +1493,10 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                     Region = router_device:region(Device0),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
-                    Datarate = blockchain_helium_packet_v1:datarate(Packet),
-                    DRIdx = lora_plan:datarate_to_index(Plan, Datarate),
+                    DataRate = erlang:list_to_binary(
+                        blockchain_helium_packet_v1:datarate(Packet)
+                    ),
+                    DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {location, PubKeyBin},
@@ -1559,7 +1565,9 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                     Region = router_device:region(Device0),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
-                    DataRate = blockchain_helium_packet_v1:datarate(Packet),
+                    DataRate = erlang:list_to_binary(
+                        blockchain_helium_packet_v1:datarate(Packet)
+                    ),
                     DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
@@ -2137,9 +2145,11 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% power this packet transmitted at, but that value is
         %% unknowable.
         {false, true} ->
-            DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
             Plan = lora_plan:region_to_plan(Region),
-            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateBinary),
+            DataRate = erlang:list_to_binary(
+                blockchain_helium_packet_v1:datarate(Packet)
+            ),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for

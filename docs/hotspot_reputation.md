@@ -1,13 +1,13 @@
 # Hotspot Reputation
 
-The Hotspot reputation tracking allow to deny hotspot that do not deliver packet after buying offer.
+The Hotspot reputation tracking provides the ability to minimize the number of Hotspots that do not deliver packets after buying offer.
 
 ## Config
 
 - By default the Hotspot Reputation is **disabled**, to enable set env variablable `ROUTER_HOTSPOT_REPUTATION_ENABLED=true` in your `.env`.
-- Deny Threshold can set via `ROUTER_HOTSPOT_REPUTATION_THRESHOLD=50` it defaults to `50`.
+- Reputation Threshold can be set via `ROUTER_HOTSPOT_REPUTATION_THRESHOLD=50` default: `50`.
 
-Note: Reputations are only tracked in memory and will reset on restart.
+Note: Reputations are only tracked in memory and will be reset upon restart.
 
 ## Usage
 

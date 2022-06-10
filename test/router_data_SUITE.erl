@@ -315,7 +315,7 @@ data_test_2(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 %% RSSI act as power here we are and based on UPLINK RSSI > -80 we should power downlink at 20
-                <<"rssi">> => 20,
+                <<"rssi">> => 16,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF8BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,
@@ -458,7 +458,7 @@ data_test_3(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
                 <<"name">> => erlang:list_to_binary(HotspotName),
                 %% RSSI act as power here we are and based on UPLINK RSSI < -80 we should power downlink at 20
-                <<"rssi">> => 20,
+                <<"rssi">> => 27,
                 <<"snr">> => fun erlang:is_float/1,
                 <<"spreading">> => <<"SF12BW125">>,
                 <<"frequency">> => fun erlang:is_float/1,

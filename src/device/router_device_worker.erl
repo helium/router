@@ -1301,11 +1301,12 @@ handle_join(
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
     lager:debug(
-        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
+        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [
             lorawan_utils:binary_to_hex(DevEUI),
             lorawan_utils:binary_to_hex(AppEUI),
             DevNonce,
+            HotspotRegion,
             blockchain_utils:addr2name(PubKeyBin)
         ]
     ),
@@ -1451,7 +1452,8 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
     AppEUI = router_device:app_eui(Device0),
     AName = blockchain_utils:addr2name(PubKeyBin),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
-    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) region ~p from ~p",
+        [FCnt, TS, DevAddr, HotspotRegion, AName]),
     PayloadSize = erlang:byte_size(FRMPayload),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case maybe_charge(Device0, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
@@ -1484,11 +1486,11 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    Region = router_device:region(Device),
+                    Region = router_device:region(Device0),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     Datarate = blockchain_helium_packet_v1:datarate(Packet),
-                    DRIdx = lora_plan:datarate_to_index(Plan, BinaryDatarate),
+                    DRIdx = lora_plan:datarate_to_index(Plan, Datarate),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {location, PubKeyBin},
@@ -1554,7 +1556,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    Region = router_device:region(Device),
+                    Region = router_device:region(Device0),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     DataRate = blockchain_helium_packet_v1:datarate(Packet),

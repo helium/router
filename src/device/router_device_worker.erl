@@ -1275,7 +1275,7 @@ handle_join(
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     %% ToDo: Our goal is for Plan data to be retrieved from blockchain var
-    Region = determine_region(Packet, HotspotRegion),
+    Region = dualplan_region(Packet, HotspotRegion),
     Plan = lora_plan:region_to_plan(Region),
     Datarate = blockchain_helium_packet_v1:datarate(Packet),
     DRIdx = lora_plan:datarate_to_index(Plan, Datarate),
@@ -1317,15 +1317,17 @@ handle_join(
     }}.
 
 %% Dual-Plan Code
+%% Logic to support the dual frequency plan which allows an AS923_1 Hotspot
+%% to support both AS923_1 and AU915 end-devices.
 %% Start
--spec determine_region(
+-spec dualplan_region(
     Packet :: blockchain_helium_packet_v1:packet() | atom(),
     Region :: atom()
 ) -> {atom()}.
-determine_region(Packet, HotspotRegion) ->
+dualplan_region(Packet, HotspotRegion) ->
     Frequency = blockchain_helium_packet_v1:frequency(Packet),
     Datarate = blockchain_helium_packet_v1:datarate(Packet),
-    DeviceRegion = lora_plan:device_region(HotspotRegion, Frequency, Datarate),
+    DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, Datarate),
     DeviceRegion.
 %% End
 %% Dual-Plan Code

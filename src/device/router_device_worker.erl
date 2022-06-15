@@ -1512,7 +1512,9 @@ validate_frame_(
     AppEUI = router_device:app_eui(Device0),
     AName = blockchain_utils:addr2name(PubKeyBin),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
-    lager:debug("validating frame ~p @ ~p (devaddr: ~p) region ~p from ~p", [PacketFCnt, TS, DevAddr, HotspotRegion, AName]),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) region ~p from ~p", [
+        PacketFCnt, TS, DevAddr, HotspotRegion, AName
+    ]),
     PayloadSize = erlang:byte_size(FRMPayload),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case maybe_charge(Device0, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of

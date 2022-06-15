@@ -866,7 +866,10 @@ remove_devices_filter_after_restart_test(Config) ->
 
     %% make sure worker died
     ok = test_utils:wait_until(fun() ->
-        not erlang:is_process_alive(whereis(router_xor_filter_worker))
+        case whereis(router_xor_filter_worker) of
+            undefined -> true;
+            Pid -> not erlang:is_process_alive(Pid)
+        end
     end),
 
     %% wait for worker to raise from the dead

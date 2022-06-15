@@ -1172,21 +1172,18 @@ expected_fcnt(Device, Payload) ->
             %% and we'll take the lower bits as-is; this will be the
             %% new FCntUp.
             PayloadFCntLow;
-        
         PayloadFCntLow >= PrevFCntLow ->
             %% The FCnt on this packet is gte the last packet, meaning
             %% it hasn't rolled back to 0.  We're going to prepend the
             %% high bits from our internal counter and assume that is
             %% the correct FCntUp.
             binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
-        
         PayloadFCntLow < PrevFCntLow andalso LowDiff =< 10 ->
             %% The FCnt on this packet appears to be slightly lower
             %% than our internal counter.  We're going to append the
             %% upper bits of our internal counter to the packet's
             %% lower bits and take that as the new FCntUp.
             binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
-        
         PayloadFCntLow < PrevFCntLow andalso LowDiff > 10 ->
             %% The FCnt on this packets is significantly less than our
             %% internal counter.  We're goint to assume the lower 16

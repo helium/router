@@ -670,7 +670,6 @@ handle_cast(
         device = Device,
         db = DB,
         cf = CF,
-        channels_worker = ChannelsWorker,
         is_active = false
     } = State
 ) ->
@@ -684,7 +683,7 @@ handle_cast(
         PubKeyBin
     ),
     Device1 = router_device:update([{fcnt, PacketFCnt}], Device),
-    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+    ok = save_device(DB, CF, Device1),
     {noreply, State};
 handle_cast(
     {frame, UsedNwkSKey, PacketFCnt, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
@@ -721,7 +720,7 @@ handle_cast(
         case LastDevNonce == undefined of
             true ->
                 D1 = router_device:update([{fcnt, PacketFCnt}], Device0),
-                ok = save_and_update(DB, CF, ChannelsWorker, D1),
+                ok = save_device(DB, CF, D1),
                 D1;
             %% this is our first good uplink after join lets cleanup keys and update dev_nonces
             false ->
@@ -745,7 +744,7 @@ handle_cast(
                     {fcnt, PacketFCnt}
                 ],
                 D1 = router_device:update(DeviceUpdates, Device0),
-                ok = save_and_update(DB, CF, ChannelsWorker, D1),
+                ok = save_device(DB, CF, D1),
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
                         router_device:dev_nonces(D1),
@@ -2091,11 +2090,16 @@ packet_to_rxq(Packet) ->
         lsnr = blockchain_helium_packet_v1:snr(Packet)
     }.
 
+-spec save_device(rocksdb:db_handle(), rocksdb:cf_handle(), router_device:device()) -> ok.
+save_device(DB, CF, Device) ->
+    {ok, _} = router_device_cache:save(Device),
+    {ok, _} = router_device:save(DB, CF, Device),
+    ok.
+
 -spec save_and_update(rocksdb:db_handle(), rocksdb:cf_handle(), pid(), router_device:device()) ->
     ok.
 save_and_update(DB, CF, Pid, Device) ->
-    {ok, _} = router_device_cache:save(Device),
-    {ok, _} = router_device:save(DB, CF, Device),
+    ok = save_device(DB, CF, Device),
     ok = router_device_channels_worker:handle_device_update(Pid, Device).
 
 -spec get_device(rocksdb:db_handle(), rocksdb:cf_handle(), binary()) -> router_device:device().

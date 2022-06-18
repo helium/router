@@ -1334,6 +1334,17 @@ dualplan_region(Packet, HotspotRegion) ->
     ),
     DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
     DeviceRegion.
+
+-spec region_or_default(
+    DeviceRegion :: atom() | undefined,
+    HotspotRegion :: atom()
+) -> atom().
+region_or_default(DeviceRegion, HotspotRegion) ->
+    case DeviceRegion of
+        undefined -> HotspotRegion;
+        _ -> DeviceRegion
+    end.
+
 %% End
 %% Dual-Plan Code
 
@@ -1490,7 +1501,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    Region = router_device:region(Device0),
+                    Region = region_or_default(router_device:region(Device0), HotspotRegion),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     DataRate = erlang:list_to_binary(
@@ -1562,7 +1573,7 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    Region = router_device:region(Device0),
+                    Region = region_or_default(router_device:region(Device0), HotspotRegion),
                     %% ToDo: Our goal is for Plan data to be retrieved from chain var
                     Plan = lora_plan:region_to_plan(Region),
                     DataRate = erlang:list_to_binary(

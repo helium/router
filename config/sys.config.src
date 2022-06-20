@@ -48,7 +48,6 @@
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
         {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
-        {downlink_port_0_enabled, "${ROUTER_DOWNLINK_PORT_0_ENABLED}"},
         {charge_when_no_offer, "${ROUTER_CHARGE_WHEN_NO_OFFER}"},
         {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
         {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},

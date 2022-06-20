@@ -1274,7 +1274,13 @@ handle_join(
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
+    %% ToDo: Our goal is for Plan data to be retrieved from blockchain var
+    Region = dualplan_region(Packet, HotspotRegion),
+    Plan = lora_plan:region_to_plan(Region),
+    DataRate = erlang:list_to_binary(
+        blockchain_helium_packet_v1:datarate(Packet)
+    ),
+    DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
@@ -1292,16 +1298,17 @@ handle_join(
                     router_device:metadata(APIDevice)
                 )
             )},
-        {last_known_datarate, DR},
+        {last_known_datarate, DRIdx},
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
     lager:debug(
-        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p via ~s",
+        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [
             lorawan_utils:binary_to_hex(DevEUI),
             lorawan_utils:binary_to_hex(AppEUI),
             DevNonce,
+            HotspotRegion,
             blockchain_utils:addr2name(PubKeyBin)
         ]
     ),
@@ -1311,6 +1318,35 @@ handle_join(
         dev_addr = DevAddr,
         app_key = AppKey
     }}.
+
+%% Dual-Plan Code
+%% Logic to support the dual frequency plan which allows an AS923_1 Hotspot
+%% to support both AS923_1 and AU915 end-devices.
+%% Start
+-spec dualplan_region(
+    Packet :: blockchain_helium_packet_v1:packet() | atom(),
+    HotspotRegion :: atom()
+) -> atom().
+dualplan_region(Packet, HotspotRegion) ->
+    Frequency = blockchain_helium_packet_v1:frequency(Packet),
+    DataRate = erlang:list_to_binary(
+        blockchain_helium_packet_v1:datarate(Packet)
+    ),
+    DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
+    DeviceRegion.
+
+-spec region_or_default(
+    DeviceRegion :: atom() | undefined,
+    HotspotRegion :: atom()
+) -> atom().
+region_or_default(DeviceRegion, HotspotRegion) ->
+    case DeviceRegion of
+        undefined -> HotspotRegion;
+        _ -> DeviceRegion
+    end.
+
+%% End
+%% Dual-Plan Code
 
 -spec craft_join_reply(router_device:device(), #join_accept_args{}) -> binary().
 craft_join_reply(
@@ -1413,7 +1449,7 @@ validate_frame(
 -spec validate_frame_(
     Packet :: blockchain_helium_packet_v1:packet(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Region :: atom(),
+    HotspotRegion :: atom(),
     Device :: router_device:device(),
     OfferCache :: map(),
     Blockchain :: blockchain:blockchain(),
@@ -1431,7 +1467,8 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
     AppEUI = router_device:app_eui(Device0),
     AName = blockchain_utils:addr2name(PubKeyBin),
     TS = blockchain_helium_packet_v1:timestamp(Packet),
-    lager:debug("validating frame ~p @ ~p (devaddr: ~p) from ~p", [FCnt, TS, DevAddr, AName]),
+    lager:debug("validating frame ~p @ ~p (devaddr: ~p) region ~p from ~p",
+        [FCnt, TS, DevAddr, HotspotRegion, AName]),
     PayloadSize = erlang:byte_size(FRMPayload),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case maybe_charge(Device0, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
@@ -1464,12 +1501,18 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
+                    Region = region_or_default(router_device:region(Device0), HotspotRegion),
+                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
+                    Plan = lora_plan:region_to_plan(Region),
+                    DataRate = erlang:list_to_binary(
+                        blockchain_helium_packet_v1:datarate(Packet)
+                    ),
+                    DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {location, PubKeyBin},
                         {region, Region},
-                        {last_known_datarate, DR}
+                        {last_known_datarate, DRIdx}
                     ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
                     QueueDeviceUpdates =
@@ -1530,11 +1573,17 @@ validate_frame_(Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchai
                             AName
                         ]
                     ),
-                    {Region, DR} = packet_datarate(Device0, Packet, HotspotRegion),
+                    Region = region_or_default(router_device:region(Device0), HotspotRegion),
+                    %% ToDo: Our goal is for Plan data to be retrieved from chain var
+                    Plan = lora_plan:region_to_plan(Region),
+                    DataRate = erlang:list_to_binary(
+                        blockchain_helium_packet_v1:datarate(Packet)
+                    ),
+                    DRIdx = lora_plan:datarate_to_index(Plan, DataRate),
                     BaseDeviceUpdates = [
                         {fcnt, FCnt},
                         {region, Region},
-                        {last_known_datarate, DR}
+                        {last_known_datarate, DRIdx}
                     ],
                     %% If frame countain ACK=1 we should clear message from queue and go on next
                     QueueDeviceUpdates =
@@ -2107,9 +2156,11 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
         %% power this packet transmitted at, but that value is
         %% unknowable.
         {false, true} ->
-            DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
             Plan = lora_plan:region_to_plan(Region),
-            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRateBinary),
+            DataRate = erlang:list_to_binary(
+                blockchain_helium_packet_v1:datarate(Packet)
+            ),
+            DataRateIdx = lora_plan:datarate_to_index(Plan, DataRate),
             TxPowerIdx = 0,
             {undefined, {DataRateIdx, TxPowerIdx}};
         %% ADR is allowed for this device so no special handling for
@@ -2168,17 +2219,18 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
             )
     end.
 
+-ifdef(DEAD_CODE).
 -spec packet_datarate(
     Device :: router_device:device() | binary(),
     Packet :: blockchain_helium_packet_v1:packet() | atom(),
     Region :: atom()
 ) -> {atom(), integer()}.
-packet_datarate(Device, Packet, Region) ->
+packet_datarate(Device, Packet, HotspotRegion) ->
     Datarate = erlang:list_to_binary(
         blockchain_helium_packet_v1:datarate(Packet)
     ),
     DeviceRegion = router_device:region(Device),
-    packet_datarate(Datarate, {Region, DeviceRegion}).
+    packet_datarate(Datarate, {HotspotRegion, DeviceRegion}).
 
 -spec packet_datarate(
     Datarate :: binary(),
@@ -2187,21 +2239,22 @@ packet_datarate(Device, Packet, Region) ->
 packet_datarate(Datarate, {Region, Region}) ->
     Plan = lora_plan:region_to_plan(Region),
     {Region, lora_plan:datarate_to_index(Plan, Datarate)};
-packet_datarate(Datarate, {Region, DeviceRegion}) ->
-    Plan = lora_plan:region_to_plan(Region),
+packet_datarate(Datarate, {HotspotRegion, DeviceRegion}) ->
+    Plan = lora_plan:region_to_plan(HotspotRegion),
     try lora_plan:datarate_to_index(Plan, Datarate) of
         DR ->
-            {Region, DR}
+            {HotspotRegion, DR}
     catch
         _E:_R ->
             lager:info("failed to get DR for ~p ~p, reverting to device's region (~p)", [
-                Region,
+                HotspotRegion,
                 Datarate,
                 DeviceRegion
             ]),
             DevicePlan = lora_plan:region_to_plan(DeviceRegion),
             {DeviceRegion, lora_plan:datarate_to_index(DevicePlan, Datarate)}
     end.
+-endif.
 
 -spec calculate_packet_timeout(
     Device :: rourter_device:device(),

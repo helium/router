@@ -84,17 +84,7 @@
 %% Rate Limit (per_second)
 -define(THROTTLE_ERROR, limit_exceeded).
 -define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
--ifdef(TEST).
--define(HOTSPOT_RATE_LIMIT, 100).
--else.
--define(HOTSPOT_RATE_LIMIT, 10).
--endif.
 -define(DEVICE_THROTTLE, router_device_routing_device_throttle).
--ifdef(TEST).
--define(DEVICE_RATE_LIMIT, 100).
--else.
--define(DEVICE_RATE_LIMIT, 1).
--endif.
 
 -spec init() -> ok.
 init() ->
@@ -115,8 +105,10 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
-    ok = throttle:setup(?HOTSPOT_THROTTLE, ?HOTSPOT_RATE_LIMIT, per_second),
-    ok = throttle:setup(?DEVICE_THROTTLE, ?DEVICE_RATE_LIMIT, per_second),
+    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, 10),
+    DeviceRateLimit = application:get_env(router, device_rate_limit, 1),
+    ok = throttle:setup(?HOTSPOT_THROTTLE, HotspotRateLimit, per_second),
+    ok = throttle:setup(?DEVICE_THROTTLE, DeviceRateLimit, per_second),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -1290,6 +1282,8 @@ false_positive_test() ->
 %     {timeout, 15, fun test_for_handle_join_offer/0}.
 
 handle_join_offer_test() ->
+    application:set_env(router, hotspot_rate_limit, 100),
+    application:set_env(router, device_rate_limit, 100),
     application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),

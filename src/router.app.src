@@ -33,7 +33,8 @@
         inet_cidr,
         grpcbox,
         grpc_client,
-        erlang_lorawan
+        erlang_lorawan,
+        throttle
     ]},
     {included_applications, [blockchain]},
     {env, []},

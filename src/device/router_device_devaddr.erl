@@ -178,7 +178,7 @@ handle_cast(_Msg, State) ->
 handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
     case router_utils:get_blockchain() of
         undefined ->
-            erlang:send_after(500, self(), post_init),
+            erlang:send_after(100, self(), post_init),
             {noreply, State};
         Chain ->
             Subnets = subnets(OUI, Chain),

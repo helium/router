@@ -12,6 +12,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
+    init_ets/0,
     get_device/1,
     get_devices_by_deveui_appeui/2,
     get_devices/0,
@@ -80,6 +81,11 @@
 
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+-spec init_ets() -> ok.
+init_ets() ->
+    ?ETS = ets:new(?ETS, [public, named_table, set]),
+    ok.
 
 -spec get_device(DeviceID :: binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
@@ -419,7 +425,6 @@ evict_org_from_cache(OrgID) ->
     ok.
 
 -spec get_token() -> binary().
-
 get_token() ->
     gen_server:call(?SERVER, get_token).
 
@@ -450,7 +455,6 @@ xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
 init(Args) ->
     erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ets:new(?ETS, [public, named_table, set]),
     ok = hackney_pool:start_pool(?POOL, [{timeout, timer:seconds(60)}, {max_connections, 100}]),
     DownlinkEndpoint = maps:get(downlink_endpoint, Args),
     Endpoint = maps:get(endpoint, Args),

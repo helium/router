@@ -35,7 +35,6 @@ start_link() ->
 %% Supervisor callbacks
 %%====================================================================
 init([]) ->
-    ok = router_console_dc_tracker:init_ets(),
     DeviceAPIData = maps:from_list(application:get_env(router, router_console_api, [])),
     {ok,
         {?FLAGS, [

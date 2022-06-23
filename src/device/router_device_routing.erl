@@ -1194,35 +1194,6 @@ expected_fcnt(Device, Payload) ->
             binary:decode_unsigned(<<NewHigh:16, PayloadFCntLow:16>>)
     end.
 
-%% {DeviceFCnt, DeviceFCntLow} =
-%%     case router_device:fcnt(Device) of
-%%         undefined ->
-%%             {undefined, undefined};
-%%         I when is_integer(I) ->
-%%             <<IL:16/integer-unsigned-little, _:16>> = <<I:32/integer-unsigned-little>>,
-%%             {I, IL}
-%%     end,
-%% lager:debug("PayloadFCntLow = ~p, DeviceFCntLow = ~p. DeviceFCnt = ~p.~n", [
-%%     PayloadFCntLow, DeviceFCntLow, DeviceFCnt
-%% ]),
-
-%% case {DeviceFCnt, PayloadFCntLow, DeviceFCntLow} of
-%%     {undefined, 1, undefined} ->
-%%         %% This case applies only to the first packet after a
-%%         %% successful join.  It happens when a device erroneously
-%%         %% begins counting packets at 1 instead of 0.  Most
-%%         %% notably, the LoRaMac simulator in c_src/ behaves this
-%%         %% way.  We're going to accommodate it.
-%%         1;
-%%     {LastSeenFCnt, LowBits, LowBits} when is_integer(LastSeenFCnt) ->
-%%         %% This case happens when we receive a retransmission of
-%%         %% the most recent packet.
-%%         LastSeenFCnt;
-%%     _ ->
-%%         %% This is the "normal" case.
-%%         router_device:fcnt_next_val(Device)
-%% end.
-
 -spec b0_from_payload(binary(), non_neg_integer()) -> binary().
 b0_from_payload(Payload, ExpectedFCnt) ->
     <<MType:3, _:5, DevAddr:4/binary, _:4, FOptsLen:4, _:16, _FOpts:FOptsLen/binary, _/binary>> =

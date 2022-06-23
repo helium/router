@@ -559,13 +559,8 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
         {ok, Payload} ->
             Port =
                 case maps:find(<<"port">>, MapPayload) of
-                    {ok, X} when is_integer(X), X > 0, X < 224 ->
+                    {ok, X} when is_integer(X), X >= 0, X < 224 ->
                         X;
-                    {ok, 0} ->
-                        case allow_port_0() of
-                            true -> 0;
-                            false -> 1
-                        end;
                     _ ->
                         1
                 end,
@@ -603,14 +598,6 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
     end;
 downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
-
--spec allow_port_0() -> boolean().
-allow_port_0() ->
-    case application:get_env(router, downlink_port_0_enabled, false) of
-        "true" -> true;
-        true -> true;
-        _ -> false
-    end.
 
 -spec send_join_to_channel(
     JoinCache :: #join_cache{},

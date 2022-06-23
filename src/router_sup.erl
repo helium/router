@@ -107,9 +107,23 @@ init([]) ->
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
     MetricsOpts = #{},
-
+    POCDenyListArgs =
+        case {application:get_env(router, denylist_keys, undefined), application:get_env(router, denylist_url, undefined)} of
+            {undefined, _} ->
+                #{};
+            {_, undefined} ->
+                #{};
+            {DenyListKeys, DenyListUrl} -> 
+                #{
+                    denylist_keys => DenyListKeys,
+                    denylist_url => DenyListUrl,
+                    denylist_base_dir => BaseDir,
+                    denylist_check_timer => {immediate, timer:hours(12)}
+                }
+        end,
     {ok,
         {?FLAGS, [
+            ?WORKER(ru_poc_denylist, [POCDenyListArgs])
             ?SUP(blockchain_sup, [BlockchainOpts]),
             ?WORKER(router_metrics, [MetricsOpts]),
             ?WORKER(router_db, [DBOpts]),

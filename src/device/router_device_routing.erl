@@ -84,6 +84,9 @@
 -define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
 -define(DEVICE_THROTTLE, router_device_routing_device_throttle).
 
+-define(REPUTATION_ERROR, reputation_denied).
+-define(POC_DENYLIST_ERROR, poc_denylist_denied).
+
 -spec init() -> ok.
 init() ->
     Options = [
@@ -111,30 +114,23 @@ init() ->
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
     Start = erlang:system_time(millisecond),
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    {OfferCheckTime, OfferCheck} = timer:tc(fun offer_check/1, [Offer]),
     Resp =
-        case
-            router_hotspot_reputation:enabled() andalso
-                router_hotspot_reputation:denied(Hotspot)
-        of
-            true ->
-                {error, denied};
-            false ->
-                case throttle:check(?HOTSPOT_THROTTLE, Hotspot) of
-                    {limit_exceeded, _, _} ->
-                        {error, ?THROTTLE_ERROR};
-                    {ok, _, _} ->
-                        case Routing of
-                            #routing_information_pb{data = {eui, _EUI}} ->
-                                join_offer(Offer, HandlerPid);
-                            #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                                packet_offer(Offer, HandlerPid)
-                        end
+        case OfferCheck of
+            {error, _} = Error0 ->
+                Error0;
+            ok ->
+                case Routing of
+                    #routing_information_pb{data = {eui, _EUI}} ->
+                        join_offer(Offer, HandlerPid);
+                    #routing_information_pb{data = {devaddr, _DevAddr}} ->
+                        packet_offer(Offer, HandlerPid)
                 end
         end,
     End = erlang:system_time(millisecond),
     erlang:spawn(fun() ->
+        ok = router_metrics:function_observe('router_device_routing:offer_check', OfferCheckTime),
         ok = router_metrics:packet_trip_observe_start(
             blockchain_state_channel_offer_v1:packet_hash(Offer),
             blockchain_state_channel_offer_v1:hotspot(Offer),
@@ -148,8 +144,8 @@ handle_offer(Offer, HandlerPid) ->
             ok = router_hotspot_reputation:track_offer(Offer),
             ok = router_device_stats:track_offer(Offer, Device),
             ok;
-        {error, _} = Error ->
-            Error
+        {error, _} = Error1 ->
+            Error1
     end.
 
 -spec handle_packet(
@@ -224,6 +220,38 @@ clear_replay(DeviceID) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec offer_check(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok | {error, any()}.
+offer_check(Offer) ->
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    ReputationCheck = fun(H) ->
+        router_hotspot_reputation:enabled() andalso
+            router_hotspot_reputation:denied(H)
+    end,
+    ThrottleCheck = fun(H) ->
+        case throttle:check(?HOTSPOT_THROTTLE, H) of
+            {limit_exceeded, _, _} -> false;
+            _ -> true
+        end
+    end,
+    Checks = [
+        {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
+        {ReputationCheck, ?REPUTATION_ERROR},
+        {ThrottleCheck, ?THROTTLE_ERROR}
+    ],
+    lists:foldl(
+        fun
+            ({_Fun, _Error}, {error, _} = Error) ->
+                Error;
+            ({Fun, Error}, ok) ->
+                case Fun(Hotspot) of
+                    true -> ok;
+                    false -> {error, Error}
+                end
+        end,
+        ok,
+        Checks
+    ).
 
 -spec print_handle_offer_resp(
     Offer :: blockchain_state_channel_offer_v1:offer(),
@@ -428,7 +456,7 @@ check_device_rate(Hotspot, Device) ->
     case throttle:check(?DEVICE_THROTTLE, {Hotspot, DeviceID}) of
         {limit_exceeded, _, _} ->
             {error, ?THROTTLE_ERROR};
-        {ok, _, _} ->
+        _ ->
             ok
     end.
 

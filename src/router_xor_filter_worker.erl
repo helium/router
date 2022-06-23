@@ -354,7 +354,7 @@ handle_cast(_Msg, State) ->
 
 handle_info(post_init, #state{check_filters_ref = undefined} = State) ->
     State1 =
-        case blockchain_worker:blockchain() of
+        case router_utils:get_blockchain() of
             undefined ->
                 ok = schedule_post_init(),
                 State;

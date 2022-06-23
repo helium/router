@@ -61,12 +61,17 @@ all() ->
 %%--------------------------------------------------------------------
 
 init_per_group(RegionGroup, Config) ->
-    [{region, RegionGroup} | Config].
+    case os:type() of
+        {unix, darwin} -> {skip, macos};
+        _ -> [{region, RegionGroup} | Config]
+    end.
 
 end_per_group(_, _) ->
     ok.
 
 init_per_testcase(TestCase, Config) ->
+    %% Clean up router_blockchain to avoid old chain from previous test
+    _ = persistent_term:erase(router_blockchain),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, allocate, fun(_, _) ->
         DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
@@ -176,6 +181,8 @@ init_per_testcase(TestCase, Config) ->
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(_TestCase, Config) ->
+    %% Clean up router_blockchain to avoid old chain from previous test
+    _ = persistent_term:erase(router_blockchain),
     libp2p_swarm:stop(proplists:get_value(swarm, Config)),
     Pid = proplists:get_value(elli, Config),
     {ok, Acceptors} = elli:get_acceptors(Pid),

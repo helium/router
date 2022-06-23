@@ -221,7 +221,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(post_init, #state{chain = undefined} = State) ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
@@ -235,6 +235,7 @@ handle_info(
     {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
     #state{chain = undefined} = State
 ) ->
+    lager:info("got block ~p with not chain", [_BlockHash]),
     erlang:send_after(500, self(), post_init),
     {noreply, State};
 handle_info(
@@ -513,19 +514,15 @@ record_queues() ->
 
 -spec record_hotspot_reputations() -> ok.
 record_hotspot_reputations() ->
-    lists:foreach(
-        fun({Hotspot, PacketMissed, PacketUnknownDevice}) ->
-            Name = blockchain_utils:addr2name(Hotspot),
-            Counter = PacketMissed + PacketUnknownDevice,
-            case Counter >= router_hotspot_reputation:threshold() of
-                true ->
-                    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, [Name], Counter);
-                false ->
-                    ok
-            end
+    Gauge = lists:foldl(
+        fun({_Hotspot, PacketMissed, PacketUnknownDevice}, Acc) ->
+            PacketMissed + PacketUnknownDevice + Acc
         end,
+        0,
         router_hotspot_reputation:reputations()
-    ).
+    ),
+    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, Gauge),
+    ok.
 
 -spec record_devices() -> ok.
 record_devices() ->

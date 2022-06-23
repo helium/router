@@ -404,7 +404,7 @@ packet_hash_cache_test(Config) ->
 
     %% -------------------------------------------------------------------
     %% Query for devices
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
     DevAddr = router_device:devaddr(Device1),
 
     %% make sure things go wrong first
@@ -447,6 +447,14 @@ packet_hash_cache_test(Config) ->
 
 multi_buy_test(Config) ->
     meck:delete(router_device_devaddr, allocate, 2, false),
+    %% We're going to use the actual devaddr allocation, make sure we have a
+    %% chain before starting this test.
+    ok = test_utils:wait_until(fun() ->
+        case whereis(router_device_devaddr) of
+            undefined -> false;
+            Pid -> element(2, sys:get_state(Pid)) /= undefined
+        end
+    end),
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),

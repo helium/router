@@ -69,15 +69,17 @@ get_by_devaddr(DevAddr) ->
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
-    % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
-    MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
-    _ = ets:select_delete(?DEVADDR_ETS, MS),
-    lists:foreach(
-        fun(DevAddr) ->
-            true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
-        end,
-        router_device:devaddrs(Device)
-    ),
+    _ = erlang:spawn(fun() ->
+        % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
+        MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
+        _ = ets:select_delete(?DEVADDR_ETS, MS),
+        lists:foreach(
+            fun(DevAddr) ->
+                true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
+            end,
+            router_device:devaddrs(Device)
+        )
+    end),
     {ok, Device}.
 
 -spec delete(binary()) -> ok.
@@ -137,12 +139,14 @@ init_from_db_test() ->
     ?assertEqual({ok, Device1}, router_device:save(DB, CF, Device1)),
     ?assertEqual(ok, init_from_db()),
     ?assertEqual({ok, Device1}, ?MODULE:get(ID)),
+    timer:sleep(10),
     ?assertEqual([Device1], ?MODULE:get_by_devaddr(DevAddr0)),
 
     DevAddr1 = <<"devaddr1">>,
     DevAddr2 = <<"devaddr2">>,
     Device2 = router_device:devaddrs([DevAddr1, DevAddr2], Device1),
     ?assertEqual({ok, Device2}, ?MODULE:save(Device2)),
+    timer:sleep(10),
     ?assertEqual([], ?MODULE:get_by_devaddr(DevAddr0)),
     ?assertEqual([Device2], ?MODULE:get_by_devaddr(DevAddr1)),
     ?assertEqual([Device2], ?MODULE:get_by_devaddr(DevAddr2)),

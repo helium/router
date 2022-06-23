@@ -42,8 +42,6 @@
 -define(BITS_23, 8388607).
 -define(MAX_16_BITS, erlang:trunc(math:pow(2, 16) - 1)).
 
--define(ETS, router_device_routing_ets).
-
 -define(BF_ETS, router_device_routing_bf_ets).
 -define(BF_KEY, bloom_key).
 %% https://hur.st/bloomfilter/?n=10000&p=1.0E-6&m=&k=20
@@ -90,7 +88,6 @@ init() ->
         {write_concurrency, true},
         {read_concurrency, true}
     ],
-    ets:new(?ETS, Options),
     ets:new(?BF_ETS, Options),
     ets:new(?REPLAY_ETS, Options),
     {ok, BloomJoinRef} = bloom:new_forgetful(
@@ -149,7 +146,6 @@ handle_offer(Offer, HandlerPid) ->
 ) -> ok | {error, any()}.
 handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
-    ok = router_hotspot_reputation:track_packet(SCPacket),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
@@ -157,10 +153,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
+            ok = router_hotspot_reputation:track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
+
             E;
         ok ->
+            ok = router_hotspot_reputation:track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -581,7 +580,7 @@ check_device_is_active(Device, PubKeyBin) ->
     Chain :: blockchain:blockchain()
 ) -> ok | {error, ?DEVICE_NO_DC}.
 check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
-    case router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+    try router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
         {error, _Reason} ->
             ok = router_utils:event_uplink_dropped_not_enough_dc(
                 erlang:system_time(millisecond),
@@ -592,6 +591,10 @@ check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
             {error, ?DEVICE_NO_DC};
         {ok, _OrgID, _Balance, _Nonce} ->
             ok
+    catch
+        What:Why ->
+            lager:info("failed to check_device_balance", [{What, Why}]),
+            {error, dc_tracker_crashed}
     end.
 
 -spec eui_to_bin(EUI :: undefined | non_neg_integer()) -> binary().
@@ -859,7 +862,7 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
-            ok = router_hotspot_reputation:track_unknown_device(PubKeyBin),
+            ok = router_hotspot_reputation:track_unknown_device(Packet, PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1130,15 +1133,7 @@ maybe_start_worker(DeviceID) ->
 
 -spec get_chain() -> blockchain:blockchain().
 get_chain() ->
-    Key = blockchain,
-    case ets:lookup(?ETS, Key) of
-        [] ->
-            Chain = blockchain_worker:blockchain(),
-            true = ets:insert(?ETS, {Key, Chain}),
-            Chain;
-        [{Key, Chain}] ->
-            Chain
-    end.
+    router_utils:get_blockchain().
 
 -spec handle_offer_metrics(
     #routing_information_pb{},
@@ -1285,7 +1280,6 @@ handle_join_offer_test() ->
     meck:unload(router_metrics),
     ?assert(meck:validate(router_devices_sup)),
     meck:unload(router_devices_sup),
-    ets:delete(?ETS),
     ets:delete(?BF_ETS),
     ets:delete(?REPLAY_ETS),
     _ = catch ets:delete(router_device_multibuy_ets),

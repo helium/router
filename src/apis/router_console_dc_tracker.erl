@@ -169,7 +169,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(post_init, #state{chain = undefined} = State) ->
-    case blockchain_worker:blockchain() of
+    case router_utils:get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
@@ -180,6 +180,8 @@ handle_info(
     {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
     #state{chain = undefined} = State
 ) ->
+    lager:info("got block ~p with not chain", [_BlockHash]),
+    erlang:send_after(500, self(), post_init),
     {noreply, State};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, Ledger}},

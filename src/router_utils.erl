@@ -4,6 +4,7 @@
 -include("router_device_worker.hrl").
 
 -export([
+    get_blockchain/0,
     event_join_request/8,
     event_join_accept/5,
     event_uplink/10,
@@ -40,6 +41,18 @@
 -type uuid_v4() :: binary().
 
 -export_type([uuid_v4/0]).
+
+-spec get_blockchain() -> blockchain:blockchain() | undefined.
+get_blockchain() ->
+    Key = router_blockchain,
+    case persistent_term:get(Key, undefined) of
+        undefined ->
+            Chain = blockchain_worker:blockchain(),
+            ok = persistent_term:put(Key, Chain),
+            Chain;
+        Chain ->
+            Chain
+    end.
 
 -spec event_join_request(
     ID :: uuid_v4(),

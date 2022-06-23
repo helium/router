@@ -19,7 +19,7 @@
     init/0,
     track_offer/1,
     track_packet/1,
-    track_unknown_device/1,
+    track_unknown_device/2,
     reputations/0,
     reputation/1,
     denied/1,
@@ -82,10 +82,24 @@ track_packet(SCPacket) ->
     end),
     ok.
 
--spec track_unknown_device(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
-track_unknown_device(Hotspot) ->
-    Counter = ets:update_counter(?ETS, Hotspot, {3, 1}, {default, 0, 0}),
-    lager:info("hotspot ~p unknown_device= ~p", [blockchain_utils:addr2name(Hotspot), Counter]),
+-spec track_unknown_device(
+    Packet :: blockchain_helium_packet_v1:packet(), Hotspot :: libp2p_crypto:pubkey_bin()
+) -> ok.
+track_unknown_device(Packet, Hotspot) ->
+    erlang:spawn(fun() ->
+        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+        case ets:lookup(?OFFER_ETS, {Hotspot, PHash}) of
+            [] ->
+                %% if we have no offer for this packet lets assume only the packet was sent
+                ok;
+            [{{Hotspot, PHash}, _} | _] ->
+                true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
+                Counter = ets:update_counter(?ETS, Hotspot, {3, 1}, {default, 0, 0}),
+                lager:info("hotspot ~p unknown_device= ~p", [
+                    blockchain_utils:addr2name(Hotspot), Counter
+                ])
+        end
+    end),
     ok.
 
 -spec reputations() -> list().
@@ -183,7 +197,14 @@ bad_hotspot_test() ->
 
     ?assertEqual([{Hotspot, 100, 0}], ?MODULE:reputations()),
 
-    ok = ?MODULE:track_unknown_device(Hotspot),
+    Packet1 = blockchain_helium_packet_v1:new(
+        {eui, 16#deadbeef, 16#DEADC0DE}, crypto:strong_rand_bytes(32)
+    ),
+    Offer1 = blockchain_state_channel_offer_v1:from_packet(Packet1, Hotspot, 'US915'),
+    ok = ?MODULE:track_offer(Offer1),
+    timer:sleep(100),
+    ok = ?MODULE:track_unknown_device(Packet1, Hotspot),
+    timer:sleep(100),
     ?assertEqual({100, 1}, ?MODULE:reputation(Hotspot)),
     ?assertEqual([{Hotspot, 100, 1}], ?MODULE:reputations()),
 

@@ -79,7 +79,7 @@ sc_worker_test(Config) ->
             {ok, Block} ->
                 _ = blockchain_test_utils:add_block(
                     Block,
-                    blockchain_worker:blockchain(),
+                    router_utils:get_blockchain(),
                     self(),
                     blockchain_swarm:tid()
                 ),
@@ -89,7 +89,7 @@ sc_worker_test(Config) ->
     end),
 
     _ = test_utils:add_oui(Config),
-    Chain = blockchain_worker:blockchain(),
+    Chain = router_utils:get_blockchain(),
 
     % Force tick to open first SC
     router_sc_worker ! '__router_sc_tick',

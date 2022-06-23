@@ -86,6 +86,7 @@
 
 -define(REPUTATION_ERROR, reputation_denied).
 -define(POC_DENYLIST_ERROR, poc_denylist_denied).
+-define(ROUTER_DENYLIST_ERROR, router_denylist_denied).
 
 -spec init() -> ok.
 init() ->
@@ -236,6 +237,7 @@ offer_check(Offer) ->
     end,
     Checks = [
         {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
+        {fun ru_denylist:check/1, ?ROUTER_DENYLIST_ERROR},
         {ReputationCheck, ?REPUTATION_ERROR},
         {ThrottleCheck, ?THROTTLE_ERROR}
     ],

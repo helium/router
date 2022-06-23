@@ -70,6 +70,7 @@ init([]) ->
     ok = router_console_api:init_ets(),
     ok = router_hotspot_reputation:init(),
     ok = router_device_stats:init(),
+    ok = ru_denylist:init(BaseDir),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),
 
     {ok, _} = application:ensure_all_started(ranch),

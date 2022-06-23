@@ -61,7 +61,10 @@ all() ->
 %%--------------------------------------------------------------------
 
 init_per_group(RegionGroup, Config) ->
-    [{region, RegionGroup} | Config].
+    case os:type() of
+        {unix, darwin} -> {skip, macos};
+        _ -> [{region, RegionGroup} | Config]
+    end.
 
 end_per_group(_, _) ->
     ok.

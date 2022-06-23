@@ -231,8 +231,8 @@ offer_check(Offer) ->
     end,
     ThrottleCheck = fun(H) ->
         case throttle:check(?HOTSPOT_THROTTLE, H) of
-            {limit_exceeded, _, _} -> false;
-            _ -> true
+            {limit_exceeded, _, _} -> true;
+            _ -> false
         end
     end,
     Checks = [
@@ -247,8 +247,8 @@ offer_check(Offer) ->
                 Error;
             ({Fun, Error}, ok) ->
                 case Fun(Hotspot) of
-                    true -> ok;
-                    false -> {error, Error}
+                    true -> {error, Error};
+                    false -> ok
                 end
         end,
         ok,

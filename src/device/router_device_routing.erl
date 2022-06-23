@@ -79,6 +79,11 @@
 -define(DEVICE_INACTIVE, device_inactive).
 -define(DEVICE_NO_DC, device_not_enought_dc).
 
+%% Rate Limit (per_second)
+-define(THROTTLE_ERROR, limit_exceeded).
+-define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
+-define(DEVICE_THROTTLE, router_device_routing_device_throttle).
+
 -spec init() -> ok.
 init() ->
     Options = [
@@ -97,6 +102,10 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
+    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, 10),
+    DeviceRateLimit = application:get_env(router, device_rate_limit, 1),
+    ok = throttle:setup(?HOTSPOT_THROTTLE, HotspotRateLimit, per_second),
+    ok = throttle:setup(?DEVICE_THROTTLE, DeviceRateLimit, per_second),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -112,11 +121,16 @@ handle_offer(Offer, HandlerPid) ->
             true ->
                 {error, denied};
             false ->
-                case Routing of
-                    #routing_information_pb{data = {eui, _EUI}} ->
-                        join_offer(Offer, HandlerPid);
-                    #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                        packet_offer(Offer, HandlerPid)
+                case throttle:check(?HOTSPOT_THROTTLE, Hotspot) of
+                    {limit_exceeded, _, _} ->
+                        {error, ?THROTTLE_ERROR};
+                    {ok, _, _} ->
+                        case Routing of
+                            #routing_information_pb{data = {eui, _EUI}} ->
+                                join_offer(Offer, HandlerPid);
+                            #routing_information_pb{data = {devaddr, _DevAddr}} ->
+                                packet_offer(Offer, HandlerPid)
+                        end
                 end
         end,
     End = erlang:system_time(millisecond),
@@ -364,17 +378,22 @@ join_offer_(Offer, _Pid) ->
 ) -> {ok, router_device:device()} | {error, any()}.
 maybe_buy_join_offer(Offer, _Pid, Device) ->
     PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
-    case check_device_is_active(Device, PubKeyBin) of
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    case check_device_rate(Hotspot, Device) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            Chain = get_chain(),
-            case check_device_balance(PayloadSize, Device, PubKeyBin, Chain) of
+            case check_device_is_active(Device, Hotspot) of
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    check_device_preferred_hotspots(Device, Offer)
+                    Chain = get_chain(),
+                    case check_device_balance(PayloadSize, Device, Hotspot, Chain) of
+                        {error, _Reason} = Error ->
+                            Error;
+                        ok ->
+                            check_device_preferred_hotspots(Device, Offer)
+                    end
             end
     end.
 
@@ -400,6 +419,17 @@ check_device_preferred_hotspots(Device, Offer) ->
                 _ ->
                     {error, not_preferred_hotspot}
             end
+    end.
+
+-spec check_device_rate(Hotspot :: libp2p_crypto:pubkey_bin(), Device :: router_device:device()) ->
+    ok | {error, ?THROTTLE_ERROR}.
+check_device_rate(Hotspot, Device) ->
+    DeviceID = router_device:id(Device),
+    case throttle:check(?DEVICE_THROTTLE, {Hotspot, DeviceID}) of
+        {limit_exceeded, _, _} ->
+            {error, ?THROTTLE_ERROR};
+        {ok, _, _} ->
+            ok
     end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
@@ -493,20 +523,29 @@ validate_packet_offer(Offer, _Pid, Chain) ->
         {error, _} = Error ->
             Error;
         ok ->
-            PubKeyBin = blockchain_state_channel_offer_v1:hotspot(Offer),
+            Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
-            case get_device_for_offer(Offer, DevAddr1, PubKeyBin, Chain) of
+            case get_device_for_offer(Offer, DevAddr1, Hotspot, Chain) of
                 {error, _} = Err ->
                     Err;
                 {ok, Device} ->
-                    case check_device_is_active(Device, PubKeyBin) of
+                    case check_device_rate(Hotspot, Device) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
-                            PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-                            case check_device_balance(PayloadSize, Device, PubKeyBin, Chain) of
-                                {error, _Reason} = Error -> Error;
-                                ok -> {ok, Device}
+                            case check_device_is_active(Device, Hotspot) of
+                                {error, _Reason} = Error ->
+                                    Error;
+                                ok ->
+                                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(
+                                        Offer
+                                    ),
+                                    case
+                                        check_device_balance(PayloadSize, Device, Hotspot, Chain)
+                                    of
+                                        {error, _Reason} = Error -> Error;
+                                        ok -> {ok, Device}
+                                    end
                             end
                     end
             end
@@ -1238,6 +1277,9 @@ false_positive_test() ->
 %     {timeout, 15, fun test_for_handle_join_offer/0}.
 
 handle_join_offer_test() ->
+    application:set_env(router, hotspot_rate_limit, 100),
+    application:set_env(router, device_rate_limit, 100),
+    application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),
 

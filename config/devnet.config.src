@@ -1,0 +1,136 @@
+[
+    {libp2p, [
+        {use_dns_for_seeds, false},
+        {seed_dns_cname, "seed.helium.io"},
+        {seed_config_dns_name, "_seed_config.helium.io"},
+        {nat_map, #{
+            {"${ROUTER_NAT_INTERNAL_IP}", "${ROUTER_NAT_INTERNAL_PORT}"} =>
+                {"${ROUTER_NAT_EXTERNAL_IP}", "${ROUTER_NAT_EXTERNAL_PORT}"}
+        }},
+        {max_tcp_connections, 500000}
+    ]},
+    {blockchain, [
+        {network, testnet},
+        {base_dir, "/var/data"},
+        {update_dir, "update"},
+        {port, 2154},
+        {seed_nodes, "/ip4/3.227.21.97/tcp/2154,/ip4/3.235.14.99/tcp/2154"},
+        {seed_node_dns, ""},
+        {snap_source_base_url, undefined},
+        {fetch_latest_from_snap_source, false},
+        {honor_quick_sync, false},
+        {disable_gateway_cache, true},
+        {sync_timeout_mins, 1},
+        {max_inbound_connections, 12},
+        {outbound_gossip_connections, 4},
+        {sc_packet_handler, router_device_routing},
+        {sc_max_actors, "${ROUTER_SC_MAX_ACTORS}"},
+        {sc_sup_type, server},
+        {sc_hook_close_submit, router_sc_worker}
+    ]},
+    {router, [
+        {max_v8_context, 1000},
+        {oui, "${ROUTER_OUI}"},
+        {sc_open_dc_amount, "${ROUTER_SC_OPEN_DC_AMOUNT}"},
+        {sc_expiration_interval, "${ROUTER_SC_EXPIRATION_INTERVAL}"},
+        {sc_expiration_buffer, "${ROUTER_SC_EXPIRATION_BUFFER}"},
+        {max_sc_open, "${ROUTER_MAX_SC_OPEN}"},
+        {router_console_api, [
+            {endpoint, <<"${ROUTER_CONSOLE_ENDPOINT}">>},
+            {ws_endpoint, <<"${ROUTER_CONSOLE_WS_ENDPOINT}">>},
+            {downlink_endpoint, <<"${ROUTER_CONSOLE_DOWNLINK_ENDPOINT}">>},
+            {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
+        ]},
+        {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
+        {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
+        {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
+        {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
+        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"}
+    ]},
+    {grpcbox, [
+        {servers, [
+            #{
+                grpc_opts => #{
+                    service_protos => [router_pb, state_channel_pb],
+                    services => #{
+                        'helium.router' => helium_router_service,
+                        'helium.state_channel' => blockchain_grpc_sc_server_handler
+                    }
+                },
+                transport_opts => #{ssl => false},
+                listen_opts => #{
+                    port => 8080,
+                    ip => {0, 0, 0, 0}
+                },
+                pool_opts => #{size => 100},
+                server_opts => #{
+                    header_table_size => 4096,
+                    enable_push => 1,
+                    max_concurrent_streams => unlimited,
+                    initial_window_size => 65535,
+                    max_frame_size => 16384,
+                    max_header_list_size => unlimited
+                }
+            }
+        ]}
+    ]},
+    {prometheus, [
+        {collectors, [
+            prometheus_boolean,
+            prometheus_counter,
+            prometheus_gauge,
+            prometheus_histogram,
+            prometheus_vm_memory_collector,
+            prometheus_vm_system_info_collector
+        ]},
+        {vm_system_info_collector_metrics, [process_count]}
+    ]},
+    {lager, [
+        {suppress_supervisor_start_stop, true},
+        {log_root, "/var/data/log"},
+        {crash_log, "crash.log"},
+        {handlers, [
+            {lager_file_backend, [
+                {file, "router.log"},
+                {level, warning},
+                {size, 0},
+                {date, "$D0"},
+                {count, 7},
+                {formatter_config, [
+                    "[",
+                    date,
+                    " ",
+                    time,
+                    "] ",
+                    pid,
+                    " [",
+                    severity,
+                    "]",
+                    {device_id, [" [", device_id, "]"], ""},
+                    " [",
+                    {module, ""},
+                    {function, [":", function], ""},
+                    {line, [":", line], ""},
+                    "] ",
+                    message,
+                    "\n"
+                ]}
+            ]}
+        ]},
+        {traces, [
+            {{lager_file_backend, "router.log"}, [{application, router}], info},
+            {{lager_file_backend, "router.log"}, [{module, router_console_api}], info},
+            {{lager_file_backend, "router.log"}, [{module, router_device_routing}], info},
+            {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], info},
+            {{lager_file_backend, "state_channel.log"},
+                [{module, blockchain_state_channels_db_owner}], info},
+            {{lager_file_backend, "state_channel.log"}, [{module, blockchain_state_channels_cache}],
+                info},
+            {{lager_file_backend, "state_channel.log"},
+                [{module, blockchain_state_channels_server}], info},
+            {{lager_file_backend, "state_channel.log"},
+                [{module, blockchain_state_channels_worker}], info},
+            {{lager_file_backend, "blockchain.log"}, [{module, blockchain_txn}], debug}
+        ]}
+    ]}
+].

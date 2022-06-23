@@ -1303,9 +1303,6 @@ false_positive_test() ->
     ?assert(Failures < 10),
     ok.
 
-% handle_join_offer_test() ->
-%     {timeout, 15, fun test_for_handle_join_offer/0}.
-
 handle_join_offer_test() ->
     application:set_env(router, hotspot_rate_limit, 100),
     application:set_env(router, device_rate_limit, 100),
@@ -1358,5 +1355,130 @@ handle_join_offer_test() ->
     _ = catch ets:delete(router_device_multibuy_max_ets),
     application:stop(lager),
     ok.
+
+offer_check_success_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        {Time, Resp} = timer:tc(fun offer_check/1, [Offer]),
+        ?assertEqual(ok, Resp),
+        %% Time is in micro seconds (10000 = 10ms)
+        ?assert(Time < 10000),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_poc_denylist_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+        Hotspot = libp2p_crypto:b58_to_bin("1112BVrz6rsgtvmAXS9dBPh9JoASYfmtu5u3sYQjvK19AmgjGkq"),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?POC_DENYLIST_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_denylist_test_() ->
+    {timeout, 15, fun() ->
+        {ok, BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        ok = ru_denylist:insert(BaseDir, Hotspot),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?ROUTER_DENYLIST_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_reputation_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        true = ets:insert(router_hotspot_reputation_ets, {Hotspot, 666, 0}),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?REPUTATION_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_throttle_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual(ok, offer_check(Offer)),
+        ?assertEqual({error, ?THROTTLE_ERROR}, offer_check(Offer)),
+        timer:sleep(1000),
+        ?assertEqual(ok, offer_check(Offer)),
+        ?assertEqual({error, ?THROTTLE_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_init() ->
+    application:set_env(router, hotspot_reputation_enabled, true),
+    ok = router_hotspot_reputation:init(),
+
+    _ = application:ensure_all_started(throttle),
+    ok = throttle:setup(?HOTSPOT_THROTTLE, 1, per_second),
+
+    application:ensure_all_started(lager),
+    application:ensure_all_started(hackney),
+    BaseDir = string:chomp(os:cmd("mktemp -d")),
+    _ = ru_poc_denylist:start_link(#{
+        denylist_keys => ["1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL"],
+        denylist_url => "https://api.github.com/repos/helium/denylist/releases/latest",
+        denylist_base_dir => BaseDir,
+        denylist_check_timer => {immediate, timer:hours(12)}
+    }),
+    ok = wait_until(fun() ->
+        ru_poc_denylist:get_version() /= {ok, 0}
+    end),
+
+    ok = ru_denylist:init(BaseDir),
+
+    {ok, BaseDir}.
+
+offer_check_stop() ->
+    application:set_env(router, hotspot_reputation_enabled, false),
+    ets:delete(router_hotspot_reputation_ets),
+    ets:delete(router_hotspot_reputation_offers_ets),
+    application:stop(throttle),
+    application:stop(lager),
+    application:stop(hackney),
+    gen_server:stop(ru_poc_denylist),
+    ok.
+
+wait_until(Fun) ->
+    wait_until(Fun, 100, 100).
+
+wait_until(Fun, Retry, Delay) when Retry > 0 ->
+    Res = Fun(),
+    case Res of
+        true ->
+            ok;
+        {fail, _Reason} = Fail ->
+            Fail;
+        _ when Retry == 1 ->
+            {fail, Res};
+        _ ->
+            timer:sleep(Delay),
+            wait_until(Fun, Retry - 1, Delay)
+    end.
 
 -endif.

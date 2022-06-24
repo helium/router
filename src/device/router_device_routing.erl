@@ -80,9 +80,12 @@
 -define(DEVICE_NO_DC, device_not_enought_dc).
 
 %% Rate Limit (per_second)
--define(THROTTLE_ERROR, limit_exceeded).
+-define(HOTSPOT_THROTTLE_ERROR, hotspot_limit_exceeded).
+-define(DEVICE_THROTTLE_ERROR, device_limit_exceeded).
 -define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
+-define(DEFAULT_HOTSPOT_THROTTLE, 10).
 -define(DEVICE_THROTTLE, router_device_routing_device_throttle).
+-define(DEFAULT_DEVICE_THROTTLE, 1).
 
 -define(REPUTATION_ERROR, reputation_denied).
 -define(POC_DENYLIST_ERROR, poc_denylist_denied).
@@ -106,8 +109,8 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
-    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, 10),
-    DeviceRateLimit = application:get_env(router, device_rate_limit, 1),
+    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, ?DEFAULT_HOTSPOT_THROTTLE),
+    DeviceRateLimit = application:get_env(router, device_rate_limit, ?DEFAULT_DEVICE_THROTTLE),
     ok = throttle:setup(?HOTSPOT_THROTTLE, HotspotRateLimit, per_second),
     ok = throttle:setup(?DEVICE_THROTTLE, DeviceRateLimit, per_second),
     ok.
@@ -239,7 +242,7 @@ offer_check(Offer) ->
         {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
         {fun ru_denylist:check/1, ?ROUTER_DENYLIST_ERROR},
         {ReputationCheck, ?REPUTATION_ERROR},
-        {ThrottleCheck, ?THROTTLE_ERROR}
+        {ThrottleCheck, ?HOTSPOT_THROTTLE_ERROR}
     ],
     lists:foldl(
         fun
@@ -452,12 +455,12 @@ check_device_preferred_hotspots(Device, Offer) ->
     end.
 
 -spec check_device_rate(Hotspot :: libp2p_crypto:pubkey_bin(), Device :: router_device:device()) ->
-    ok | {error, ?THROTTLE_ERROR}.
+    ok | {error, ?DEVICE_THROTTLE_ERROR}.
 check_device_rate(Hotspot, Device) ->
     DeviceID = router_device:id(Device),
     case throttle:check(?DEVICE_THROTTLE, {Hotspot, DeviceID}) of
         {limit_exceeded, _, _} ->
-            {error, ?THROTTLE_ERROR};
+            {error, ?DEVICE_THROTTLE_ERROR};
         _ ->
             ok
     end.
@@ -1437,10 +1440,10 @@ offer_check_fail_throttle_test_() ->
         Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
 
         ?assertEqual(ok, offer_check(Offer)),
-        ?assertEqual({error, ?THROTTLE_ERROR}, offer_check(Offer)),
+        ?assertEqual({error, ?HOTSPOT_THROTTLE_ERROR}, offer_check(Offer)),
         timer:sleep(1000),
         ?assertEqual(ok, offer_check(Offer)),
-        ?assertEqual({error, ?THROTTLE_ERROR}, offer_check(Offer)),
+        ?assertEqual({error, ?HOTSPOT_THROTTLE_ERROR}, offer_check(Offer)),
 
         ok = offer_check_stop()
     end}.

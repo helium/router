@@ -1309,6 +1309,8 @@ handle_join_offer_test() ->
     application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),
+    ok = router_hotspot_reputation:init(),
+    ok = router_device_stats:init(),
 
     DeviceID = router_utils:uuid_v4(),
     application:ensure_all_started(lager),
@@ -1351,8 +1353,14 @@ handle_join_offer_test() ->
     meck:unload(router_devices_sup),
     ets:delete(?BF_ETS),
     ets:delete(?REPLAY_ETS),
-    _ = catch ets:delete(router_device_multibuy_ets),
-    _ = catch ets:delete(router_device_multibuy_max_ets),
+    true = ets:delete(router_device_multibuy_ets),
+    true = ets:delete(router_device_multibuy_max_ets),
+    %% true = ets:delete(router_hotspot_reputation_ets),
+    %% true = ets:delete(router_hotspot_reputation_offers_ets),
+    true = ets:delete(router_device_stats_ets),
+    true = ets:delete(router_device_stats_offers_ets),
+    true = ets:delete(ru_reputation_ets),
+    true = ets:delete(ru_reputation_offers_ets),
     application:stop(lager),
     ok.
 
@@ -1411,7 +1419,7 @@ offer_check_fail_reputation_test_() ->
         {ok, _BaseDir} = offer_check_init(),
         #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
         Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
-        true = ets:insert(router_hotspot_reputation_ets, {Hotspot, 666, 0}),
+        true = ets:insert(ru_reputation_ets, {Hotspot, 666, 0}),
         Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
         Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
 
@@ -1439,6 +1447,7 @@ offer_check_fail_throttle_test_() ->
 
 offer_check_init() ->
     application:set_env(router, hotspot_reputation_enabled, true),
+    ok = router_device_stats:init(),
     ok = router_hotspot_reputation:init(),
 
     _ = application:ensure_all_started(throttle),
@@ -1454,8 +1463,12 @@ offer_check_init() ->
 
 offer_check_stop() ->
     application:set_env(router, hotspot_reputation_enabled, false),
-    ets:delete(router_hotspot_reputation_ets),
-    ets:delete(router_hotspot_reputation_offers_ets),
+    %% true = ets:delete(router_hotspot_reputation_ets),
+    %% true = ets:delete(router_hotspot_reputation_offers_ets),
+    true = ets:delete(router_device_stats_ets),
+    true = ets:delete(router_device_stats_offers_ets),
+    true = ets:delete(ru_reputation_ets),
+    true = ets:delete(ru_reputation_offers_ets),
     application:stop(throttle),
     ok.
 

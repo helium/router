@@ -45,21 +45,7 @@ threshold() ->
 
 -spec init() -> ok.
 init() ->
-    Opts1 = [
-        public,
-        named_table,
-        set,
-        {read_concurrency, true}
-    ],
-    _ = ets:new(?ETS, Opts1),
-    Opts2 = [
-        public,
-        named_table,
-        set,
-        {write_concurrency, true}
-    ],
-    _ = ets:new(?OFFER_ETS, Opts2),
-    ok = spawn_crawl_offers(?DEFAULT_TIMER),
+    ok = ru_reputation:init(),
     ok.
 
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
@@ -67,8 +53,7 @@ track_offer(Offer) ->
     erlang:spawn(fun() ->
         Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
         PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-        Now = erlang:system_time(millisecond),
-        true = ets:insert(?OFFER_ETS, {{Hotspot, PHash}, Now})
+        ok = ru_reputation:track_offer(Hotspot, PHash)
     end),
     ok.
 
@@ -108,10 +93,11 @@ reputations() ->
 
 -spec reputation(Hotspot :: libp2p_crypto:pubkey_bin()) -> {non_neg_integer(), non_neg_integer()}.
 reputation(Hotspot) ->
-    case ets:lookup(?ETS, Hotspot) of
-        [] -> {0, 0};
-        [{Hotspot, PacketMissed, PacketUnknownDevice}] -> {PacketMissed, PacketUnknownDevice}
-    end.
+    ru_reputation:reputation(Hotspot).
+    %% case ets:lookup(?ETS, Hotspot) of
+    %%     [] -> {0, 0};
+    %%     [{Hotspot, PacketMissed, PacketUnknownDevice}] -> {PacketMissed, PacketUnknownDevice}
+    %% end.
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
@@ -144,14 +130,14 @@ crawl_offers(Timer) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec spawn_crawl_offers(Timer :: non_neg_integer()) -> ok.
-spawn_crawl_offers(Timer) ->
-    _ = erlang:spawn(fun() ->
-        ok = timer:sleep(Timer),
-        ok = crawl_offers(Timer),
-        ok = spawn_crawl_offers(Timer)
-    end),
-    ok.
+%% -spec spawn_crawl_offers(Timer :: non_neg_integer()) -> ok.
+%% spawn_crawl_offers(Timer) ->
+%%     _ = erlang:spawn(fun() ->
+%%         ok = timer:sleep(Timer),
+%%         ok = crawl_offers(Timer),
+%%         ok = spawn_crawl_offers(Timer)
+%%     end),
+%%     ok.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

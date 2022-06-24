@@ -1971,7 +1971,7 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->
-    FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
+    FOpts = lora_core:encode_fopts(Frame#frame.fopts),
     FOptsLen = erlang:byte_size(FOpts),
     PktHdr =
         <<

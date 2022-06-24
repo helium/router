@@ -182,7 +182,7 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     ADRACKReq = 0,
     ACK = 0,
     RFU = 0,
-    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
+    FOptsBin = lora_core:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),
     <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
     Data = lorawan_utils:reverse(

@@ -149,7 +149,7 @@ handle_offer(Offer, HandlerPid) ->
     end),
     case Resp of
         {ok, Device} ->
-            ok = router_hotspot_reputation:track_offer(Offer),
+            ok = reputation_track_offer(Offer),
             ok = router_device_stats:track_offer(Offer, Device),
             ok;
         {error, _} = Error1 ->
@@ -171,13 +171,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
-            ok = router_hotspot_reputation:track_packet(SCPacket),
+            ok = reputation_track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
             E;
         ok ->
-            ok = router_hotspot_reputation:track_packet(SCPacket),
+            ok = reputation_track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -233,8 +233,8 @@ clear_replay(DeviceID) ->
 offer_check(Offer) ->
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     ReputationCheck = fun(H) ->
-        router_hotspot_reputation:enabled() andalso
-            router_hotspot_reputation:denied(H)
+        Enabled = router_utils:get_env_bool(hotspot_reputation_enabled, false),
+        Enabled andalso ru_reputation:denied(H)
     end,
     ThrottleCheck = fun(H) ->
         case throttle:check(?HOTSPOT_THROTTLE, H) of
@@ -938,7 +938,7 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, _Reason1} = Error ->
-            ok = router_hotspot_reputation:track_unknown_device(Packet, PubKeyBin),
+            _ = ru_reputation:track_unknown(PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1255,6 +1255,21 @@ handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End - Start).
 
+-spec reputation_track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
+reputation_track_offer(Offer) ->
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    ok = ru_reputation:track_offer(Hotspot, PHash),
+    ok.
+
+-spec reputation_track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
+reputation_track_packet(SCPacket) ->
+    Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    ok = ru_reputation:track_packet(Hotspot, PHash),
+    ok.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -1316,7 +1331,7 @@ handle_join_offer_test() ->
     application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),
-    ok = router_hotspot_reputation:init(),
+    ok = ru_reputation:init(),
     ok = router_device_stats:init(),
 
     DeviceID = router_utils:uuid_v4(),
@@ -1362,8 +1377,6 @@ handle_join_offer_test() ->
     ets:delete(?REPLAY_ETS),
     true = ets:delete(router_device_multibuy_ets),
     true = ets:delete(router_device_multibuy_max_ets),
-    %% true = ets:delete(router_hotspot_reputation_ets),
-    %% true = ets:delete(router_hotspot_reputation_offers_ets),
     true = ets:delete(router_device_stats_ets),
     true = ets:delete(router_device_stats_offers_ets),
     true = ets:delete(ru_reputation_ets),
@@ -1455,7 +1468,7 @@ offer_check_fail_throttle_test_() ->
 offer_check_init() ->
     application:set_env(router, hotspot_reputation_enabled, true),
     ok = router_device_stats:init(),
-    ok = router_hotspot_reputation:init(),
+    ok = ru_reputation:init(),
 
     _ = application:ensure_all_started(throttle),
     ok = throttle:setup(?HOTSPOT_THROTTLE, 1, per_second),
@@ -1470,8 +1483,6 @@ offer_check_init() ->
 
 offer_check_stop() ->
     application:set_env(router, hotspot_reputation_enabled, false),
-    %% true = ets:delete(router_hotspot_reputation_ets),
-    %% true = ets:delete(router_hotspot_reputation_offers_ets),
     true = ets:delete(router_device_stats_ets),
     true = ets:delete(router_device_stats_offers_ets),
     true = ets:delete(ru_reputation_ets),

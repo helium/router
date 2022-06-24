@@ -519,7 +519,7 @@ record_hotspot_reputations() ->
             PacketMissed + PacketUnknownDevice + Acc
         end,
         0,
-        router_hotspot_reputation:reputations()
+        ru_reputation:reputations()
     ),
     _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, Gauge),
     ok.

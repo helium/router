@@ -34,6 +34,7 @@
     frame_timeout/0,
     join_timeout/0,
     get_env_int/2,
+    get_env_bool/2,
     enumerate_0/1,
     enumerate_0_to_size/3
 ]).
@@ -661,6 +662,14 @@ get_env_int(Key, Default) ->
         [] -> Default;
         Str when is_list(Str) -> erlang:list_to_integer(Str);
         I -> I
+    end.
+
+-spec get_env_bool(atom(), boolean()) -> boolean().
+get_env_bool(Key, Default) ->
+    case application:get_env(router, Key, Default) of
+        "true" -> true;
+        true -> true;
+        _ -> false
     end.
 
 %% ------------------------------------------------------------------

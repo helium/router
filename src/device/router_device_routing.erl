@@ -937,7 +937,7 @@ send_to_device_worker(
     Chain
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
-        {error, _Reason1} = Error ->
+        {error, unknown_device} ->
             _ = ru_reputation:track_unknown(PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(

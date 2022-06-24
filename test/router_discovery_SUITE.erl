@@ -6,7 +6,7 @@
     end_per_testcase/2
 ]).
 
--export([disovery_test/1, fail_to_connect_test/1]).
+-export([discovery_test/1, fail_to_connect_test/1]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("helium_proto/include/discovery_pb.hrl").
@@ -33,7 +33,7 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [disovery_test, fail_to_connect_test].
+    [discovery_test, fail_to_connect_test].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -51,7 +51,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-disovery_test(Config) ->
+discovery_test(Config) ->
     DiscoFrameTimeout = timer:seconds(3),
     application:set_env(router, disco_frame_timeout, DiscoFrameTimeout),
 
@@ -164,7 +164,7 @@ disovery_test(Config) ->
             <<"rx_delay">> => 0,
             <<"preferred_hotspots">> => fun erlang:is_list/1
         },
-        <<"fcnt">> => 1,
+        <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body1),
         <<"payload_size">> => erlang:byte_size(Body1),
@@ -239,7 +239,7 @@ disovery_test(Config) ->
             <<"rx_delay">> => 0,
             <<"preferred_hotspots">> => fun erlang:is_list/1
         },
-        <<"fcnt">> => 2,
+        <<"fcnt">> => 1,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body1),
         <<"payload_size">> => erlang:byte_size(Body1),
@@ -334,7 +334,7 @@ disovery_test(Config) ->
             <<"rx_delay">> => 0,
             <<"preferred_hotspots">> => fun erlang:is_list/1
         },
-        <<"fcnt">> => 1,
+        <<"fcnt">> => 0,
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"payload">> => base64:encode(Body3),
         <<"payload_size">> => erlang:byte_size(Body3),

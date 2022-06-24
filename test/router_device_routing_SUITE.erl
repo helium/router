@@ -7,7 +7,6 @@
 ]).
 
 -export([
-    bad_fcnt_test/1,
     multi_buy_test/1,
     packet_hash_cache_test/1,
     join_offer_from_strange_hotspot_test/1,
@@ -21,7 +20,9 @@
     handle_packet_with_no_preferred_hotspot_test/1,
     handle_join_packet_from_strange_hotspot_test/1,
     handle_join_packet_from_preferred_hotspot_test/1,
-    handle_join_packet_with_no_preferred_hotspot_test/1
+    handle_join_packet_with_no_preferred_hotspot_test/1,
+    handle_packet_fcnt_32_bit_rollover_test/1,
+    handle_packet_wrong_fcnt_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -50,7 +51,6 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        bad_fcnt_test,
         multi_buy_test,
         packet_hash_cache_test,
         join_offer_from_strange_hotspot_test,
@@ -64,7 +64,9 @@ all() ->
         handle_packet_with_no_preferred_hotspot_test,
         handle_join_packet_from_strange_hotspot_test,
         handle_join_packet_from_preferred_hotspot_test,
-        handle_join_packet_with_no_preferred_hotspot_test
+        handle_join_packet_with_no_preferred_hotspot_test,
+        handle_packet_fcnt_32_bit_rollover_test,
+        handle_packet_wrong_fcnt_test
     ].
 
 %%--------------------------------------------------------------------
@@ -251,8 +253,9 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
 
     NwkSKey = router_device:nwk_s_key(Device1),
     AppSKey = router_device:app_s_key(Device1),
+    FCnt = router_device:fcnt_next_val(Device1),
 
-    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
         dont_encode => true, routing => true, devaddr => router_device:devaddr(Device1)
     }),
 
@@ -604,181 +607,124 @@ multi_buy_test(Config) ->
 
     ok.
 
-bad_fcnt_test(Config) ->
-    #{
-        pubkey_bin := PubKeyBin,
-        stream := Stream,
-        hotspot_name := HotspotName
-    } = test_utils:join_device(Config),
+handle_packet_fcnt_32_bit_rollover_test(Config) ->
+    WaitForDeviceWorker = fun() ->
+        timer:sleep(500)
+    end,
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    test_utils:add_oui(Config),
 
-    %% Waiting for reply from router to hotspot
+    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
     test_utils:wait_state_channel_message(1250),
 
-    %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    FCnt = 65535 - 20,
-    Stream !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device0),
-                router_device:app_s_key(Device0),
-                FCnt,
-                #{fcnt_size => 16}
-            )},
+    Device1 = router_device:update([{fcnt, 16#FFFFFFFE}], Device0),
+    {ok, _} = router_device_cache:save(Device1),
 
-    %% Waiting for data from HTTP channel
-    test_utils:wait_channel_data(#{
-        <<"type">> => <<"uplink">>,
-        <<"replay">> => false,
-        <<"uuid">> => fun erlang:is_binary/1,
-        <<"id">> => ?CONSOLE_DEVICE_ID,
-        <<"downlink_url">> => fun erlang:is_binary/1,
-        <<"name">> => ?CONSOLE_DEVICE_NAME,
-        <<"dev_eui">> => lorawan_utils:binary_to_hex(?DEVEUI),
-        <<"app_eui">> => lorawan_utils:binary_to_hex(?APPEUI),
-        <<"metadata">> => #{
-            <<"labels">> => ?CONSOLE_LABELS,
-            <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
-            <<"adr_allowed">> => false,
-            <<"cf_list_enabled">> => false,
-            <<"rx_delay_state">> => fun erlang:is_binary/1,
-            <<"rx_delay">> => 0,
-            <<"preferred_hotspots">> => fun erlang:is_list/1
-        },
-        <<"fcnt">> => FCnt,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"payload">> => <<>>,
-        <<"payload_size">> => 0,
-        <<"raw_packet">> => fun erlang:is_binary/1,
-        <<"port">> => 1,
-        <<"devaddr">> => '_',
-        <<"hotspots">> => [
-            #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"reported_at">> => fun erlang:is_integer/1,
-                <<"hold_time">> => fun erlang:is_integer/1,
-                <<"status">> => <<"success">>,
-                <<"rssi">> => 0.0,
-                <<"snr">> => 0.0,
-                <<"spreading">> => <<"SF8BW125">>,
-                <<"frequency">> => fun erlang:is_float/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1
-            }
-        ],
-        <<"dc">> => #{
-            <<"balance">> => fun erlang:is_integer/1,
-            <<"nonce">> => fun erlang:is_integer/1
-        }
+    NwkSKey = router_device:nwk_s_key(Device1),
+    AppSKey = router_device:app_s_key(Device1),
+    FCnt = router_device:fcnt_next_val(Device1),
+
+    ?assertEqual(16#FFFFFFFF, FCnt),
+
+    %% Let's try sending the highest possible FCnt.
+    SCPacket = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device1)
     }),
 
-    %% Waiting for report channel status from HTTP channel
-    {ok, #{<<"id">> := UplinkUUID}} = test_utils:wait_for_console_event_sub(
-        <<"uplink_unconfirmed">>,
-        #{
-            <<"id">> => fun erlang:is_binary/1,
-            <<"category">> => <<"uplink">>,
-            <<"sub_category">> => <<"uplink_unconfirmed">>,
-            <<"description">> => fun erlang:is_binary/1,
-            <<"reported_at">> => fun erlang:is_integer/1,
-            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-            <<"data">> => #{
-                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-                <<"fcnt">> => fun erlang:is_integer/1,
-                <<"payload_size">> => fun erlang:is_integer/1,
-                <<"payload">> => fun erlang:is_binary/1,
-                <<"raw_packet">> => fun erlang:is_binary/1,
-                <<"port">> => fun erlang:is_integer/1,
-                <<"devaddr">> => fun erlang:is_binary/1,
-                <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                    <<"name">> => erlang:list_to_binary(HotspotName),
-                    <<"rssi">> => 0.0,
-                    <<"snr">> => 0.0,
-                    <<"spreading">> => <<"SF8BW125">>,
-                    <<"frequency">> => fun erlang:is_float/1,
-                    <<"channel">> => fun erlang:is_number/1,
-                    <<"lat">> => fun erlang:is_float/1,
-                    <<"long">> => fun erlang:is_float/1
-                },
-                <<"mac">> => [],
-                <<"hold_time">> => fun erlang:is_integer/1
-            }
-        }
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
     ),
 
-    test_utils:wait_for_console_event_sub(<<"uplink_integration_req">>, #{
-        <<"id">> => UplinkUUID,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_integration_req">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Request sent to ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
-        ),
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"req">> => #{
-                <<"method">> => <<"POST">>,
-                <<"url">> => <<?CONSOLE_URL/binary, "/channel">>,
-                <<"body">> => fun erlang:is_binary/1,
-                <<"headers">> => fun erlang:is_map/1,
-                <<"url_params">> => fun test_utils:is_jsx_encoded_map/1
-            },
-            <<"integration">> => #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"status">> => <<"success">>
-            }
-        }
+    WaitForDeviceWorker(),
+
+    %% Packet was routed.
+    %% fcnt should now be 16#FFFFFFFF
+    %% next fcnt should now be 0
+
+    {ok, Device2} = router_device:get_by_id(DB, CF, WorkerID),
+    ?assertEqual(16#FFFFFFFF, router_device:fcnt(Device2)),
+    ?assertEqual(0, router_device:fcnt_next_val(Device2)),
+
+    %% If we send 16#FFFFFFFF again, that should work because it's a legitimate replay.
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
+    ),
+
+    %% Fun fact: there exists a race condition here where the worker
+    %% may reject our replayed packet because the frame cache TTL is
+    %% set very low during testing.  The worker is expected to save
+    %% the device record with the updated fcnt in any case.  That's
+    %% why we sleep instead of waiting for a console message
+    %% indicating the worker has processed the frame: because we don't
+    %% know what to expect here, an `uplink` or an `uplink_dropped`.
+    WaitForDeviceWorker(),
+
+    %% Now, let's try sending 0.
+    SCPacket2 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device1)
+    }),
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket2, erlang:system_time(millisecond), self())
+    ),
+
+    WaitForDeviceWorker(),
+
+    %% That worked.
+    %% fcnt should now be 0
+    %% next fcnt should now be 1
+
+    {ok, Device3} = router_device:get_by_id(DB, CF, WorkerID),
+    ?assertEqual(0, router_device:fcnt(Device3)),
+    ?assertEqual(1, router_device:fcnt_next_val(Device3)),
+    ok.
+
+handle_packet_wrong_fcnt_test(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    test_utils:add_oui(Config),
+
+    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
+    test_utils:wait_state_channel_message(1250),
+
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    NwkSKey = router_device:nwk_s_key(Device0),
+    AppSKey = router_device:app_s_key(Device0),
+
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device0)
+    }),
+    ?assertEqual(
+        ok, router_device_routing:handle_packet(SCPacket0, erlang:system_time(millisecond), self())
+    ),
+
+    Device1 = router_device:update([{fcnt, 200}], Device0),
+    {ok, _} = router_device_cache:save(Device1),
+    BadFCnt = 99,
+
+    SCPacket1 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, BadFCnt, #{
+        dont_encode => true,
+        routing => true,
+        devaddr => router_device:devaddr(Device1)
     }),
 
-    test_utils:wait_for_console_event_sub(<<"uplink_integration_res">>, #{
-        <<"id">> => UplinkUUID,
-        <<"category">> => <<"uplink">>,
-        <<"sub_category">> => <<"uplink_integration_res">>,
-        <<"description">> => erlang:list_to_binary(
-            io_lib:format("Response received from ~p", [?CONSOLE_HTTP_CHANNEL_NAME])
-        ),
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"res">> => #{
-                <<"body">> => <<"success">>,
-                <<"headers">> => fun erlang:is_map/1,
-                <<"code">> => 200
-            },
-            <<"integration">> => #{
-                <<"id">> => ?CONSOLE_HTTP_CHANNEL_ID,
-                <<"name">> => ?CONSOLE_HTTP_CHANNEL_NAME,
-                <<"status">> => <<"success">>
-            }
-        }
-    }),
-
-    Stream !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(Device0),
-                router_device:app_s_key(Device0),
-                FCnt + 100,
-                #{fcnt_size => 32}
-            )},
-
-    test_utils:wait_until(fun() ->
-        {error, not_found} == router_device:get_by_id(DB, CF, WorkerID) andalso
-            {error, not_found} == router_device_cache:get(WorkerID)
-    end),
-
+    ?assertEqual(
+        {error, unknown_device},
+        router_device_routing:handle_packet(
+            SCPacket1, erlang:system_time(millisecond), self()
+        )
+    ),
     ok.
 
 %% ------------------------------------------------------------------

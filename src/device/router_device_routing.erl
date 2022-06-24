@@ -83,8 +83,12 @@
 -define(HOTSPOT_THROTTLE_ERROR, hotspot_limit_exceeded).
 -define(DEVICE_THROTTLE_ERROR, device_limit_exceeded).
 -define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
--define(DEFAULT_HOTSPOT_THROTTLE, 10).
+%% 25/second: After analysis it seems that in best condition a hotspot
+%% cannot really support more than 25 uplinks per second
+-define(DEFAULT_HOTSPOT_THROTTLE, 25).
 -define(DEVICE_THROTTLE, router_device_routing_device_throttle).
+%% 1/second is the default (note: this is 1/second per device/hotspot pair combo)
+%% 1/second was picked as rx windows are minimum 1s
 -define(DEFAULT_DEVICE_THROTTLE, 1).
 
 -define(REPUTATION_ERROR, reputation_denied).

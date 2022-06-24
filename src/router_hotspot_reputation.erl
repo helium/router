@@ -41,103 +41,57 @@ enabled() ->
 
 -spec threshold() -> non_neg_integer().
 threshold() ->
-    router_utils:get_env_int(hotspot_reputation_threshold, ?DEFAULT_THRESHOLD).
+    ru_reputation:threshold().
 
 -spec init() -> ok.
 init() ->
     ok = ru_reputation:init(),
+    Threshold = router_utils:get_env_int(hotspot_reputation_threshold, ?DEFAULT_THRESHOLD),
+    _ = ru_reputation:threshold(Threshold),
     ok.
 
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
 track_offer(Offer) ->
-    erlang:spawn(fun() ->
-        Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-        PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-        ok = ru_reputation:track_offer(Hotspot, PHash)
-    end),
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    ok = ru_reputation:track_offer(Hotspot, PHash),
     ok.
 
 -spec track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
 track_packet(SCPacket) ->
-    erlang:spawn(fun() ->
-        Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-        Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        true = ets:delete(?OFFER_ETS, {Hotspot, PHash})
-    end),
+    Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    ok = ru_reputation:track_packet(Hotspot, PHash),
     ok.
 
 -spec track_unknown_device(
-    Packet :: blockchain_helium_packet_v1:packet(), Hotspot :: libp2p_crypto:pubkey_bin()
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Hotspot :: libp2p_crypto:pubkey_bin()
 ) -> ok.
-track_unknown_device(Packet, Hotspot) ->
-    erlang:spawn(fun() ->
-        PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-        case ets:lookup(?OFFER_ETS, {Hotspot, PHash}) of
-            [] ->
-                %% if we have no offer for this packet lets assume only the packet was sent
-                ok;
-            [{{Hotspot, PHash}, _} | _] ->
-                true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
-                Counter = ets:update_counter(?ETS, Hotspot, {3, 1}, {default, 0, 0}),
-                lager:info("hotspot ~p unknown_device= ~p", [
-                    blockchain_utils:addr2name(Hotspot), Counter
-                ])
-        end
-    end),
+track_unknown_device(_Packet, Hotspot) ->
+    ru_reputation:track_unknown(Hotspot),
     ok.
 
 -spec reputations() -> list().
 reputations() ->
-    ets:tab2list(?ETS).
+    ru_reputation:reputations().
 
 -spec reputation(Hotspot :: libp2p_crypto:pubkey_bin()) -> {non_neg_integer(), non_neg_integer()}.
 reputation(Hotspot) ->
     ru_reputation:reputation(Hotspot).
-    %% case ets:lookup(?ETS, Hotspot) of
-    %%     [] -> {0, 0};
-    %%     [{Hotspot, PacketMissed, PacketUnknownDevice}] -> {PacketMissed, PacketUnknownDevice}
-    %% end.
 
 -spec denied(Hotspot :: libp2p_crypto:pubkey_bin()) -> boolean().
 denied(Hotspot) ->
-    {PacketMissed, PacketUnknownDevice} = ?MODULE:reputation(Hotspot),
-    PacketMissed + PacketUnknownDevice >= ?MODULE:threshold().
+    ru_reputation:denied(Hotspot).
 
 -spec reset(Hotspot :: libp2p_crypto:pubkey_bin()) -> ok.
 reset(Hotspot) ->
-    true = ets:insert(?ETS, {Hotspot, 0, 0}),
-    ok.
+    ru_reputation:reset(Hotspot).
 
 -spec crawl_offers(Timer :: non_neg_integer()) -> ok.
 crawl_offers(Timer) ->
-    Now = erlang:system_time(millisecond) - Timer,
-    %% MS = ets:fun2ms(fun({Key, Time}) when Time < Now -> Key end),
-    MS = [{{'$1', '$2'}, [{'<', '$2', {const, Now}}], ['$1']}],
-    Expired = ets:select(?OFFER_ETS, MS),
-    lager:info("crawling offer, found ~p", [erlang:length(Expired)]),
-    lists:foreach(
-        fun({Hotspot, PHash}) ->
-            true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
-            Counter = ets:update_counter(?ETS, Hotspot, {2, 1}, {default, 0, 0}),
-            lager:info("hotspot ~p packet miss= ~p", [blockchain_utils:addr2name(Hotspot), Counter])
-        end,
-        Expired
-    ),
-    ok.
-
-%% ------------------------------------------------------------------
-%% Internal Function Definitions
-%% ------------------------------------------------------------------
-
-%% -spec spawn_crawl_offers(Timer :: non_neg_integer()) -> ok.
-%% spawn_crawl_offers(Timer) ->
-%%     _ = erlang:spawn(fun() ->
-%%         ok = timer:sleep(Timer),
-%%         ok = crawl_offers(Timer),
-%%         ok = spawn_crawl_offers(Timer)
-%%     end),
-%%     ok.
+    ru_reputation:crawl_offers(Timer).
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -164,7 +118,7 @@ bad_hotspot_test() ->
     ?assertEqual({1, 0}, ?MODULE:reputation(Hotspot)),
 
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    ?assertEqual([], ets:lookup(?ETS, {Hotspot, PHash})),
+    ?assertEqual([], ets:lookup(ru_reputation_ets, {Hotspot, PHash})),
 
     lists:foreach(
         fun(X) ->
@@ -199,8 +153,8 @@ bad_hotspot_test() ->
     ?assertEqual({0, 0}, ?MODULE:reputation(Hotspot)),
     ?assertEqual(false, ?MODULE:denied(Hotspot)),
 
-    ets:delete(?ETS),
-    ets:delete(?OFFER_ETS),
+    ets:delete(ru_reputation_ets),
+    ets:delete(ru_reputation_offers_ets),
     application:stop(lager),
 
     ok.
@@ -225,12 +179,12 @@ good_hotspot_test() ->
     ?assertEqual({0, 0}, ?MODULE:reputation(Hotspot)),
 
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    ?assertEqual([], ets:lookup(?ETS, {Hotspot, PHash})),
+    ?assertEqual([], ets:lookup(ru_reputation_ets, {Hotspot, PHash})),
 
     ?assertEqual([], ?MODULE:reputations()),
 
-    ets:delete(?ETS),
-    ets:delete(?OFFER_ETS),
+    ets:delete(ru_reputation_ets),
+    ets:delete(ru_reputation_offers_ets),
     application:stop(lager),
 
     ok.

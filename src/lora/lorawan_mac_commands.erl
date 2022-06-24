@@ -12,9 +12,7 @@
     build_fopts/2,
     merge_rxwin/2,
     parse_fopts/1,
-    parse_fdownopts/1,
-    encode_fopts/1,
-    encode_fupopts/1
+    parse_fdownopts/1
 ]).
 
 -include("lorawan_db.hrl").
@@ -111,7 +109,7 @@ build_fopts({Network, Profile, Node}, FOptsOut0) ->
         [] -> ok;
         List2 -> lager:debug("~s <- ~w", [lorawan_utils:binary_to_hex(Node#node.devaddr), List2])
     end,
-    encode_fopts(FOptsOut).
+    lora_core:encode_fopts(FOptsOut).
 
 parse_fopts(<<16#02, Rest/binary>>) ->
     [link_check_req | parse_fopts(Rest)];
@@ -173,59 +171,6 @@ parse_fdownopts(<<>>) ->
 parse_fdownopts(Unknown) ->
     lager:warning("Unknown downlink command ~p", [lorawan_utils:binary_to_hex(Unknown)]),
     [].
-
-encode_fopts([{link_check_ans, Margin, GwCnt} | Rest]) ->
-    <<16#02, Margin, GwCnt, (encode_fopts(Rest))/binary>>;
-encode_fopts([{link_adr_req, DataRate, TXPower, ChMask, ChMaskCntl, NbRep} | Rest]) ->
-    <<16#03, DataRate:4, TXPower:4, ChMask:16/little-unsigned-integer, 0:1, ChMaskCntl:3, NbRep:4,
-        (encode_fopts(Rest))/binary>>;
-encode_fopts([{duty_cycle_req, MaxDCycle} | Rest]) ->
-    <<16#04, 0:4, MaxDCycle:4, (encode_fopts(Rest))/binary>>;
-encode_fopts([{rx_param_setup_req, RX1DROffset, RX2DataRate, Frequency} | Rest]) ->
-    <<16#05, 0:1, RX1DROffset:3, RX2DataRate:4, Frequency:24/little-unsigned-integer,
-        (encode_fopts(Rest))/binary>>;
-encode_fopts([dev_status_req | Rest]) ->
-    <<16#06, (encode_fopts(Rest))/binary>>;
-encode_fopts([{new_channel_req, ChIndex, Freq, MaxDR, MinDR} | Rest]) ->
-    <<16#07, ChIndex, Freq:24/little-unsigned-integer, MaxDR:4, MinDR:4,
-        (encode_fopts(Rest))/binary>>;
-encode_fopts([{rx_timing_setup_req, Delay} | Rest]) ->
-    <<16#08, 0:4, Delay:4, (encode_fopts(Rest))/binary>>;
-encode_fopts([{tx_param_setup_req, DownDwell, UplinkDwell, MaxEIRP} | Rest]) ->
-    <<16#09, 0:2, DownDwell:1, UplinkDwell:1, MaxEIRP:4, (encode_fopts(Rest))/binary>>;
-encode_fopts([{di_channel_req, ChIndex, Freq} | Rest]) ->
-    <<16#0A, ChIndex, Freq:24/little-unsigned-integer, (encode_fopts(Rest))/binary>>;
-encode_fopts([{device_time_ans, MsSinceEpoch} | Rest]) ->
-    % 0.5^8
-    Ms = trunc((MsSinceEpoch rem 1000) / 3.90625),
-    <<16#0D, (MsSinceEpoch div 1000):32/little-unsigned-integer, Ms, (encode_fopts(Rest))/binary>>;
-encode_fopts([]) ->
-    <<>>.
-
-encode_fupopts([link_check_req | Rest]) ->
-    <<16#02, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([{link_adr_ans, PowerACK, DataRateACK, ChannelMaskACK} | Rest]) ->
-    <<16#03, 0:5, PowerACK:1, DataRateACK:1, ChannelMaskACK:1, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([duty_cycle_ans | Rest]) ->
-    <<16#04, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([{rx_param_setup_ans, RX1DROffsetACK, RX2DataRateACK, ChannelACK} | Rest]) ->
-    <<16#05, 0:5, RX1DROffsetACK:1, RX2DataRateACK:1, ChannelACK:1, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([{dev_status_ans, Battery, Margin} | Rest]) ->
-    <<16#06, Battery:8, 0:2, Margin:6, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([{new_channel_ans, DataRateRangeOK, ChannelFreqOK} | Rest]) ->
-    <<16#07, 0:6, DataRateRangeOK:1, ChannelFreqOK:1, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([rx_timing_setup_ans | Rest]) ->
-    <<16#08, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([tx_param_setup_ans | Rest]) ->
-    <<16#09, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([{di_channel_ans, UplinkFreqExists, ChannelFreqOK} | Rest]) ->
-    <<16#0A, 0:6, UplinkFreqExists:1, ChannelFreqOK:1, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([device_time_req | Rest]) ->
-    <<16#0D, (encode_fupopts(Rest))/binary>>;
-encode_fupopts([_ | Rest]) ->
-    <<(encode_fupopts(Rest))/binary>>;
-encode_fupopts([]) ->
-    <<>>.
 
 store_actual_adr(
     [{_MAC, RxQ} | _],

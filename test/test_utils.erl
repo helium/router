@@ -808,7 +808,7 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
         type = lorawan,
         payload = Payload1,
         frequency = 923.3,
-        datarate = maps:get(datarate, Options, <<"SF8BW125">>),
+        datarate = maps:get(datarate, Options, "SF8BW125"),
         signal_strength = maps:get(rssi, Options, 0.0),
         snr = maps:get(snr, Options, 0.0),
         routing = Routing
@@ -839,16 +839,16 @@ frame_payload(MType, DevAddr, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     ADRACKReq = OptionsBoolToBit(wants_adr_ack),
     ACK = OptionsBoolToBit(wants_ack),
     RFU = 0,
-    FOptsBin = lorawan_mac_commands:encode_fupopts(maps:get(fopts, Options, [])),
+    FOptsBin = lora_core:encode_fupopts(maps:get(fopts, Options, [])),
     FOptsLen = byte_size(FOptsBin),
     <<Port:8/integer, Body/binary>> = maps:get(body, Options, <<1:8>>),
     Data = lorawan_utils:reverse(
         lorawan_utils:cipher(Body, AppSessionKey, MType band 1, DevAddr, FCnt)
     ),
-    FCntSize = maps:get(fcnt_size, Options, 16),
+    <<FCntLow:16/integer-unsigned-little, _:16>> = <<FCnt:32/integer-unsigned-little>>,
     Payload0 =
         <<MType:3, MHDRRFU:3, Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1,
-            FOptsLen:4, FCnt:FCntSize/little-unsigned-integer, FOptsBin:FOptsLen/binary,
+            FOptsLen:4, FCntLow:16/little-unsigned-integer, FOptsBin:FOptsLen/binary,
             Port:8/integer, Data/binary>>,
     B0 = router_utils:b0(MType band 1, DevAddr, FCnt, erlang:byte_size(Payload0)),
     MIC = crypto:macN(cmac, aes_128_cbc, NwkSessionKey, <<B0/binary, Payload0/binary>>, 4),

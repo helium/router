@@ -28,7 +28,9 @@
     devaddrs/1, devaddrs/2,
     dev_nonces/1, dev_nonces/2,
     fcnt/1, fcnt/2,
+    fcnt_next_val/1,
     fcntdown/1, fcntdown/2,
+    fcntdown_next_val/1,
     offset/1, offset/2,
     channel_correction/1, channel_correction/2,
     queue/1, queue/2,
@@ -58,6 +60,7 @@
 ]).
 
 -define(QUEUE_SIZE_LIMIT, 20).
+-define(MAX_32_BITS, 16#100000000).
 
 -type device() :: #device_v7{}.
 
@@ -145,13 +148,19 @@ dev_nonces(Device) ->
 dev_nonces(Nonces, Device) ->
     Device#device_v7{dev_nonces = lists:sublist(Nonces, 25)}.
 
--spec fcnt(device()) -> non_neg_integer().
+-spec fcnt(device()) -> undefined | non_neg_integer().
 fcnt(Device) ->
     Device#device_v7.fcnt.
 
--spec fcnt(non_neg_integer(), device()) -> device().
+-spec fcnt(non_neg_integer() | undefined, device()) -> device().
 fcnt(Fcnt, Device) ->
     Device#device_v7{fcnt = Fcnt}.
+
+-spec fcnt_next_val(device()) -> non_neg_integer().
+fcnt_next_val(#device_v7{fcnt = undefined}) ->
+    0;
+fcnt_next_val(#device_v7{fcnt = FCnt}) ->
+    (FCnt + 1) rem ?MAX_32_BITS.
 
 -spec fcntdown(device()) -> non_neg_integer().
 fcntdown(Device) ->
@@ -160,6 +169,10 @@ fcntdown(Device) ->
 -spec fcntdown(non_neg_integer(), device()) -> device().
 fcntdown(Fcnt, Device) ->
     Device#device_v7{fcntdown = Fcnt}.
+
+-spec fcntdown_next_val(device()) -> non_neg_integer().
+fcntdown_next_val(#device_v7{fcntdown = FD}) ->
+    (FD + 1) rem ?MAX_32_BITS.
 
 -spec offset(device()) -> non_neg_integer().
 offset(Device) ->
@@ -637,13 +650,20 @@ dev_nonces_test() ->
 
 fcnt_test() ->
     Device = new(<<"id">>),
-    ?assertEqual(0, fcnt(Device)),
+    ?assertEqual(undefined, fcnt(Device)),
+    ?assertEqual(0, fcnt(fcnt(0, Device))),
     ?assertEqual(1, fcnt(fcnt(1, Device))).
 
 fcntdown_test() ->
     Device = new(<<"id">>),
     ?assertEqual(0, fcntdown(Device)),
     ?assertEqual(1, fcntdown(fcntdown(1, Device))).
+
+fcntdown_next_val_test() ->
+    ?assertEqual(1, fcntdown_next_val(#device_v7{})),
+    ?assertEqual(1, fcntdown_next_val(#device_v7{fcntdown = 0})),
+    ?assertEqual(2, fcntdown_next_val(#device_v7{fcntdown = 1})),
+    ?assertEqual(0, fcntdown_next_val(#device_v7{fcntdown = 16#FFFFFFFF})).
 
 offset_test() ->
     Device = new(<<"id">>),

@@ -237,7 +237,7 @@ mac_commands_test(Config) ->
                         }
                     )},
 
-            ExpectedFopts = parse_fopts([lists:nth(Index, Fopts)]),
+            ExpectedFopts = parse_fopts([Fopt]),
 
             %% Waiting for report channel status from HTTP channel
             {ok, _} = test_utils:wait_for_console_event(<<"uplink">>, #{
@@ -271,7 +271,7 @@ mac_commands_test(Config) ->
                 }
             })
         end,
-        lists:zip(lists:seq(1, length(Fopts)), Fopts)
+        lists:zip(lists:seq(0, length(Fopts) - 1), Fopts)
     ),
 
     %% Ignore down messages updates

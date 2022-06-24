@@ -9,9 +9,9 @@
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("public_key/include/public_key.hrl").
+-include_lib("erlang_lorawan/src/lora_adr.hrl").
 
 -include("router_device_worker.hrl").
--include("lorawan_adr.hrl").
 -include("lorawan_vars.hrl").
 -include("lorawan_db.hrl").
 
@@ -78,7 +78,7 @@
     join_cache = #{} :: #{integer() => #join_cache{}},
     frame_cache = #{} :: #{integer() => #frame_cache{}},
     offer_cache = #{} :: #{{libp2p_crypto:pubkey_bin(), binary()} => non_neg_integer()},
-    adr_engine :: undefined | lorawan_adr:handle(),
+    adr_engine :: undefined | lora_adr:handle(),
     is_active = true :: boolean() | undefined,
     discovery = false :: boolean()
 }).
@@ -1931,7 +1931,7 @@ handle_frame_timeout(
     router_device:device(),
     #frame{},
     pos_integer(),
-    lorawan_adr:adjustment()
+    lora_adr:adjustment()
 ) -> {boolean(), list()}.
 channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
     Plan = lora_plan:region_to_plan(Region),
@@ -1996,7 +1996,7 @@ ack_to_mtype(_) -> ?UNCONFIRMED_DOWN.
 
 -spec frame_to_packet_payload(#frame{}, router_device:device()) -> binary().
 frame_to_packet_payload(Frame, Device) ->
-    FOpts = lorawan_mac_commands:encode_fopts(Frame#frame.fopts),
+    FOpts = lora_core:encode_fopts(Frame#frame.fopts),
     FOptsLen = erlang:byte_size(FOpts),
     PktHdr =
         <<
@@ -2139,21 +2139,21 @@ get_device(DB, CF, DeviceID) ->
     ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),
     Device1.
 
--spec maybe_construct_adr_engine(undefined | lorawan_adr:handle(), atom()) -> lorawan_adr:handle().
+-spec maybe_construct_adr_engine(undefined | lora_adr:handle(), atom()) -> lora_adr:handle().
 
 maybe_construct_adr_engine(Other, Region) ->
     case Other of
         undefined ->
-            lorawan_adr:new(Region);
+            lora_adr:new(Region);
         _ ->
             Other
     end.
 
 -spec maybe_track_adr_offer(
     Device :: router_device:device(),
-    ADREngine0 :: undefined | lorawan_adr:handle(),
+    ADREngine0 :: undefined | lora_adr:handle(),
     Offer :: blockchain_state_channel_offer_v1:offer()
-) -> undefined | lorawan_adr:handle().
+) -> undefined | lora_adr:handle().
 maybe_track_adr_offer(Device, ADREngine0, Offer) ->
     Metadata = router_device:metadata(Device),
     case maps:get(adr_allowed, Metadata, false) of
@@ -2166,14 +2166,14 @@ maybe_track_adr_offer(Device, ADREngine0, Offer) ->
                 hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
                 packet_hash = blockchain_state_channel_offer_v1:packet_hash(Offer)
             },
-            lorawan_adr:track_offer(ADREngine1, AdrOffer)
+            lora_adr:track_offer(ADREngine1, AdrOffer)
     end.
 
 -spec maybe_track_adr_packet(
     Device :: router_device:device(),
-    ADREngine0 :: undefined | lorawan_adr:handle(),
+    ADREngine0 :: undefined | lora_adr:handle(),
     FrameCache :: #frame_cache{}
-) -> {undefined | lorawan_adr:handle(), lorawan_adr:adjustment()}.
+) -> {undefined | lora_adr:handle(), lora_adr:adjustment()}.
 maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
     Metadata = router_device:metadata(Device),
     #frame_cache{
@@ -2225,7 +2225,7 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                             datarate_ack = N2B(DatarateAck),
                             power_ack = N2B(PowerAck)
                         },
-                        lorawan_adr:track_adr_answer(ADREngine1, ADRAnswer);
+                        lora_adr:track_adr_answer(ADREngine1, ADRAnswer);
                     {false, {link_adr_ans, _, _, _}} ->
                         lager:debug(
                             "ignoring ADR answer while waiting for channel correction ~p",
@@ -2253,7 +2253,7 @@ maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
                 rssi = RSSI,
                 hotspot = PubKeyBin
             },
-            lorawan_adr:track_packet(
+            lora_adr:track_packet(
                 ADREngine2,
                 AdrPacket
             )
@@ -2276,7 +2276,7 @@ packet_datarate_index(Region, Packet) ->
     Device :: rourter_device:device(),
     Frame :: #frame{},
     PacketTime :: non_neg_integer(),
-    ADRAdjustment :: lorawan_adr:adjustment(),
+    ADRAdjustment :: lora_adr:adjustment(),
     DefaultFrameTimeout :: non_neg_integer()
 ) -> non_neg_integer().
 calculate_packet_timeout(Device, Frame, PacketTime, ADRAdjustment, DefaultFrameTimeout) ->

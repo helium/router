@@ -52,7 +52,9 @@
         {hotspot_reputation_enabled, "${ROUTER_HOTSPOT_REPUTATION_ENABLED}"},
         {hotspot_reputation_threshold, "${ROUTER_HOTSPOT_REPUTATION_THRESHOLD}"},
         {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"},
-        {metrics_port, "${ROUTER_METRICS_PORT}"}
+        {metrics_port, "${ROUTER_METRICS_PORT}"},
+        {denylist_keys, ["1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL"]},
+        {denylist_url, "https://api.github.com/repos/helium/denylist/releases/latest"}
     ]},
     {grpcbox, [
         {servers, [

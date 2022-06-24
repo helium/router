@@ -96,7 +96,7 @@ test_join_offer(Config, PreferredHotspots, ExpectedResult) ->
             _ -> fun(_, _) -> throw("Multibuy isn't allowed here!") end
         end,
 
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
 
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultibuyFun),
@@ -158,7 +158,7 @@ test_packet_offer(Config, PreferredHotspots, ExpectedResult) ->
             _ -> fun(_, _) -> throw("MultiBuy shouldn't happen here!") end
         end,
 
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
 
@@ -230,7 +230,7 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
             _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
         end,
 
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
 
@@ -299,7 +299,7 @@ test_join_packet(Config, PreferredHotspots, ExpectedResult) ->
             _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
         end,
 
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
 
@@ -449,15 +449,7 @@ packet_hash_cache_test(Config) ->
     ok.
 
 multi_buy_test(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-    %% We're going to use the actual devaddr allocation, make sure we have a
-    %% chain before starting this test.
-    ok = test_utils:wait_until(fun() ->
-        case whereis(router_device_devaddr) of
-            undefined -> false;
-            Pid -> element(2, sys:get_state(Pid)) /= undefined
-        end
-    end),
+    ok = remove_devaddr_allocate_meck(),
 
     AppKey = proplists:get_value(app_key, Config),
     Swarm = proplists:get_value(swarm, Config),
@@ -611,7 +603,7 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
     WaitForDeviceWorker = fun() ->
         timer:sleep(500)
     end,
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
     test_utils:add_oui(Config),
 
     #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
@@ -687,7 +679,7 @@ handle_packet_fcnt_32_bit_rollover_test(Config) ->
     ok.
 
 handle_packet_wrong_fcnt_test(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = remove_devaddr_allocate_meck(),
     test_utils:add_oui(Config),
 
     #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
@@ -730,3 +722,16 @@ handle_packet_wrong_fcnt_test(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+-spec remove_devaddr_allocate_meck() -> ok.
+remove_devaddr_allocate_meck() ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    %% We're going to use the actual devaddr allocation, make sure we have a
+    %% chain before starting this test.
+    ok = test_utils:wait_until(fun() ->
+        case whereis(router_device_devaddr) of
+            undefined -> false;
+            Pid -> element(2, sys:get_state(Pid)) /= undefined
+        end
+    end),
+    ok.

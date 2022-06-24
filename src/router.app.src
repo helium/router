@@ -34,6 +34,7 @@
         grpcbox,
         grpc_client,
         erlang_lorawan,
+        router_utils,
         throttle
     ]},
     {included_applications, [blockchain]},

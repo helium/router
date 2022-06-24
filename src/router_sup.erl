@@ -68,8 +68,9 @@ init([]) ->
     ok = router_decoder:init_ets(),
     ok = router_console_dc_tracker:init_ets(),
     ok = router_console_api:init_ets(),
-    ok = router_hotspot_reputation:init(),
+    ok = ru_reputation:init(),
     ok = router_device_stats:init(),
+    ok = ru_denylist:init(BaseDir),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),
 
     {ok, _} = application:ensure_all_started(ranch),
@@ -107,9 +108,23 @@ init([]) ->
     SCWorkerOpts = #{},
     DBOpts = [BaseDir],
     MetricsOpts = #{},
-
+    POCDenyListArgs =
+        case {application:get_env(router, denylist_keys, undefined), application:get_env(router, denylist_url, undefined)} of
+            {undefined, _} ->
+                #{};
+            {_, undefined} ->
+                #{};
+            {DenyListKeys, DenyListUrl} -> 
+                #{
+                    denylist_keys => DenyListKeys,
+                    denylist_url => DenyListUrl,
+                    denylist_base_dir => BaseDir,
+                    denylist_check_timer => {immediate, timer:hours(12)}
+                }
+        end,
     {ok,
         {?FLAGS, [
+            ?WORKER(ru_poc_denylist, [POCDenyListArgs])
             ?SUP(blockchain_sup, [BlockchainOpts]),
             ?WORKER(router_metrics, [MetricsOpts]),
             ?WORKER(router_db, [DBOpts]),

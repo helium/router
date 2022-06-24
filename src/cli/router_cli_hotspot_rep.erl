@@ -64,11 +64,11 @@ hotspot_rep_cmd() ->
     ].
 
 hotspot_rep_get(["hotspot_rep", "ls"], [], []) ->
-    List = router_hotspot_reputation:reputations(),
+    List = ru_reputation:reputations(),
     c_table(format(List));
 hotspot_rep_get(["hotspot_rep", B58], [], []) ->
     Hotspot = libp2p_crypto:b58_to_bin(B58),
-    {PacketMissed, UnknownDevice} = router_hotspot_reputation:reputation(Hotspot),
+    {PacketMissed, UnknownDevice} = ru_reputation:reputation(Hotspot),
     c_table(format([{Hotspot, PacketMissed, UnknownDevice}]));
 hotspot_rep_get([_, _, _], [], []) ->
     usage.
@@ -76,7 +76,7 @@ hotspot_rep_get([_, _, _], [], []) ->
 hotspot_rep_reset(["hotspot_rep", "reset", B58], [], []) ->
     PubKeyBin = libp2p_crypto:b58_to_bin(B58),
     Name = blockchain_utils:addr2name(PubKeyBin),
-    ok = router_hotspot_reputation:reset(PubKeyBin),
+    ok = ru_reputation:reset(PubKeyBin),
     c_text("Hotspot ~p (~p) reputation reseted", [Name, B58]);
 hotspot_rep_reset([_, _, _], [], []) ->
     usage.
@@ -113,7 +113,7 @@ hotspot_rep_sc(["hotspot_rep", "sc"], [], Flags) ->
                 lists:map(
                     fun(Summary) ->
                         PubKeyBin = blockchain_state_channel_summary_v1:client_pubkeybin(Summary),
-                        {PacketMissed, PacketUnknownDevice} = router_hotspot_reputation:reputation(
+                        {PacketMissed, PacketUnknownDevice} = ru_reputation:reputation(
                             PubKeyBin
                         ),
                         [

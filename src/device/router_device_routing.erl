@@ -80,9 +80,20 @@
 -define(DEVICE_NO_DC, device_not_enought_dc).
 
 %% Rate Limit (per_second)
--define(THROTTLE_ERROR, limit_exceeded).
+-define(HOTSPOT_THROTTLE_ERROR, hotspot_limit_exceeded).
+-define(DEVICE_THROTTLE_ERROR, device_limit_exceeded).
 -define(HOTSPOT_THROTTLE, router_device_routing_hotspot_throttle).
+%% 25/second: After analysis it seems that in best condition a hotspot
+%% cannot really support more than 25 uplinks per second
+-define(DEFAULT_HOTSPOT_THROTTLE, 25).
 -define(DEVICE_THROTTLE, router_device_routing_device_throttle).
+%% 1/second is the default (note: this is 1/second per device/hotspot pair combo)
+%% 1/second was picked as rx windows are minimum 1s
+-define(DEFAULT_DEVICE_THROTTLE, 1).
+
+-define(REPUTATION_ERROR, reputation_denied).
+-define(POC_DENYLIST_ERROR, poc_denylist_denied).
+-define(ROUTER_DENYLIST_ERROR, router_denylist_denied).
 
 -spec init() -> ok.
 init() ->
@@ -102,8 +113,8 @@ init() ->
         ?BF_ROTATE_AFTER
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
-    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, 10),
-    DeviceRateLimit = application:get_env(router, device_rate_limit, 1),
+    HotspotRateLimit = application:get_env(router, hotspot_rate_limit, ?DEFAULT_HOTSPOT_THROTTLE),
+    DeviceRateLimit = application:get_env(router, device_rate_limit, ?DEFAULT_DEVICE_THROTTLE),
     ok = throttle:setup(?HOTSPOT_THROTTLE, HotspotRateLimit, per_second),
     ok = throttle:setup(?DEVICE_THROTTLE, DeviceRateLimit, per_second),
     ok.
@@ -111,30 +122,23 @@ init() ->
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
     Start = erlang:system_time(millisecond),
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
     Routing = blockchain_state_channel_offer_v1:routing(Offer),
+    {OfferCheckTime, OfferCheck} = timer:tc(fun offer_check/1, [Offer]),
     Resp =
-        case
-            router_hotspot_reputation:enabled() andalso
-                router_hotspot_reputation:denied(Hotspot)
-        of
-            true ->
-                {error, denied};
-            false ->
-                case throttle:check(?HOTSPOT_THROTTLE, Hotspot) of
-                    {limit_exceeded, _, _} ->
-                        {error, ?THROTTLE_ERROR};
-                    {ok, _, _} ->
-                        case Routing of
-                            #routing_information_pb{data = {eui, _EUI}} ->
-                                join_offer(Offer, HandlerPid);
-                            #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                                packet_offer(Offer, HandlerPid)
-                        end
+        case OfferCheck of
+            {error, _} = Error0 ->
+                Error0;
+            ok ->
+                case Routing of
+                    #routing_information_pb{data = {eui, _EUI}} ->
+                        join_offer(Offer, HandlerPid);
+                    #routing_information_pb{data = {devaddr, _DevAddr}} ->
+                        packet_offer(Offer, HandlerPid)
                 end
         end,
     End = erlang:system_time(millisecond),
     erlang:spawn(fun() ->
+        ok = router_metrics:function_observe('router_device_routing:offer_check', OfferCheckTime),
         ok = router_metrics:packet_trip_observe_start(
             blockchain_state_channel_offer_v1:packet_hash(Offer),
             blockchain_state_channel_offer_v1:hotspot(Offer),
@@ -145,11 +149,11 @@ handle_offer(Offer, HandlerPid) ->
     end),
     case Resp of
         {ok, Device} ->
-            ok = router_hotspot_reputation:track_offer(Offer),
+            ok = reputation_track_offer(Offer),
             ok = router_device_stats:track_offer(Offer, Device),
             ok;
-        {error, _} = Error ->
-            Error
+        {error, _} = Error1 ->
+            Error1
     end.
 
 -spec handle_packet(
@@ -167,13 +171,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
-            ok = router_hotspot_reputation:track_packet(SCPacket),
+            ok = reputation_track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
             E;
         ok ->
-            ok = router_hotspot_reputation:track_packet(SCPacket),
+            ok = reputation_track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -224,6 +228,39 @@ clear_replay(DeviceID) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec offer_check(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok | {error, any()}.
+offer_check(Offer) ->
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    ReputationCheck = fun(H) ->
+        Enabled = router_utils:get_env_bool(hotspot_reputation_enabled, false),
+        Enabled andalso ru_reputation:denied(H)
+    end,
+    ThrottleCheck = fun(H) ->
+        case throttle:check(?HOTSPOT_THROTTLE, H) of
+            {limit_exceeded, _, _} -> true;
+            _ -> false
+        end
+    end,
+    Checks = [
+        {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
+        {fun ru_denylist:check/1, ?ROUTER_DENYLIST_ERROR},
+        {ReputationCheck, ?REPUTATION_ERROR},
+        {ThrottleCheck, ?HOTSPOT_THROTTLE_ERROR}
+    ],
+    lists:foldl(
+        fun
+            ({_Fun, _Error}, {error, _} = Error) ->
+                Error;
+            ({Fun, Error}, ok) ->
+                case Fun(Hotspot) of
+                    true -> {error, Error};
+                    false -> ok
+                end
+        end,
+        ok,
+        Checks
+    ).
 
 -spec print_handle_offer_resp(
     Offer :: blockchain_state_channel_offer_v1:offer(),
@@ -422,13 +459,13 @@ check_device_preferred_hotspots(Device, Offer) ->
     end.
 
 -spec check_device_rate(Hotspot :: libp2p_crypto:pubkey_bin(), Device :: router_device:device()) ->
-    ok | {error, ?THROTTLE_ERROR}.
+    ok | {error, ?DEVICE_THROTTLE_ERROR}.
 check_device_rate(Hotspot, Device) ->
     DeviceID = router_device:id(Device),
     case throttle:check(?DEVICE_THROTTLE, {Hotspot, DeviceID}) of
         {limit_exceeded, _, _} ->
-            {error, ?THROTTLE_ERROR};
-        {ok, _, _} ->
+            {error, ?DEVICE_THROTTLE_ERROR};
+        _ ->
             ok
     end.
 
@@ -901,7 +938,7 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, unknown_device} ->
-            ok = router_hotspot_reputation:track_unknown_device(Packet, PubKeyBin),
+            _ = ru_reputation:track_unknown(PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1267,6 +1304,21 @@ handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End - Start).
 
+-spec reputation_track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
+reputation_track_offer(Offer) ->
+    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+    ok = ru_reputation:track_offer(Hotspot, PHash),
+    ok.
+
+-spec reputation_track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
+reputation_track_packet(SCPacket) ->
+    Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+    ok = ru_reputation:track_packet(Hotspot, PHash),
+    ok.
+
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -1322,15 +1374,14 @@ false_positive_test() ->
     ?assert(Failures < 10),
     ok.
 
-% handle_join_offer_test() ->
-%     {timeout, 15, fun test_for_handle_join_offer/0}.
-
 handle_join_offer_test() ->
     application:set_env(router, hotspot_rate_limit, 100),
     application:set_env(router, device_rate_limit, 100),
     application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),
+    ok = ru_reputation:init(),
+    ok = router_device_stats:init(),
 
     DeviceID = router_utils:uuid_v4(),
     application:ensure_all_started(lager),
@@ -1373,9 +1424,119 @@ handle_join_offer_test() ->
     meck:unload(router_devices_sup),
     ets:delete(?BF_ETS),
     ets:delete(?REPLAY_ETS),
-    _ = catch ets:delete(router_device_multibuy_ets),
-    _ = catch ets:delete(router_device_multibuy_max_ets),
+    true = ets:delete(router_device_multibuy_ets),
+    true = ets:delete(router_device_multibuy_max_ets),
+    true = ets:delete(router_device_stats_ets),
+    true = ets:delete(router_device_stats_offers_ets),
+    true = ets:delete(ru_reputation_ets),
+    true = ets:delete(ru_reputation_offers_ets),
     application:stop(lager),
+    ok.
+
+offer_check_success_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        {Time, Resp} = timer:tc(fun offer_check/1, [Offer]),
+        ?assertEqual(ok, Resp),
+        %% Time is in micro seconds (10000 = 10ms)
+        ?assert(Time < 10000),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_poc_denylist_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+
+        meck:new(ru_poc_denylist, [passthrough]),
+        meck:expect(ru_poc_denylist, check, fun(_) -> true end),
+
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?POC_DENYLIST_ERROR}, offer_check(Offer)),
+
+        meck:unload(ru_poc_denylist),
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_denylist_test_() ->
+    {timeout, 15, fun() ->
+        {ok, BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        ok = ru_denylist:insert(BaseDir, Hotspot),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?ROUTER_DENYLIST_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_reputation_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        true = ets:insert(ru_reputation_ets, {Hotspot, 666, 0}),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual({error, ?REPUTATION_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_fail_throttle_test_() ->
+    {timeout, 15, fun() ->
+        {ok, _BaseDir} = offer_check_init(),
+        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
+        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
+        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
+
+        ?assertEqual(ok, offer_check(Offer)),
+        ?assertEqual({error, ?HOTSPOT_THROTTLE_ERROR}, offer_check(Offer)),
+        timer:sleep(1000),
+        ?assertEqual(ok, offer_check(Offer)),
+        ?assertEqual({error, ?HOTSPOT_THROTTLE_ERROR}, offer_check(Offer)),
+
+        ok = offer_check_stop()
+    end}.
+
+offer_check_init() ->
+    application:set_env(router, hotspot_reputation_enabled, true),
+    ok = router_device_stats:init(),
+    ok = ru_reputation:init(),
+
+    _ = application:ensure_all_started(throttle),
+    ok = throttle:setup(?HOTSPOT_THROTTLE, 1, per_second),
+
+    application:ensure_all_started(lager),
+    application:ensure_all_started(hackney),
+    BaseDir = string:chomp(os:cmd("mktemp -d")),
+
+    ok = ru_denylist:init(BaseDir),
+
+    {ok, BaseDir}.
+
+offer_check_stop() ->
+    application:set_env(router, hotspot_reputation_enabled, false),
+    true = ets:delete(router_device_stats_ets),
+    true = ets:delete(router_device_stats_offers_ets),
+    true = ets:delete(ru_reputation_ets),
+    true = ets:delete(ru_reputation_offers_ets),
+    application:stop(throttle),
     ok.
 
 -endif.

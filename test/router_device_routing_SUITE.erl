@@ -223,7 +223,7 @@ packet_offer_with_no_preferred_hotspot_test(Config) ->
 %% Preferred Hotspots: frame packets and handle_packet/3
 %%
 
-test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
+test_frame_packet(Config, PreferredHotspots, PacketHotspot, ExpectedResult) ->
     MultiBuyFun =
         case PreferredHotspots of
             [] -> fun(_, _) -> ok end;
@@ -236,27 +236,22 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
 
     test_utils:add_oui(Config),
 
-    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {preferred_hotspots, PreferredHotspots}),
+
+    #{} = test_utils:join_device(Config),
     test_utils:wait_state_channel_message(1250),
 
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    Device1 = router_device:update(
-        [
-            {metadata, #{preferred_hotspots => PreferredHotspots}}
-        ],
-        Device0
-    ),
-    {ok, _} = router_device_cache:save(Device1),
+    NwkSKey = router_device:nwk_s_key(Device0),
+    AppSKey = router_device:app_s_key(Device0),
+    FCnt = router_device:fcnt_next_val(Device0),
 
-    NwkSKey = router_device:nwk_s_key(Device1),
-    AppSKey = router_device:app_s_key(Device1),
-    FCnt = router_device:fcnt_next_val(Device1),
-
-    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
-        dont_encode => true, routing => true, devaddr => router_device:devaddr(Device1)
+    SCPacket0 = test_utils:frame_packet(?UNCONFIRMED_UP, PacketHotspot, NwkSKey, AppSKey, FCnt, #{
+        dont_encode => true, routing => true, devaddr => router_device:devaddr(Device0)
     }),
 
     ?assertEqual(
@@ -268,25 +263,32 @@ test_frame_packet(Config, PreferredHotspots, ExpectedResult) ->
     meck:unload(router_device_multibuy),
     ok.
 
-handle_packet_from_strange_hotspot_test(Config) ->
-    %% Device has preferred hotspots that don't include our default hotspot.
-    %% The packet should be rejected.
-
-    test_frame_packet(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
-
 handle_packet_from_preferred_hotspot_test(Config) ->
     %% Device has preferred hotspots that do include our default hotspot.
     %% The packet should be accepted.
 
     Swarm = proplists:get_value(swarm, Config),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    test_frame_packet(Config, [PubKeyBin], ok).
+    HotspotPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    test_frame_packet(Config, [HotspotPubKeyBin], HotspotPubKeyBin, ok).
+
+handle_packet_from_strange_hotspot_test(Config) ->
+    % Device has preferred hotspots that do not include the one sending the packet.
+    %% The packet should be rejected.
+
+    Swarm = proplists:get_value(swarm, Config),
+    PreferredPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    HotspotPubKeyBin = <<"SomeOtherPubKeyBin">>,
+    test_frame_packet(
+        Config, [PreferredPubKeyBin], HotspotPubKeyBin, {error, not_preferred_hotspot}
+    ).
 
 handle_packet_with_no_preferred_hotspot_test(Config) ->
     %% Device has no preferred hotspots.
     %% The packet should be accepted.
 
-    test_frame_packet(Config, [], ok).
+    Swarm = proplists:get_value(swarm, Config),
+    HotspotPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    test_frame_packet(Config, [], HotspotPubKeyBin, ok).
 
 %%
 %% Preferred Hotspots: join packets and handle_packet/3

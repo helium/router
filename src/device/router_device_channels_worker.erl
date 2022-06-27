@@ -599,6 +599,14 @@ downlink_decode(MapPayload) when is_map(MapPayload) ->
 downlink_decode(Payload) ->
     {error, {not_binary_or_map, Payload}}.
 
+format_metadata(Device) ->
+    Metadata1 = router_device:metadata(Device),
+    FormattedPreferredHotspots = [
+        list_to_binary(libp2p_crypto:bin_to_b58(P))
+     || P <- maps:get(preferred_hotspots, Metadata1)
+    ],
+    Metadata1#{preferred_hotspots => FormattedPreferredHotspots}.
+
 -spec send_join_to_channel(
     JoinCache :: #join_cache{},
     Device :: router_device:device(),
@@ -619,6 +627,8 @@ send_join_to_channel(
         format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime0, Blockchain)
     end,
 
+    Metadata = format_metadata(Device),
+
     %% No touchy, this is set in STONE
     Map = #{
         type => join,
@@ -627,7 +637,7 @@ send_join_to_channel(
         name => router_device:name(Device),
         dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
         app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-        metadata => router_device:metadata(Device),
+        metadata => Metadata,
         fcnt => 0,
         reported_at => PacketTime,
         hold_time => HoldTime,
@@ -658,6 +668,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce)
         CachedData1,
     #frame{data = Payload, fport = Port, fcnt = FCnt, devaddr = DevAddr} = Frame,
     {Balance, Nonce} = BalanceNonce,
+    Metadata = format_metadata(Device),
     %% No touchy, this is set in STONE
     Map = #{
         type => uplink,
@@ -667,7 +678,7 @@ send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce)
         name => router_device:name(Device),
         dev_eui => lorawan_utils:binary_to_hex(router_device:dev_eui(Device)),
         app_eui => lorawan_utils:binary_to_hex(router_device:app_eui(Device)),
-        metadata => router_device:metadata(Device),
+        metadata => Metadata,
         fcnt => FCnt,
         reported_at => Time,
         payload => Payload,

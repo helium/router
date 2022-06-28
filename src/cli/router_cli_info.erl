@@ -103,8 +103,9 @@ info_device(["info", "device", DeviceID0], [], []) ->
     c_table(Formated).
 
 info_hotspot(["info", "hotspot", HotspotB580], [], []) ->
-    Formated = format(router_device_stats:lookup_hotspot(HotspotB580)),
-    c_table(Formated).
+    Hotspot = libp2p_crypto:b58_to_bin(HotspotB580),
+    Formatted = format(router_device_stats:lookup_hotspot(Hotspot)),
+    c_table(Formatted).
 
 -spec format(list()) -> list().
 format(List) ->

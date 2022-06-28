@@ -99,8 +99,9 @@ info_block_age([_, _, _], [], []) ->
     usage.
 
 info_device(["info", "device", DeviceID0], [], []) ->
-    Formated = format(router_device_stats:lookup_device(DeviceID0)),
-    c_table(Formated).
+    DeviceID = erlang:list_to_binary(DeviceID0),
+    Formatted = format(router_device_stats:lookup_device(DeviceID)),
+    c_table(Formatted).
 
 info_hotspot(["info", "hotspot", HotspotB580], [], []) ->
     Hotspot = libp2p_crypto:b58_to_bin(HotspotB580),

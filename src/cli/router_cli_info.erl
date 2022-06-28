@@ -37,12 +37,14 @@ info_usage() ->
         ["info"],
         [
             "\n\n",
-            "info height        - Get height of the blockchain for this router\n",
-            "                       The first number is the current election epoch, and the second is\n"
-            "                       the block height.  If the second number is displayed with an asterisk (*)\n"
-            "                       this node has yet to sync past the assumed valid hash in the node config.\n\n"
-            "info name          - Get name for this router\n"
-            "info block_age     - Get age of the latest block in the chain, in seconds.\n"
+            "info height                - Get height of the blockchain for this router\n",
+            "                               The first number is the current election epoch, and the second is\n"
+            "                               the block height.  If the second number is displayed with an asterisk (*)\n"
+            "                               this node has yet to sync past the assumed valid hash in the node config.\n\n"
+            "info name                  - Get name for this router\n"
+            "info block_age             - Get age of the latest block in the chain, in seconds.\n"
+            "info device <device_id>    - Device's stats\n"
+            "info hotspot <hotspot_b58> - Device's stats\n"
         ]
     ].
 
@@ -50,7 +52,9 @@ info_cmd() ->
     [
         [["info", "height"], [], [], fun info_height/3],
         [["info", "name"], [], [], fun info_name/3],
-        [["info", "block_age"], [], [], fun info_block_age/3]
+        [["info", "block_age"], [], [], fun info_block_age/3],
+        [["info", "device", '*'], [], [], fun info_device/3],
+        [["info", "hotspot", '*'], [], [], fun info_hotspot/3]
     ].
 
 info_height(["info", "height"], [], []) ->
@@ -93,3 +97,28 @@ info_block_age(["info", "block_age"], [], []) ->
     [clique_status:text(integer_to_list(Age))];
 info_block_age([_, _, _], [], []) ->
     usage.
+
+info_device(["info", "device", DeviceID0], [], []) ->
+    Formated = format(router_device_stats:lookup_device(DeviceID0)),
+    c_table(Formated).
+
+info_hotspot(["info", "hotspot", HotspotB580], [], []) ->
+    Formated = format(router_device_stats:lookup_hotspot(HotspotB580)),
+    c_table(Formated).
+
+-spec format(list()) -> list().
+format(List) ->
+    lists:map(
+        fun({DeviceID, HotspotName, HotspotB58, Counter}) ->
+            [
+                {device, DeviceID},
+                {hotspot_name, HotspotName},
+                {hotspot_b58, HotspotB58},
+                {conflicts, Counter}
+            ]
+        end,
+        List
+    ).
+
+-spec c_table(list(proplists:proplist()) | proplists:proplist()) -> clique_status:status().
+c_table(PropLists) -> [clique_status:table(PropLists)].

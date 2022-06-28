@@ -67,9 +67,10 @@ track_packet(Packet, Hotspot, Device) ->
     erlang:spawn(fun() ->
         PHash = blockchain_helium_packet_v1:packet_hash(Packet),
         DeviceID = router_device:id(Device),
+        true = ets:delete(?OFFER_ETS, {Hotspot, PHash}),
         case ets:lookup(?OFFER_ETS, {Hotspot, PHash}) of
             [{{Hotspot, PHash}, DeviceID, _Time}] ->
-                true = ets:delete(?OFFER_ETS, {Hotspot, PHash});
+                ok;
             [{{Hotspot, PHash}, _OtherDeviceID, _Time}] ->
                 _ = ets:update_counter(?ETS, {DeviceID, Hotspot}, {2, 1}, {default, 0});
             [] ->

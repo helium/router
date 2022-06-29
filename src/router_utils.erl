@@ -36,7 +36,8 @@
     get_env_int/2,
     get_env_bool/2,
     enumerate_0/1,
-    enumerate_0_to_size/3
+    enumerate_0_to_size/3,
+    metadata_fun/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -53,6 +54,35 @@ get_blockchain() ->
             Chain;
         Chain ->
             Chain
+    end.
+
+metadata_fun() ->
+    try
+        Map = blockchain_worker:signed_metadata_fun(),
+        GRPCData =
+            case
+                lists:filter(
+                    fun libp2p_transport_tcp:is_public/1,
+                    libp2p_swarm:listen_addrs(blockchain_swarm)
+                )
+            of
+                [] ->
+                    #{};
+                [First | _] ->
+                    IP = lists:nth(2, string:tokens(First, "/")),
+                    {ok, Port} = application:get_env(router, grpc_port),
+                    RPCAddr = iolist_to_binary([
+                        "http://",
+                        IP,
+                        ":",
+                        integer_to_list(Port)
+                    ]),
+                    #{<<"grpc_address">> => RPCAddr}
+            end,
+        maps:merge(Map, GRPCData)
+    catch
+        _:_ ->
+            #{}
     end.
 
 -spec event_join_request(

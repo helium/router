@@ -271,7 +271,8 @@ event(Device, Map) ->
                             }
                         };
                     {downlink, SC} when
-                        SC == downlink_confirmed orelse SC == downlink_unconfirmed
+                        SC == downlink_confirmed orelse SC == downlink_unconfirmed orelse
+                            SC == downlink_ack
                     ->
                         #{
                             fcnt => maps:get(fcnt, Map),

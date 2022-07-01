@@ -630,7 +630,9 @@ lw_join_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => '_',
                 <<"long">> => '_'
-            }
+            },
+            <<"integration">> => fun erlang:is_map/1,
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

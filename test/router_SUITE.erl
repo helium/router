@@ -9,6 +9,7 @@
 -export([
     mac_commands_test/1,
     mac_command_link_check_req_test/1,
+    mac_command_link_check_req_with_confirmed_up_test/1,
     dupes_test/1,
     dupes2_test/1,
     join_test/1,
@@ -52,6 +53,7 @@ all() ->
     [
         mac_commands_test,
         mac_command_link_check_req_test,
+        mac_command_link_check_req_with_confirmed_up_test,
         dupes_test,
         join_test,
         us915_join_enabled_cf_list_test,
@@ -82,6 +84,116 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+mac_command_link_check_req_with_confirmed_up_test(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Send CONFIRMED_UP frame packet
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?CONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0,
+                #{
+                    fopts => [link_check_req]
+                }
+            )},
+
+    %% Waiting for report channel status from HTTP channel
+    {ok, _} = test_utils:wait_for_console_event(<<"uplink">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink">>,
+        <<"sub_category">> => <<"uplink_confirmed">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"dc">> => fun erlang:is_map/1,
+            <<"fcnt">> => 0,
+            <<"payload_size">> => fun erlang:is_integer/1,
+            <<"payload">> => fun erlang:is_binary/1,
+            <<"raw_packet">> => fun erlang:is_binary/1,
+            <<"port">> => fun erlang:is_integer/1,
+            <<"devaddr">> => fun erlang:is_binary/1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"rssi">> => 0.0,
+                <<"snr">> => 0.0,
+                <<"spreading">> => <<"SF8BW125">>,
+                <<"frequency">> => fun erlang:is_float/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1
+            },
+            <<"mac">> => [#{<<"command">> => <<"link_check_req">>}],
+            <<"hold_time">> => fun erlang:is_integer/1
+        }
+    }),
+
+    {ok, _} = test_utils:wait_for_console_event(<<"downlink">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"downlink">>,
+        <<"sub_category">> => <<"downlink_ack">>,
+        <<"description">> => fun erlang:is_binary/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"data">> =>
+            #{
+                <<"devaddr">> => fun erlang:is_binary/1,
+                <<"fcnt">> => 0,
+                <<"hotspot">> => fun erlang:is_map/1,
+                %% <<"integration">> => fun erlang:is_map/1,
+                <<"mac">> =>
+                    [
+                        #{
+                            <<"command">> => <<"link_check_ans">>,
+                            <<"gateway_count">> => 1,
+                            <<"margin">> => 10
+                        },
+                        %% These come as part of the first downlink
+                        #{
+                            <<"channel_mask">> => fun erlang:is_integer/1,
+                            <<"channel_mask_control">> => fun erlang:is_integer/1,
+                            <<"command">> => <<"link_adr_req">>,
+                            <<"data_rate">> => fun erlang:is_integer/1,
+                            <<"number_of_transmissions">> => fun erlang:is_integer/1,
+                            <<"tx_power">> => fun erlang:is_integer/1
+                        },
+                        #{
+                            <<"channel_mask">> => fun erlang:is_integer/1,
+                            <<"channel_mask_control">> => fun erlang:is_integer/1,
+                            <<"command">> => <<"link_adr_req">>,
+                            <<"data_rate">> => fun erlang:is_integer/1,
+                            <<"number_of_transmissions">> => fun erlang:is_integer/1,
+                            <<"tx_power">> => fun erlang:is_integer/1
+                        }
+                    ],
+                <<"payload">> => fun erlang:is_binary/1,
+                <<"payload_size">> => fun erlang:is_integer/1,
+                <<"port">> => 0
+            }
+    }),
+
+    %% Ignore down messages updates
+    ok = test_utils:ignore_messages(),
+
+    ok.
 
 mac_command_link_check_req_test(Config) ->
     #{
@@ -1969,7 +2081,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 
@@ -2600,7 +2713,8 @@ adr_test(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

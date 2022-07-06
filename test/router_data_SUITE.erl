@@ -322,7 +322,8 @@ data_test_2(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 
@@ -465,7 +466,8 @@ data_test_3(Config) ->
                 <<"channel">> => fun erlang:is_number/1,
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
-            }
+            },
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

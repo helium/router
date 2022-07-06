@@ -665,7 +665,8 @@ uplink_confirmed_and_manually_downlink_test(Config) ->
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => fun erlang:is_map/1
+            <<"hotspot">> => fun erlang:is_map/1,
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 
@@ -726,7 +727,8 @@ uplink_confirmed_and_manually_downlink_test(Config) ->
             <<"payload">> => fun erlang:is_binary/1,
             <<"port">> => fun erlang:is_integer/1,
             <<"devaddr">> => fun erlang:is_binary/1,
-            <<"hotspot">> => fun erlang:is_map/1
+            <<"hotspot">> => fun erlang:is_map/1,
+            <<"mac">> => fun erlang:is_list/1
         }
     }),
 

@@ -106,7 +106,7 @@ do_handle_event(
     #state{
         channel = Channel,
         url = URL0,
-        headers = Headers,
+        headers = Headers0,
         method = Method,
         url_params = UrlParams
     } = State
@@ -116,12 +116,17 @@ do_handle_event(
     DownlinkURL = router_console_api:get_downlink_url(Channel, maps:get(id, Data)),
     Body = router_channel:encode_data(Channel, maps:merge(Data, #{downlink_url => DownlinkURL})),
 
-    {URL1, SentParams} =
+    {URL1, SentParams, Headers} =
         case jsx:is_json(Body) of
             true ->
-                router_channel_utils:make_url(URL0, UrlParams, jsx:decode(Body, [return_maps]));
+                router_channel_utils:make_request_info(
+                    URL0,
+                    UrlParams,
+                    Headers0,
+                    jsx:decode(Body, [return_maps])
+                );
             false ->
-                router_channel_utils:make_url(URL0, UrlParams, Body)
+                router_channel_utils:make_request_info(URL0, UrlParams, Headers0, Body)
         end,
     Res = make_http_req(Method, URL1, Headers, Body),
 

@@ -100,7 +100,7 @@ mac_command_link_check_req_with_confirmed_up_test(Config) ->
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
     {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
 
-    %% Send UNCONFIRMED_UP frame packet
+    %% Send CONFIRMED_UP frame packet
     Stream !
         {send,
             test_utils:frame_packet(
@@ -158,7 +158,7 @@ mac_command_link_check_req_with_confirmed_up_test(Config) ->
                 <<"devaddr">> => fun erlang:is_binary/1,
                 <<"fcnt">> => 0,
                 <<"hotspot">> => fun erlang:is_map/1,
-                <<"integration">> => fun erlang:is_map/1,
+                %% <<"integration">> => fun erlang:is_map/1,
                 <<"mac">> =>
                     [
                         #{
@@ -2082,7 +2082,6 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"integration">> => fun erlang:is_map/1,
             <<"mac">> => fun erlang:is_list/1
         }
     }),
@@ -2715,7 +2714,6 @@ adr_test(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"integration">> => fun erlang:is_map/1,
             <<"mac">> => fun erlang:is_list/1
         }
     }),

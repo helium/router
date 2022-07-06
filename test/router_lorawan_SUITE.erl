@@ -631,7 +631,6 @@ lw_join_test(Config) ->
                 <<"lat">> => '_',
                 <<"long">> => '_'
             },
-            <<"integration">> => fun erlang:is_map/1,
             <<"mac">> => fun erlang:is_list/1
         }
     }),

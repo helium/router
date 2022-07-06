@@ -271,8 +271,7 @@ event(Device, Map) ->
                             }
                         };
                     {downlink, SC} when
-                        SC == downlink_confirmed orelse SC == downlink_unconfirmed orelse
-                            SC == downlink_ack
+                        SC == downlink_confirmed orelse SC == downlink_unconfirmed
                     ->
                         #{
                             fcnt => maps:get(fcnt, Map),
@@ -285,8 +284,7 @@ event(Device, Map) ->
                                 id => maps:get(channel_id, Map),
                                 name => maps:get(channel_name, Map),
                                 status => maps:get(channel_status, Map)
-                            },
-                            mac => maps:get(mac, Map)
+                            }
                         };
                     {_C, SC} when
                         SC == uplink_integration_req orelse
@@ -328,7 +326,6 @@ event(Device, Map) ->
                             devaddr => maps:get(devaddr, Map),
                             hotspot => maps:get(hotspot, Map),
                             dc => maps:get(dc, Map),
-                            mac => maps:get(mac, Map),
                             hold_time => maps:get(hold_time, Map)
                         };
                     {join_request, _SC} ->
@@ -358,15 +355,24 @@ event(Device, Map) ->
                             hotspot => maps:get(hotspot, Map)
                         }
                 end,
-            Body = #{
-                id => maps:get(id, Map),
-                category => Category,
-                sub_category => SubCategory,
-                description => maps:get(description, Map),
-                reported_at => maps:get(reported_at, Map),
-                device_id => router_device:id(Device),
-                data => Data
-            },
+
+            %% Always merge available mac commands into Data
+            MAC =
+                case maps:get(mac, Map, undefined) of
+                    undefined -> #{};
+                    M -> #{mac => M}
+                end,
+            Body =
+                #{
+                    id => maps:get(id, Map),
+                    category => Category,
+                    sub_category => SubCategory,
+                    description => maps:get(description, Map),
+                    reported_at => maps:get(reported_at, Map),
+                    device_id => router_device:id(Device),
+                    data => maps:merge(Data, MAC)
+                },
+
             lager:debug("post ~p with ~p", [Url, Body]),
             Start = erlang:system_time(millisecond),
             case

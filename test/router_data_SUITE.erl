@@ -323,7 +323,6 @@ data_test_2(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"integration">> => fun erlang:is_map/1,
             <<"mac">> => fun erlang:is_list/1
         }
     }),
@@ -468,7 +467,6 @@ data_test_3(Config) ->
                 <<"lat">> => fun erlang:is_float/1,
                 <<"long">> => fun erlang:is_float/1
             },
-            <<"integration">> => fun erlang:is_map/1,
             <<"mac">> => fun erlang:is_list/1
         }
     }),

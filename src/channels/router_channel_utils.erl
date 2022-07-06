@@ -15,18 +15,24 @@
 %% ------------------------------------------------------------------
 %% API Exports
 %% ------------------------------------------------------------------
--export([maybe_apply_template/2, make_url/3]).
+-export([maybe_apply_template/2, make_request_info/4]).
 
 %% ------------------------------------------------------------------
 %% Functions
 %% ------------------------------------------------------------------
 
--spec make_url(
+-spec make_request_info(
     Base :: binary(),
     Params :: proplists:proplist(),
+    Headers :: proplists:proplist(),
     Data :: map() | binary()
-) -> {binary(), proplists:proplist()}.
-make_url(Base, Params, Data) when erlang:is_binary(Data) ->
+) ->
+    {
+        URL :: binary(),
+        Params :: proplists:proplist(),
+        Headers :: proplists:proplist()
+    }.
+make_request_info(Base, Params, Headers, Data) when erlang:is_binary(Data) ->
     #hackney_url{qs = StaticParams0} = HUrl = hackney_url:parse_url(Base),
 
     StaticParams1 = hackney_url:parse_qs(StaticParams0),
@@ -35,9 +41,10 @@ make_url(Base, Params, Data) when erlang:is_binary(Data) ->
 
     {
         hackney_url:unparse_url(HUrl#hackney_url{qs = ParsedParams}),
-        CombinedParams
+        CombinedParams,
+        Headers
     };
-make_url(Base, DynamicParams0, Data) ->
+make_request_info(Base, DynamicParams0, Headers, Data) ->
     #hackney_url{qs = StaticParams0} = HUrl = hackney_url:parse_url(Base),
 
     StaticParams1 = hackney_url:parse_qs(StaticParams0),
@@ -48,7 +55,8 @@ make_url(Base, DynamicParams0, Data) ->
 
     {
         hackney_url:unparse_url(HUrl#hackney_url{qs = ParsedParams}),
-        CombinedParams
+        CombinedParams,
+        apply_template_to_qs(Headers, Data)
     }.
 
 -spec maybe_apply_template(undefined | binary(), map()) -> binary().
@@ -195,78 +203,92 @@ url_test_() ->
         ?_assertEqual(
             {
                 <<"https://website.com">>,
+                [],
                 []
             },
-            make_url("https://website.com", [], #{})
+            make_request_info("https://website.com", [], [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=two">>,
-                [{<<"one">>, <<"two">>}]
+                [{<<"one">>, <<"two">>}],
+                []
             },
-            make_url("https://website.com?one=two", [], #{})
+            make_request_info("https://website.com?one=two", [], [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=two">>,
-                [{<<"one">>, <<"two">>}]
+                [{<<"one">>, <<"two">>}],
+                []
             },
-            make_url("https://website.com", [{<<"one">>, <<"two">>}], #{})
+            make_request_info("https://website.com", [{<<"one">>, <<"two">>}], [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=two&three=four">>,
-                [{<<"one">>, <<"two">>}, {<<"three">>, <<"four">>}]
+                [{<<"one">>, <<"two">>}, {<<"three">>, <<"four">>}],
+                []
             },
-            make_url("https://website.com?one=two", [{<<"three">>, <<"four">>}], #{})
+            make_request_info("https://website.com?one=two", [{<<"three">>, <<"four">>}], [], #{})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=2">>,
-                [{<<"one">>, <<"2">>}]
+                [{<<"one">>, <<"2">>}],
+                []
             },
-            make_url("https://website.com", [{<<"one">>, <<"{{value}}">>}], #{<<"value">> => 2})
+            make_request_info("https://website.com", [{<<"one">>, <<"{{value}}">>}], [], #{
+                <<"value">> => 2
+            })
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=%7B%7Bvalue%7D%7D">>,
-                [{<<"one">>, <<"{{value}}">>}]
+                [{<<"one">>, <<"{{value}}">>}],
+                []
             },
-            make_url("https://website.com?one={{value}}", [], #{<<"value">> => 2})
+            make_request_info("https://website.com?one={{value}}", [], [], #{<<"value">> => 2})
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=42">>,
-                [{<<"one">>, <<"42">>}]
+                [{<<"one">>, <<"42">>}],
+                [{<<"header_one">>, <<"42">>}]
             },
-            make_url(
+            make_request_info(
                 "https://website.com",
                 [{<<"one">>, <<"{{deep.value}}">>}],
+                [{<<"header_one">>, <<"{{deep.value}}">>}],
                 #{<<"deep">> => #{<<"value">> => 42}}
             )
         ),
         ?_assertEqual(
             {
                 <<"https://website.com?one=two">>,
-                [{<<"one">>, <<"two">>}]
+                [{<<"one">>, <<"two">>}],
+                [{<<"header_one">>, <<"two">>}]
             },
-            make_url(
+            make_request_info(
                 "https://website.com",
                 [{<<"{{key}}">>, <<"{{value}}">>}],
+                [{<<"header_{{key}}">>, <<"{{value}}">>}],
                 #{<<"key">> => <<"one">>, <<"value">> => <<"two">>}
             )
         ),
         ?_assertEqual(
             {
                 <<"https://127.0.0.1:3000/channel?decoded_param=42&one=yolo_name">>,
-                [{<<"decoded_param">>, <<"42">>}, {<<"one">>, <<"yolo_name">>}]
+                [{<<"decoded_param">>, <<"42">>}, {<<"one">>, <<"yolo_name">>}],
+                [{<<"header_param">>, <<"42">>}]
             },
-            make_url(
+            make_request_info(
                 <<"https://127.0.0.1:3000/channel">>,
                 [
                     {<<"decoded_param">>, <<"{{decoded.payload.value}}">>},
                     {<<"one">>, <<"{{name}}">>}
                 ],
+                [{<<"header_param">>, <<"{{decoded.payload.value}}">>}],
                 jsx:decode(
                     <<"{\"decoded\":{\"payload\":{\"value\":\"42\"}},\"name\":\"yolo_name\"}">>,
                     [return_maps]

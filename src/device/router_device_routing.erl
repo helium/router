@@ -175,7 +175,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             true ->
                 Ledger = blockchain:ledger(Chain),
                 Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
-                blockchain_state_channels_server:handle_offer(Offer, ?MODULE, Ledger, self());
+                blockchain_state_channels_server:handle_valid_offer(Offer, ?MODULE, Ledger, self());
             false ->
                 ok
         end,
@@ -199,8 +199,8 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                     ),
                     ok
             end;
-        _ ->
-            ok
+        Err ->
+            Err
     end.
 
 %% This is for CTs only

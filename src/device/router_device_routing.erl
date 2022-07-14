@@ -169,21 +169,37 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
     Chain = get_chain(),
-    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
-        {error, Reason} = E ->
-            ok = reputation_track_packet(SCPacket),
-            ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
-            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
-            E;
+    UsePacket =
+        case router_utils:get_env_bool(handle_offer_after_packet, false) of
+            true ->
+                Ledger = blockchain:ledger(Chain),
+                Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
+                blockchain_state_channels_server:handle_offer(Offer, ?MODULE, Ledger, self());
+            false ->
+                ok
+        end,
+
+    case UsePacket of
         ok ->
-            ok = reputation_track_packet(SCPacket),
-            ok = print_handle_packet_resp(SCPacket, Pid, ok),
-            ok = router_metrics:routing_packet_observe_start(
-                blockchain_helium_packet_v1:packet_hash(Packet),
-                PubKeyBin,
-                Start
-            ),
+            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+                {error, Reason} = E ->
+                    ok = reputation_track_packet(SCPacket),
+                    ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+                    ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
+
+                    E;
+                ok ->
+                    ok = reputation_track_packet(SCPacket),
+                    ok = print_handle_packet_resp(SCPacket, Pid, ok),
+                    ok = router_metrics:routing_packet_observe_start(
+                        blockchain_helium_packet_v1:packet_hash(Packet),
+                        PubKeyBin,
+                        Start
+                    ),
+                    ok
+            end;
+        _ ->
             ok
     end.
 

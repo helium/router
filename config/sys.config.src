@@ -55,7 +55,8 @@
         {devaddr_allocate_resolution, "${ROUTER_DEVADDR_ALLOCATE_RESOLUTION}"},
         {metrics_port, "${ROUTER_METRICS_PORT}"},
         {denylist_keys, ["1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL"]},
-        {denylist_url, "https://api.github.com/repos/helium/denylist/releases/latest"}
+        {denylist_url, "https://api.github.com/repos/helium/denylist/releases/latest"},
+        {handle_offer_after_packet, "${ROUTER_HANDLE_OFFER_AFTER_PACKET}"}
     ]},
     {grpcbox, [
         {servers, [

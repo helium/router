@@ -50,7 +50,8 @@
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
-        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"}
+        {device_queue_size_limit, "${ROUTER_DEVICE_QUEUE_SIZE_LIMIT}"},
+        {handle_offer_after_packet, "${ROUTER_HANDLE_OFFER_AFTER_PACKET}"}
     ]},
     {grpcbox, [
         {servers, [

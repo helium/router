@@ -604,9 +604,12 @@ validate_packet_offer(Offer, _Pid, Chain) ->
             end
     end.
 
--spec validate_devaddr(non_neg_integer(), blockchain:blockchain()) -> ok | {error, any()}.
+-spec validate_devaddr(binary() | non_neg_integer(), blockchain:blockchain()) ->
+    ok | {error, any()}.
+validate_devaddr(DevNum, Chain) when erlang:is_integer(DevNum) ->
+    validate_devaddr(<<DevNum:32/integer-unsigned-little>>, Chain);
 validate_devaddr(DevAddr, Chain) ->
-    case <<DevAddr:32/integer-unsigned-little>> of
+    case DevAddr of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
@@ -791,79 +794,24 @@ packet(
     Pid,
     Chain
 ) ->
-    MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    case DevAddr of
-        <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
-            OUI = router_utils:get_oui(),
-            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-                {ok, RoutingEntry} ->
-                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                    case
-                        lists:any(
-                            fun(Subnet) ->
-                                <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> =
-                                    Subnet,
-                                Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
-                                AddrBase >= Base andalso AddrBase < Base + Size
-                            end,
-                            Subnets
-                        )
-                    of
-                        true ->
-                            %% ok device is in one of our subnets
-                            send_to_device_worker(
-                                Packet,
-                                PacketTime,
-                                HoldTime,
-                                Pid,
-                                PubKeyBin,
-                                Region,
-                                DevAddr,
-                                MIC,
-                                Payload,
-                                Chain
-                            );
-                        false ->
-                            {error, {?DEVADDR_NOT_IN_SUBNET, DevAddr}}
-                    end;
-                _E ->
-                    lager:warning("fail to find routing ~p", [_E]),
-                    %% TODO: Should fail here
-                    %% no subnets
-                    send_to_device_worker(
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        Pid,
-                        PubKeyBin,
-                        Region,
-                        DevAddr,
-                        MIC,
-                        Payload,
-                        Chain
-                    )
-            catch
-                _E:_S ->
-                    lager:warning("crashed ~p", [{_E, _S}]),
-                    %% TODO: Should fail here
-                    %% no subnets
-                    send_to_device_worker(
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        Pid,
-                        PubKeyBin,
-                        Region,
-                        DevAddr,
-                        MIC,
-                        Payload,
-                        Chain
-                    )
-            end;
-        _ ->
-            %% wrong devaddr prefix
-            {error, {?DEVADDR_MALFORMED, DevAddr}}
+    case validate_devaddr(DevAddr, Chain) of
+        ok ->
+            MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
+            %% ok device is in one of our subnets
+            send_to_device_worker(
+                Packet,
+                PacketTime,
+                HoldTime,
+                Pid,
+                PubKeyBin,
+                Region,
+                DevAddr,
+                MIC,
+                Payload,
+                Chain
+            );
+        {error, _} = Err ->
+            Err
     end;
 packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.

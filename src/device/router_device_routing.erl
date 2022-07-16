@@ -582,24 +582,29 @@ validate_packet_offer(Offer, _Pid, Chain) ->
                 {error, _} = Err ->
                     Err;
                 {ok, Device} ->
-                    case check_device_rate(Hotspot, Device) of
-                        {error, _Reason} = Error ->
-                            Error;
-                        ok ->
-                            case check_device_is_active(Device, Hotspot) of
-                                {error, _Reason} = Error ->
-                                    Error;
-                                ok ->
-                                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(
-                                        Offer
-                                    ),
-                                    case
-                                        check_device_balance(PayloadSize, Device, Hotspot, Chain)
-                                    of
-                                        {error, _Reason} = Error -> Error;
-                                        ok -> {ok, Device}
-                                    end
-                            end
+                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+                    check_device_all(Device, PayloadSize, Hotspot)
+            end
+    end.
+
+%% NOTE: Preferred hotspots is not checked here. It is part of the device, but
+%% has a precedence that takes place _after_ non device properties like packet
+%% timing, and replays.
+-spec check_device_all(router_device:device(), non_neg_integer(), libp2p_crypto:pubkey_bin()) ->
+    {ok, router_device:device()} | {error, any()}.
+check_device_all(Device, PayloadSize, Hotspot) ->
+    case check_device_rate(Hotspot, Device) of
+        {error, _Reason} = Error ->
+            Error;
+        ok ->
+            case check_device_is_active(Device, Hotspot) of
+                {error, _Reason} = Error ->
+                    Error;
+                ok ->
+                    Chain = get_chain(),
+                    case check_device_balance(PayloadSize, Device, Hotspot, Chain) of
+                        {error, _Reason} = Error -> Error;
+                        ok -> {ok, Device}
                     end
             end
     end.

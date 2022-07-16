@@ -795,7 +795,9 @@ packet(
     Chain
 ) ->
     case validate_devaddr(DevAddr, Chain) of
-        ok ->
+        {error, ?DEVADDR_MALFORMED} = Err ->
+            Err;
+        _ ->
             MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
             %% ok device is in one of our subnets
             send_to_device_worker(
@@ -809,9 +811,7 @@ packet(
                 MIC,
                 Payload,
                 Chain
-            );
-        {error, _} = Err ->
-            Err
+            )
     end;
 packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.

@@ -645,12 +645,11 @@ handle_packet_using_post_offer(Config) ->
     ok = meck:new(blockchain_state_channels_server, [passthrough]),
     ok = meck:expect(
         blockchain_state_channels_server,
-        handle_valid_offer,
-        %% We want to make sure our handle offer function still works, not
-        %% necessarily that the whole state channel machinery will accept a
-        %% gateway.
-        fun(Offer, SCPacketHandler, _Ledger, HandlerPid) ->
-            SCPacketHandler:handle_offer(Offer, HandlerPid)
+        track_offer,
+        %% All validation has been passed, but there are no state channels in
+        %% the tests, let's pretend we tracked it well.
+        fun(_Offer, _Ledger, _HandlerPid) ->
+            ok
         end
     ),
 

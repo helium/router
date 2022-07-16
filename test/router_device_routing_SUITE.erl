@@ -52,6 +52,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        handle_packet_using_post_offer,
         multi_buy_test,
         packet_hash_cache_test,
         join_offer_from_strange_hotspot_test,
@@ -67,8 +68,7 @@ all() ->
         handle_join_packet_from_preferred_hotspot_test,
         handle_join_packet_with_no_preferred_hotspot_test,
         handle_packet_fcnt_32_bit_rollover_test,
-        handle_packet_wrong_fcnt_test,
-        handle_packet_using_post_offer
+        handle_packet_wrong_fcnt_test
     ].
 
 %%--------------------------------------------------------------------

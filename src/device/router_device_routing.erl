@@ -421,17 +421,19 @@ join_offer_(Offer, _Pid) ->
                     AppEUI1
                 ]
             ),
-            maybe_buy_join_offer(Offer, _Pid, Device)
+            PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+            Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash)
     end.
 
 -spec maybe_buy_join_offer(
-    blockchain_state_channel_offer_v1:offer(),
-    pid(),
-    router_device:device()
+    Device :: router_device:device(),
+    PayloadSize :: non_neg_integer(),
+    Hotspot :: libp2p_crypto:pubkey_bin(),
+    PHash :: binary()
 ) -> {ok, router_device:device()} | {error, any()}.
-maybe_buy_join_offer(Offer, _Pid, Device) ->
-    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
     case check_device_rate(Hotspot, Device) of
         {error, _Reason} = Error ->
             Error;
@@ -445,32 +447,42 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
-                            check_device_preferred_hotspots(Device, Offer)
+                            case check_device_preferred_hotspots(Device, Hotspot) of
+                                none_preferred ->
+                                    maybe_multi_buy_offer(Device, PHash);
+                                preferred ->
+                                    % Device has preferred hotspots, so multibuy is not
+                                    {ok, Device};
+                                not_preferred_hotspot ->
+                                    {error, not_preferred_hotspot}
+                            end
                     end
             end
     end.
 
+-spec maybe_multi_buy_offer(router_device:device(), binary()) ->
+    {ok, router_device:device()} | {error, any()}.
+maybe_multi_buy_offer(Device, PHash) ->
+    DeviceID = router_device:id(Device),
+    case router_device_multibuy:maybe_buy(DeviceID, PHash) of
+        ok -> {ok, Device};
+        {error, _} = Error -> Error
+    end.
+
 -spec check_device_preferred_hotspots(
-    router_device:device(), blockchain_state_channel_offer_v1:offer()
-) -> {ok, router_device:device()} | {error, any()}.
-check_device_preferred_hotspots(Device, Offer) ->
+    Device :: router_device:device(),
+    Hotspot :: libp2p_crypto:pubkey_bin()
+) -> none_preferred | preferred | not_preferred_hotspot.
+check_device_preferred_hotspots(Device, Hotspot) ->
     case router_device:preferred_hotspots(Device) of
         [] ->
-            % No preferred hotspots means multibuy is allowed.
-            DeviceID = router_device:id(Device),
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case router_device_multibuy:maybe_buy(DeviceID, PHash) of
-                ok -> {ok, Device};
-                {error, _} = Error -> Error
-            end;
+            none_preferred;
         PreferredHotspots when is_list(PreferredHotspots) ->
-            % Device has preferred hotspots, so multibuy is not allowed.
-            OfferHotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-            case lists:member(OfferHotspot, PreferredHotspots) of
+            case lists:member(Hotspot, PreferredHotspots) of
                 true ->
-                    {ok, Device};
+                    preferred;
                 _ ->
-                    {error, not_preferred_hotspot}
+                    not_preferred_hotspot
             end
     end.
 
@@ -516,6 +528,16 @@ packet_offer_(Offer, Pid, Chain) ->
             LagerOpts = [{device_id, DeviceID}],
             BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+
+            CheckPreferredFun = fun() ->
+                case check_device_preferred_hotspots(Device, Hotspot) of
+                    none_preferred -> maybe_multi_buy_offer(Device, PHash);
+                    preferred -> {ok, Device};
+                    not_preferred_hotspot -> {error, not_preferred_hotspot}
+                end
+            end,
+
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
@@ -524,7 +546,7 @@ packet_offer_(Offer, Pid, Chain) ->
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(LagerOpts, "most likely a replay packet buying"),
-                                    check_device_preferred_hotspots(Device, Offer);
+                                    CheckPreferredFun();
                                 false ->
                                     lager:debug(
                                         LagerOpts,
@@ -555,11 +577,11 @@ packet_offer_(Offer, Pid, Chain) ->
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
-                            check_device_preferred_hotspots(Device, Offer)
+                            CheckPreferredFun()
                     end;
                 false ->
                     lager:debug(LagerOpts, "buying 1st packet for ~p", [PHash]),
-                    check_device_preferred_hotspots(Device, Offer)
+                    CheckPreferredFun()
             end
     end.
 

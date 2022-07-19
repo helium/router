@@ -3,3 +3,9 @@
 
 ## Cookie for distributed erlang
 -setcookie router
+
+## Up the number of processes allowed
++P 2097151
+
+# Tweak GC to run more often
+-env ERL_FULLSWEEP_AFTER 3

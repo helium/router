@@ -5,7 +5,7 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 
 -ifdef(TEST).
--define(TIMEOUT, 3000).
+-define(TIMEOUT, 5000).
 -else.
 -define(TIMEOUT, 8000).
 -endif.
@@ -14,11 +14,14 @@
     route/2
 ]).
 
-route(Ctx, #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}} = _Message) ->
+route(Ctx, #blockchain_state_channel_message_v1_pb{msg = {packet, SCPacket}} = _Message) ->
     lager:info("executing RPC route with msg ~p", [_Message]),
     %% handle the packet and then await a response
     %% if no response within given time, then give up and return error
-    _ = router_device_routing:handle_packet(Packet, erlang:system_time(millisecond), self()),
+    {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
+        SCPacket, erlang:system_time(millisecond), self()
+    ]),
+    router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
     wait_for_response(Ctx).
 
 %% ------------------------------------------------------------------

@@ -655,7 +655,6 @@ handle_packet_using_post_offer(Config) ->
 
     %% ===================================================================
     %% Already default
-    ok = application:set_env(router, handle_offer_after_packet, false),
 
     %% Multi buy for device is set to 2
     ok = router_device_multibuy:max(DeviceID, 2),
@@ -678,7 +677,6 @@ handle_packet_using_post_offer(Config) ->
 
     %% ===================================================================
     %% Use post packet offer handling
-    ok = application:set_env(router, handle_offer_after_packet, true),
 
     %% Multi buy for device is set to 2
     ok = router_device_multibuy:max(DeviceID, 2),

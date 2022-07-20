@@ -22,7 +22,8 @@
     init/0,
     handle_offer/2,
     handle_packet/3,
-    handle_packet/4
+    handle_packet/4,
+    handle_free_packet/3
 ]).
 
 %% replay API
@@ -169,54 +170,22 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
     Chain = get_chain(),
+    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+        {error, Reason} = E ->
+            ok = reputation_track_packet(SCPacket),
+            ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
-    UsePacket =
-        case router_utils:get_env_bool(handle_offer_after_packet, false) of
-            true ->
-                Ledger = blockchain:ledger(Chain),
-                Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
-
-                Payload = blockchain_helium_packet_v1:payload(Packet),
-                PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-
-                case get_device_for_payload(Payload, PubKeyBin, Chain) of
-                    {ok, Device} ->
-                        case validate_payload_for_device(Device, Payload, PHash, PubKeyBin) of
-                            ok ->
-                                blockchain_state_channels_server:track_offer(
-                                    Offer, Ledger, self()
-                                );
-                            {error, _} = E1 ->
-                                E1
-                        end;
-                    {error, _} = E2 ->
-                        E2
-                end;
-            false ->
-                ok
-        end,
-
-    case UsePacket of
+            E;
         ok ->
-            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
-                {error, Reason} = E ->
-                    ok = reputation_track_packet(SCPacket),
-                    ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
-                    ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
-
-                    E;
-                ok ->
-                    ok = reputation_track_packet(SCPacket),
-                    ok = print_handle_packet_resp(SCPacket, Pid, ok),
-                    ok = router_metrics:routing_packet_observe_start(
-                        blockchain_helium_packet_v1:packet_hash(Packet),
-                        PubKeyBin,
-                        Start
-                    ),
-                    ok
-            end;
-        Err ->
-            Err
+            ok = reputation_track_packet(SCPacket),
+            ok = print_handle_packet_resp(SCPacket, Pid, ok),
+            ok = router_metrics:routing_packet_observe_start(
+                blockchain_helium_packet_v1:packet_hash(Packet),
+                PubKeyBin,
+                Start
+            ),
+            ok
     end.
 
 %% This is for CTs only
@@ -242,6 +211,64 @@ handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
                 Start
             ),
             ok
+    end.
+
+-spec handle_free_packet(
+    SCPacket ::
+        blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+    PacketTime :: pos_integer(),
+    Pid :: pid()
+) -> ok | {error, any()}.
+handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
+    Start = erlang:system_time(millisecond),
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    Region = blockchain_state_channel_packet_v1:region(SCPacket),
+    HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
+    Chain = get_chain(),
+
+    Ledger = blockchain:ledger(Chain),
+    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
+
+    Payload = blockchain_helium_packet_v1:payload(Packet),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
+    UsePacket =
+        case get_device_for_payload(Payload, PubKeyBin, Chain) of
+            {ok, Device} ->
+                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin) of
+                    ok ->
+                        erlang:spawn(blockchain_state_channels_server, track_offer, [
+                            Offer, Ledger, self()
+                        ]),
+                        ok;
+                    {error, _} = E1 ->
+                        E1
+                end;
+            {error, _} = E2 ->
+                E2
+        end,
+
+    case UsePacket of
+        ok ->
+            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+                {error, Reason} = E ->
+                    ok = reputation_track_packet(SCPacket),
+                    ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+                    ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
+                    E;
+                ok ->
+                    ok = reputation_track_packet(SCPacket),
+                    ok = print_handle_packet_resp(SCPacket, Pid, ok),
+                    ok = router_metrics:routing_packet_observe_start(
+                        blockchain_helium_packet_v1:packet_hash(Packet),
+                        PubKeyBin,
+                        Start
+                    ),
+                    ok
+            end;
+        Err ->
+            Err
     end.
 
 -spec allow_replay(blockchain_helium_packet_v1:packet(), binary(), non_neg_integer()) -> ok.

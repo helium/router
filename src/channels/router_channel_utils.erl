@@ -176,14 +176,27 @@ bytes_to_list(Val) ->
 %%%-------------------------------------------------------------------
 -spec replace_index_lookup_with_special_key(binary()) -> binary().
 replace_index_lookup_with_special_key(Template) ->
-    re:replace(
-        Template,
-        %% (key )(followed by ".[:number:]")
-        <<"(\\w+)(?=\\.\\d+)">>,
-        %% __indexed__            (key)
-        <<?MUSTACHE_INDEX_LOOKUP, "&">>,
-        [{return, binary}, global]
-    ).
+    case binary:match(Template, <<"{{">>, []) of
+        nomatch ->
+            %% No interpoliation is being attempted, return untouched
+            Template;
+        {Start, _Length} ->
+            End = erlang:byte_size(Template) - Start,
+            case binary:match(Template, <<"}}">>, [{scope, {Start, End}}]) of
+                nomatch ->
+                    %% The template has opening brackets, but no closing brackets, return untouched
+                    Template;
+                _ ->
+                    re:replace(
+                        Template,
+                        %% (key )(followed by ".[:number:]")
+                        <<"(\\w+)(?=\\.\\d+)">>,
+                        %% __indexed__            (key)
+                        <<?MUSTACHE_INDEX_LOOKUP, "&">>,
+                        [{return, binary}, global]
+                    )
+            end
+    end.
 
 -spec index_list_of_maps(list(map())) -> propslist:proplist().
 index_list_of_maps(LofM) ->
@@ -294,6 +307,24 @@ url_test_() ->
                     [return_maps]
                 )
             )
+        ),
+        %% If something is encoded to have periods, we should not attempt
+        %% interpolation unless there are brackets present
+        ?_assertEqual(
+            {
+                <<"https://127.0.0.1:3000/channel">>,
+                [],
+                [{<<"Authorization">>, <<"Bearer some.token.1">>}]
+            },
+            make_request_info(
+                <<"https://127.0.0.1:3000/channel">>,
+                [],
+                [{<<"Authorization">>, <<"Bearer some.token.1">>}],
+                jsx:decode(
+                    <<"{\"decoded\":{\"payload\":{\"value\":\"42\"}},\"name\":\"yolo_name\"}">>,
+                    [return_maps]
+                )
+            )
         )
     ].
 
@@ -301,9 +332,11 @@ replace_index_lookup_with_special_key_test() ->
     ?assertEqual(<<>>, replace_index_lookup_with_special_key(<<>>)),
     ?assertEqual(<<"untouched">>, replace_index_lookup_with_special_key(<<"untouched">>)),
     ?assertEqual(
-        <<"__indexed__foo.0.bar">>,
-        replace_index_lookup_with_special_key(<<"foo.0.bar">>)
+        <<"{{__indexed__foo.0.bar}}">>,
+        replace_index_lookup_with_special_key(<<"{{foo.0.bar}}">>)
     ),
+    %% Don't attempt to replace the key unless brackets are closed
+    ?assertEqual(<<"{{foo.0.bar">>, replace_index_lookup_with_special_key(<<"{{foo.0.bar">>)),
     ?assertEqual(
         <<"untouched_base64">>,
         replace_index_lookup_with_special_key(<<"untouched_base64">>)

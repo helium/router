@@ -638,7 +638,7 @@ handle_packet_using_post_offer(Config) ->
             FCnt,
             #{dont_encode => true, devaddr => router_device:devaddr(Device0)}
         ),
-        router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
+        router_device_routing:handle_free_packet(SCPacket, erlang:system_time(millisecond), self())
     end,
 
     DeviceID = router_device:id(Device),
@@ -659,13 +659,16 @@ handle_packet_using_post_offer(Config) ->
     %% Multi buy for device is set to 2
     ok = router_device_multibuy:max(DeviceID, 2),
 
-    %% Send the same packet from all hotspots, doesn't matter, we accept everything
+    %% Send the same packet from all hotspots
     ok = HandlePacketForHotspotFun(PubKeyBin1, Device, 0),
     ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 0),
-    ok = HandlePacketForHotspotFun(PubKeyBin3, Device, 0),
-    ok = HandlePacketForHotspotFun(PubKeyBin4, Device, 0),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin3, Device, 0),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin4, Device, 0),
 
-    %% Change multi-buy to 4, still doesn't matter, we accept everything
+    %% 2 packets should have made it to state channels
+    ?assertEqual(2, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
+
+    %% Change multi-buy to 4
     ok = router_device_multibuy:max(DeviceID, 4),
 
     %% Send the same packet from all hotspots
@@ -673,29 +676,10 @@ handle_packet_using_post_offer(Config) ->
     ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 1),
     ok = HandlePacketForHotspotFun(PubKeyBin3, Device, 1),
     ok = HandlePacketForHotspotFun(PubKeyBin4, Device, 1),
-    ok = HandlePacketForHotspotFun(PubKeyBin5, Device, 1),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin5, Device, 1),
 
-    %% ===================================================================
-    %% Use post packet offer handling
-
-    %% Multi buy for device is set to 2
-    ok = router_device_multibuy:max(DeviceID, 2),
-
-    %% Send the same packet from all hotspots
-    ok = HandlePacketForHotspotFun(PubKeyBin1, Device, 3),
-    ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 3),
-    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin3, Device, 3),
-    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin4, Device, 3),
-
-    %% Change multi-buy to 4
-    ok = router_device_multibuy:max(DeviceID, 4),
-
-    %% Send the same packet from all hotspots
-    ok = HandlePacketForHotspotFun(PubKeyBin1, Device, 4),
-    ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 4),
-    ok = HandlePacketForHotspotFun(PubKeyBin3, Device, 4),
-    ok = HandlePacketForHotspotFun(PubKeyBin4, Device, 4),
-    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin5, Device, 4),
+    %% 4 packets should have made it to state channels (2 previous + 4 new)
+    ?assertEqual(6, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
 
     ok = meck:unload(blockchain_state_channels_server),
 

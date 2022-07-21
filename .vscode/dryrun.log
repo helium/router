@@ -1,0 +1,29 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory `/Users/hady/Code/router'
+./rebar3 Makefile
+ 
+===> Command Makefile not found
+ 
+make: *** [Makefile] Error 1
+
+make: Failed to remake makefile `Makefile'.
+
+echo "grpc service directory  does not exist, generating services"
+./rebar3 get-deps
+/Library/Developer/CommandLineTools/usr/bin/make grpc
+ 
+make[1]: Entering directory `/Users/hady/Code/router'
+./rebar3 Makefile
+ 
+===> Command Makefile not found
+ 
+make[1]: *** [Makefile] Error 1
+
+make[1]: Failed to remake makefile `Makefile'.
+make: *** [src/grpc/autogen] Error 2
+
+REBAR_CONFIG="config/grpc_server_gen.config" ./rebar3 grpc gen
+REBAR_CONFIG="config/grpc_client_gen.config" ./rebar3 grpc gen
+make[1]: Leaving directory `/Users/hady/Code/router'
+make: Leaving directory `/Users/hady/Code/router'
+ 

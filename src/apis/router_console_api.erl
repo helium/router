@@ -15,6 +15,7 @@
     get_device/1,
     get_devices_by_deveui_appeui/2,
     get_devices/0,
+    update_device/2,
     get_channels/2,
     event/2,
     get_downlink_url/2,
@@ -117,6 +118,44 @@ get_devices() ->
         Other ->
             {error, Other}
     end.
+
+update_device(DeviceId, DeviceUpdate) ->
+    {Endpoint, Token} = token_lookup(),
+    Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
+    lager:debug("put ~p", [Url]),
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case
+        hackney:put(
+            Url,
+            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+            jsx:encode(format_device_update(DeviceUpdate)),
+            Opts
+        )
+    of
+        {ok, 200, _Headers, _Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(update_device, ok, End - Start),
+            lager:debug("Body for ~p ~p", [Url, _Body]),
+            ok;
+        _Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(
+                update_device,
+                error,
+                End - Start
+            ),
+            {error, {update_device_failed, _Other}}
+    end.
+
+-spec format_device_update(map()) -> map().
+format_device_update(Device) ->
+    router_utils:replace_map_key(Device, ecc_compact, ecc_key_pair).
 
 -spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->
     [{binary(), router_device:device()}].
@@ -1048,7 +1087,12 @@ json_device_to_record(JSONDevice, ADRDefault, US915CFListDefault, RxDelayDefault
         {app_eui, lorawan_utils:hex_to_binary(kvc:path([<<"app_eui">>], JSONDevice))},
         {metadata, maps:filter(fun(_K, V) -> V =/= undefined end, Metadata)},
         {is_active, kvc:path([<<"active">>], JSONDevice)}
-    ],
+        %% TODO: Handle undefined case? Should it ever be undefined?
+%%        {ecc_compact, router_utils:decode_ecc(kvc:path([<<"ecc_key_pair">>], JSONDevice))}
+    ] ++ case kvc:path([<<"ecc_key_pair">>], JSONDevice) of
+             [] -> [];
+             ECC ->  [{ecc_compact, router_utils:decode_ecc(ECC)}]
+         end,
     router_device:update(DeviceUpdates, router_device:new(ID)).
 
 -spec hotspot_to_pubkey_bin(B58Bin :: binary()) -> libp2p_crypto:pubkey_bin().

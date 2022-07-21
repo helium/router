@@ -486,12 +486,11 @@ can_queue_payload(Payload, DownlinkRegion, Device) ->
             {error, queue_size_limit};
         false ->
             Region = router_utils:either(DownlinkRegion, ?MODULE:region(Device)),
-            UpDRIndex = ?MODULE:last_known_datarate(Device),
-            Plan = lora_plan:region_to_plan(Region),
-            DownDRIndex = lora_plan:up_to_down_datarate(Plan, UpDRIndex, 0),
-            MaxSize = lora_plan:max_downlink_payload_size(Plan, DownDRIndex),
+            UpDR = ?MODULE:last_known_datarate(Device),
+            DownDR = lorawan_mac_region:dr_to_down(Region, UpDR, 0),
+            MaxSize = lorawan_mac_region:max_payload_size(Region, DownDR),
             Size = erlang:byte_size(Payload),
-            {Size =< MaxSize, Size, MaxSize, DownDRIndex}
+            {Size =< MaxSize, Size, MaxSize, DownDR}
     end.
 
 %% ------------------------------------------------------------------

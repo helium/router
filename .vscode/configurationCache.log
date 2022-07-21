@@ -1,0 +1,1 @@
+{"buildTargets":[".PHONY","Makefile","all","clean","compile","docker-build","docker-docs","docker-exec","docker-run","docker-test","docs","grpc","rel","run","src/grpc/autogen","test"],"launchTargets":[],"customConfigurationProvider":{"workspaceBrowse":{"browsePath":[],"compilerArgs":[]},"fileIndex":[]}}

@@ -374,32 +374,26 @@ handle_cast(
                         []
                 end,
 
-            ECCUpdate =
-                case router_device:ecc_compact(APIDevice) of
-                    undefined ->
-                        [];
-                    ECC ->
-                        DecodeECC = base64:decode(ECC),
-                        [{ecc_compact, libp2p_crypto:bin_to_pubkey(DecodeECC)}]
-                end,
+            {UpdateConsole, ECCUpdate} =
+                get_ecc_update(router_device:ecc_compact(Device0), router_device:ecc_compact(APIDevice)),
 
-            DeviceUpdates =
-                [
-                    {name, router_device:name(APIDevice)},
-                    {dev_eui, router_device:dev_eui(APIDevice)},
-                    {app_eui, router_device:app_eui(APIDevice)},
-                    {devaddrs, DevAddrs},
-                    {metadata,
-                        maps:merge(
-                            lorawan_rxdelay:maybe_update(APIDevice, Device0),
-                            router_device:metadata(APIDevice)
-                        )},
-                    {is_active, IsActive}
-                ] ++ ECCUpdate,
+            DeviceUpdates = [
+                {name, router_device:name(APIDevice)},
+                {dev_eui, router_device:dev_eui(APIDevice)},
+                {app_eui, router_device:app_eui(APIDevice)},
+                {devaddrs, DevAddrs},
+                {metadata,
+                    maps:merge(
+                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                        router_device:metadata(APIDevice)
+                    )},
+                {is_active, IsActive}
+            ] ++ ECCUpdate,
             Device1 = router_device:update(DeviceUpdates, Device0),
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
             ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            true =:= UpdateConsole andalso update_console_ecc_keys(DeviceID, router_device:ecc_compact(Device0)),
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
 handle_cast(
@@ -2304,6 +2298,16 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
     DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.
 
+-spec get_ecc_update(undefined | map(), map()) -> {boolean(), list()}.
+get_ecc_update(undefined, Keys) -> {false, [{ecc_compact, Keys}]};
+get_ecc_update(Keys, Keys) -> {false, []};
+get_ecc_update(_, _) -> {true, []}.
+
+-spec update_console_ecc_keys(binary(), map()) -> ok.
+update_console_ecc_keys(DeviceId, Key) ->
+    router_console_api:update_device(DeviceId, #{ecc_compact => router_utils:encode_ecc(Key)}).
+
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
@@ -2321,4 +2325,13 @@ channel_record_update_test() ->
         },
         #downlink{}
     ).
+
+ecc_test() ->
+    Keys = libp2p_crypto:generate_keys(ecc_compact),
+    Keys2 = libp2p_crypto:generate_keys(ecc_compact),
+    ?assertMatch({false, [{ecc_compact, Keys}]}, get_ecc_update(undefined, Keys)),
+    ?assertMatch({false, []}, get_ecc_update(Keys, Keys)),
+    ?assertMatch({true, []}, get_ecc_update(Keys, Keys2)),
+
+    ok.
 -endif.

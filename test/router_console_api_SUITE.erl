@@ -7,6 +7,7 @@
 ]).
 
 -export([
+    update_test/1,
     pagination_test/1,
     ws_get_address_test/1,
     ws_request_address_test/1,
@@ -36,6 +37,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        update_test,
         pagination_test,
         ws_get_address_test,
         ws_request_address_test,
@@ -58,6 +60,22 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+update_test(Config) ->
+    Tab = proplists:get_value(ets, Config),
+    Devices = n_rand_devices(1),
+    true = ets:insert(Tab, {devices, Devices}),
+    {ok, [APIDevices]} = router_console_api:get_devices(),
+    DeviceId = router_device:id(APIDevices),
+    Key = libp2p_crypto:generate_keys(ecc_compact),
+
+    _Result = router_console_api:update_device(DeviceId, #{ecc_compact => router_utils:encode_ecc(Key)}),
+
+    {ok, [APIDevices2]} = router_console_api:get_devices(),
+
+    Key = router_device:ecc_compact(APIDevices2),
+
+    ok.
 
 pagination_test(Config) ->
     Tab = proplists:get_value(ets, Config),
@@ -409,7 +427,8 @@ n_rand_devices(N) ->
             Updates = [
                 {app_eui, crypto:strong_rand_bytes(8)},
                 {dev_eui, crypto:strong_rand_bytes(8)},
-                {name, ID}
+                {name, ID},
+                {ecc_compact, router_utils:encode_ecc(libp2p_crypto:generate_keys(ecc_compact))}
             ],
             Device = router_device:update(Updates, router_device:new(ID)),
             Device

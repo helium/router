@@ -51,7 +51,8 @@ device_to_json(Device) ->
             <<"fake org id">>
         ),
         <<"active">> => true,
-        <<"multi_buy">> => 1
+        <<"multi_buy">> => 1,
+        <<"ecc_key_pair">> => router_device:ecc_compact(Device)
     }.
 
 %% Get All Devices
@@ -73,7 +74,8 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
                             <<"labels">> => ?CONSOLE_LABELS,
                             <<"organization_id">> => ?CONSOLE_ORG_ID,
                             <<"active">> => true,
-                            <<"multi_buy">> => 1
+                            <<"multi_buy">> => 1,
+                            <<"ecc_key_pair">> => router_utils:encode_ecc(libp2p_crypto:generate_keys(ecc_compact))
                         }
                     ],
                     undefined
@@ -248,6 +250,26 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
                 false ->
                     {200, [], jsx:encode(Body)}
             end
+    end;
+handle('PUT', [<<"api">>,<<"router">>,<<"devices">>, DeviceID], Req, Args) ->
+    Tab = maps:get(ets, Args),
+
+    ct:print("1: ~p~n", [DeviceID]),
+
+    Update = elli_request:body(Req),
+    try jsx:decode(Update) of
+        Updates ->
+            [{devices, Devices}] = ets:lookup(Tab, devices),
+            {[D], Rest} = lists:partition(fun(Device) -> router_device:id(Device) =:= DeviceID end, Devices),
+            FormattedUpdates0 = router_utils:replace_map_key(Updates, <<"ecc_key_pair">>, <<"ecc_compact">>),
+            FormattedUpdates = lists:map(fun({Key, Value}) -> {binary_to_atom(Key), Value} end, maps:to_list(FormattedUpdates0)),
+            NewDevice = router_device:update(FormattedUpdates, D),
+            ets:insert(Tab, {devices, [NewDevice] ++ Rest}),
+
+            {200, [], jsx:encode(<<"">>)}
+    catch
+        _:_ ->
+            {400, [], <<"bad_body">>}
     end;
 handle('POST', [<<"api">>, <<"router">>, <<"devices">>, <<"update_in_xor_filter">>], Req, Args) ->
     Pid = maps:get(forward, Args),

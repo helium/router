@@ -24,6 +24,9 @@
     get_hotspot_location/2,
     to_bin/1,
     b0/4,
+    encode_ecc/1,
+    decode_ecc/1,
+    replace_map_key/3,
     either/2,
     lager_md/1,
     trace/1,
@@ -551,6 +554,21 @@ to_bin(_) ->
 -spec b0(integer(), binary(), integer(), integer()) -> binary().
 b0(Dir, DevAddr, FCnt, Len) ->
     <<16#49, 0, 0, 0, 0, Dir, DevAddr:4/binary, FCnt:32/little-unsigned-integer, 0, Len>>.
+
+-spec encode_ecc(map()) -> binary().
+encode_ecc(ECC) -> base64:encode(libp2p_crypto:keys_to_bin(ECC)).
+
+-spec decode_ecc(binary()) -> map().
+decode_ecc(ECC) -> libp2p_crypto:keys_from_bin(base64:decode(ECC)).
+
+-spec replace_map_key(map(), binary(), binary()) -> map().
+replace_map_key(Map, Key, NewKey) ->
+    case maps:find(Key, Map) of
+        error -> Map;
+        {ok, Value} ->
+            Map2 = maps:remove(Key, Map),
+            maps:put(NewKey, Value, Map2)
+    end.
 
 -spec either(Value :: any(), Default :: any()) -> any().
 either(undefined, Default) -> Default;

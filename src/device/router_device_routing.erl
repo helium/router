@@ -318,7 +318,10 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin) ->
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, _AppEUI:8/binary, _DevEUI:8/binary, _DevNonce:2/binary,
             _MIC:4/binary>> ->
-            maybe_buy_join_offer(Device, PayloadSize, PubKeyBin, PHash);
+            case maybe_buy_join_offer(Device, PayloadSize, PubKeyBin, PHash) of
+                {ok, _} -> ok;
+                E -> E
+            end;
         <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _/binary>> ->
             case check_device_all(Device, PayloadSize, PubKeyBin) of
                 {ok, _} ->

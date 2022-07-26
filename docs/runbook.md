@@ -262,33 +262,6 @@ also *Erlang Expressions* section below.
 application:get_env(router, device_trace_timeout, 240).
 ```
 
-## Gateway Reputation
-
-This applies mostly when testing such as on a developer instance of router,
-but customers may inqure as to why their packet offers are rejected by router.
-
-Sufficient load from a single gateway trigger abuse-prevention measures of
-[router](https://github.com/helium/router) such as its reputation system.
-
-Check:
-
-```bash
-router hotspot_rep ls
-```
-
-If you see the name corresponding to your instance(s) of gateway-rs, with a
-score approaching `50` (default threshold), that gateway has been
-banned.
-
-Copy the alphanumeric string associated with your gateway's name under the
-`b58` column, and use it as the identifier below.
-
-Reset reputation:
-
-```bash
-router hotspot_reputation reset longAlphaNumeric...
-```
-
 ## Erlang Expressions
 
 For one-off expressions **not** intended to persist inside the running BEAM,

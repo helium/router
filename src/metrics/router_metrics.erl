@@ -263,7 +263,6 @@ handle_info(
             ok = record_ets(),
             ok = record_queues(),
             ok = record_grpc_connections(),
-            ok = record_hotspot_reputations(),
             ok = record_devices()
         end,
         [
@@ -510,18 +509,6 @@ record_queues() ->
         end,
         maps:to_list(NewQs)
     ),
-    ok.
-
--spec record_hotspot_reputations() -> ok.
-record_hotspot_reputations() ->
-    Gauge = lists:foldl(
-        fun({_Hotspot, PacketMissed, PacketUnknownDevice}, Acc) ->
-            PacketMissed + PacketUnknownDevice + Acc
-        end,
-        0,
-        ru_reputation:reputations()
-    ),
-    _ = prometheus_gauge:set(?METRICS_HOTSPOT_REPUTATION, Gauge),
     ok.
 
 -spec record_devices() -> ok.

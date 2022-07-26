@@ -4,8 +4,7 @@
     router_cli_device_worker,
     router_cli_info,
     router_cli_xor_filter,
-    router_cli_organization,
-    router_cli_hotspot_rep
+    router_cli_organization
 ]).
 
 -export([register_cli/0]).

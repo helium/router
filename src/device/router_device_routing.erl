@@ -173,13 +173,15 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
             ok = reputation_track_packet(SCPacket),
-            ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+            ok = print_handle_packet_resp(
+                ?FUNCTION_NAME, SCPacket, Pid, reason_to_single_atom(Reason)
+            ),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
             E;
         ok ->
             ok = reputation_track_packet(SCPacket),
-            ok = print_handle_packet_resp(SCPacket, Pid, ok),
+            ok = print_handle_packet_resp(?FUNCTION_NAME, SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -254,12 +256,14 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
                 {error, Reason} = E ->
                     ok = reputation_track_packet(SCPacket),
-                    ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+                    ok = print_handle_packet_resp(
+                        ?FUNCTION_NAME, SCPacket, Pid, reason_to_single_atom(Reason)
+                    ),
                     ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
                     E;
                 ok ->
                     ok = reputation_track_packet(SCPacket),
-                    ok = print_handle_packet_resp(SCPacket, Pid, ok),
+                    ok = print_handle_packet_resp(?FUNCTION_NAME, SCPacket, Pid, ok),
                     ok = router_metrics:routing_packet_observe_start(
                         blockchain_helium_packet_v1:packet_hash(Packet),
                         PubKeyBin,
@@ -438,11 +442,12 @@ print_handle_offer_resp(Offer, HandlerPid, Error) ->
     end.
 
 -spec print_handle_packet_resp(
+    Type :: atom(),
     Offer :: blockchain_state_channel_packet_v1:packet(),
     HandlerPid :: pid(),
     Resp :: any()
 ) -> ok.
-print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
+print_handle_packet_resp(Type, SCPacket, HandlerPid, Resp) ->
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
@@ -454,8 +459,8 @@ print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
             AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
             lager:debug(
                 [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
-                "responded ~p to join deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
-                [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+                "~p responded ~p to join deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                [Type, Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         {devaddr, DevAddr0} ->
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
@@ -463,8 +468,8 @@ print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
             <<StoredDevAddr:4/binary, _/binary>> = DevAddr1,
             lager:debug(
                 [{devaddr, StoredDevAddr}],
-                "responded ~p to packet devaddr=~s (~p) from: ~p (pid: ~p)",
-                [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
+                "~p responded ~p to packet devaddr=~s (~p) from: ~p (pid: ~p)",
+                [Type, Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
     end.
 

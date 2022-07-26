@@ -251,6 +251,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
         ok ->
             case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
                 {error, Reason} = E ->
+                    Pid ! E,
                     ok = print_handle_packet_resp(
                         ?FUNCTION_NAME, SCPacket, Pid, reason_to_single_atom(Reason)
                     ),
@@ -266,6 +267,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                     ok
             end;
         Err ->
+            Pid ! Err,
             Err
     end.
 

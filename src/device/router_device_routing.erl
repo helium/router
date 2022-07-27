@@ -171,13 +171,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
             ok = print_handle_packet_resp(
-                ?FUNCTION_NAME, SCPacket, Pid, reason_to_single_atom(Reason)
+                SCPacket, Pid, reason_to_single_atom(Reason)
             ),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
             E;
         ok ->
-            ok = print_handle_packet_resp(?FUNCTION_NAME, SCPacket, Pid, ok),
+            ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -220,6 +220,7 @@ handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
 handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Start = erlang:system_time(millisecond),
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
@@ -234,6 +235,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     UsePacket =
         case get_device_for_payload(Payload, PubKeyBin, Chain) of
             {ok, Device} ->
+                ok = lager:md([{device_id, router_device:id(Device)}]),
                 case validate_payload_for_device(Device, Payload, PHash, PubKeyBin) of
                     ok ->
                         erlang:spawn(blockchain_state_channels_server, track_offer, [
@@ -246,19 +248,17 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             {error, _} = E2 ->
                 E2
         end,
-
     case UsePacket of
         ok ->
+            %% This is redondant but at least we dont have to redo all that code...
             case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
-                {error, Reason} = E ->
-                    Pid ! E,
-                    ok = print_handle_packet_resp(
-                        ?FUNCTION_NAME, SCPacket, Pid, reason_to_single_atom(Reason)
-                    ),
+                {error, Reason} = Err ->
+                    Pid ! Err,
+                    lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
                     ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
-                    E;
+                    Err;
                 ok ->
-                    ok = print_handle_packet_resp(?FUNCTION_NAME, SCPacket, Pid, ok),
+                    lager:debug("packet from ~p accepted", [HotspotName]),
                     ok = router_metrics:routing_packet_observe_start(
                         blockchain_helium_packet_v1:packet_hash(Packet),
                         PubKeyBin,
@@ -266,7 +266,8 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                     ),
                     ok
             end;
-        Err ->
+        {error, Reason} = Err ->
+            lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
             Pid ! Err,
             Err
     end.
@@ -433,12 +434,11 @@ print_handle_offer_resp(Offer, HandlerPid, Error) ->
     end.
 
 -spec print_handle_packet_resp(
-    Type :: atom(),
     Offer :: blockchain_state_channel_packet_v1:packet(),
     HandlerPid :: pid(),
     Resp :: any()
 ) -> ok.
-print_handle_packet_resp(Type, SCPacket, HandlerPid, Resp) ->
+print_handle_packet_resp(SCPacket, HandlerPid, Resp) ->
     PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
@@ -450,8 +450,8 @@ print_handle_packet_resp(Type, SCPacket, HandlerPid, Resp) ->
             AppEUI2 = lorawan_utils:binary_to_hex(AppEUI1),
             lager:debug(
                 [{app_eui, AppEUI1}, {dev_eui, DevEUI1}],
-                "~p responded ~p to join deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
-                [Type, Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
+                "responded ~p to join deveui=~s appeui=~s (~p/~p) from: ~p (pid: ~p)",
+                [Resp, DevEUI2, AppEUI2, DevEUI0, AppEUI0, HotspotName, HandlerPid]
             );
         {devaddr, DevAddr0} ->
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
@@ -459,8 +459,8 @@ print_handle_packet_resp(Type, SCPacket, HandlerPid, Resp) ->
             <<StoredDevAddr:4/binary, _/binary>> = DevAddr1,
             lager:debug(
                 [{devaddr, StoredDevAddr}],
-                "~p responded ~p to packet devaddr=~s (~p) from: ~p (pid: ~p)",
-                [Type, Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
+                "responded ~p to packet devaddr=~s (~p) from: ~p (pid: ~p)",
+                [Resp, DevAddr2, DevAddr0, HotspotName, HandlerPid]
             )
     end.
 

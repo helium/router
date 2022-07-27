@@ -22,7 +22,8 @@
     handle_join_packet_from_preferred_hotspot_test/1,
     handle_join_packet_with_no_preferred_hotspot_test/1,
     handle_packet_fcnt_32_bit_rollover_test/1,
-    handle_packet_wrong_fcnt_test/1
+    handle_packet_wrong_fcnt_test/1,
+    handle_packet_using_post_offer/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -51,6 +52,7 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        handle_packet_using_post_offer,
         multi_buy_test,
         packet_hash_cache_test,
         join_offer_from_strange_hotspot_test,
@@ -131,7 +133,10 @@ join_offer_from_strange_hotspot_test(Config) ->
     %% Device has preferred hotspots that don't include our default hotspot.
     %% The offer should be rejected.
 
-    test_join_offer(Config, [<<"SomeOtherPubKeyBin">>], {error, not_preferred_hotspot}).
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    SomeOtherPubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    test_join_offer(Config, [SomeOtherPubKeyBin], {error, not_preferred_hotspot}).
 
 join_offer_from_preferred_hotspot_test(Config) ->
     %% Device has preferred hotspots that do include our default hotspot.
@@ -598,6 +603,85 @@ multi_buy_test(Config) ->
     ok = HandleOfferForHotspotFun(PubKeyBin3, Device, 1),
     ok = HandleOfferForHotspotFun(PubKeyBin4, Device, 1),
     {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin5, Device, 1),
+
+    ok.
+
+handle_packet_using_post_offer(Config) ->
+    %% We can toggle accepting packets by running it through the handle_offer function
+    ok = remove_devaddr_allocate_meck(),
+    test_utils:add_oui(Config),
+    #{pubkey_bin := PubKeyBin1} = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% Hotspot 2-5
+    [PubKeyBin2, PubKeyBin3, PubKeyBin4, PubKeyBin5] = lists:map(
+        fun(_) ->
+            #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+            libp2p_crypto:pubkey_to_bin(PubKey)
+        end,
+        lists:seq(1, 4)
+    ),
+
+    HandlePacketForHotspotFun = fun(PubKeyBin, Device0, FCnt) ->
+        SCPacket = test_utils:frame_packet(
+            ?UNCONFIRMED_UP,
+            PubKeyBin,
+            router_device:nwk_s_key(Device0),
+            router_device:app_s_key(Device0),
+            FCnt,
+            #{dont_encode => true, devaddr => router_device:devaddr(Device0)}
+        ),
+        router_device_routing:handle_free_packet(SCPacket, erlang:system_time(millisecond), self())
+    end,
+
+    DeviceID = router_device:id(Device),
+    ok = meck:new(blockchain_state_channels_server, [passthrough]),
+    ok = meck:expect(
+        blockchain_state_channels_server,
+        track_offer,
+        %% All validation has been passed, but there are no state channels in
+        %% the tests, let's pretend we tracked it well.
+        fun(_Offer, _Ledger, _HandlerPid) ->
+            ok
+        end
+    ),
+
+    %% ===================================================================
+    %% Already default
+
+    %% Multi buy for device is set to 2
+    ok = router_device_multibuy:max(DeviceID, 2),
+
+    %% Send the same packet from all hotspots
+    ok = HandlePacketForHotspotFun(PubKeyBin1, Device, 0),
+    ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 0),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin3, Device, 0),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin4, Device, 0),
+
+    %% 2 packets should have made it to state channels
+    ?assertEqual(2, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
+
+    %% Change multi-buy to 4
+    ok = router_device_multibuy:max(DeviceID, 4),
+
+    %% Send the same packet from all hotspots
+    ok = HandlePacketForHotspotFun(PubKeyBin1, Device, 1),
+    ok = HandlePacketForHotspotFun(PubKeyBin2, Device, 1),
+    ok = HandlePacketForHotspotFun(PubKeyBin3, Device, 1),
+    ok = HandlePacketForHotspotFun(PubKeyBin4, Device, 1),
+    {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin5, Device, 1),
+
+    %% 4 packets should have made it to state channels (2 previous + 4 new)
+    ?assertEqual(6, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
+
+    ok = meck:unload(blockchain_state_channels_server),
 
     ok.
 

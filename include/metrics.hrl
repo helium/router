@@ -25,7 +25,6 @@
 -define(METRICS_XOR_FILTER, "router_xor_filter").
 -define(METRICS_GRPC_CONNECTION_COUNT, "router_grpc_connection_count").
 -define(METRICS_SC_CLOSE_SUBMIT, "router_sc_close_submit_count").
--define(METRICS_HOTSPOT_REPUTATION, "router_hotspot_reputation_gauge").
 -define(METRICS_DEVICE_TOTAL, "router_device_total_gauge").
 -define(METRICS_DEVICE_RUNNING, "router_device_running_gauge").
 
@@ -57,7 +56,6 @@
     {?METRICS_GRPC_CONNECTION_COUNT, prometheus_gauge, [], "Number of active GRPC Connections"},
     {?METRICS_SC_CLOSE_SUBMIT, prometheus_counter, [status],
         "Router state channels close txn status"},
-    {?METRICS_HOTSPOT_REPUTATION, prometheus_gauge, [], "Reputation gauge"},
     {?METRICS_DEVICE_TOTAL, prometheus_gauge, [], "Device total gauge"},
     {?METRICS_DEVICE_RUNNING, prometheus_gauge, [], "Device running gauge"}
 ]).

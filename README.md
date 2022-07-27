@@ -67,10 +67,6 @@ Router's deafult port for blockchain connection is `2154`.
 
 Prometheus template config file in `prometheus-template.yaml`.
 
-## Hotspot Reputation
-
-[See Here](docs/hotspot_reputation.md)
-
 ## CLI
 Commands are run in the `routerv3` directory using a docker container.
 > **_NOTE:_**  `sudo` may be required

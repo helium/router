@@ -1335,7 +1335,7 @@ handle_join(
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
     lager:debug(
-        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
+        "Join DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [
             lorawan_utils:binary_to_hex(DevEUI),
             lorawan_utils:binary_to_hex(AppEUI),
@@ -1364,7 +1364,17 @@ dualplan_region(Packet, HotspotRegion) ->
     DataRate = erlang:list_to_binary(
         blockchain_helium_packet_v1:datarate(Packet)
     ),
+    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
     DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
+    lager:debug(
+        "Join Frequency ~p DataRate ~p HotspotRegion ~p DeviceRegion ~p",
+        [
+            Frequency,
+            DataRateAtom,
+            HotspotRegion,
+            DeviceRegion
+        ]
+    ),
     DeviceRegion.
 
 -spec region_or_default(

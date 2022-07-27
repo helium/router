@@ -1364,13 +1364,12 @@ dualplan_region(Packet, HotspotRegion) ->
     DataRate = erlang:list_to_binary(
         blockchain_helium_packet_v1:datarate(Packet)
     ),
-    DataRateAtom = lora_plan:datarate_to_atom(DataRate),
     DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
     lager:debug(
         "Join Frequency ~p DataRate ~p HotspotRegion ~p DeviceRegion ~p",
         [
             Frequency,
-            DataRateAtom,
+            DataRate,
             HotspotRegion,
             DeviceRegion
         ]

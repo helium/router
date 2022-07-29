@@ -296,9 +296,10 @@ clear_replay(DeviceID) ->
 ) -> {ok, router_device:device()} | {error, any()}.
 get_device_for_payload(Payload, PubKeyBin, Chain) ->
     case Payload of
-        <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI:8/binary, DevEUI:8/binary, _DevNonce:2/binary,
+        <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,
             MIC:4/binary>> ->
             Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
+            {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
             case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
                 {ok, Device, _} -> {ok, Device};
                 E1 -> E1

@@ -986,7 +986,8 @@ handle_info(
             device = Device0,
             pid = Pid
         } = maps:get(DevNonce, JoinCache),
-    {Packet, PubKeyBin, Region, _PacketTime, _HoldTime} = PacketSelected,
+    {Region, _N, _D, _K} = JoinAcceptArgs,
+    {Packet, PubKeyBin, _HotspotRegion, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),

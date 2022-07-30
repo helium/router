@@ -15,14 +15,25 @@
 ]).
 
 route(Ctx, #blockchain_state_channel_message_v1_pb{msg = {packet, SCPacket}} = _Message) ->
-    lager:info("executing RPC route with msg ~p", [_Message]),
-    %% handle the packet and then await a response
-    %% if no response within given time, then give up and return error
-    {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
-        SCPacket, erlang:system_time(millisecond), self()
-    ]),
-    router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
-    wait_for_response(Ctx).
+    lager:debug("executing RPC route with msg ~p", [_Message]),
+
+    BasePacket = SCPacket#blockchain_state_channel_packet_v1_pb{signature = <<>>},
+    EncodedPacket = blockchain_state_channel_packet_v1:encode(BasePacket),
+    Signature = blockchain_state_channel_packet_v1:signature(SCPacket),
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    PubKey = libp2p_crypto:bin_to_pubkey(PubKeyBin),
+    case libp2p_crypto:verify(EncodedPacket, Signature, PubKey) of
+        false ->
+            {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};
+        true ->
+            %% handle the packet and then await a response
+            %% if no response within given time, then give up and return error
+            {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
+                SCPacket, erlang:system_time(millisecond), self()
+            ]),
+            router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
+            wait_for_response(Ctx)
+    end.
 
 %% ------------------------------------------------------------------
 %% Internal functions

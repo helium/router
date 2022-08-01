@@ -1712,7 +1712,7 @@ charge_when_no_offer() ->
 %%%-------------------------------------------------------------------
 -spec handle_frame_timeout(
     Packet0 :: blockchain_helium_packet_v1:packet(),
-    Region :: atom(),
+    HotspotRegion :: atom(),
     Device0 :: router_device:device(),
     Frame :: #frame{},
     Count :: pos_integer(),
@@ -1725,7 +1725,7 @@ charge_when_no_offer() ->
 
 handle_frame_timeout(
     Packet0,
-    Region,
+    _HotspotRegion,
     Device0,
     Frame,
     Count,
@@ -1735,6 +1735,7 @@ handle_frame_timeout(
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
+    Region = router_device:region(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
         Region,
@@ -1817,7 +1818,7 @@ handle_frame_timeout(
     end;
 handle_frame_timeout(
     Packet0,
-    Region,
+    _HotspotRegion,
     Device0,
     Frame,
     Count,
@@ -1830,6 +1831,7 @@ handle_frame_timeout(
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
+    Region = router_device:region(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
         Region,
@@ -1947,7 +1949,8 @@ handle_frame_timeout(
     pos_integer(),
     lora_adr:adjustment()
 ) -> {boolean(), list()}.
-channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
+channel_correction_and_fopts(Packet, _HotspotRegion, Device, Frame, Count, ADRAdjustment) ->
+    Region = router_device:region(Device),
     Plan = lora_plan:region_to_plan(Region),
     ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
@@ -2190,12 +2193,13 @@ maybe_track_adr_offer(Device, ADREngine0, Offer) ->
 ) -> {undefined | lora_adr:handle(), lora_adr:adjustment()}.
 maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
     Metadata = router_device:metadata(Device),
+    Region = router_device:region(Device),
     #frame_cache{
         rssi = RSSI,
         packet = Packet,
         pubkey_bin = PubKeyBin,
         frame = Frame,
-        region = Region
+        region = _HotspotRegion
     } = FrameCache,
     #frame{fopts = FOpts, adr = ADRBit, adrackreq = ADRAckReqBit} = Frame,
     ADRAllowed = maps:get(adr_allowed, Metadata, false),

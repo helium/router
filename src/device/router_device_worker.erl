@@ -1733,9 +1733,9 @@ handle_frame_timeout(
     []
 ) ->
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
+    Region = router_device:region(Device0),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
-    Region = router_device:region(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
         Region,
@@ -1830,8 +1830,8 @@ handle_frame_timeout(
 ) ->
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
-    WereChannelsCorrected = were_channels_corrected(Frame, Region),
     Region = router_device:region(Device0),
+    WereChannelsCorrected = were_channels_corrected(Frame, Region),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
         Region,

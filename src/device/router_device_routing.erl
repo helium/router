@@ -239,7 +239,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                 case validate_payload_for_device(Device, Payload, PHash, PubKeyBin) of
                     ok ->
                         erlang:spawn(blockchain_state_channels_server, track_offer, [
-                            Offer, Ledger, self()
+                            Offer, Ledger, Pid
                         ]),
                         ok;
                     {error, _} = E1 ->

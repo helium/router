@@ -52,15 +52,14 @@ end_per_testcase(TestCase, Config) ->
 %% verify we get a response
 join_grpc_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    RouterSwarm = proplists:get_value(swarm, Config),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(RouterSwarm),
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
-    Packet = join_packet(PubKeyBin0, AppKey, JoinNonce, -40),
 
     {ok, #{msg := {response, ResponseMsg}} = Result, #{headers := Headers, trailers := _Trailers}} = helium_router_client:route(
-        Packet
+        join_packet_map(PubKeyBin, SigFun, AppKey, JoinNonce, -40)
     ),
     ct:pal("Response Headers: ~p", [Headers]),
     ct:pal("Response Body: ~p", [Result]),
@@ -72,17 +71,16 @@ join_grpc_test(Config) ->
 
 %% send a packet from an unknown device
 %% we will fail to get a response
-join_from_unknown_device_grpc_test(Config) ->
-    RouterSwarm = proplists:get_value(swarm, Config),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(RouterSwarm),
+join_from_unknown_device_grpc_test(_Config) ->
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),
     BadAppKey = crypto:strong_rand_bytes(16),
-    Packet = join_packet(PubKeyBin0, BadAppKey, JoinNonce, -40),
 
     {error, {_ErrorCode, ResponseMsg}, #{headers := Headers, trailers := _Trailers}} = helium_router_client:route(
-        Packet
+        join_packet_map(PubKeyBin, SigFun, BadAppKey, JoinNonce, -40)
     ),
     ct:pal("Response Headers: ~p", [Headers]),
     ct:pal("Response Body: ~p", [ResponseMsg]),
@@ -96,9 +94,9 @@ join_from_unknown_device_grpc_test(Config) ->
 %% Helper functions
 %% ------------------------------------------------------------------
 
-join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
+join_packet_map(PubKeyBin, SigFun, AppKey, DevNonce, RSSI) ->
     RoutingInfo = {devaddr, 1},
-    HeliumPacket = #{
+    PacketMap = #{
         oui => 0,
         type => lorawan,
         payload => test_utils:join_payload(AppKey, DevNonce),
@@ -110,10 +108,35 @@ join_packet(PubKeyBin, AppKey, DevNonce, RSSI) ->
         routing => #{data => RoutingInfo},
         rx2_window => undefined
     },
-    Packet = #{
-        packet => HeliumPacket,
+    SCPacketMap0 = #{
+        packet => PacketMap,
         hotspot => PubKeyBin,
         region => 'US915',
         hold_time => 100
     },
-    #{msg => {packet, Packet}}.
+    Signature = signature(SCPacketMap0, SigFun),
+    PacketMap1 = maps:put(signature, Signature, SCPacketMap0),
+    #{msg => {packet, PacketMap1}}.
+
+signature(SCPacketMap, SigFun) ->
+    #{
+        packet := #{
+            type := Type,
+            payload := Payload,
+            timestamp := Timestamp,
+            signal_strength := RSSI,
+            frequency := Frequency,
+            datarate := DataRate,
+            snr := SNR,
+            routing := #{data := RoutingInfo}
+        },
+        hotspot := Hotspot,
+        region := Region,
+        hold_time := HoldTime
+    } = SCPacketMap,
+    Packet = blockchain_helium_packet_v1:new(
+        Type, Payload, Timestamp, RSSI, Frequency, DataRate, SNR, RoutingInfo
+    ),
+    SCPacket = blockchain_state_channel_packet_v1:new(Packet, Hotspot, Region, HoldTime),
+    SignedSCPacket = blockchain_state_channel_packet_v1:sign(SCPacket, SigFun),
+    blockchain_state_channel_packet_v1:signature(SignedSCPacket).

@@ -253,7 +253,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             %% This is redondant but at least we dont have to redo all that code...
             case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
                 {error, Reason} = Err ->
-                    Pid ! Err,
+                    Pid ! {error, reason_to_single_atom(Reason)},
                     lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
                     ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
                     Err;
@@ -268,7 +268,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
             end;
         {error, Reason} = Err ->
             lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
-            Pid ! Err,
+            Pid ! {error, reason_to_single_atom(Reason)},
             Err
     end.
 

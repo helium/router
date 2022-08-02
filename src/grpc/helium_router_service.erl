@@ -46,10 +46,10 @@ wait_for_response(Ctx) ->
         {packet, Packet} ->
             lager:debug("received packet ~p", [Packet]),
             {ok, #blockchain_state_channel_message_v1_pb{msg = {packet, Packet}}, Ctx};
-        {error, _Reason} ->
-            lager:debug("received error msg ~p", [_Reason]),
-            {grpc_error, {grpcbox_stream:code_to_status(2), <<"no response">>}}
+        {error, Reason} ->
+            lager:debug("received error msg ~p", [Reason]),
+            {grpc_error, {grpcbox_stream:code_to_status(2), erlang:atom_to_binary(Reason)}}
     after ?TIMEOUT ->
         lager:debug("failed to receive response msg after ~p seconds", [?TIMEOUT]),
-        {grpc_error, {grpcbox_stream:code_to_status(2), <<"no response">>}}
+        {grpc_error, {grpcbox_stream:code_to_status(2), <<"timeout no response">>}}
     end.

@@ -198,7 +198,7 @@ data_test_2(Config) ->
         pubkey_bin := PubKeyBin,
         stream := Stream,
         hotspot_name := HotspotName
-    } = test_utils:join_device(Config),
+    } = test_utils:join_device(Config, #{region => 'EU868'}),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -342,7 +342,7 @@ data_test_3(Config) ->
         pubkey_bin := PubKeyBin,
         stream := Stream,
         hotspot_name := HotspotName
-    } = test_utils:join_device(Config),
+    } = test_utils:join_device(Config, #{region => 'EU868'}),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),

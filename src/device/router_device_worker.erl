@@ -1458,43 +1458,63 @@ validate_frame(
     <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, _FCnt:16, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-    FrameAck = router_utils:mtype_to_ack(MType),
-    Window = PacketTime - DownlinkHandledAtTime,
-    case maps:get(PacketFCnt, FrameCache, undefined) of
-        #frame_cache{} ->
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false
-            );
-        undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
-            lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
-                PacketFCnt,
-                LastSeenFCnt
-            ]),
-            {error, late_packet};
-        undefined when
-            FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
-                Window < ?RX_MAX_WINDOW
-        ->
-            lager:debug(
-                "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
-                [PacketFCnt, DownlinkHandledAtFCnt, Window]
-            ),
-            {error, late_packet};
-        undefined when
-            FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
-                Window >= ?RX_MAX_WINDOW
-        ->
-            lager:debug(
-                "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
-                [PacketFCnt, DownlinkHandledAtFCnt, Window]
-            ),
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
-            );
-        undefined ->
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false
-            )
+    case MType of
+        MType when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
+            FrameAck = router_utils:mtype_to_ack(MType),
+            Window = PacketTime - DownlinkHandledAtTime,
+            case maps:get(PacketFCnt, FrameCache, undefined) of
+                #frame_cache{} ->
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    );
+                undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
+                    lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
+                        PacketFCnt,
+                        LastSeenFCnt
+                    ]),
+                    {error, late_packet};
+                undefined when
+                    FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
+                        Window < ?RX_MAX_WINDOW
+                ->
+                    lager:debug(
+                        "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
+                        [PacketFCnt, DownlinkHandledAtFCnt, Window]
+                    ),
+                    {error, late_packet};
+                undefined when
+                    FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
+                        Window >= ?RX_MAX_WINDOW
+                ->
+                    lager:debug(
+                        "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
+                        [PacketFCnt, DownlinkHandledAtFCnt, Window]
+                    ),
+                    validate_frame_(
+                        PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
+                    );
+                undefined ->
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    )
+            end;
+        MType ->
+            lager:warning("got wrong mtype ~p", [{MType, router_utils:mtype_to_ack(MType)}]),
+            {error, bad_message_type}
     end.
 
 -spec validate_frame_(

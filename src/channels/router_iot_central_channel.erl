@@ -42,12 +42,13 @@ init({[Channel, Device], _}) ->
     case setup_iot_central(Channel) of
         {ok, Account} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-            send_connect_after(ChannelID, 0),
+            TimerRef = send_connect_after(ChannelID, 0),
             {ok, #state{
                 channel = Channel,
                 channel_id = ChannelID,
                 azure = Account,
-                conn_backoff = Backoff
+                conn_backoff = Backoff,
+                conn_backoff_ref = TimerRef
             }};
         Err ->
             lager:warning("could not setup iot_central connection ~p", [Err]),

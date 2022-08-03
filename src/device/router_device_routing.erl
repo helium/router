@@ -324,7 +324,7 @@ get_device_for_payload(Payload, PubKeyBin, Chain) ->
 -spec validate_payload_for_device(
     router_device:device(), binary(), binary(), libp2p_crypto:pubkey_bin(), non_neg_integer()
 ) -> ok | {error, any()}.
-validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
+validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) ->
     PayloadSize = byte_size(Payload),
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, _AppEUI:8/binary, _DevEUI:8/binary, _DevNonce:2/binary,
@@ -334,7 +334,7 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
                 E -> E
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _/binary>> ->
-            case router_device:fcnt(Device) > Fcnt of
+            case PacketFCnt =< router_device:fcnt(Device) of
                 true ->
                     {error, ?LATE_PACKET};
                 false ->

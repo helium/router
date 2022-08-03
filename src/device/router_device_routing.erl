@@ -234,17 +234,23 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 
     UsePacket =
         case get_device_for_payload(Payload, PubKeyBin, Chain) of
-            {ok, Device, Fcnt} ->
+            {ok, Device, PacketFCnt} ->
                 ok = lager:md([{device_id, router_device:id(Device)}]),
-                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) of
+                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
                     ok ->
                         erlang:spawn(blockchain_state_channels_server, track_offer, [
                             Offer, Ledger, self()
                         ]),
                         ok;
                     {error, ?LATE_PACKET} = E1 ->
-                        Pid ! E1,
-                        ok;
+                        ok = router_utils:event_uplink_dropped_late_packet(
+                            PacketTime,
+                            HoldTime,
+                            PacketFCnt,
+                            Device,
+                            PubKeyBin
+                        ),
+                        E1;
                     {error, _} = E1 ->
                         E1
                 end;
@@ -296,7 +302,7 @@ clear_replay(DeviceID) ->
     Payload :: binary(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Chain :: blockchain:blockchain()
-) -> {ok, router_device:device()} | {error, any()}.
+) -> {ok, router_device:device(), non_neg_integer()} | {error, any()}.
 get_device_for_payload(Payload, PubKeyBin, Chain) ->
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,

@@ -1,0 +1,22 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+ENV["LC_ALL"] = "en_US.UTF-8"
+ENV["DEBIAN_FRONTEND"] = "noninteractive"
+
+Vagrant.configure("2") do |config|
+  # Ubuntu 20.04.4 code-name is Focal.
+  config.vm.box = "ubuntu/focal64"
+
+  # config.vm.provider "virtualbox" do |vb|
+  #    vb.memory = "1024"
+  # end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+
+    # See ../../Make-deb-package.mk for `vagrant ssh` commands
+    # that exercise the Debian package for test purposes.
+
+  SHELL
+end

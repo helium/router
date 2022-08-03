@@ -1,0 +1,16 @@
+Package: helium-router
+Version: 1.0-1
+Section: lorawan
+Priority: extra
+Architecture: all
+Depends: 
+Suggests: esl-erlang
+Installed-Size: 168820736
+Homepage: https://github.com/helium/router
+Vcs-Browser: https://github.com/helium/router/
+Vcs-Git: https://github.com/helium/router.git
+Maintainer: Nova Labs Inc <support@nova-labs.com>
+Conflicts: helium-router
+Provides: helium-router
+Description: LoRaWAN Network Server (LNS) for Helium Network
+ conforming to LoRaWAN 1.0.x specification.

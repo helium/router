@@ -50,6 +50,9 @@ rel: | $(grpc_services_directory)
 run: | $(grpc_services_directory)
 	_build/default/rel/router/bin/router foreground
 
+deb:
+	$(MAKE) -f Make-deb-package.mk deb deb-test
+
 docker-build:
 	docker build -f Dockerfile-CI --force-rm -t quay.io/team-helium/router:local .
 

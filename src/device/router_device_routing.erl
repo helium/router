@@ -242,7 +242,8 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                             Offer, Ledger, self()
                         ]),
                         ok;
-                    {error, ?LATE_PACKET} = _E1 ->
+                    {error, ?LATE_PACKET} = E1 ->
+                        Pid ! E1,
                         ok;
                     {error, _} = E1 ->
                         E1

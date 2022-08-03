@@ -499,7 +499,7 @@ can_queue_payload(Payload, DownlinkRegion, Device) ->
         true ->
             {error, queue_size_limit};
         false ->
-            Region = router_utils:either(DownlinkRegion, ?MODULE:region(Device)),
+            Region = router_utils:either(?MODULE:region(Device), DownlinkRegion),
             UpDRIndex = ?MODULE:last_known_datarate(Device),
             Plan = lora_plan:region_to_plan(Region),
             DownDRIndex = lora_plan:up_to_down_datarate(Plan, UpDRIndex, 0),

@@ -1037,7 +1037,7 @@ send_to_device_worker(
                 [
                     DevAddr,
                     lorawan_utils:binary_to_hex(DevAddr),
-                    libp2p_crypto:bin_to_b58(PubKeyBin)
+                    blockchain_utils:addr2name(PubKeyBin)
                 ]
             ),
             {error, unknown_device};

@@ -990,7 +990,8 @@ handle_info(
         region = Region,
         app_nonce = _N,
         dev_addr = _D,
-        app_key = _K} = JoinAcceptArgs,
+        app_key = _K
+    } = JoinAcceptArgs,
     {Packet, PubKeyBin, _Region, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
@@ -1479,7 +1480,7 @@ validate_frame(
                         Blockchain,
                         false
                     );
-                undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
+                undefined when FrameAck == 0 andalso PacketFCnt =< LastSeenFCnt ->
                     lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
                         PacketFCnt,
                         LastSeenFCnt

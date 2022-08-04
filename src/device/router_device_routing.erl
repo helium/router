@@ -334,7 +334,8 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
                 E -> E
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _/binary>> ->
-            case router_device:fcnt(Device) > Fcnt of
+            DeviceFcnt = router_device:fcnt(Device),
+            case DeviceFcnt /= undefined andalso DeviceFcnt > Fcnt of
                 true ->
                     {error, ?LATE_PACKET};
                 false ->

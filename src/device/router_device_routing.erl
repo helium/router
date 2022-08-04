@@ -234,14 +234,23 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 
     UsePacket =
         case get_device_for_payload(Payload, PubKeyBin, Chain) of
-            {ok, Device} ->
+            {ok, Device, PacketFCnt} ->
                 ok = lager:md([{device_id, router_device:id(Device)}]),
-                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin) of
+                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
                     ok ->
                         erlang:spawn(blockchain_state_channels_server, track_offer, [
                             Offer, Ledger, self()
                         ]),
                         ok;
+                    {error, ?LATE_PACKET} = E1 ->
+                        ok = router_utils:event_uplink_dropped_late_packet(
+                            PacketTime,
+                            HoldTime,
+                            PacketFCnt,
+                            Device,
+                            PubKeyBin
+                        ),
+                        E1;
                     {error, _} = E1 ->
                         E1
                 end;
@@ -293,7 +302,7 @@ clear_replay(DeviceID) ->
     Payload :: binary(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Chain :: blockchain:blockchain()
-) -> {ok, router_device:device()} | {error, any()}.
+) -> {ok, router_device:device(), non_neg_integer()} | {error, any()}.
 get_device_for_payload(Payload, PubKeyBin, Chain) ->
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,
@@ -301,21 +310,21 @@ get_device_for_payload(Payload, PubKeyBin, Chain) ->
             Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
             {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
             case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
-                {ok, Device, _} -> {ok, Device};
+                {ok, Device, _} -> {ok, Device, 0};
                 E1 -> E1
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
             MIC = payload_mic(Payload),
             case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
-                {ok, {Device, _NwkSKey, _FCnt}} -> {ok, Device};
+                {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
                 E2 -> E2
             end
     end.
 
 -spec validate_payload_for_device(
-    router_device:device(), binary(), binary(), libp2p_crypto:pubkey_bin()
+    router_device:device(), binary(), binary(), libp2p_crypto:pubkey_bin(), non_neg_integer()
 ) -> ok | {error, any()}.
-validate_payload_for_device(Device, Payload, PHash, PubKeyBin) ->
+validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
     PayloadSize = byte_size(Payload),
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, _AppEUI:8/binary, _DevEUI:8/binary, _DevNonce:2/binary,
@@ -325,18 +334,24 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin) ->
                 E -> E
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _/binary>> ->
-            case check_device_all(Device, PayloadSize, PubKeyBin) of
-                {ok, _} ->
-                    case check_device_preferred_hotspots(Device, PubKeyBin) of
-                        none_preferred ->
-                            case maybe_multi_buy_offer(Device, PHash) of
-                                {ok, _} -> ok;
-                                E -> E
-                            end;
-                        preferred ->
-                            ok;
-                        not_preferred_hotspot ->
-                            {error, not_preferred_hotspot}
+            DeviceFcnt = router_device:fcnt(Device),
+            case DeviceFcnt /= undefined andalso DeviceFcnt > Fcnt of
+                true ->
+                    {error, ?LATE_PACKET};
+                false ->
+                    case check_device_all(Device, PayloadSize, PubKeyBin) of
+                        {ok, _} ->
+                            case check_device_preferred_hotspots(Device, PubKeyBin) of
+                                none_preferred ->
+                                    case maybe_multi_buy_offer(Device, PHash) of
+                                        {ok, _} -> ok;
+                                        E -> E
+                                    end;
+                                preferred ->
+                                    ok;
+                                not_preferred_hotspot ->
+                                    {error, not_preferred_hotspot}
+                            end
                     end
             end
     end.
@@ -1037,7 +1052,7 @@ send_to_device_worker(
                 [
                     DevAddr,
                     lorawan_utils:binary_to_hex(DevAddr),
-                    libp2p_crypto:bin_to_b58(PubKeyBin)
+                    blockchain_utils:addr2name(PubKeyBin)
                 ]
             ),
             {error, unknown_device};

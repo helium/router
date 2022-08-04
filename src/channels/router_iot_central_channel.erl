@@ -199,7 +199,9 @@ connect(#state{azure = Azure0, conn_backoff = Backoff0, channel_id = ChannelID} 
     end.
 
 -spec reconnect(#state{}) -> #state{}.
-reconnect(#state{channel_id = ChannelID, conn_backoff = Backoff0, conn_backoff_ref = TimerRef0} = State) ->
+reconnect(
+    #state{channel_id = ChannelID, conn_backoff = Backoff0, conn_backoff_ref = TimerRef0} = State
+) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     erlang:cancel_timer(TimerRef0),
     TimerRef1 = send_connect_after(ChannelID, Delay),

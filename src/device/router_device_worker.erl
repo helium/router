@@ -990,7 +990,8 @@ handle_info(
         region = Region,
         app_nonce = _N,
         dev_addr = _D,
-        app_key = _K} = JoinAcceptArgs,
+        app_key = _K
+    } = JoinAcceptArgs,
     {Packet, PubKeyBin, _Region, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
@@ -1441,7 +1442,7 @@ craft_join_reply(
     Region :: atom(),
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
-    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
+    {LastSeenFCnt :: undefined | non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
     FrameCache :: #{integer() => #frame_cache{}},
     OfferCache :: map()
 ) ->
@@ -1479,7 +1480,19 @@ validate_frame(
                         Blockchain,
                         false
                     );
-                undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
+                undefined when FrameAck == 0 andalso LastSeenFCnt == undefined ->
+                    lager:debug("we got a first packet [fcnt: ~p]", [PacketFCnt]),
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    );
+                undefined when FrameAck == 0 andalso PacketFCnt =< LastSeenFCnt ->
                     lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
                         PacketFCnt,
                         LastSeenFCnt
@@ -1506,6 +1519,7 @@ validate_frame(
                         PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
                     );
                 undefined ->
+                    lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
                     validate_frame_(
                         PacketFCnt,
                         Packet,

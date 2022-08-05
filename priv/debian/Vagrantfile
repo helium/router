@@ -5,15 +5,21 @@ ENV["LC_ALL"] = "en_US.UTF-8"
 ENV["DEBIAN_FRONTEND"] = "noninteractive"
 
 Vagrant.configure("2") do |config|
-  # Ubuntu 20.04.4 code-name is Focal.
+  # Ubuntu 20.04 code-name is Focal Fossa, 22.04 is Jammy Jellyfish.
   config.vm.box = "ubuntu/focal64"
 
-  # config.vm.provider "virtualbox" do |vb|
-  #    vb.memory = "1024"
-  # end
+  #config.vm.define "router_deb"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.check_guest_additions = false
+    #vb.name = "router_deb"
+    #vb.memory = "7168"
+  end
 
   config.vm.provision "shell", inline: <<-SHELL
     apt-get update
+    usermod -a -G adm,root,systemd-journal vagrant
+    ln -s /vagrant/* .
 
     # See ../../Make-deb-package.mk for `vagrant ssh` commands
     # that exercise the Debian package for test purposes.

@@ -16,6 +16,8 @@
 %% API
 -export([start_link/0, handle_push_data/4, handle_pull_data/4, handle_tx_ack/4]).
 
+-export([send_pull_resp/2]).
+
 %% gen_server callbacks
 -export([
     init/1,
@@ -27,34 +29,50 @@
 ]).
 
 -define(SERVER, ?MODULE).
+-define(GWMP_HEARTBEAT_SECONDS, 10).
 
 -record(gwmp_server_state, {
-    lns_socket :: gen_udp:socket()
+    lns_socket :: gen_udp:socket(),
+    gwmp_heartbeat_seconds = ?GWMP_HEARTBEAT_SECONDS :: integer()
 }).
 
-handle_push_data(GWMPValues, #gwmp_server_state{lns_socket = LNSSocket} , IP, Port) ->
+-spec send_pull_resp(MAC::binary(), Data::map()) -> ok | gateway_not_found.
+
+send_pull_resp(MAC, Data) ->
+    gen_server:call(?SERVER, {pull_resp, MAC, Data}).
+
+handle_push_data(GWMPValues, #gwmp_server_state{
+    lns_socket = LNSSocket,
+    gwmp_heartbeat_seconds = ConnectionLifetime} , IP, Port) ->
     #{
         map := Map,
-        token := Token
+        token := Token,
+        mac := MAC
     } = GWMPValues,
     lager:info("got PUSH_DATA: Token: ~p, Map: ~p", [Token, Map]),
+    gwmp_gateway_connections:new_connection(MAC, {IP, Port}, ConnectionLifetime),
     send_push_ack(IP, Port, LNSSocket, Token).
 
-handle_pull_data(GWMPValues, #gwmp_server_state{lns_socket = LNSSocket}, IP, Port) ->
+handle_pull_data(GWMPValues,
+    #gwmp_server_state{lns_socket = LNSSocket,
+    gwmp_heartbeat_seconds = ConnectionLifetime}, IP, Port) ->
     #{
         token := Token,
         mac := MAC
     } = GWMPValues,
     lager:info("got PULL_DATA: Token: ~p, MAC: ~p", [Token, MAC]),
+    gwmp_gateway_connections:new_connection(MAC, {IP, Port}, ConnectionLifetime),
     send_pull_ack(IP, Port, LNSSocket, Token).
 
-handle_tx_ack(GWMPValues, _CustomState, _IP, _Port) ->
+handle_tx_ack(GWMPValues, #gwmp_server_state{
+    gwmp_heartbeat_seconds = ConnectionLifetime}, IP, Port) ->
     #{
         map := Map,
         token := Token,
         mac := MAC
     } = GWMPValues,
-    lager:info("got TX_ACK: Token: ~p, Map: ~p, MAC: ~p", [Token, Map, MAC]).
+    lager:info("got TX_ACK: Token: ~p, Map: ~p, MAC: ~p", [Token, Map, MAC]),
+    gwmp_gateway_connections:new_connection(MAC, {IP, Port}, ConnectionLifetime).
 
 %%%===================================================================
 %%% API
@@ -80,10 +98,13 @@ start_link() ->
 init(Args) ->
     process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
-    Port = 1700,
-    {ok, Socket} = gen_udp:open(Port, [binary, {active, true}]),
+    Port = application:get_env(router, gwmp_port, 1700),
+    Address = application:get_env(router, gwmp_address, any),
+    {ok, Socket} = gen_udp:open(Port, [binary, {active, true}, {ip, Address}]),
     CustomState = #gwmp_server_state{
-        lns_socket = Socket
+        lns_socket = Socket,
+        gwmp_heartbeat_seconds = application:get_env(
+            router, gwmp_heartbeat_seconds, ?GWMP_HEARTBEAT_SECONDS)
     },
     {ok, #lns_udp_state{
         socket = Socket,
@@ -107,6 +128,9 @@ init(Args) ->
     | {noreply, NewState :: #lns_udp_state{}, timeout() | hibernate}
     | {stop, Reason :: term(), Reply :: term(), NewState :: #lns_udp_state{}}
     | {stop, Reason :: term(), NewState :: #lns_udp_state{}}.
+handle_call({pull_resp, MAC, Map}, _From, State = #lns_udp_state{socket = LNSSocket}) ->
+    Result = send_pull_resp(MAC, LNSSocket, Map),
+    {reply, Result, State};
 handle_call(_Request, _From, State = #lns_udp_state{}) ->
     {reply, ok, State}.
 
@@ -170,3 +194,15 @@ send_push_ack(DestinationIP, DestinationPort, LNSSocket, Token) ->
 send_pull_ack(DestinationIP, DestinationPort, LNSSocket, Token) ->
     lager:info("Sending pull_ack to ~p.", [{DestinationPort, DestinationIP}]),
     gen_udp:send(LNSSocket, DestinationIP, DestinationPort,  semtech_udp:pull_ack(Token)).
+
+send_pull_resp(MAC, LNSSocket, Map) ->
+%%    Use MAC to find UDP endpoint
+    case gwmp_gateway_connections:lookup_connection(MAC) of
+        undefined ->
+            gateway_not_found;
+        {DestinationIP, DestinationPort} ->
+            Token = semtech_udp:token(),
+            gen_udp:send(LNSSocket, DestinationIP, DestinationPort,
+                semtech_udp:pull_resp(Token, Map)),
+            ok
+    end.

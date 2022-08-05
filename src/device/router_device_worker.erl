@@ -986,7 +986,13 @@ handle_info(
             device = Device0,
             pid = Pid
         } = maps:get(DevNonce, JoinCache),
-    {Packet, PubKeyBin, Region, _PacketTime, _HoldTime} = PacketSelected,
+    #join_accept_args{
+        region = Region,
+        app_nonce = _N,
+        dev_addr = _D,
+        app_key = _K
+    } = JoinAcceptArgs,
+    {Packet, PubKeyBin, _Region, _PacketTime, _HoldTime} = PacketSelected,
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),
@@ -1335,7 +1341,7 @@ handle_join(
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
     lager:debug(
-        "DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
+        "Join DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [
             lorawan_utils:binary_to_hex(DevEUI),
             lorawan_utils:binary_to_hex(AppEUI),
@@ -1365,6 +1371,15 @@ dualplan_region(Packet, HotspotRegion) ->
         blockchain_helium_packet_v1:datarate(Packet)
     ),
     DeviceRegion = lora_plan:dualplan_region(HotspotRegion, Frequency, DataRate),
+    lager:debug(
+        "Join Frequency ~p DataRate ~p HotspotRegion ~p DeviceRegion ~p",
+        [
+            Frequency,
+            DataRate,
+            HotspotRegion,
+            DeviceRegion
+        ]
+    ),
     DeviceRegion.
 
 -spec region_or_default(
@@ -1427,7 +1442,7 @@ craft_join_reply(
     Region :: atom(),
     Device :: router_device:device(),
     Blockchain :: blockchain:blockchain(),
-    {LastSeenFCnt :: non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
+    {LastSeenFCnt :: undefined | non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
     FrameCache :: #{integer() => #frame_cache{}},
     OfferCache :: map()
 ) ->
@@ -1449,43 +1464,76 @@ validate_frame(
     <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
         _FOptsLen:4, _FCnt:16, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
-    FrameAck = router_utils:mtype_to_ack(MType),
-    Window = PacketTime - DownlinkHandledAtTime,
-    case maps:get(PacketFCnt, FrameCache, undefined) of
-        #frame_cache{} ->
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false
-            );
-        undefined when FrameAck == 0 andalso PacketFCnt =:= LastSeenFCnt ->
-            lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
-                PacketFCnt,
-                LastSeenFCnt
-            ]),
-            {error, late_packet};
-        undefined when
-            FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
-                Window < ?RX_MAX_WINDOW
-        ->
-            lager:debug(
-                "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
-                [PacketFCnt, DownlinkHandledAtFCnt, Window]
-            ),
-            {error, late_packet};
-        undefined when
-            FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
-                Window >= ?RX_MAX_WINDOW
-        ->
-            lager:debug(
-                "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
-                [PacketFCnt, DownlinkHandledAtFCnt, Window]
-            ),
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
-            );
-        undefined ->
-            validate_frame_(
-                PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, false
-            )
+    case MType of
+        MType when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
+            FrameAck = router_utils:mtype_to_ack(MType),
+            Window = PacketTime - DownlinkHandledAtTime,
+            case maps:get(PacketFCnt, FrameCache, undefined) of
+                #frame_cache{} ->
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    );
+                undefined when FrameAck == 0 andalso LastSeenFCnt == undefined ->
+                    lager:debug("we got a first packet [fcnt: ~p]", [PacketFCnt]),
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    );
+                undefined when FrameAck == 0 andalso PacketFCnt =< LastSeenFCnt ->
+                    lager:debug("we got a late unconfirmed up packet for ~p: LastSeenFCnt: ~p", [
+                        PacketFCnt,
+                        LastSeenFCnt
+                    ]),
+                    {error, late_packet};
+                undefined when
+                    FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
+                        Window < ?RX_MAX_WINDOW
+                ->
+                    lager:debug(
+                        "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
+                        [PacketFCnt, DownlinkHandledAtFCnt, Window]
+                    ),
+                    {error, late_packet};
+                undefined when
+                    FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
+                        Window >= ?RX_MAX_WINDOW
+                ->
+                    lager:debug(
+                        "we got a replay confirmed up packet for ~p: DownlinkHandledAt: ~p outside window ~p",
+                        [PacketFCnt, DownlinkHandledAtFCnt, Window]
+                    ),
+                    validate_frame_(
+                        PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
+                    );
+                undefined ->
+                    lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
+                    validate_frame_(
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        Blockchain,
+                        false
+                    )
+            end;
+        MType ->
+            lager:warning("got wrong mtype ~p", [{MType, router_utils:mtype_to_ack(MType)}]),
+            {error, bad_message_type}
     end.
 
 -spec validate_frame_(
@@ -1698,7 +1746,7 @@ charge_when_no_offer() ->
 %%%-------------------------------------------------------------------
 -spec handle_frame_timeout(
     Packet0 :: blockchain_helium_packet_v1:packet(),
-    Region :: atom(),
+    HotspotRegion :: atom(),
     Device0 :: router_device:device(),
     Frame :: #frame{},
     Count :: pos_integer(),
@@ -1711,7 +1759,7 @@ charge_when_no_offer() ->
 
 handle_frame_timeout(
     Packet0,
-    Region,
+    _HotspotRegion,
     Device0,
     Frame,
     Count,
@@ -1719,6 +1767,7 @@ handle_frame_timeout(
     []
 ) ->
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
+    Region = router_device:region(Device0),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     ChannelCorrection = router_device:channel_correction(Device0),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
@@ -1803,7 +1852,7 @@ handle_frame_timeout(
     end;
 handle_frame_timeout(
     Packet0,
-    Region,
+    _HotspotRegion,
     Device0,
     Frame,
     Count,
@@ -1815,6 +1864,7 @@ handle_frame_timeout(
 ) ->
     ACK = router_utils:mtype_to_ack(Frame#frame.mtype),
     MType = ack_to_mtype(ConfirmedDown),
+    Region = router_device:region(Device0),
     WereChannelsCorrected = were_channels_corrected(Frame, Region),
     {ChannelsCorrected, FOpts1} = channel_correction_and_fopts(
         Packet0,
@@ -1933,7 +1983,8 @@ handle_frame_timeout(
     pos_integer(),
     lora_adr:adjustment()
 ) -> {boolean(), list()}.
-channel_correction_and_fopts(Packet, Region, Device, Frame, Count, ADRAdjustment) ->
+channel_correction_and_fopts(Packet, _HotspotRegion, Device, Frame, Count, ADRAdjustment) ->
+    Region = router_device:region(Device),
     Plan = lora_plan:region_to_plan(Region),
     ChannelsCorrected = were_channels_corrected(Frame, Region),
     DataRateBinary = erlang:list_to_binary(blockchain_helium_packet_v1:datarate(Packet)),
@@ -2176,12 +2227,13 @@ maybe_track_adr_offer(Device, ADREngine0, Offer) ->
 ) -> {undefined | lora_adr:handle(), lora_adr:adjustment()}.
 maybe_track_adr_packet(Device, ADREngine0, FrameCache) ->
     Metadata = router_device:metadata(Device),
+    Region = router_device:region(Device),
     #frame_cache{
         rssi = RSSI,
         packet = Packet,
         pubkey_bin = PubKeyBin,
         frame = Frame,
-        region = Region
+        region = _HotspotRegion
     } = FrameCache,
     #frame{fopts = FOpts, adr = ADRBit, adrackreq = ADRAckReqBit} = Frame,
     ADRAllowed = maps:get(adr_allowed, Metadata, false),

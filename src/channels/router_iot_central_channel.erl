@@ -42,12 +42,13 @@ init({[Channel, Device], _}) ->
     case setup_iot_central(Channel) of
         {ok, Account} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-            send_connect_after(ChannelID, 0),
+            TimerRef = send_connect_after(ChannelID, 0),
             {ok, #state{
                 channel = Channel,
                 channel_id = ChannelID,
                 azure = Account,
-                conn_backoff = Backoff
+                conn_backoff = Backoff,
+                conn_backoff_ref = TimerRef
             }};
         Err ->
             lager:warning("could not setup iot_central connection ~p", [Err]),
@@ -198,8 +199,11 @@ connect(#state{azure = Azure0, conn_backoff = Backoff0, channel_id = ChannelID} 
     end.
 
 -spec reconnect(#state{}) -> #state{}.
-reconnect(#state{channel_id = ChannelID, conn_backoff = Backoff0} = State) ->
+reconnect(
+    #state{channel_id = ChannelID, conn_backoff = Backoff0, conn_backoff_ref = TimerRef0} = State
+) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
+    erlang:cancel_timer(TimerRef0),
     TimerRef1 = send_connect_after(ChannelID, Delay),
     State#state{
         conn_backoff = Backoff1,

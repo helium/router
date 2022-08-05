@@ -18,7 +18,8 @@
     device_worker_late_packet_double_charge_test/1,
     offer_cache_test/1,
     load_offer_cache_test/1,
-    hotspot_bad_region_test/1
+    hotspot_bad_region_test/1,
+    uplink_bad_mtype/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -56,7 +57,8 @@ all() ->
         device_worker_late_packet_double_charge_test,
         offer_cache_test,
         load_offer_cache_test,
-        hotspot_bad_region_test
+        hotspot_bad_region_test,
+        uplink_bad_mtype
     ].
 
 %%--------------------------------------------------------------------
@@ -1414,6 +1416,53 @@ hotspot_bad_region_test(Config) ->
     ?assertEqual(EURegion, router_device:region(Device1)),
     ok.
 
+uplink_bad_mtype(Config) ->
+    #{
+        pubkey_bin := PubKeyBin,
+        hotspot_name := HotspotName,
+        stream := Stream
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    {ok, Device} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_DOWN,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                1
+            )},
+
+    test_utils:wait_for_console_event_sub(<<"uplink_dropped_invalid">>, #{
+        <<"id">> => fun erlang:is_binary/1,
+        <<"category">> => <<"uplink_dropped">>,
+        <<"sub_category">> => <<"uplink_dropped_invalid">>,
+        <<"description">> => <<"Invalid Packet: bad_message_type">>,
+        <<"reported_at">> => fun erlang:is_integer/1,
+        <<"device_id">> => ?CONSOLE_DEVICE_ID,
+        <<"data">> => #{
+            <<"fcnt">> => 1,
+            <<"hotspot">> => #{
+                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
+                <<"name">> => erlang:list_to_binary(HotspotName),
+                <<"lat">> => fun erlang:is_float/1,
+                <<"long">> => fun erlang:is_float/1,
+                <<"rssi">> => fun erlang:is_float/1,
+                <<"snr">> => fun erlang:is_float/1,
+                <<"spreading">> => fun erlang:is_binary/1,
+                <<"channel">> => fun erlang:is_number/1,
+                <<"frequency">> => fun erlang:is_float/1
+            }
+        }
+    }),
+
+    ok.
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------

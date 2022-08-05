@@ -22,7 +22,8 @@
     init/0,
     handle_offer/2,
     handle_packet/3,
-    handle_packet/4
+    handle_packet/4,
+    handle_free_packet/3
 ]).
 
 %% replay API
@@ -91,7 +92,6 @@
 %% 1/second was picked as rx windows are minimum 1s
 -define(DEFAULT_DEVICE_THROTTLE, 1).
 
--define(REPUTATION_ERROR, reputation_denied).
 -define(POC_DENYLIST_ERROR, poc_denylist_denied).
 -define(ROUTER_DENYLIST_ERROR, router_denylist_denied).
 
@@ -149,7 +149,6 @@ handle_offer(Offer, HandlerPid) ->
     end),
     case Resp of
         {ok, Device} ->
-            ok = reputation_track_offer(Offer),
             ok = router_device_stats:track_offer(Offer, Device),
             ok;
         {error, _} = Error1 ->
@@ -171,13 +170,13 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
     case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
         {error, Reason} = E ->
-            ok = reputation_track_packet(SCPacket),
-            ok = print_handle_packet_resp(SCPacket, Pid, reason_to_single_atom(Reason)),
+            ok = print_handle_packet_resp(
+                SCPacket, Pid, reason_to_single_atom(Reason)
+            ),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
 
             E;
         ok ->
-            ok = reputation_track_packet(SCPacket),
             ok = print_handle_packet_resp(SCPacket, Pid, ok),
             ok = router_metrics:routing_packet_observe_start(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -212,6 +211,76 @@ handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
             ok
     end.
 
+-spec handle_free_packet(
+    SCPacket ::
+        blockchain_state_channel_packet_v1:packet() | blockchain_state_channel_v1:packet_pb(),
+    PacketTime :: pos_integer(),
+    Pid :: pid()
+) -> ok | {error, any()}.
+handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
+    Start = erlang:system_time(millisecond),
+    PubKeyBin = blockchain_state_channel_packet_v1:hotspot(SCPacket),
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
+    Region = blockchain_state_channel_packet_v1:region(SCPacket),
+    HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
+    Chain = get_chain(),
+
+    Ledger = blockchain:ledger(Chain),
+    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
+
+    Payload = blockchain_helium_packet_v1:payload(Packet),
+    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
+
+    UsePacket =
+        case get_device_for_payload(Payload, PubKeyBin, Chain) of
+            {ok, Device, PacketFCnt} ->
+                ok = lager:md([{device_id, router_device:id(Device)}]),
+                case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
+                    ok ->
+                        erlang:spawn(blockchain_state_channels_server, track_offer, [
+                            Offer, Ledger, self()
+                        ]),
+                        ok;
+                    {error, ?LATE_PACKET} = E1 ->
+                        ok = router_utils:event_uplink_dropped_late_packet(
+                            PacketTime,
+                            HoldTime,
+                            PacketFCnt,
+                            Device,
+                            PubKeyBin
+                        ),
+                        E1;
+                    {error, _} = E1 ->
+                        E1
+                end;
+            {error, _} = E2 ->
+                E2
+        end,
+    case UsePacket of
+        ok ->
+            %% This is redondant but at least we dont have to redo all that code...
+            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+                {error, Reason} = Err ->
+                    Pid ! {error, reason_to_single_atom(Reason)},
+                    lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
+                    ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
+                    Err;
+                ok ->
+                    lager:debug("packet from ~p accepted", [HotspotName]),
+                    ok = router_metrics:routing_packet_observe_start(
+                        blockchain_helium_packet_v1:packet_hash(Packet),
+                        PubKeyBin,
+                        Start
+                    ),
+                    ok
+            end;
+        {error, Reason} = Err ->
+            lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
+            Pid ! {error, reason_to_single_atom(Reason)},
+            Err
+    end.
+
 -spec allow_replay(blockchain_helium_packet_v1:packet(), binary(), non_neg_integer()) -> ok.
 allow_replay(Packet, DeviceID, PacketTime) ->
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
@@ -226,16 +295,81 @@ clear_replay(DeviceID) ->
     ok.
 
 %% ------------------------------------------------------------------
+%% handle_packet helpers (special)
+%% ------------------------------------------------------------------
+
+-spec get_device_for_payload(
+    Payload :: binary(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Chain :: blockchain:blockchain()
+) -> {ok, router_device:device(), non_neg_integer()} | {error, any()}.
+get_device_for_payload(Payload, PubKeyBin, Chain) ->
+    case Payload of
+        <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,
+            MIC:4/binary>> ->
+            Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
+            {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+            case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
+                {ok, Device, _} -> {ok, Device, 0};
+                E1 -> E1
+            end;
+        <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
+            MIC = payload_mic(Payload),
+            case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
+                {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
+                E2 -> E2
+            end
+    end.
+
+-spec validate_payload_for_device(
+    router_device:device(), binary(), binary(), libp2p_crypto:pubkey_bin(), non_neg_integer()
+) -> ok | {error, any()}.
+validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
+    PayloadSize = byte_size(Payload),
+    case Payload of
+        <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, _AppEUI:8/binary, _DevEUI:8/binary, _DevNonce:2/binary,
+            _MIC:4/binary>> ->
+            case maybe_buy_join_offer(Device, PayloadSize, PubKeyBin, PHash) of
+                {ok, _} -> ok;
+                E -> E
+            end;
+        <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _/binary>> ->
+            DeviceFcnt = router_device:fcnt(Device),
+            case DeviceFcnt /= undefined andalso DeviceFcnt > Fcnt of
+                true ->
+                    {error, ?LATE_PACKET};
+                false ->
+                    case check_device_all(Device, PayloadSize, PubKeyBin) of
+                        {ok, _} ->
+                            case check_device_preferred_hotspots(Device, PubKeyBin) of
+                                none_preferred ->
+                                    case maybe_multi_buy_offer(Device, PHash) of
+                                        {ok, _} -> ok;
+                                        E -> E
+                                    end;
+                                preferred ->
+                                    ok;
+                                not_preferred_hotspot ->
+                                    {error, not_preferred_hotspot}
+                            end
+                    end
+            end
+    end.
+
+-spec payload_mic(binary()) -> binary().
+payload_mic(Payload) ->
+    PayloadSize = byte_size(Payload),
+    Part = {PayloadSize, -4},
+    MIC = binary:part(Payload, Part),
+    MIC.
+
+%% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
 -spec offer_check(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok | {error, any()}.
 offer_check(Offer) ->
     Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-    ReputationCheck = fun(H) ->
-        Enabled = router_utils:get_env_bool(hotspot_reputation_enabled, false),
-        Enabled andalso ru_reputation:denied(H)
-    end,
     ThrottleCheck = fun(H) ->
         case throttle:check(?HOTSPOT_THROTTLE, H) of
             {limit_exceeded, _, _} -> true;
@@ -245,7 +379,6 @@ offer_check(Offer) ->
     Checks = [
         {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
         {fun ru_denylist:check/1, ?ROUTER_DENYLIST_ERROR},
-        {ReputationCheck, ?REPUTATION_ERROR},
         {ThrottleCheck, ?HOTSPOT_THROTTLE_ERROR}
     ],
     lists:foldl(
@@ -405,17 +538,19 @@ join_offer_(Offer, _Pid) ->
                     AppEUI1
                 ]
             ),
-            maybe_buy_join_offer(Offer, _Pid, Device)
+            PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+            Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash)
     end.
 
 -spec maybe_buy_join_offer(
-    blockchain_state_channel_offer_v1:offer(),
-    pid(),
-    router_device:device()
+    Device :: router_device:device(),
+    PayloadSize :: non_neg_integer(),
+    Hotspot :: libp2p_crypto:pubkey_bin(),
+    PHash :: binary()
 ) -> {ok, router_device:device()} | {error, any()}.
-maybe_buy_join_offer(Offer, _Pid, Device) ->
-    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
     case check_device_rate(Hotspot, Device) of
         {error, _Reason} = Error ->
             Error;
@@ -429,32 +564,42 @@ maybe_buy_join_offer(Offer, _Pid, Device) ->
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
-                            check_device_preferred_hotspots(Device, Offer)
+                            case check_device_preferred_hotspots(Device, Hotspot) of
+                                none_preferred ->
+                                    maybe_multi_buy_offer(Device, PHash);
+                                preferred ->
+                                    % Device has preferred hotspots, so multibuy is not
+                                    {ok, Device};
+                                not_preferred_hotspot ->
+                                    {error, not_preferred_hotspot}
+                            end
                     end
             end
     end.
 
+-spec maybe_multi_buy_offer(router_device:device(), binary()) ->
+    {ok, router_device:device()} | {error, any()}.
+maybe_multi_buy_offer(Device, PHash) ->
+    DeviceID = router_device:id(Device),
+    case router_device_multibuy:maybe_buy(DeviceID, PHash) of
+        ok -> {ok, Device};
+        {error, _} = Error -> Error
+    end.
+
 -spec check_device_preferred_hotspots(
-    router_device:device(), blockchain_state_channel_offer_v1:offer()
-) -> {ok, router_device:device()} | {error, any()}.
-check_device_preferred_hotspots(Device, Offer) ->
+    Device :: router_device:device(),
+    Hotspot :: libp2p_crypto:pubkey_bin()
+) -> none_preferred | preferred | not_preferred_hotspot.
+check_device_preferred_hotspots(Device, Hotspot) ->
     case router_device:preferred_hotspots(Device) of
         [] ->
-            % No preferred hotspots means multibuy is allowed.
-            DeviceID = router_device:id(Device),
-            PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-            case router_device_multibuy:maybe_buy(DeviceID, PHash) of
-                ok -> {ok, Device};
-                {error, _} = Error -> Error
-            end;
+            none_preferred;
         PreferredHotspots when is_list(PreferredHotspots) ->
-            % Device has preferred hotspots, so multibuy is not allowed.
-            OfferHotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-            case lists:member(OfferHotspot, PreferredHotspots) of
+            case lists:member(Hotspot, PreferredHotspots) of
                 true ->
-                    {ok, Device};
+                    preferred;
                 _ ->
-                    {error, not_preferred_hotspot}
+                    not_preferred_hotspot
             end
     end.
 
@@ -500,6 +645,16 @@ packet_offer_(Offer, Pid, Chain) ->
             LagerOpts = [{device_id, DeviceID}],
             BFRef = lookup_bf(?BF_KEY),
             PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
+            Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
+
+            CheckPreferredFun = fun() ->
+                case check_device_preferred_hotspots(Device, Hotspot) of
+                    none_preferred -> maybe_multi_buy_offer(Device, PHash);
+                    preferred -> {ok, Device};
+                    not_preferred_hotspot -> {error, not_preferred_hotspot}
+                end
+            end,
+
             case bloom:set(BFRef, PHash) of
                 true ->
                     case lookup_replay(PHash) of
@@ -508,7 +663,7 @@ packet_offer_(Offer, Pid, Chain) ->
                                 true ->
                                     %% Buying replay packet
                                     lager:debug(LagerOpts, "most likely a replay packet buying"),
-                                    check_device_preferred_hotspots(Device, Offer);
+                                    CheckPreferredFun();
                                 false ->
                                     lager:debug(
                                         LagerOpts,
@@ -539,11 +694,11 @@ packet_offer_(Offer, Pid, Chain) ->
                                     {error, ?LATE_PACKET}
                             end;
                         {error, not_found} ->
-                            check_device_preferred_hotspots(Device, Offer)
+                            CheckPreferredFun()
                     end;
                 false ->
                     lager:debug(LagerOpts, "buying 1st packet for ~p", [PHash]),
-                    check_device_preferred_hotspots(Device, Offer)
+                    CheckPreferredFun()
             end
     end.
 
@@ -566,31 +721,39 @@ validate_packet_offer(Offer, _Pid, Chain) ->
                 {error, _} = Err ->
                     Err;
                 {ok, Device} ->
-                    case check_device_rate(Hotspot, Device) of
-                        {error, _Reason} = Error ->
-                            Error;
-                        ok ->
-                            case check_device_is_active(Device, Hotspot) of
-                                {error, _Reason} = Error ->
-                                    Error;
-                                ok ->
-                                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(
-                                        Offer
-                                    ),
-                                    case
-                                        check_device_balance(PayloadSize, Device, Hotspot, Chain)
-                                    of
-                                        {error, _Reason} = Error -> Error;
-                                        ok -> {ok, Device}
-                                    end
-                            end
+                    PayloadSize = blockchain_state_channel_offer_v1:payload_size(Offer),
+                    check_device_all(Device, PayloadSize, Hotspot)
+            end
+    end.
+
+%% NOTE: Preferred hotspots is not checked here. It is part of the device, but
+%% has a precedence that takes place _after_ non device properties like packet
+%% timing, and replays.
+-spec check_device_all(router_device:device(), non_neg_integer(), libp2p_crypto:pubkey_bin()) ->
+    {ok, router_device:device()} | {error, any()}.
+check_device_all(Device, PayloadSize, Hotspot) ->
+    case check_device_rate(Hotspot, Device) of
+        {error, _Reason} = Error ->
+            Error;
+        ok ->
+            case check_device_is_active(Device, Hotspot) of
+                {error, _Reason} = Error ->
+                    Error;
+                ok ->
+                    Chain = get_chain(),
+                    case check_device_balance(PayloadSize, Device, Hotspot, Chain) of
+                        {error, _Reason} = Error -> Error;
+                        ok -> {ok, Device}
                     end
             end
     end.
 
--spec validate_devaddr(non_neg_integer(), blockchain:blockchain()) -> ok | {error, any()}.
+-spec validate_devaddr(binary() | non_neg_integer(), blockchain:blockchain()) ->
+    ok | {error, any()}.
+validate_devaddr(DevNum, Chain) when erlang:is_integer(DevNum) ->
+    validate_devaddr(<<DevNum:32/integer-unsigned-little>>, Chain);
 validate_devaddr(DevAddr, Chain) ->
-    case <<DevAddr:32/integer-unsigned-little>> of
+    case DevAddr of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             OUI = router_utils:get_oui(),
             try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
@@ -775,79 +938,24 @@ packet(
     Pid,
     Chain
 ) ->
-    MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
-    case DevAddr of
-        <<AddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>> ->
-            OUI = router_utils:get_oui(),
-            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-                {ok, RoutingEntry} ->
-                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                    case
-                        lists:any(
-                            fun(Subnet) ->
-                                <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> =
-                                    Subnet,
-                                Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
-                                AddrBase >= Base andalso AddrBase < Base + Size
-                            end,
-                            Subnets
-                        )
-                    of
-                        true ->
-                            %% ok device is in one of our subnets
-                            send_to_device_worker(
-                                Packet,
-                                PacketTime,
-                                HoldTime,
-                                Pid,
-                                PubKeyBin,
-                                Region,
-                                DevAddr,
-                                MIC,
-                                Payload,
-                                Chain
-                            );
-                        false ->
-                            {error, {?DEVADDR_NOT_IN_SUBNET, DevAddr}}
-                    end;
-                _E ->
-                    lager:warning("fail to find routing ~p", [_E]),
-                    %% TODO: Should fail here
-                    %% no subnets
-                    send_to_device_worker(
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        Pid,
-                        PubKeyBin,
-                        Region,
-                        DevAddr,
-                        MIC,
-                        Payload,
-                        Chain
-                    )
-            catch
-                _E:_S ->
-                    lager:warning("crashed ~p", [{_E, _S}]),
-                    %% TODO: Should fail here
-                    %% no subnets
-                    send_to_device_worker(
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        Pid,
-                        PubKeyBin,
-                        Region,
-                        DevAddr,
-                        MIC,
-                        Payload,
-                        Chain
-                    )
-            end;
+    case validate_devaddr(DevAddr, Chain) of
+        {error, ?DEVADDR_MALFORMED} = Err ->
+            Err;
         _ ->
-            %% wrong devaddr prefix
-            {error, {?DEVADDR_MALFORMED, DevAddr}}
+            MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
+            %% ok device is in one of our subnets
+            send_to_device_worker(
+                Packet,
+                PacketTime,
+                HoldTime,
+                Pid,
+                PubKeyBin,
+                Region,
+                DevAddr,
+                MIC,
+                Payload,
+                Chain
+            )
     end;
 packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
@@ -938,14 +1046,13 @@ send_to_device_worker(
 ) ->
     case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
         {error, unknown_device} ->
-            _ = ru_reputation:track_unknown(PubKeyBin),
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
                 "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
                 [
                     DevAddr,
                     lorawan_utils:binary_to_hex(DevAddr),
-                    libp2p_crypto:bin_to_b58(PubKeyBin)
+                    blockchain_utils:addr2name(PubKeyBin)
                 ]
             ),
             {error, unknown_device};
@@ -1304,21 +1411,6 @@ handle_packet_metrics(_Packet, Reason, Start) ->
     End = erlang:system_time(millisecond),
     ok = router_metrics:routing_packet_observe(packet, rejected, Reason, End - Start).
 
--spec reputation_track_offer(Offer :: blockchain_state_channel_offer_v1:offer()) -> ok.
-reputation_track_offer(Offer) ->
-    Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
-    PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
-    ok = ru_reputation:track_offer(Hotspot, PHash),
-    ok.
-
--spec reputation_track_packet(SCPacket :: blockchain_state_channel_packet_v1:packet()) -> ok.
-reputation_track_packet(SCPacket) ->
-    Hotspot = blockchain_state_channel_packet_v1:hotspot(SCPacket),
-    Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    ok = ru_reputation:track_packet(Hotspot, PHash),
-    ok.
-
 %% ------------------------------------------------------------------
 %% EUNIT Tests
 %% ------------------------------------------------------------------
@@ -1380,7 +1472,6 @@ handle_join_offer_test() ->
     application:ensure_all_started(throttle),
     ok = init(),
     ok = router_device_multibuy:init(),
-    ok = ru_reputation:init(),
     ok = router_device_stats:init(),
 
     DeviceID = router_utils:uuid_v4(),
@@ -1428,8 +1519,6 @@ handle_join_offer_test() ->
     true = ets:delete(router_device_multibuy_max_ets),
     true = ets:delete(router_device_stats_ets),
     true = ets:delete(router_device_stats_offers_ets),
-    true = ets:delete(ru_reputation_ets),
-    true = ets:delete(ru_reputation_offers_ets),
     application:stop(lager),
     ok.
 
@@ -1483,20 +1572,6 @@ offer_check_fail_denylist_test_() ->
         ok = offer_check_stop()
     end}.
 
-offer_check_fail_reputation_test_() ->
-    {timeout, 15, fun() ->
-        {ok, _BaseDir} = offer_check_init(),
-        #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-        Hotspot = libp2p_crypto:pubkey_to_bin(PubKey),
-        true = ets:insert(ru_reputation_ets, {Hotspot, 666, 0}),
-        Packet = blockchain_helium_packet_v1:new({eui, 16#deadbeef, 16#DEADC0DE}, <<"payload">>),
-        Offer = blockchain_state_channel_offer_v1:from_packet(Packet, Hotspot, 'US915'),
-
-        ?assertEqual({error, ?REPUTATION_ERROR}, offer_check(Offer)),
-
-        ok = offer_check_stop()
-    end}.
-
 offer_check_fail_throttle_test_() ->
     {timeout, 15, fun() ->
         {ok, _BaseDir} = offer_check_init(),
@@ -1515,9 +1590,7 @@ offer_check_fail_throttle_test_() ->
     end}.
 
 offer_check_init() ->
-    application:set_env(router, hotspot_reputation_enabled, true),
     ok = router_device_stats:init(),
-    ok = ru_reputation:init(),
 
     _ = application:ensure_all_started(throttle),
     ok = throttle:setup(?HOTSPOT_THROTTLE, 1, per_second),
@@ -1531,11 +1604,8 @@ offer_check_init() ->
     {ok, BaseDir}.
 
 offer_check_stop() ->
-    application:set_env(router, hotspot_reputation_enabled, false),
     true = ets:delete(router_device_stats_ets),
     true = ets:delete(router_device_stats_offers_ets),
-    true = ets:delete(ru_reputation_ets),
-    true = ets:delete(ru_reputation_offers_ets),
     application:stop(throttle),
     ok.
 

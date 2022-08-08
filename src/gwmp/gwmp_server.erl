@@ -12,9 +12,16 @@
 -behaviour(gen_server).
 
 -include_lib("router_utils/include/semtech_udp.hrl").
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 
 %% API
--export([start_link/0, handle_push_data/4, handle_pull_data/4, handle_tx_ack/4]).
+-export([
+    start_link/0,
+    handle_push_data/4,
+    handle_pull_data/4,
+    handle_tx_ack/4,
+    state_channel_packet_v1_from/1
+]).
 
 -export([send_pull_resp/2]).
 
@@ -36,26 +43,38 @@
     gwmp_heartbeat_seconds = ?GWMP_HEARTBEAT_SECONDS :: integer()
 }).
 
--spec send_pull_resp(MAC::binary(), Data::map()) -> ok | gateway_not_found.
+-spec send_pull_resp(MAC :: binary(), Data :: map()) -> ok | gateway_not_found.
 
 send_pull_resp(MAC, Data) ->
     gen_server:call(?SERVER, {pull_resp, MAC, Data}).
 
-handle_push_data(GWMPValues, #gwmp_server_state{
-    lns_socket = LNSSocket,
-    gwmp_heartbeat_seconds = ConnectionLifetime} , IP, Port) ->
+handle_push_data(
+    GWMPValues,
+    #gwmp_server_state{
+        lns_socket = LNSSocket,
+        gwmp_heartbeat_seconds = ConnectionLifetime
+    },
+    IP,
+    Port
+) ->
     #{
-        map := Map,
+        map := PushDataMap,
         token := Token,
         mac := MAC
     } = GWMPValues,
-    lager:info("got PUSH_DATA: Token: ~p, Map: ~p", [Token, Map]),
+    lager:info("got PUSH_DATA: Token: ~p, Map: ~p", [Token, PushDataMap]),
     gwmp_gateway_connections:new_connection(MAC, {IP, Port}, ConnectionLifetime),
     send_push_ack(IP, Port, LNSSocket, Token).
 
-handle_pull_data(GWMPValues,
-    #gwmp_server_state{lns_socket = LNSSocket,
-    gwmp_heartbeat_seconds = ConnectionLifetime}, IP, Port) ->
+handle_pull_data(
+    GWMPValues,
+    #gwmp_server_state{
+        lns_socket = LNSSocket,
+        gwmp_heartbeat_seconds = ConnectionLifetime
+    },
+    IP,
+    Port
+) ->
     #{
         token := Token,
         mac := MAC
@@ -64,8 +83,14 @@ handle_pull_data(GWMPValues,
     gwmp_gateway_connections:new_connection(MAC, {IP, Port}, ConnectionLifetime),
     send_pull_ack(IP, Port, LNSSocket, Token).
 
-handle_tx_ack(GWMPValues, #gwmp_server_state{
-    gwmp_heartbeat_seconds = ConnectionLifetime}, IP, Port) ->
+handle_tx_ack(
+    GWMPValues,
+    #gwmp_server_state{
+        gwmp_heartbeat_seconds = ConnectionLifetime
+    },
+    IP,
+    Port
+) ->
     #{
         map := Map,
         token := Token,
@@ -104,7 +129,8 @@ init(Args) ->
     CustomState = #gwmp_server_state{
         lns_socket = Socket,
         gwmp_heartbeat_seconds = application:get_env(
-            router, gwmp_heartbeat_seconds, ?GWMP_HEARTBEAT_SECONDS)
+            router, gwmp_heartbeat_seconds, ?GWMP_HEARTBEAT_SECONDS
+        )
     },
     {ok, #lns_udp_state{
         socket = Socket,
@@ -189,20 +215,59 @@ code_change(_OldVsn, State = #lns_udp_state{}, _Extra) ->
 
 send_push_ack(DestinationIP, DestinationPort, LNSSocket, Token) ->
     lager:info("Sending push_ack to ~p.", [{DestinationPort, DestinationIP}]),
-    gen_udp:send(LNSSocket, DestinationIP, DestinationPort,  semtech_udp:push_ack(Token)).
+    gen_udp:send(LNSSocket, DestinationIP, DestinationPort, semtech_udp:push_ack(Token)).
 
 send_pull_ack(DestinationIP, DestinationPort, LNSSocket, Token) ->
     lager:info("Sending pull_ack to ~p.", [{DestinationPort, DestinationIP}]),
-    gen_udp:send(LNSSocket, DestinationIP, DestinationPort,  semtech_udp:pull_ack(Token)).
+    gen_udp:send(LNSSocket, DestinationIP, DestinationPort, semtech_udp:pull_ack(Token)).
 
 send_pull_resp(MAC, LNSSocket, Map) ->
-%%    Use MAC to find UDP endpoint
+    %%    Use MAC to find UDP endpoint
     case gwmp_gateway_connections:lookup_connection(MAC) of
         undefined ->
             gateway_not_found;
         {DestinationIP, DestinationPort} ->
             Token = semtech_udp:token(),
-            gen_udp:send(LNSSocket, DestinationIP, DestinationPort,
-                semtech_udp:pull_resp(Token, Map)),
+            gen_udp:send(
+                LNSSocket,
+                DestinationIP,
+                DestinationPort,
+                semtech_udp:pull_resp(Token, Map)
+            ),
             ok
     end.
+
+-spec state_channel_packet_v1_from(map()) ->
+    SCPacket :: blockchain_state_channel_packet_v1:packet().
+
+state_channel_packet_v1_from(PushDataMap) ->
+    #{
+        <<"rxpk">> := [RFPacket | _],
+        <<"stat">> := _Stat
+    } = PushDataMap,
+
+    #{
+        <<"data">> := PayloadBase64,
+        <<"tmst">> := Timestamp,
+        <<"rssi">> := SignalStrength,
+        <<"freq">> := Frequency,
+        <<"datr">> := Datarate,
+        <<"lsnr">> := Snr
+    } = RFPacket,
+
+    Packet = #packet_pb{
+        payload = PayloadBase64,
+        timestamp = Timestamp,
+        signal_strength = SignalStrength,
+        frequency = Frequency,
+        datarate = Datarate,
+        snr = Snr
+    },
+
+    #blockchain_state_channel_packet_v1_pb{
+        packet = Packet,
+        hotspot = todo,
+        signature = todo,
+        region = todo,
+        hold_time = todo
+    }.

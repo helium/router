@@ -832,7 +832,7 @@ check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
             ok
     catch
         What:Why ->
-            lager:info("failed to check_device_balance", [{What, Why}]),
+            lager:info("failed to check_device_balance ~p", [{What, Why}]),
             {error, dc_tracker_crashed}
     end.
 

@@ -74,12 +74,12 @@ save(Device) ->
         MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], ['$_']}],
         CurrentDevaddrs = router_device:devaddrs(Device),
         SelectResult = ets:select(?DEVADDR_ETS, MS),
-        %% We remove devaddrs that are not in use by the device
+        %% We remove devaddrs that are not in use by the device and update existing ones
         lists:foreach(
-            fun({DevAddr, _Device} = Obj) ->
+            fun({DevAddr, _} = Obj) ->
                 case lists:member(DevAddr, CurrentDevaddrs) of
                     true ->
-                        noop;
+                        true = ets:insert(?DEVADDR_ETS, {DevAddr, Device});
                     false ->
                         true = ets:delete_object(?DEVADDR_ETS, Obj)
                 end

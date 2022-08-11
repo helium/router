@@ -70,14 +70,35 @@ save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
     _ = erlang:spawn(fun() ->
-        % MS = ets:fun2ms(fun({_, D}) when D#device_v7.id == DeviceID -> true end),
-        MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], [true]}],
-        _ = ets:select_delete(?DEVADDR_ETS, MS),
+        % MS = ets:fun2ms(fun({_, D}=O) when D#device_v7.id == DeviceID -> O end),
+        MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], ['$_']}],
+        CurrentDevaddrs = router_device:devaddrs(Device),
+        SelectResult = ets:select(?DEVADDR_ETS, MS),
+        %% We remove devaddrs that are not in use by the device and update existing ones
+        lists:foreach(
+            fun({DevAddr, _} = Obj) ->
+                true = ets:delete_object(?DEVADDR_ETS, Obj),
+                case lists:member(DevAddr, CurrentDevaddrs) of
+                    true ->
+                        true = ets:insert(?DEVADDR_ETS, {DevAddr, Device});
+                    false ->
+                        noop
+                end
+            end,
+            SelectResult
+        ),
+        SelectDevaddrs = [DevAddr || {DevAddr, _} <- SelectResult],
+        %% We add devaddrs that are in use by the device and missing from ETS
         lists:foreach(
             fun(DevAddr) ->
-                true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
+                case lists:member(DevAddr, SelectDevaddrs) of
+                    true ->
+                        noop;
+                    false ->
+                        true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
+                end
             end,
-            router_device:devaddrs(Device)
+            CurrentDevaddrs
         )
     end),
     {ok, Device}.

@@ -35,7 +35,8 @@
         grpc_client,
         erlang_lorawan,
         router_utils,
-        throttle
+        throttle,
+        e2qc
     ]},
     {included_applications, [blockchain]},
     {env, []},

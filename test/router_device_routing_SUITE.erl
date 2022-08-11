@@ -799,30 +799,12 @@ handle_packet_wrong_fcnt_test(Config) ->
         devaddr => router_device:devaddr(Device0)
     }),
 
-    %% We accept late packets, they are just marked as late later
     ?assertEqual(
-        ok,
+        {error, unknown_device},
         router_device_routing:handle_packet(
             SCPacket1, erlang:system_time(millisecond), self()
         )
     ),
-
-    test_utils:wait_for_console_event(<<"uplink_dropped">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink_dropped">>,
-        <<"sub_category">> => <<"uplink_dropped_late">>,
-        <<"description">> => fun erlang:is_binary/1,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"fcnt">> => 99,
-            <<"hold_time">> => fun erlang:is_integer/1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => fun erlang:is_binary/1
-            }
-        }
-    }),
 
     ok.
 

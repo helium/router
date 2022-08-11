@@ -77,11 +77,12 @@ save(Device) ->
         %% We remove devaddrs that are not in use by the device and update existing ones
         lists:foreach(
             fun({DevAddr, _} = Obj) ->
+                true = ets:delete_object(?DEVADDR_ETS, Obj),
                 case lists:member(DevAddr, CurrentDevaddrs) of
                     true ->
                         true = ets:insert(?DEVADDR_ETS, {DevAddr, Device});
                     false ->
-                        true = ets:delete_object(?DEVADDR_ETS, Obj)
+                        noop
                 end
             end,
             SelectResult

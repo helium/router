@@ -1,5 +1,6 @@
 [
     {libp2p, [
+        {random_peer_pred, fun router_utils:random_non_miner_predicate/1},
         {use_dns_for_seeds, true},
         {seed_dns_cname, "seed.helium.io"},
         {seed_config_dns_name, "_seed_config.helium.io"},

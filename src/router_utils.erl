@@ -37,7 +37,8 @@
     get_env_bool/2,
     enumerate_0/1,
     enumerate_0_to_size/3,
-    metadata_fun/0
+    metadata_fun/0,
+    random_non_miner_predicate/1
 ]).
 
 -type uuid_v4() :: binary().
@@ -917,6 +918,10 @@ enumerate_0_to_size(IndexedList, Max, Default) ->
     {_, Start} = lists:unzip(IndexedList),
     End = lists:duplicate(Needed, Default),
     enumerate_0(Start ++ End).
+
+random_non_miner_predicate(Peer) ->
+    not libp2p_peer:is_stale(Peer, timer:minutes(360)) andalso
+        maps:get(<<"node_type">>, libp2p_peer:signed_metadata(Peer), undefined) /= <<"gateway">>.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

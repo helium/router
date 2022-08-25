@@ -264,6 +264,8 @@ the container **again**.
 In the meantime, running `router sc list` will return `none`.  Ignore it.
 Loading probably is continuing in the background.
 
+There's a chance the snap loaded contains closing txns for all the open State Channels. In that case, Router will need to open new State Channels. You can view those with `router txn queue`.
+
 ```bash
 docker-compose down && docker-compose up -d
 ```

@@ -208,10 +208,70 @@ docker cp validator:/opt/miner/latest.snap /tmp/
 rsync -a --progress /tmp/latest.snap  192.168.123.123:/var/data/latest.snap
 ```
 
+### Load Snapshot
+
 Once copied to the intended server, load that snapshot:
 
+Ensure that the snapshot file lives under `/var/data/`.  Otherwise, the
+container is unable to access it.
+
+Once the container is stopped and before restarting it, remove files
+associated with the chain database, ledger, etc.
+
+Keep `blockchain` because it contains your swarm key.
+
+Keep `router.db` because it contains device cache.
+
+Everything else under `/var/data/` may be purged for reclaiming space on the
+file system.
+
 ```bash
+docker-compose down
+
+sudo rm -rf /var/data/blockchain.db
+sudo rm -rf /var/data/blockchain_swarm
+sudo rm -rf /var/data/checkpoints
+sudo rm -rf /var/data/ledger.db
+sudo rm -rf /var/data/snap
+sudo rm -rf /var/data/state_channels.db
+sudo rm -rf /var/data/update
+
+docker-compose up -d
+
 router snapshot load /var/data/latest.snap
+```
+
+Expect to wait about **20 minutes** for the shell prompt to come back.
+
+If the snapshot command exits with a timeout, that's *not necessarily*
+failure.
+
+```log
+RPC to 'router@127.0.0.1' failed: timeout
+```
+
+Give it more time, and watch the logs:
+
+```bash
+tail -F /var/data/log/router.log
+```
+
+Note: uppercase `-F` flag, in case log files get rotated.
+
+When a log message appears mentioning `maybe_start_state_channel`, restart
+the container **again**.
+
+In the meantime, running `router sc list` will return `none`.  Ignore it.
+Loading probably is continuing in the background.
+
+```bash
+docker-compose down && docker-compose up -d
+```
+
+Finally, state channels should get created after a few minutes:
+
+```bash
+router sc list
 ```
 
 ## State Channels

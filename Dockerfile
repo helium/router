@@ -41,7 +41,8 @@ ADD scripts/ scripts/
 RUN make
 
 ADD config/ config/
-ADD priv/genesis.${BUILD_NET} priv/genesis
+RUN wget -O /priv/docker/update/genesis https://snapshots.helium.wtf/genesis.${BUILD_NET}
+
 RUN ./rebar3 as ${BUILD_NET} release
 
 ENV PATH=$PATH:_build/${BUILD_NET}/rel/router/bin

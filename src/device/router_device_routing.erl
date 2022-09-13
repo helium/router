@@ -928,8 +928,8 @@ packet(
 packet(
     #packet_pb{
         payload =
-            <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1,
-                _RFU:1, FOptsLen:4, _FCnt:16/little-unsigned-integer, _FOpts:FOptsLen/binary,
+            <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+                FOptsLen:4, _FCnt:16/little-unsigned-integer, _FOpts:FOptsLen/binary,
                 PayloadAndMIC/binary>> = Payload
     } = Packet,
     PacketTime,
@@ -938,7 +938,7 @@ packet(
     Region,
     Pid,
     Chain
-) ->
+) when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
     case validate_devaddr(DevAddr, Chain) of
         {error, ?DEVADDR_MALFORMED} = Err ->
             Err;

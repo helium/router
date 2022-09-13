@@ -69,6 +69,7 @@ docker-exec:
 grpc:
 	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
 	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen
+	REBAR_CONFIG="config/grpc_packet_router_client_gen.config" $(REBAR) grpc gen
 
 $(grpc_services_directory):
 	@echo "grpc service directory $(directory) does not exist, generating services"

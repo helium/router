@@ -14,7 +14,7 @@
 ]).
 
 -spec init(atom(), grpcbox_stream:t()) -> grpcbox_stream:t().
-init(Rpc, Stream) ->
+init(_Rpc, Stream) ->
     Stream.
 
 -spec send_packet(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->

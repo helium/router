@@ -1419,7 +1419,6 @@ hotspot_bad_region_test(Config) ->
 uplink_bad_mtype(Config) ->
     #{
         pubkey_bin := PubKeyBin,
-        hotspot_name := HotspotName,
         stream := Stream
     } = test_utils:join_device(Config),
 
@@ -1438,31 +1437,16 @@ uplink_bad_mtype(Config) ->
                 router_device:app_s_key(Device),
                 1
             )},
-
-    test_utils:wait_for_console_event_sub(<<"uplink_dropped_invalid">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink_dropped">>,
-        <<"sub_category">> => <<"uplink_dropped_invalid">>,
-        <<"description">> => <<"Invalid Packet: bad_message_type">>,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"fcnt">> => 1,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin)),
-                <<"name">> => erlang:list_to_binary(HotspotName),
-                <<"lat">> => fun erlang:is_float/1,
-                <<"long">> => fun erlang:is_float/1,
-                <<"rssi">> => fun erlang:is_float/1,
-                <<"snr">> => fun erlang:is_float/1,
-                <<"spreading">> => fun erlang:is_binary/1,
-                <<"channel">> => fun erlang:is_number/1,
-                <<"frequency">> => fun erlang:is_float/1
-            }
-        }
-    }),
-
+    ok = rcv_loop(),
     ok.
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+rcv_loop() ->
+    receive
+        {websocket_init, _} ->
+            rcv_loop()
+    after 1000 ->
+        ok
+    end.

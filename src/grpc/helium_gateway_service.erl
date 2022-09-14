@@ -15,15 +15,12 @@
 
 -spec init(atom(), grpcbox_stream:t()) -> grpcbox_stream:t().
 init(Rpc, Stream) ->
-    ct:print("called: ~p ~nfor: ~p", [Rpc, Stream]),
     Stream.
 
 -spec send_packet(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
 send_packet(PacketUp, StreamState) ->
-    Res = verify(PacketUp),
-    ct:print("verifying: ~p~nres: ~p", [PacketUp, Res]),
-    case Res of
+    case verify(PacketUp) of
         false ->
             {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};
         true ->
@@ -43,8 +40,7 @@ handle_info(_Msg, StreamState) ->
         {Pid, Atom} when erlang:is_pid(Pid) andalso erlang:is_atom(Atom) -> Pid ! {Atom, _Msg};
         _ -> ok
     end,
-
-    ct:print("~p got a message ~p", [self(), _Msg]),
+    lager:info("~p got an unhandled message ~p", [self(), _Msg]),
     StreamState.
 
 %% ------------------------------------------------------------------
@@ -65,7 +61,6 @@ verify(Packet) ->
         Bool -> Bool
     catch
         _E:_R ->
-            ct:print("bad verify: ~p", [{_E, _R}]),
             false
     end.
 

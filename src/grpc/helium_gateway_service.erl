@@ -2,7 +2,7 @@
 
 -behavior(helium_packet_router_gateway_bhvr).
 
--include("../grpc/autogen/server/packet_router_pb.hrl").
+-include("../grpc/autogen/client/packet_router_client_pb.hrl").
 -include_lib("helium_proto/include/packet_pb.hrl").
 
 -define(JOIN_REQUEST, 2#000).
@@ -75,7 +75,8 @@ to_sc_packet(HprPacketUp) ->
         payload = Payload,
         timestamp = Timestamp,
         rssi = SignalStrength,
-        frequency_mhz = Frequency,
+        %% This is coming in as hz
+        frequency = Frequency,
         datarate = DataRate,
         snr = SNR,
         region = Region,
@@ -88,7 +89,8 @@ to_sc_packet(HprPacketUp) ->
         Payload,
         Timestamp,
         erlang:float(SignalStrength),
-        Frequency,
+        %% hz to Mhz
+        Frequency / 1000000,
         erlang:atom_to_list(DataRate),
         SNR,
         routing_information(Payload)
@@ -118,7 +120,8 @@ from_sc_packet(StateChannelResponse) ->
         payload = blockchain_helium_packet_v1:payload(Downlink),
         rx1 = #window_v1_pb{
             timestamp = blockchain_helium_packet_v1:timestamp(Downlink),
-            frequency = blockchain_helium_packet_v1:frequency(Downlink),
+            %% Mhz to hz
+            frequency = blockchain_helium_packet_v1:frequency(Downlink) * 1000000,
             datarate = hpr_datarate(blockchain_helium_packet_v1:datarate(Downlink))
         },
         rx2 = rx2_window(blockchain_helium_packet_v1:rx2_window(Downlink))
@@ -134,7 +137,8 @@ hpr_datarate(DataRateString) ->
 rx2_window(#window_pb{timestamp = RX2Timestamp, frequency = RX2Frequency, datarate = RX2Datarate}) ->
     #window_v1_pb{
         timestamp = RX2Timestamp,
-        frequency = RX2Frequency,
+        %% Mhz to hz
+        frequency = RX2Frequency * 1000000,
         datarate = hpr_datarate(RX2Datarate)
     };
 rx2_window(undefined) ->

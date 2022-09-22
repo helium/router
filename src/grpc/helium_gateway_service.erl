@@ -36,6 +36,7 @@ send_packet(PacketUp, StreamState) ->
 handle_info({send_response, Reply}, StreamState) ->
     grpcbox_stream:send(false, from_sc_packet(Reply), StreamState);
 handle_info(_Msg, StreamState) ->
+    %% NOTE: For testing non-reply flows
     case application:get_env(router, packet_router_grpc_forward_unhandled_messages, undefined) of
         {Pid, Atom} when erlang:is_pid(Pid) andalso erlang:is_atom(Atom) -> Pid ! {Atom, _Msg};
         _ -> ok

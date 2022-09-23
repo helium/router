@@ -122,7 +122,7 @@ from_sc_packet(StateChannelResponse) ->
         rx1 = #window_v1_pb{
             timestamp = blockchain_helium_packet_v1:timestamp(Downlink),
             %% Mhz to hz
-            frequency = blockchain_helium_packet_v1:frequency(Downlink) * 1000000,
+            frequency = erlang:round(blockchain_helium_packet_v1:frequency(Downlink) * 1_000_000),
             datarate = hpr_datarate(blockchain_helium_packet_v1:datarate(Downlink))
         },
         rx2 = rx2_window(blockchain_helium_packet_v1:rx2_window(Downlink))
@@ -139,7 +139,7 @@ rx2_window(#window_pb{timestamp = RX2Timestamp, frequency = RX2Frequency, datara
     #window_v1_pb{
         timestamp = RX2Timestamp,
         %% Mhz to hz
-        frequency = RX2Frequency * 1000000,
+        frequency = erlang:round(RX2Frequency * 1_000_000),
         datarate = hpr_datarate(RX2Datarate)
     };
 rx2_window(undefined) ->

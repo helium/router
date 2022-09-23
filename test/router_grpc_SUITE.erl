@@ -8,14 +8,17 @@
 
 -export([
     join_grpc_test/1,
+    join_grpc_gateway_test/1,
     join_from_unknown_device_grpc_test/1,
-    packet_from_known_device_no_downlink/1
+    join_from_unknown_device_grpc_gateway_test/1,
+    packet_from_known_device_no_downlink/1,
+    packet_from_known_device_no_downlink_gateway_test/1
 ]).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
+-include("../src/grpc/autogen/server/packet_router_pb.hrl").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -30,8 +33,11 @@
 all() ->
     [
         join_grpc_test,
+        join_grpc_gateway_test,
         join_from_unknown_device_grpc_test,
-        packet_from_known_device_no_downlink
+        join_from_unknown_device_grpc_gateway_test,
+        packet_from_known_device_no_downlink,
+        packet_from_known_device_no_downlink_gateway_test
     ].
 
 %%--------------------------------------------------------------------
@@ -73,6 +79,41 @@ join_grpc_test(Config) ->
 
     ok.
 
+join_grpc_gateway_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    %% create a client stream
+    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+    ct:print("stream: ~p", [Stream]),
+
+    %% create a join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+
+    Packet = #packet_router_packet_up_v1_pb{
+        payload = test_utils:join_payload(AppKey, JoinNonce),
+        timestamp = 620124,
+        rssi = 112,
+        frequency = 903900024,
+        datarate = 'SF10BW125',
+        snr = 5.5,
+        region = 'US915',
+        hold_time = 0,
+        gateway = PubKeyBin,
+        signature = <<>>
+    },
+    Signed = Packet#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(Packet))
+    },
+    ok = grpcbox_client:send(Stream, Signed),
+
+    timer:sleep(router_utils:join_timeout()),
+    {ok, DownlinkMsg} = grpcbox_client:recv_data(Stream),
+    ct:print("downlink: ~p", [DownlinkMsg]),
+
+    ok.
+
 %% send a packet from an unknown device
 %% we will fail to get a response
 join_from_unknown_device_grpc_test(_Config) ->
@@ -91,6 +132,54 @@ join_from_unknown_device_grpc_test(_Config) ->
     #{<<":status">> := HttpStatus} = Headers,
     ?assertEqual(HttpStatus, <<"200">>),
     ?assertEqual(ResponseMsg, <<"not_found">>),
+
+    ok.
+
+join_from_unknown_device_grpc_gateway_test(_Config) ->
+    ok = application:set_env(
+        router,
+        packet_router_grpc_forward_unhandled_messages,
+        {self(), grpc_forward}
+    ),
+
+    %% create a client stream
+    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+    ct:print("stream: ~p", [Stream]),
+
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    %% create a join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    BadAppKey = crypto:strong_rand_bytes(16),
+
+    Packet = #packet_router_packet_up_v1_pb{
+        payload = test_utils:join_payload(BadAppKey, JoinNonce),
+        timestamp = 620124,
+        rssi = 112,
+        frequency = 903900024,
+        datarate = 'SF10BW125',
+        snr = 5.5,
+        region = 'US915',
+        hold_time = 0,
+        gateway = PubKeyBin,
+        signature = <<>>
+    },
+    Signed = Packet#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(Packet))
+    },
+    ok = grpcbox_client:send(Stream, Signed),
+
+    timer:sleep(router_utils:join_timeout()),
+    %% no downlink should be returned
+    ?assertEqual(timeout, grpcbox_client:recv_data(Stream)),
+
+    %% we get forwarded the error for testing
+    ok =
+        receive
+            {grpc_forward, {error, not_found}} -> ok
+        after timer:seconds(2) -> ct:fail(expected_msg_timeout)
+        end,
 
     ok.
 
@@ -146,6 +235,103 @@ packet_from_known_device_no_downlink(Config) ->
 
     ?assertEqual(Resp1, Resp1#{accepted := true}),
     ?assertNot(maps:is_key(downlink, Resp1)),
+
+    ok.
+
+packet_from_known_device_no_downlink_gateway_test(Config) ->
+    AppKey = proplists:get_value(app_key, Config),
+    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    %% create client stream
+    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+
+    %% create a join packet
+    JoinNonce = crypto:strong_rand_bytes(2),
+    Packet = #packet_router_packet_up_v1_pb{
+        payload = test_utils:join_payload(AppKey, JoinNonce),
+        timestamp = 620124,
+        rssi = 112,
+        frequency = 903900024,
+        datarate = 'SF10BW125',
+        snr = 5.5,
+        region = 'US915',
+        hold_time = 0,
+        gateway = PubKeyBin,
+        signature = <<>>
+    },
+    Signed = Packet#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(Packet))
+    },
+    ok = grpcbox_client:send(Stream, Signed),
+
+    timer:sleep(router_utils:join_timeout()),
+    {ok, _JoinAcceptDownlinkMsg} = grpcbox_client:recv_data(Stream),
+
+    %% We are joined
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% create an unconfirmed uplink
+    DevAddr = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
+    DataPacket1 = #packet_router_packet_up_v1_pb{
+        payload = test_utils:frame_payload(
+            ?UNCONFIRMED_UP,
+            DevAddr,
+            router_device:nwk_s_key(Device),
+            router_device:app_s_key(Device),
+            1,
+            #{}
+        ),
+        timestamp = 620124,
+        rssi = 112,
+        frequency = 903900024,
+        datarate = 'SF10BW125',
+        snr = 5.5,
+        region = 'US915',
+        hold_time = 0,
+        gateway = PubKeyBin,
+        signature = <<>>
+    },
+    DataSigned1 = DataPacket1#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(DataPacket1))
+    },
+    %% Send first packet to get CFList response
+    ok = grpcbox_client:send(Stream, DataSigned1),
+
+    timer:sleep(router_utils:frame_timeout()),
+    {ok, Downlink1} = grpcbox_client:recv_data(Stream),
+    ct:print("DataRes1 recv: ~p", [Downlink1]),
+
+    %% Send another uplink now that we have our cflist, confirming the change, we expect no downlink
+    DataPacket2 = #packet_router_packet_up_v1_pb{
+        payload = test_utils:frame_payload(
+            ?UNCONFIRMED_UP,
+            DevAddr,
+            router_device:nwk_s_key(Device),
+            router_device:app_s_key(Device),
+            2,
+            #{fopts => [{link_adr_ans, 1, 1, 1}]}
+        ),
+        timestamp = 620124,
+        rssi = 112,
+        frequency = 903900024,
+        datarate = 'SF10BW125',
+        snr = 5.5,
+        region = 'US915',
+        hold_time = 0,
+        gateway = PubKeyBin,
+        signature = <<>>
+    },
+    DataSigned2 = DataPacket2#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(DataPacket2))
+    },
+    ok = grpcbox_client:send(Stream, DataSigned2),
+
+    timer:sleep(router_utils:frame_timeout()),
+    %% Expect no downlink
+    ?assertEqual(timeout, grpcbox_client:recv_data(Stream)),
 
     ok.
 

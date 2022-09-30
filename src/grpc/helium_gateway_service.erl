@@ -2,7 +2,7 @@
 
 -behavior(helium_packet_router_gateway_bhvr).
 
--include("../grpc/autogen/client/packet_router_client_pb.hrl").
+-include("autogen/client/packet_router_client_pb.hrl").
 -include_lib("helium_proto/include/packet_pb.hrl").
 
 -define(JOIN_REQUEST, 2#000).

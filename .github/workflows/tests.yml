@@ -69,7 +69,7 @@ jobs:
           mkdir _build
           tar -xvf build.tar.gz -C _build
       - name: xref
-        run: ./rebar3 xref
+        run: make xref
   eunit:
     needs: build
     runs-on: ubuntu-latest
@@ -90,7 +90,7 @@ jobs:
           mkdir _build
           tar -xvf build.tar.gz -C _build
       - name: eunit
-        run: ./rebar3 eunit -v
+        run: make eunit -v
   dialyzer:
     needs: build
     runs-on: ubuntu-latest
@@ -111,7 +111,7 @@ jobs:
           mkdir _build
           tar -xvf build.tar.gz -C _build
       - name: dialyzer
-        run: ./rebar3 dialyzer
+        run: make dialyzer
   suites:
     runs-on: ubuntu-latest
     outputs:
@@ -161,4 +161,6 @@ jobs:
           mkdir _build
           tar -xvf build.tar.gz -C _build
       - name: ct ${{ matrix.suite }}
-        run: CT_LAGER=DEBUG ./rebar3 ct --suite=${{ matrix.suite }} --readable=true
+        run: |
+          make grpc
+          CT_LAGER=DEBUG ./rebar3 ct --suite=${{ matrix.suite }} --readable=true

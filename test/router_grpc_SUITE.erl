@@ -85,7 +85,7 @@ join_grpc_gateway_test(Config) ->
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a client stream
-    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+    {ok, Stream} = helium_packet_router_packet_client:route(ctx:new()),
     ct:print("stream: ~p", [Stream]),
 
     %% create a join packet
@@ -143,7 +143,7 @@ join_from_unknown_device_grpc_gateway_test(_Config) ->
     ),
 
     %% create a client stream
-    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+    {ok, Stream} = helium_packet_router_packet_client:route(ctx:new()),
     ct:print("stream: ~p", [Stream]),
 
     {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
@@ -244,7 +244,7 @@ packet_from_known_device_no_downlink_gateway_test(Config) ->
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create client stream
-    {ok, Stream} = helium_packet_router_gateway_client:send_packet(ctx:new()),
+    {ok, Stream} = helium_packet_router_packet_client:route(ctx:new()),
 
     %% create a join packet
     JoinNonce = crypto:strong_rand_bytes(2),

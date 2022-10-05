@@ -74,8 +74,10 @@ grpc:
 $(grpc_services_directory):
 	@echo "grpc service directory $(directory) does not exist, generating services"
 	$(REBAR) get-deps
-	$(MAKE) grpc
+	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
+	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen
+	REBAR_CONFIG="config/grpc_packet_router_client_gen.config" $(REBAR) grpc gen
 
 # Pass all unknown targets straight to rebar3 (e.g. `make dialyzer`)
-%:
+%: | $(grpc_services_directory)
 	$(REBAR) $@

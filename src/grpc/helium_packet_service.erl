@@ -1,6 +1,6 @@
--module(helium_gateway_service).
+-module(helium_packet_service).
 
--behavior(helium_packet_router_gateway_bhvr).
+-behavior(helium_packet_router_packet_bhvr).
 
 -include("autogen/client/packet_router_client_pb.hrl").
 -include_lib("helium_proto/include/packet_pb.hrl").
@@ -9,7 +9,7 @@
 
 -export([
     init/2,
-    send_packet/2,
+    route/2,
     handle_info/2
 ]).
 
@@ -17,9 +17,10 @@
 init(_Rpc, Stream) ->
     Stream.
 
--spec send_packet(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->
+-spec route(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
-send_packet(PacketUp, StreamState) ->
+route(PacketUp, StreamState) ->
+    ct:print("got a packet"),
     case verify(PacketUp) of
         false ->
             {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};

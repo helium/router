@@ -12,7 +12,7 @@
   0},
  {<<"blockchain">>,
   {git,"https://github.com/helium/blockchain-core.git",
-       {ref,"b6aca665dfa1cf5bdf81bf4c410275a463b0cc0c"}},
+       {ref,"83ed1aff3a7139870a1bde1896eec0d6bfb776eb"}},
   0},
  {<<"certifi">>,{pkg,<<"certifi">>,<<"2.9.0">>},1},
  {<<"chatterbox">>,

@@ -170,18 +170,8 @@ migrate_oui_print(Map) ->
                 maps:get(euis, Route)
             ),
 
-            Acc ++
-                lists:flatten([
-                    NetID,
-                    Server,
-                    Protocol,
-                    MaxCopies,
-                    DevAddrsCnt,
-                    DevAddrs,
-                    EUISCnt,
-                    EUIS,
-                    RouteSpacer
-                ])
+            Acc ++ [NetID, Server, Protocol, MaxCopies, DevAddrsCnt] ++ DevAddrs ++ [EUISCnt] ++
+                EUIS ++ [RouteSpacer]
         end,
         [io_lib:format("Routes~n", [])],
         maps:get(routes, Map)

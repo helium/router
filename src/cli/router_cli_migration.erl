@@ -140,7 +140,7 @@ migrate_oui_print(Map) ->
 
             ServerMap = maps:get(server, Route),
             Server = io_lib:format("    Server: ~p:~p~n", [
-                maps:get(host, ServerMap), maps:get(post, ServerMap)
+                maps:get(host, ServerMap), maps:get(port, ServerMap)
             ]),
 
             ProtocolMap = maps:get(protocol, ServerMap),

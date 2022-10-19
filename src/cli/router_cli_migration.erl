@@ -124,50 +124,50 @@ migrate_oui_print(Map) ->
     %%     Server: localhost:8080
     %%     Protocol: gwmp
     %%     Max Copies: 1
-    %%     EUIs (AppEUI, DevEUI): 1
-    %%         (010203040506070809, 010203040506070809)
     %%     DevAddrs (Start, End): 1
     %%         (Start, End)
+    %%     EUIs (AppEUI, DevEUI): 1
+    %%         (010203040506070809, 010203040506070809)
     %%     ################################################
 
-    OUI = io_lib:format("OUI: ~p~n", [maps:get(oui, Map)]),
-    Owner = io_lib:format("Owner: ~p~n", [maps:get(owner_wallet_id, Map)]),
-    Payer = io_lib:format("Payer: ~p~n", [maps:get(payer_wallet_id, Map)]),
-    RouteSpacer = io_lib:format("    ################################################n", []),
+    OUI = io_lib:format("OUI: ~w~n", [maps:get(oui, Map)]),
+    Owner = io_lib:format("Owner: ~s~n", [maps:get(owner_wallet_id, Map)]),
+    Payer = io_lib:format("Payer: ~s~n", [maps:get(payer_wallet_id, Map)]),
+    RouteSpacer = io_lib:format("    ################################################~n", []),
     Routes = lists:foldl(
         fun(Route, Acc) ->
-            NetID = io_lib:format("    Net ID: ~p~n", [maps:get(net_id, Route)]),
+            NetID = io_lib:format("    Net ID: ~s~n", [maps:get(net_id, Route)]),
 
             ServerMap = maps:get(server, Route),
-            Server = io_lib:format("    Server: ~p:~p~n", [
+            Server = io_lib:format("    Server: ~s:~w~n", [
                 maps:get(host, ServerMap), maps:get(port, ServerMap)
             ]),
 
             ProtocolMap = maps:get(protocol, ServerMap),
-            Protocol = io_lib:format("    Protocol: ~p~n", [maps:get(type, ProtocolMap)]),
+            Protocol = io_lib:format("    Protocol: ~s~n", [maps:get(type, ProtocolMap)]),
 
-            MaxCopies = io_lib:format("    Max Copies: ~p~n", [1]),
-
-            EUISCnt = io_lib:format("   EUIs (AppEUI, DevEUI): ~w~n", [
-                erlang:length(maps:get(euis, Route))
-            ]),
-            EUIS = lists:foldl(
-                fun(#{app_eui := A, dev_eui := D}, Acc1) ->
-                    [io_lib:format("        (~p, ~p)~n", [A, D]) | Acc1]
-                end,
-                [],
-                maps:get(euis, Route)
-            ),
+            MaxCopies = io_lib:format("    Max Copies: ~w~n", [1]),
 
             DevAddrsCnt = io_lib:format("   DevAddrs (Start, End): ~w~n", [
                 erlang:length(maps:get(devaddr_ranges, Route))
             ]),
             DevAddrs = lists:foldl(
                 fun(#{start_addr := S, end_addr := E}, Acc1) ->
-                    [io_lib:format("        (~p, ~p)~n", [S, E]) | Acc1]
+                    [io_lib:format("        (~s, ~s)~n", [S, E]) | Acc1]
                 end,
                 [],
                 maps:get(devaddr_ranges, Route)
+            ),
+
+            EUISCnt = io_lib:format("    EUIs (AppEUI, DevEUI): ~w~n", [
+                erlang:length(maps:get(euis, Route))
+            ]),
+            EUIS = lists:foldl(
+                fun(#{app_eui := A, dev_eui := D}, Acc1) ->
+                    [io_lib:format("        (~s, ~s)~n", [A, D]) | Acc1]
+                end,
+                [],
+                maps:get(euis, Route)
             ),
 
             Acc ++
@@ -176,17 +176,17 @@ migrate_oui_print(Map) ->
                     Server,
                     Protocol,
                     MaxCopies,
-                    EUISCnt,
-                    EUIS,
                     DevAddrsCnt,
                     DevAddrs,
+                    EUISCnt,
+                    EUIS,
                     RouteSpacer
                 ])
         end,
         [io_lib:format("Routes~n", [])],
         maps:get(routes, Map)
     ),
-    c_list(lists:flatten([OUI, Owner, Payer, Routes])).
+    c_list([OUI, Owner, Payer] ++ Routes).
 
 euis() ->
     Devices = router_device_cache:get(),

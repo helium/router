@@ -33,33 +33,33 @@ register_all_cmds() ->
 
 info_usage() ->
     [
-        ["migrate"],
+        ["migration"],
         [
             "\n\n",
-            "migrate oui [--config_service 42]    - Migrate OUI \n"
+            "migration oui [--config_service http://localhost:8080]    - Migrate OUI \n"
         ]
     ].
 
 info_cmd() ->
     [
         [
-            ["migrate", "oui"],
+            ["migration", "oui"],
             [],
             [
                 {config_service, [{longname, "config_service"}]},
                 {commit, [{longname, "commit"}, {datatype, boolean}]}
             ],
-            fun migrate_oui/3
+            fun migration_oui/3
         ]
     ].
 
-migrate_oui(["migrate", "oui"], [], Flags) ->
+migration_oui(["migration", "oui"], [], Flags) ->
     Options = maps:from_list(Flags),
-    migrate_oui(Options);
-migrate_oui([_, _, _], [], _Flags) ->
+    migration_oui(Options);
+migration_oui([_, _, _], [], _Flags) ->
     usage.
 
-migrate_oui(Options) ->
+migration_oui(Options) ->
     OUI = router_utils:get_oui(),
     Chain = router_utils:get_blockchain(),
     Ledger = blockchain:ledger(Chain),

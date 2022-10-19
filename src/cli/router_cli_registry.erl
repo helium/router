@@ -4,7 +4,8 @@
     router_cli_device_worker,
     router_cli_info,
     router_cli_xor_filter,
-    router_cli_organization
+    router_cli_organization,
+    router_cli_migration
 ]).
 
 -export([register_cli/0]).

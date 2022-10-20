@@ -61,7 +61,7 @@ migration_oui(["migration", "oui"], [], Flags) ->
     Options = maps:from_list(Flags),
     case create_migration_oui_map(Options) of
         {error, Reason} ->
-            c_alert("Error ~p~n", [Reason]);
+            c_text("Error ~p~n", [Reason]);
         {ok, Map} ->
             migration_oui(Map, Options)
     end;
@@ -251,12 +251,6 @@ get_grpc_address() ->
 
 -spec c_list(list(string())) -> clique_status:status().
 c_list(L) -> [clique_status:list(L)].
-
--spec c_alert(string()) -> clique_status:status().
-c_alert(T) -> [clique_status:alert([T])].
-
--spec c_alert(string(), list(term())) -> clique_status:status().
-c_alert(F, Args) -> c_alert(io_lib:format(F, Args)).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

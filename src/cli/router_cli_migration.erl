@@ -61,7 +61,7 @@ migration_oui(["migration", "oui"], [], Flags) ->
     Options = maps:from_list(Flags),
     case create_migration_oui_map(Options) of
         {error, Reason} ->
-            c_alert("Error ~s~n", [Reason]);
+            c_alert("Error ~p~n", [Reason]);
         {ok, Map} ->
             migration_oui(Map, Options)
     end;

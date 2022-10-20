@@ -36,7 +36,10 @@ info_usage() ->
         ["migration"],
         [
             "\n\n",
-            "migration oui [--config_service http://localhost:8080]    - Migrate OUI \n"
+            "migration oui    - Migrate OUI \n",
+            "    [--format json / normal] default: json",
+            "    [--no_euis] default: false (EUIs included)",
+            "    [--max_copies 1] default: 1"
         ]
     ].
 
@@ -46,8 +49,9 @@ info_cmd() ->
             ["migration", "oui"],
             [],
             [
-                {config_service, [{longname, "config_service"}]},
-                {commit, [{longname, "commit"}, {datatype, boolean}]}
+                {format, [{longname, "format"}]},
+                {no_euis, [{longname, "no_euis"}, {datatype, boolean}]},
+                {max_copies, [{longmame, "max_copies"}, {datatype, integer}]}
             ],
             fun migration_oui/3
         ]
@@ -55,27 +59,41 @@ info_cmd() ->
 
 migration_oui(["migration", "oui"], [], Flags) ->
     Options = maps:from_list(Flags),
-    migration_oui(Options);
+    case create_migration_oui_map(Options) of
+        {error, _} ->
+            c_alert("Failed to find OUI");
+        {ok, Map} ->
+            migration_oui(Map, Options)
+    end;
 migration_oui([_, _, _], [], _Flags) ->
     usage.
 
-migration_oui(Options) ->
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
+
+-spec create_migration_oui_map(Options :: map()) -> {ok, map()} | {error, any()}.
+create_migration_oui_map(Options) ->
     OUI = router_utils:get_oui(),
     Chain = router_utils:get_blockchain(),
     Ledger = blockchain:ledger(Chain),
     case blockchain_ledger_v1:find_routing(OUI, Ledger) of
         {error, _} ->
-            c_alert("Failed to find OUI ~w", [OUI]);
+            {error, oui_not_found};
         {ok, RoutingEntry} ->
             #{<<"grpc_address">> := GRPCAddress} = router_utils:metadata_fun(),
             #{host := Host, port := Port} = uri_string:parse(GRPCAddress),
             Owner = blockchain_ledger_routing_v1:owner(RoutingEntry),
             {DevAddrRanges, IntNetID} = devaddr_ranges(RoutingEntry),
-            EUIs = euis(),
-            OrgMap = #{
+            EUIs =
+                case maps:is_key(no_euis, Options) of
+                    true -> [];
+                    false -> euis()
+                end,
+            Map = #{
                 oui => OUI,
-                owner_wallet_id => libp2p_crypto:bin_to_b58(Owner),
-                payer_wallet_id => libp2p_crypto:bin_to_b58(Owner),
+                owner_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                payer_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
                 routes => [
                     #{
                         devaddr_ranges => DevAddrRanges,
@@ -89,33 +107,27 @@ migration_oui(Options) ->
                                 type => <<"packet_router">>
                             }
                         },
-                        %% TODO: make this option
-                        max_copies => 1
+                        max_copies => maps:get(balance, Options, 1)
                     }
                 ]
             },
-            _ConfigServiceURL = maps:get(config_service, Options, ?DEFAULT_URL),
-
-            case maps:is_key(commit, Options) of
-                false ->
-                    migrate_oui_print(OrgMap);
-                true ->
-                    migrate_oui_print(OrgMap)
-                % httpc:request(
-                %     post,
-                %     {
-                %         ConfigServiceURL ++ "/api/v1/organizations",
-                %         [],
-                %         "application/json",
-                %         jsx:encode(OrgMap)
-                %     },
-                %     [],
-                %     []
-                % )
-            end
+            {ok, Map}
     end.
 
+-spec migration_oui(Map :: map(), Options :: map()) -> clique_status:status().
+migration_oui(Map, Options) ->
+    case maps:get(format, Options, json) of
+        json ->
+            c_text("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n~s~n", [
+                jsx:prettify(jsx:encode(Map))
+            ]);
+        _ ->
+            migrate_oui_print(Map)
+    end.
+
+-spec migrate_oui_print(Map :: map()) -> clique_status:status().
 migrate_oui_print(Map) ->
+    %% PLEASE VERIFY THAT ALL THE DATA MATCH
     %% OUI: 4
     %% Owner: XYZ
     %% Payer: XYZ
@@ -129,7 +141,7 @@ migrate_oui_print(Map) ->
     %%     EUIs (AppEUI, DevEUI): 1
     %%         (010203040506070809, 010203040506070809)
     %%     ################################################
-
+    Disclamer = io_lib:format("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n", []),
     OUI = io_lib:format("OUI: ~w~n", [maps:get(oui, Map)]),
     Owner = io_lib:format("Owner: ~s~n", [maps:get(owner_wallet_id, Map)]),
     Payer = io_lib:format("Payer: ~s~n", [maps:get(payer_wallet_id, Map)]),
@@ -176,8 +188,9 @@ migrate_oui_print(Map) ->
         [io_lib:format("Routes~n", [])],
         maps:get(routes, Map)
     ),
-    c_list([OUI, Owner, Payer] ++ Routes).
+    c_list([Disclamer, OUI, Owner, Payer] ++ Routes).
 
+-spec euis() -> list(map()).
 euis() ->
     Devices = router_device_cache:get(),
     lists:usort([
@@ -188,6 +201,8 @@ euis() ->
      || D <- Devices
     ]).
 
+-spec devaddr_ranges(RoutingEntry :: blockchain_ledger_routing_v1:routing()) ->
+    {list(map()), non_neg_integer()}.
 devaddr_ranges(RoutingEntry) ->
     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
     lists:foldl(
@@ -208,15 +223,14 @@ devaddr_ranges(RoutingEntry) ->
         Subnets
     ).
 
-%%--------------------------------------------------------------------
-%% Helpers
-%%--------------------------------------------------------------------
-
 -spec c_list(list(string())) -> clique_status:status().
 c_list(L) -> [clique_status:list(L)].
 
 -spec c_alert(string()) -> clique_status:status().
 c_alert(T) -> [clique_status:alert([T])].
 
--spec c_alert(string(), list(term())) -> clique_status:status().
-c_alert(F, Args) -> c_alert(io_lib:format(F, Args)).
+-spec c_text(string()) -> clique_status:status().
+c_text(T) -> [clique_status:text([T])].
+
+-spec c_text(string(), list(term())) -> clique_status:status().
+c_text(F, Args) -> c_text(io_lib:format(F, Args)).

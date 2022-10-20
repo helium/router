@@ -37,7 +37,7 @@ info_usage() ->
         [
             "\n\n",
             "migration oui    - Migrate OUI \n",
-            "    [--format json / normal] default: json",
+            "    [--print json / normal] default: json",
             "    [--no_euis] default: false (EUIs included)",
             "    [--max_copies 1] default: 1"
         ]
@@ -49,7 +49,7 @@ info_cmd() ->
             ["migration", "oui"],
             [],
             [
-                {format, [{longname, "format"}]},
+                {print, [{longname, "print"}]},
                 {no_euis, [{longname, "no_euis"}, {datatype, boolean}]},
                 {max_copies, [{longmame, "max_copies"}, {datatype, integer}]}
             ],
@@ -107,7 +107,7 @@ create_migration_oui_map(Options) ->
                                 type => <<"packet_router">>
                             }
                         },
-                        max_copies => maps:get(balance, Options, 1)
+                        max_copies => maps:get(max_copies, Options, 1)
                     }
                 ]
             },
@@ -116,7 +116,7 @@ create_migration_oui_map(Options) ->
 
 -spec migration_oui(Map :: map(), Options :: map()) -> clique_status:status().
 migration_oui(Map, Options) ->
-    case maps:get(format, Options, json) of
+    case maps:get(print, Options, json) of
         json ->
             c_text("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n~s~n", [
                 jsx:prettify(jsx:encode(Map))

@@ -37,9 +37,9 @@ info_usage() ->
         [
             "\n\n",
             "migration oui    - Migrate OUI \n",
-            "    [--print json / normal] default: json",
-            "    [--no_euis] default: false (EUIs included)",
-            "    [--max_copies 1] default: 1"
+            "    [--print json / normal] default: json\n",
+            "    [--no_euis] default: false (EUIs included)\n",
+            "    [--max_copies 1] default: 1\n"
         ]
     ].
 

@@ -41,6 +41,7 @@ info_usage() ->
             "    [--no_euis] default: false (EUIs included)\n",
             "    [--max_copies 1] default: 1\n",
             "    [--ignore_no_address] default: false\n"
+            "migration ouis  \n"
         ]
     ].
 
@@ -56,6 +57,12 @@ info_cmd() ->
                 {ignore_no_address, [{longname, "ignore_no_address"}, {datatype, boolean}]}
             ],
             fun migration_oui/3
+        ],
+        [
+            ["migration", "ouis"],
+            [],
+            [],
+            fun migration_ouis/3
         ]
     ].
 
@@ -68,6 +75,11 @@ migration_oui(["migration", "oui"], [], Flags) ->
             migration_oui(Map, Options)
     end;
 migration_oui([_, _, _], [], _Flags) ->
+    usage.
+
+migration_ouis(["migration", "ouis"], [], _Flags) ->
+    c_text("TODO ~n");
+migration_ouis([_, _, _], [], _Flags) ->
     usage.
 
 %% ------------------------------------------------------------------

@@ -60,8 +60,8 @@ info_cmd() ->
 migration_oui(["migration", "oui"], [], Flags) ->
     Options = maps:from_list(Flags),
     case create_migration_oui_map(Options) of
-        {error, _} ->
-            c_alert("Failed to find OUI");
+        {error, Reason} ->
+            c_alert("Error ~s~n", [Reason]);
         {ok, Map} ->
             migration_oui(Map, Options)
     end;
@@ -81,37 +81,41 @@ create_migration_oui_map(Options) ->
         {error, _} ->
             {error, oui_not_found};
         {ok, RoutingEntry} ->
-            #{<<"grpc_address">> := GRPCAddress} = router_utils:metadata_fun(),
-            #{host := Host, port := Port} = uri_string:parse(GRPCAddress),
-            Owner = blockchain_ledger_routing_v1:owner(RoutingEntry),
-            {DevAddrRanges, IntNetID} = devaddr_ranges(RoutingEntry),
-            EUIs =
-                case maps:is_key(no_euis, Options) of
-                    true -> [];
-                    false -> euis()
-                end,
-            Map = #{
-                oui => OUI,
-                owner_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
-                payer_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
-                routes => [
-                    #{
-                        devaddr_ranges => DevAddrRanges,
-                        euis => EUIs,
-                        net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
+            case get_grpc_address() of
+                undefined ->
+                    {error, address_not_found};
+                {ok, GRPCAddress} ->
+                    #{host := Host, port := Port} = uri_string:parse(GRPCAddress),
+                    Owner = blockchain_ledger_routing_v1:owner(RoutingEntry),
+                    {DevAddrRanges, IntNetID} = devaddr_ranges(RoutingEntry),
+                    EUIs =
+                        case maps:is_key(no_euis, Options) of
+                            true -> [];
+                            false -> euis()
+                        end,
+                    Map = #{
                         oui => OUI,
-                        server => #{
-                            host => Host,
-                            port => Port,
-                            protocol => #{
-                                type => <<"packet_router">>
+                        owner_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        payer_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        routes => [
+                            #{
+                                devaddr_ranges => DevAddrRanges,
+                                euis => EUIs,
+                                net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
+                                oui => OUI,
+                                server => #{
+                                    host => Host,
+                                    port => Port,
+                                    protocol => #{
+                                        type => <<"packet_router">>
+                                    }
+                                },
+                                max_copies => maps:get(max_copies, Options, 1)
                             }
-                        },
-                        max_copies => maps:get(max_copies, Options, 1)
-                    }
-                ]
-            },
-            {ok, Map}
+                        ]
+                    },
+                    {ok, Map}
+            end
     end.
 
 -spec migration_oui(Map :: map(), Options :: map()) -> clique_status:status().
@@ -160,7 +164,7 @@ migrate_oui_print(Map) ->
 
             MaxCopies = io_lib:format("    Max Copies: ~w~n", [1]),
 
-            DevAddrsCnt = io_lib:format("   DevAddrs (Start, End): ~w~n", [
+            DevAddrsCnt = io_lib:format("    DevAddrs (Start, End): ~w~n", [
                 erlang:length(maps:get(devaddr_ranges, Route))
             ]),
             DevAddrs = lists:foldl(
@@ -223,11 +227,36 @@ devaddr_ranges(RoutingEntry) ->
         Subnets
     ).
 
+-spec get_grpc_address() -> undefined | {ok, binary()}.
+get_grpc_address() ->
+    case
+        lists:filter(
+            fun libp2p_transport_tcp:is_public/1,
+            libp2p_swarm:listen_addrs(blockchain_swarm)
+        )
+    of
+        [] ->
+            undefined;
+        [First | _] ->
+            IP = lists:nth(2, string:tokens(First, "/")),
+            {ok, Port} = application:get_env(router, grpc_port),
+            RPCAddr = erlang:iolist_to_binary([
+                "http://",
+                IP,
+                ":",
+                erlang:integer_to_list(Port)
+            ]),
+            {ok, RPCAddr}
+    end.
+
 -spec c_list(list(string())) -> clique_status:status().
 c_list(L) -> [clique_status:list(L)].
 
 -spec c_alert(string()) -> clique_status:status().
 c_alert(T) -> [clique_status:alert([T])].
+
+-spec c_alert(string(), list(term())) -> clique_status:status().
+c_alert(F, Args) -> c_alert(io_lib:format(F, Args)).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

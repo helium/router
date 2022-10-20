@@ -110,6 +110,7 @@ create_migration_oui_map(Options) ->
                     Map = #{
                         oui => OUI,
                         owner_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        %% TODO: maybe set payer to Router's address?
                         payer_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
                         routes => [
                             #{

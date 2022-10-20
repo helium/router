@@ -39,7 +39,8 @@ info_usage() ->
             "migration oui    - Migrate OUI \n",
             "    [--print json / normal] default: json\n",
             "    [--no_euis] default: false (EUIs included)\n",
-            "    [--max_copies 1] default: 1\n"
+            "    [--max_copies 1] default: 1\n",
+            "    [--ignore_no_address] default: false\n"
         ]
     ].
 
@@ -51,7 +52,8 @@ info_cmd() ->
             [
                 {print, [{longname, "print"}]},
                 {no_euis, [{longname, "no_euis"}, {datatype, boolean}]},
-                {max_copies, [{longmame, "max_copies"}, {datatype, integer}]}
+                {max_copies, [{longmame, "max_copies"}, {datatype, integer}]},
+                {ignore_no_address, [{longname, "ignore_no_address"}, {datatype, boolean}]}
             ],
             fun migration_oui/3
         ]
@@ -81,7 +83,7 @@ create_migration_oui_map(Options) ->
         {error, _} ->
             {error, oui_not_found};
         {ok, RoutingEntry} ->
-            case get_grpc_address() of
+            case get_grpc_address(Options) of
                 undefined ->
                     {error, address_not_found};
                 {ok, GRPCAddress} ->
@@ -227,8 +229,8 @@ devaddr_ranges(RoutingEntry) ->
         Subnets
     ).
 
--spec get_grpc_address() -> undefined | {ok, binary()}.
-get_grpc_address() ->
+-spec get_grpc_address(Options :: map()) -> undefined | {ok, binary()}.
+get_grpc_address(Options) ->
     case
         lists:filter(
             fun libp2p_transport_tcp:is_public/1,
@@ -236,7 +238,10 @@ get_grpc_address() ->
         )
     of
         [] ->
-            undefined;
+            case maps:is_key(ignore_no_address, Options) of
+                false -> undefined;
+                true -> {ok, <<"http://localhost:8080">>}
+            end;
         [First | _] ->
             IP = lists:nth(2, string:tokens(First, "/")),
             {ok, Port} = application:get_env(router, grpc_port),

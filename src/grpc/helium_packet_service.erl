@@ -20,7 +20,6 @@ init(_Rpc, Stream) ->
 -spec route(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
 route(PacketUp, StreamState) ->
-    ct:print("got a packet"),
     case verify(PacketUp) of
         false ->
             {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};

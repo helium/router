@@ -1125,7 +1125,7 @@ handle_info(
                 IsDownlinkAck,
                 ConfirmedDown,
                 Port,
-                Device0,
+                Device2,
                 ChannelMap,
                 Blockchain,
                 PubKeyBin,
@@ -1133,7 +1133,7 @@ handle_info(
                 Region,
                 FOpts
             ),
-            ok = maybe_send_queue_update(Device1, State),
+            ok = maybe_send_queue_update(Device2, State),
             case router_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)

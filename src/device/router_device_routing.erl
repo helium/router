@@ -121,38 +121,45 @@ init() ->
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
 handle_offer(Offer, HandlerPid) ->
-    Start = erlang:system_time(millisecond),
-    Routing = blockchain_state_channel_offer_v1:routing(Offer),
-    {OfferCheckTime, OfferCheck} = timer:tc(fun offer_check/1, [Offer]),
-    Resp =
-        case OfferCheck of
-            {error, _} = Error0 ->
-                Error0;
-            ok ->
-                case Routing of
-                    #routing_information_pb{data = {eui, _EUI}} ->
-                        join_offer(Offer, HandlerPid);
-                    #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                        packet_offer(Offer, HandlerPid)
-                end
-        end,
-    End = erlang:system_time(millisecond),
-    erlang:spawn(fun() ->
-        ok = router_metrics:function_observe('router_device_routing:offer_check', OfferCheckTime),
-        ok = router_metrics:packet_trip_observe_start(
-            blockchain_state_channel_offer_v1:packet_hash(Offer),
-            blockchain_state_channel_offer_v1:hotspot(Offer),
-            Start
-        ),
-        ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
-        ok = handle_offer_metrics(Routing, Resp, End - Start)
-    end),
-    case Resp of
-        {ok, Device} ->
-            ok = router_device_stats:track_offer(Offer, Device),
-            ok;
-        {error, _} = Error1 ->
-            Error1
+    case application:get_env(router, testing, false) of
+        false ->
+            {error, deprecated};
+        true ->
+            Start = erlang:system_time(millisecond),
+            Routing = blockchain_state_channel_offer_v1:routing(Offer),
+            {OfferCheckTime, OfferCheck} = timer:tc(fun offer_check/1, [Offer]),
+            Resp =
+                case OfferCheck of
+                    {error, _} = Error0 ->
+                        Error0;
+                    ok ->
+                        case Routing of
+                            #routing_information_pb{data = {eui, _EUI}} ->
+                                join_offer(Offer, HandlerPid);
+                            #routing_information_pb{data = {devaddr, _DevAddr}} ->
+                                packet_offer(Offer, HandlerPid)
+                        end
+                end,
+            End = erlang:system_time(millisecond),
+            erlang:spawn(fun() ->
+                ok = router_metrics:function_observe(
+                    'router_device_routing:offer_check', OfferCheckTime
+                ),
+                ok = router_metrics:packet_trip_observe_start(
+                    blockchain_state_channel_offer_v1:packet_hash(Offer),
+                    blockchain_state_channel_offer_v1:hotspot(Offer),
+                    Start
+                ),
+                ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
+                ok = handle_offer_metrics(Routing, Resp, End - Start)
+            end),
+            case Resp of
+                {ok, Device} ->
+                    ok = router_device_stats:track_offer(Offer, Device),
+                    ok;
+                {error, _} = Error1 ->
+                    Error1
+            end
     end.
 
 -spec handle_packet(
@@ -1468,6 +1475,7 @@ false_positive_test() ->
     ok.
 
 handle_join_offer_test() ->
+    application:set_env(router, testing, true),
     application:set_env(router, hotspot_rate_limit, 100),
     application:set_env(router, device_rate_limit, 100),
     application:ensure_all_started(throttle),

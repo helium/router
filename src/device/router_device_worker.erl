@@ -1077,19 +1077,23 @@ handle_info(
     %% to achieve here. We ignore those packets in metrics so they don't skew
     %% our alerting.
     IgnoreMetrics = DefaultFrameTimeout > router_utils:frame_timeout(),
+
+    %% Update location with best selected packet
+    DeviceUpdates = [{location, PubKeyBin}],
+    Device1 = router_device:update(DeviceUpdates, Device0),
     case
         handle_frame_timeout(
             Packet,
             Region,
-            Device0,
+            Device1,
             Frame,
             Count,
             ADRAdjustment,
-            router_device:queue(Device0)
+            router_device:queue(Device1)
         )
     of
-        {ok, Device1} ->
-            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+        {ok, Device2} ->
+            ok = save_and_update(DB, CF, ChannelsWorker, Device2),
             lager:debug("sending frame response with no downlink"),
             catch blockchain_state_channel_common:send_response(
                 Pid,
@@ -1105,13 +1109,13 @@ handle_info(
                 IgnoreMetrics
             ),
             {noreply, State#state{
-                device = Device1,
+                device = Device2,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
                 frame_cache = Cache1,
                 fcnt = FCnt
             }};
-        {send, Device1, DownlinkPacket, {ACK, ConfirmedDown, Port, ChannelMap, FOpts}} ->
+        {send, Device2, DownlinkPacket, {ACK, ConfirmedDown, Port, ChannelMap, FOpts}} ->
             IsDownlinkAck =
                 case ACK of
                     1 -> true;
@@ -1129,12 +1133,12 @@ handle_info(
                 Region,
                 FOpts
             ),
-            ok = maybe_send_queue_update(Device1, State),
+            ok = maybe_send_queue_update(Device2, State),
             case router_utils:mtype_to_ack(Frame#frame.mtype) of
                 1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
                 _ -> router_device_routing:clear_replay(DeviceID)
             end,
-            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device2),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
             catch blockchain_state_channel_common:send_response(
                 Pid,
@@ -1149,7 +1153,7 @@ handle_info(
                 IgnoreMetrics
             ),
             {noreply, State#state{
-                device = Device1,
+                device = Device2,
                 last_dev_nonce = undefined,
                 adr_engine = ADREngine1,
                 frame_cache = Cache1,
@@ -1170,7 +1174,9 @@ handle_info(
                 false,
                 IgnoreMetrics
             ),
+            ok = save_and_update(DB, CF, ChannelsWorker, Device1),
             {noreply, State#state{
+                device = Device1,
                 last_dev_nonce = undefined,
                 frame_cache = Cache1,
                 adr_engine = ADREngine1,
@@ -1599,7 +1605,6 @@ validate_frame_(
                     DRIdx = packet_datarate_index(Region, Packet),
                     BaseDeviceUpdates = [
                         {fcnt, PacketFCnt},
-                        {location, PubKeyBin},
                         {region, Region},
                         {last_known_datarate, DRIdx}
                     ],

@@ -261,6 +261,7 @@ consume_queue_test(Config) ->
                 router_device:app_s_key(Device0),
                 _FCnt = 0
             )},
+
     test_utils:wait_until(fun() ->
         test_utils:get_device_last_seen_fcnt(?CONSOLE_DEVICE_ID) == 0
     end),

@@ -108,12 +108,17 @@ init([]) ->
     DBOpts = [BaseDir],
     MetricsOpts = #{},
     POCDenyListArgs =
-        case {application:get_env(router, denylist_keys, undefined), application:get_env(router, denylist_url, undefined)} of
+        case
+            {
+                application:get_env(router, denylist_keys, undefined),
+                application:get_env(router, denylist_url, undefined)
+            }
+        of
             {undefined, _} ->
                 #{};
             {_, undefined} ->
                 #{};
-            {DenyListKeys, DenyListUrl} -> 
+            {DenyListKeys, DenyListUrl} ->
                 #{
                     denylist_keys => DenyListKeys,
                     denylist_url => DenyListUrl,
@@ -123,7 +128,7 @@ init([]) ->
         end,
     {ok,
         {?FLAGS, [
-            ?WORKER(ru_poc_denylist, [POCDenyListArgs])
+            ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
             ?SUP(blockchain_sup, [BlockchainOpts]),
             ?WORKER(router_metrics, [MetricsOpts]),
             ?WORKER(router_db, [DBOpts]),

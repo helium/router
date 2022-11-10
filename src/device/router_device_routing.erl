@@ -234,7 +234,6 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Chain = get_chain(),
 
     Ledger = blockchain:ledger(Chain),
-    Offer = blockchain_state_channel_offer_v1:from_packet(Packet, PubKeyBin, Region),
 
     Payload = blockchain_helium_packet_v1:payload(Packet),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
@@ -245,11 +244,19 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                 ok = lager:md([{device_id, router_device:id(Device)}]),
                 case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
                     ok ->
-                        erlang:spawn(blockchain_state_channels_server, track_offer, [
-                            Offer, Ledger, self()
-                        ]),
-                        ok;
-                    {error, ?LATE_PACKET} = E1 ->
+                        Offer = blockchain_state_channel_offer_v1:from_packet(
+                            Packet, PubKeyBin, Region
+                        ),
+                        case offer_check(Offer) of
+                            ok ->
+                                erlang:spawn(blockchain_state_channels_server, track_offer, [
+                                    Offer, Ledger, self()
+                                ]),
+                                ok;
+                            {error, _} = E1 ->
+                                E1
+                        end;
+                    {error, ?LATE_PACKET} = E2 ->
                         ok = router_utils:event_uplink_dropped_late_packet(
                             PacketTime,
                             HoldTime,
@@ -257,12 +264,12 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                             Device,
                             PubKeyBin
                         ),
-                        E1;
-                    {error, _} = E1 ->
-                        E1
+                        E2;
+                    {error, _} = E3 ->
+                        E3
                 end;
-            {error, _} = E2 ->
-                E2
+            {error, _} = E4 ->
+                E4
         end,
     case UsePacket of
         ok ->

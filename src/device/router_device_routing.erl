@@ -392,6 +392,7 @@ offer_check(Offer) ->
     end,
     Checks = [
         {fun ru_poc_denylist:check/1, ?POC_DENYLIST_ERROR},
+        {fun ru_denylist:check/1, ?ROUTER_DENYLIST_ERROR},
         {ThrottleCheck, ?HOTSPOT_THROTTLE_ERROR}
     ],
     lists:foldl(

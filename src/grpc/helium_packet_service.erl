@@ -17,9 +17,9 @@
 init(_Rpc, Stream) ->
     Stream.
 
--spec route(packet_router_pb:packet_router_packet_up_v1_pb(), grpcbox_stream:t()) ->
+-spec route(packet_router_pb:envelope_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
-route(PacketUp, StreamState) ->
+route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
     case verify(PacketUp) of
         false ->
             {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};
@@ -30,7 +30,10 @@ route(PacketUp, StreamState) ->
             ]),
             router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
             {ok, StreamState}
-    end.
+    end;
+route(_EnvUp, StreamState) ->
+    lager:warning("unknown ~p", [_EnvUp]),
+    {ok, StreamState}.
 
 -spec handle_info(Msg :: any(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
 handle_info({send_response, Reply}, StreamState) ->
@@ -113,11 +116,10 @@ routing_information(<<_FType:3, _:5, DevAddr:32/integer-unsigned-little, _/binar
 %% ===================================================================
 
 -spec from_sc_packet(router_pb:blockchain_state_channel_response_v1_pb()) ->
-    packet_router_db:packet_router_packet_down_v1_pb().
+    packet_router_db:envelope_down_v1_pb().
 from_sc_packet(StateChannelResponse) ->
     Downlink = blockchain_state_channel_response_v1:downlink(StateChannelResponse),
-
-    #packet_router_packet_down_v1_pb{
+    PacketDown = #packet_router_packet_down_v1_pb{
         payload = blockchain_helium_packet_v1:payload(Downlink),
         rx1 = #window_v1_pb{
             timestamp = blockchain_helium_packet_v1:timestamp(Downlink),
@@ -126,7 +128,8 @@ from_sc_packet(StateChannelResponse) ->
             datarate = hpr_datarate(blockchain_helium_packet_v1:datarate(Downlink))
         },
         rx2 = rx2_window(blockchain_helium_packet_v1:rx2_window(Downlink))
-    }.
+    },
+    #envelope_down_v1_pb{data = {packet, PacketDown}}.
 
 -spec hpr_datarate(unicode:chardata()) ->
     packet_router_pb:'helium.data_rate'().

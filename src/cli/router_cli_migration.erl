@@ -41,7 +41,6 @@ info_usage() ->
             "    [--ignore_no_address] default: false\n"
             "migration ouis  \n",
             "migration ouis routes \n",
-            "\n\n",
             "migration euis   - Add Console EUIs to config service existing route\n",
             "    --host=<config_service_host>\n"
             "    --port=<config_service_port>\n"
@@ -112,7 +111,7 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
     RouteList = lists:map(
         fun(#{payer := Payer} = Map) ->
             PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
-            case libp2p:peerbook(PeerBook, PubKeyBin) of
+            case libp2p_peerbook:get(PeerBook, PubKeyBin) of
                 {error, _Reason} ->
                     Map;
                 {ok, Peer} ->

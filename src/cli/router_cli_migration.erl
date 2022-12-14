@@ -204,7 +204,7 @@ get_ouis() ->
                     Max = lorawan_utils:reverse(<<
                         (Base + Size):25/integer-unsigned-little, Prefix:7/integer
                     >>),
-                    #{min => binary:encode_hex(Min), max => binary:encode_hex(Max)}
+                    #{start_addr => binary:encode_hex(Min), end_addr => binary:encode_hex(Max)}
                 end,
                 blockchain_ledger_routing_v1:subnets(RoutingV1)
             ),

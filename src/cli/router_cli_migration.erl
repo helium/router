@@ -36,12 +36,11 @@ info_usage() ->
         ["migration"],
         [
             "\n\n",
-            "migration oui    - Migrate OUI \n",
-            "    [--print json / normal] default: json\n",
+            "migration oui    - Print OUI migration \n",
             "    [--no_euis] default: false (EUIs included)\n",
-            "    [--max_copies 1] default: 1\n",
             "    [--ignore_no_address] default: false\n"
             "migration ouis  \n",
+            "migration ouis routes \n",
             "\n\n",
             "migration euis   - Add Console EUIs to config service existing route\n",
             "    --host=<config_service_host>\n"
@@ -57,9 +56,7 @@ info_cmd() ->
             ["migration", "oui"],
             [],
             [
-                {print, [{longname, "print"}]},
                 {no_euis, [{longname, "no_euis"}, {datatype, boolean}]},
-                {max_copies, [{longmame, "max_copies"}, {datatype, integer}]},
                 {ignore_no_address, [{longname, "ignore_no_address"}, {datatype, boolean}]}
             ],
             fun migration_oui/3
@@ -95,7 +92,9 @@ migration_oui(["migration", "oui"], [], Flags) ->
         {error, Reason} ->
             c_text("Error ~p~n", [Reason]);
         {ok, Map} ->
-            migration_oui(Map, Options)
+            c_text("~n~s~n", [
+                jsx:prettify(jsx:encode(Map))
+            ])
     end;
 migration_oui([_, _, _], [], _Flags) ->
     usage.
@@ -224,11 +223,11 @@ create_migration_oui_map(Options) ->
                             true -> [];
                             false -> euis()
                         end,
+                    Payer = blockchain_swarm:pubkey_bin(),
                     Map = #{
                         oui => OUI,
                         payer => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
-                        %% TODO: maybe set payer to Router's address?
-                        owner => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        owner => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Payer)),
                         routes => [
                             #{
                                 devaddr_ranges => DevAddrRanges,
@@ -242,7 +241,7 @@ create_migration_oui_map(Options) ->
                                         type => <<"packet_router">>
                                     }
                                 },
-                                max_copies => maps:get(max_copies, Options, 1)
+                                max_copies => 1
                             }
                         ]
                     },
@@ -250,81 +249,70 @@ create_migration_oui_map(Options) ->
             end
     end.
 
--spec migration_oui(Map :: map(), Options :: map()) -> clique_status:status().
-migration_oui(Map, Options) ->
-    case maps:get(print, Options, json) of
-        json ->
-            c_text("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n~s~n", [
-                jsx:prettify(jsx:encode(Map))
-            ]);
-        _ ->
-            migrate_oui_print(Map)
-    end.
+% -spec migrate_oui_print(Map :: map()) -> clique_status:status().
+% migrate_oui_print(Map) ->
+%     %% PLEASE VERIFY THAT ALL THE DATA MATCH
+%     %% OUI: 4
+%     %% Owner: XYZ
+%     %% Payer: XYZ
+%     %% Routes
+%     %%     Net ID: C00053
+%     %%     Server: localhost:8080
+%     %%     Protocol: gwmp
+%     %%     Max Copies: 1
+%     %%     DevAddrs (Start, End): 1
+%     %%         (Start, End)
+%     %%     EUIs (AppEUI, DevEUI): 1
+%     %%         (010203040506070809, 010203040506070809)
+%     %%     ################################################
+%     Disclamer = io_lib:format("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n", []),
+%     OUI = io_lib:format("OUI: ~w~n", [maps:get(oui, Map)]),
+%     Owner = io_lib:format("Owner: ~s~n", [maps:get(owner_wallet_id, Map)]),
+%     Payer = io_lib:format("Payer: ~s~n", [maps:get(payer_wallet_id, Map)]),
+%     RouteSpacer = io_lib:format("    ################################################~n", []),
+%     Routes = lists:foldl(
+%         fun(Route, Acc) ->
+%             NetID = io_lib:format("    Net ID: ~s~n", [maps:get(net_id, Route)]),
 
--spec migrate_oui_print(Map :: map()) -> clique_status:status().
-migrate_oui_print(Map) ->
-    %% PLEASE VERIFY THAT ALL THE DATA MATCH
-    %% OUI: 4
-    %% Owner: XYZ
-    %% Payer: XYZ
-    %% Routes
-    %%     Net ID: C00053
-    %%     Server: localhost:8080
-    %%     Protocol: gwmp
-    %%     Max Copies: 1
-    %%     DevAddrs (Start, End): 1
-    %%         (Start, End)
-    %%     EUIs (AppEUI, DevEUI): 1
-    %%         (010203040506070809, 010203040506070809)
-    %%     ################################################
-    Disclamer = io_lib:format("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n", []),
-    OUI = io_lib:format("OUI: ~w~n", [maps:get(oui, Map)]),
-    Owner = io_lib:format("Owner: ~s~n", [maps:get(owner_wallet_id, Map)]),
-    Payer = io_lib:format("Payer: ~s~n", [maps:get(payer_wallet_id, Map)]),
-    RouteSpacer = io_lib:format("    ################################################~n", []),
-    Routes = lists:foldl(
-        fun(Route, Acc) ->
-            NetID = io_lib:format("    Net ID: ~s~n", [maps:get(net_id, Route)]),
+%             ServerMap = maps:get(server, Route),
+%             Server = io_lib:format("    Server: ~s:~w~n", [
+%                 maps:get(host, ServerMap), maps:get(port, ServerMap)
+%             ]),
 
-            ServerMap = maps:get(server, Route),
-            Server = io_lib:format("    Server: ~s:~w~n", [
-                maps:get(host, ServerMap), maps:get(port, ServerMap)
-            ]),
+%             ProtocolMap = maps:get(protocol, ServerMap),
+%             Protocol = io_lib:format("    Protocol: ~s~n", [maps:get(type, ProtocolMap)]),
 
-            ProtocolMap = maps:get(protocol, ServerMap),
-            Protocol = io_lib:format("    Protocol: ~s~n", [maps:get(type, ProtocolMap)]),
+%             MaxCopies = io_lib:format("    Max Copies: ~w~n", [1]),
 
-            MaxCopies = io_lib:format("    Max Copies: ~w~n", [1]),
+%             DevAddrsCnt = io_lib:format("    DevAddrs (Start, End): ~w~n", [
+%                 erlang:length(maps:get(devaddr_ranges, Route))
+%             ]),
+%             DevAddrs = lists:foldl(
+%                 fun(#{start_addr := S, end_addr := E}, Acc1) ->
+%                     [io_lib:format("        (~s, ~s)~n", [S, E]) | Acc1]
+%                 end,
+%                 [],
+%                 maps:get(devaddr_ranges, Route)
+%             ),
 
-            DevAddrsCnt = io_lib:format("    DevAddrs (Start, End): ~w~n", [
-                erlang:length(maps:get(devaddr_ranges, Route))
-            ]),
-            DevAddrs = lists:foldl(
-                fun(#{start_addr := S, end_addr := E}, Acc1) ->
-                    [io_lib:format("        (~s, ~s)~n", [S, E]) | Acc1]
-                end,
-                [],
-                maps:get(devaddr_ranges, Route)
-            ),
+%             EUISCnt = io_lib:format("    EUIs (AppEUI, DevEUI): ~w~n", [
+%                 erlang:length(maps:get(euis, Route))
+%             ]),
+%             EUIS = lists:foldl(
+%                 fun(#{app_eui := A, dev_eui := D}, Acc1) ->
+%                     [io_lib:format("        (~s, ~s)~n", [A, D]) | Acc1]
+%                 end,
+%                 [],
+%                 maps:get(euis, Route)
+%             ),
 
-            EUISCnt = io_lib:format("    EUIs (AppEUI, DevEUI): ~w~n", [
-                erlang:length(maps:get(euis, Route))
-            ]),
-            EUIS = lists:foldl(
-                fun(#{app_eui := A, dev_eui := D}, Acc1) ->
-                    [io_lib:format("        (~s, ~s)~n", [A, D]) | Acc1]
-                end,
-                [],
-                maps:get(euis, Route)
-            ),
-
-            Acc ++ [NetID, Server, Protocol, MaxCopies, DevAddrsCnt] ++ DevAddrs ++ [EUISCnt] ++
-                EUIS ++ [RouteSpacer]
-        end,
-        [io_lib:format("Routes~n", [])],
-        maps:get(routes, Map)
-    ),
-    c_list([Disclamer, OUI, Owner, Payer] ++ Routes).
+%             Acc ++ [NetID, Server, Protocol, MaxCopies, DevAddrsCnt] ++ DevAddrs ++ [EUISCnt] ++
+%                 EUIS ++ [RouteSpacer]
+%         end,
+%         [io_lib:format("Routes~n", [])],
+%         maps:get(routes, Map)
+%     ),
+%     c_list([Disclamer, OUI, Owner, Payer] ++ Routes).
 
 -spec euis() -> list(map()).
 euis() ->
@@ -427,8 +415,8 @@ token_lookup() ->
         [{token, {Endpoint, _Downlink, Token}}] -> {Endpoint, Token}
     end.
 
--spec c_list(list(string())) -> clique_status:status().
-c_list(L) -> [clique_status:list(L)].
+% -spec c_list(list(string())) -> clique_status:status().
+% c_list(L) -> [clique_status:list(L)].
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

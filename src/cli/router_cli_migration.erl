@@ -128,7 +128,7 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
                     #{
                         net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
                         devaddr_ranges => DevRanges,
-                        euis => euis(),
+                        euis => [],
                         oui => OUI,
                         server => #{
                             host => Address1,

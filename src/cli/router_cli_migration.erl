@@ -109,14 +109,35 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
     Swarm = blockchain_swarm:swarm(),
     PeerBook = libp2p_swarm:peerbook(Swarm),
     RouteList = lists:map(
-        fun(#{payer := Payer} = Map) ->
+        fun(#{oui := OUI, payer := Payer} = Map) ->
             PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
             case libp2p_peerbook:get(PeerBook, PubKeyBin) of
                 {error, _Reason} ->
-                    Map;
+                    #{
+                        oui => OUI,
+                        route => address_not_found
+                    };
                 {ok, Peer} ->
-                    Addresses = libp2p_peer:listen_addrs(Peer),
-                    Map#{addresses => [erlang:list_to_binary(A) || A <- Addresses]}
+                    [Address1 | _] = [
+                        erlang:list_to_binary(lists:nth(2, string:tokens(A, "/")))
+                     || A <- libp2p_peer:listen_addrs(Peer)
+                    ],
+                    #{devaddrs := DevRanges} = Map,
+                    [#{start_addr := HexMin} | _] = DevRanges,
+                    {ok, IntNetID} = lora_subnet:parse_netid(erlang:list_to_binary(HexMin), big),
+                    #{
+                        net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
+                        devaddr_ranges => DevRanges,
+                        euis => euis(),
+                        oui => OUI,
+                        server => #{
+                            host => Address1,
+                            port => 8080,
+                            protocol => packet_router
+                        },
+                        max_copies => 3,
+                        nonce => 1
+                    }
             end
         end,
         OUIsList

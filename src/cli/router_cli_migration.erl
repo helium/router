@@ -71,6 +71,12 @@ info_cmd() ->
             fun migration_ouis/3
         ],
         [
+            ["migration", "ouis", "routes"],
+            [],
+            [],
+            fun migration_ouis_routes/3
+        ],
+        [
             ["migration", "euis"],
             [],
             [
@@ -95,8 +101,30 @@ migration_oui([_, _, _], [], _Flags) ->
     usage.
 
 migration_ouis(["migration", "ouis"], [], _Flags) ->
-    migration_ouis();
+    OUIsList = get_ouis(),
+    c_text("~n~s~n", [jsx:prettify(jsx:encode(OUIsList))]);
 migration_ouis([_, _, _], [], _Flags) ->
+    usage.
+
+migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
+    OUIsList = get_ouis(),
+    Swarm = blockchain_swarm:swarm(),
+    PeerBook = libp2p_swarm:peerbook(Swarm),
+    RouteList = lists:map(
+        fun(#{payer := Payer} = Map) ->
+            PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
+            case libp2p:peerbook(PeerBook, PubKeyBin) of
+                {error, _Reason} ->
+                    Map;
+                {ok, Peer} ->
+                    Addresses = libp2p_peer:listen_addrs(Peer),
+                    Map#{addresses => Addresses}
+            end
+        end,
+        OUIsList
+    ),
+    c_text("~n~s~n", [jsx:prettify(jsx:encode(RouteList))]);
+migration_ouis_routes([_, _, _], [], _Flags) ->
     usage.
 
 send_euis_to_config_service(["migration", "euis"], [], Flags) ->
@@ -136,9 +164,9 @@ send_euis_to_config_service(A, B, C) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-migration_ouis() ->
+get_ouis() ->
     Ledger = blockchain:ledger(blockchain_worker:blockchain()),
-    List = lists:map(
+    lists:map(
         fun({OUI, RoutingV1}) ->
             Owner = blockchain_ledger_routing_v1:owner(RoutingV1),
             Routers = blockchain_ledger_routing_v1:addresses(RoutingV1),
@@ -148,6 +176,19 @@ migration_ouis() ->
                     [Router1 | _] -> Router1
                 end,
             Prefix = $H,
+            DevAddrRanges = lists:map(
+                fun(<<Base:25, Mask:23>> = _Subnet) ->
+                    Size = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
+                    Min = lorawan_utils:reverse(
+                        <<Base:25/integer-unsigned-little, Prefix:7/integer>>
+                    ),
+                    Max = lorawan_utils:reverse(<<
+                        (Base + Size):25/integer-unsigned-little, Prefix:7/integer
+                    >>),
+                    #{min => binary:encode_hex(Min), max => binary:encode_hex(Max)}
+                end,
+                blockchain_ledger_routing_v1:subnets(RoutingV1)
+            ),
             #{
                 oui => OUI,
                 owner => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
@@ -156,24 +197,11 @@ migration_ouis() ->
                     erlang:list_to_binary(libp2p_crypto:bin_to_b58(R))
                  || R <- Routers
                 ],
-                devaddrs => lists:map(
-                    fun(<<Base:25, Mask:23>> = _Subnet) ->
-                        Size = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
-                        Min = lorawan_utils:reverse(
-                            <<Base:25/integer-unsigned-little, Prefix:7/integer>>
-                        ),
-                        Max = lorawan_utils:reverse(<<
-                            (Base + Size):25/integer-unsigned-little, Prefix:7/integer
-                        >>),
-                        #{min => binary:encode_hex(Min), max => binary:encode_hex(Max)}
-                    end,
-                    blockchain_ledger_routing_v1:subnets(RoutingV1)
-                )
+                devaddrs => DevAddrRanges
             }
         end,
         blockchain_ledger_v1:snapshot_ouis(Ledger)
-    ),
-    c_text("~n~s~n", [jsx:prettify(jsx:encode(List))]).
+    ).
 
 -spec create_migration_oui_map(Options :: map()) -> {ok, map()} | {error, any()}.
 create_migration_oui_map(Options) ->

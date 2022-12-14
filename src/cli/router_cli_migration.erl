@@ -124,7 +124,7 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
                     ],
                     #{devaddrs := DevRanges} = Map,
                     [#{start_addr := HexMin} | _] = DevRanges,
-                    {ok, IntNetID} = lora_subnet:parse_netid(erlang:list_to_binary(HexMin), big),
+                    {ok, IntNetID} = lora_subnet:parse_netid(binary:decode_hex(HexMin), big),
                     #{
                         net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
                         devaddr_ranges => DevRanges,
@@ -269,71 +269,6 @@ create_migration_oui_map(Options) ->
             end
     end.
 
-% -spec migrate_oui_print(Map :: map()) -> clique_status:status().
-% migrate_oui_print(Map) ->
-%     %% PLEASE VERIFY THAT ALL THE DATA MATCH
-%     %% OUI: 4
-%     %% Owner: XYZ
-%     %% Payer: XYZ
-%     %% Routes
-%     %%     Net ID: C00053
-%     %%     Server: localhost:8080
-%     %%     Protocol: gwmp
-%     %%     Max Copies: 1
-%     %%     DevAddrs (Start, End): 1
-%     %%         (Start, End)
-%     %%     EUIs (AppEUI, DevEUI): 1
-%     %%         (010203040506070809, 010203040506070809)
-%     %%     ################################################
-%     Disclamer = io_lib:format("~n~nPLEASE VERIFY THAT ALL THE DATA MATCH~n~n", []),
-%     OUI = io_lib:format("OUI: ~w~n", [maps:get(oui, Map)]),
-%     Owner = io_lib:format("Owner: ~s~n", [maps:get(owner_wallet_id, Map)]),
-%     Payer = io_lib:format("Payer: ~s~n", [maps:get(payer_wallet_id, Map)]),
-%     RouteSpacer = io_lib:format("    ################################################~n", []),
-%     Routes = lists:foldl(
-%         fun(Route, Acc) ->
-%             NetID = io_lib:format("    Net ID: ~s~n", [maps:get(net_id, Route)]),
-
-%             ServerMap = maps:get(server, Route),
-%             Server = io_lib:format("    Server: ~s:~w~n", [
-%                 maps:get(host, ServerMap), maps:get(port, ServerMap)
-%             ]),
-
-%             ProtocolMap = maps:get(protocol, ServerMap),
-%             Protocol = io_lib:format("    Protocol: ~s~n", [maps:get(type, ProtocolMap)]),
-
-%             MaxCopies = io_lib:format("    Max Copies: ~w~n", [1]),
-
-%             DevAddrsCnt = io_lib:format("    DevAddrs (Start, End): ~w~n", [
-%                 erlang:length(maps:get(devaddr_ranges, Route))
-%             ]),
-%             DevAddrs = lists:foldl(
-%                 fun(#{start_addr := S, end_addr := E}, Acc1) ->
-%                     [io_lib:format("        (~s, ~s)~n", [S, E]) | Acc1]
-%                 end,
-%                 [],
-%                 maps:get(devaddr_ranges, Route)
-%             ),
-
-%             EUISCnt = io_lib:format("    EUIs (AppEUI, DevEUI): ~w~n", [
-%                 erlang:length(maps:get(euis, Route))
-%             ]),
-%             EUIS = lists:foldl(
-%                 fun(#{app_eui := A, dev_eui := D}, Acc1) ->
-%                     [io_lib:format("        (~s, ~s)~n", [A, D]) | Acc1]
-%                 end,
-%                 [],
-%                 maps:get(euis, Route)
-%             ),
-
-%             Acc ++ [NetID, Server, Protocol, MaxCopies, DevAddrsCnt] ++ DevAddrs ++ [EUISCnt] ++
-%                 EUIS ++ [RouteSpacer]
-%         end,
-%         [io_lib:format("Routes~n", [])],
-%         maps:get(routes, Map)
-%     ),
-%     c_list([Disclamer, OUI, Owner, Payer] ++ Routes).
-
 -spec euis() -> list(map()).
 euis() ->
     {ok, Devices} = get_devices(),
@@ -434,9 +369,6 @@ token_lookup() ->
         [] -> {<<>>, <<>>};
         [{token, {Endpoint, _Downlink, Token}}] -> {Endpoint, Token}
     end.
-
-% -spec c_list(list(string())) -> clique_status:status().
-% c_list(L) -> [clique_status:list(L)].
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

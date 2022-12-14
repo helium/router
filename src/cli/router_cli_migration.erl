@@ -95,7 +95,7 @@ migration_oui([_, _, _], [], _Flags) ->
     usage.
 
 migration_ouis(["migration", "ouis"], [], _Flags) ->
-    c_text("TODO ~n");
+    migration_ouis();
 migration_ouis([_, _, _], [], _Flags) ->
     usage.
 
@@ -136,6 +136,45 @@ send_euis_to_config_service(A, B, C) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+migration_ouis() ->
+    Ledger = blockchain:ledger(blockchain_worker:blockchain()),
+    List = lists:map(
+        fun({OUI, RoutingV1}) ->
+            Owner = blockchain_ledger_routing_v1:owner(RoutingV1),
+            Routers = blockchain_ledger_routing_v1:addresses(RoutingV1),
+            Payer =
+                case Routers of
+                    [] -> Owner;
+                    [Router1 | _] -> Router1
+                end,
+            Prefix = $H,
+            #{
+                oui => OUI,
+                owner => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                payer => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Payer)),
+                delegate_keys => [
+                    erlang:list_to_binary(libp2p_crypto:bin_to_b58(R))
+                 || R <- Routers
+                ],
+                devaddrs => lists:map(
+                    fun(<<Base:25, Mask:23>> = _Subnet) ->
+                        Size = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
+                        Min = lorawan_utils:reverse(
+                            <<Base:25/integer-unsigned-little, Prefix:7/integer>>
+                        ),
+                        Max = lorawan_utils:reverse(<<
+                            (Base + Size):25/integer-unsigned-little, Prefix:7/integer
+                        >>),
+                        #{min => binary:encode_hex(Min), max => binary:encode_hex(Max)}
+                    end,
+                    blockchain_ledger_routing_v1:subnets(RoutingV1)
+                )
+            }
+        end,
+        blockchain_ledger_v1:snapshot_ouis(Ledger)
+    ),
+    c_text("~n~s~n", [jsx:prettify(jsx:encode(List))]).
+
 -spec create_migration_oui_map(Options :: map()) -> {ok, map()} | {error, any()}.
 create_migration_oui_map(Options) ->
     OUI = router_utils:get_oui(),
@@ -159,9 +198,9 @@ create_migration_oui_map(Options) ->
                         end,
                     Map = #{
                         oui => OUI,
-                        owner_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        payer => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
                         %% TODO: maybe set payer to Router's address?
-                        payer_wallet_id => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
+                        owner => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),
                         routes => [
                             #{
                                 devaddr_ranges => DevAddrRanges,

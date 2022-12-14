@@ -116,7 +116,7 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
                     Map;
                 {ok, Peer} ->
                     Addresses = libp2p_peer:listen_addrs(Peer),
-                    Map#{addresses => Addresses}
+                    Map#{addresses => [erlang:list_to_binary(A) || A <- Addresses]}
             end
         end,
         OUIsList

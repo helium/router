@@ -41,7 +41,13 @@ info_usage() ->
             "    [--no_euis] default: false (EUIs included)\n",
             "    [--max_copies 1] default: 1\n",
             "    [--ignore_no_address] default: false\n"
-            "migration ouis  \n"
+            "migration ouis  \n",
+            "\n\n",
+            "migration euis   - Add Console EUIs to config service existing route\n",
+            "    --host=<config_service_host>\n"
+            "    --port=<config_service_port>\n"
+            "    --route_id=<route_id>\n"
+            "    [--commit]\n"
         ]
     ].
 
@@ -63,6 +69,17 @@ info_cmd() ->
             [],
             [],
             fun migration_ouis/3
+        ],
+        [
+            ["migration", "euis"],
+            [],
+            [
+                {host, [{longname, "host"}, {datatype, string}]},
+                {port, [{longname, "port"}, {datatype, integer}]},
+                {route_id, [{longname, "route_id"}, {datatype, string}]},
+                {commit, [{longname, "commit"}, {datatype, boolean}]}
+            ],
+            fun send_euis_to_config_service/3
         ]
     ].
 
@@ -80,6 +97,39 @@ migration_oui([_, _, _], [], _Flags) ->
 migration_ouis(["migration", "ouis"], [], _Flags) ->
     c_text("TODO ~n");
 migration_ouis([_, _, _], [], _Flags) ->
+    usage.
+
+send_euis_to_config_service(["migration", "euis"], [], Flags) ->
+    Options = maps:from_list(Flags),
+
+    PubKeyBin = blockchain_swarm:pubkey_bin(),
+    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+
+    RouteEuisReq = #{
+        id => maps:get(route_id, Options, ""),
+        action => add,
+        euis => euis(),
+        timestamp => erlang:system_time(millisecond),
+        signer => PubKeyBin,
+        signature => <<>>
+    },
+    Encoded = config_client_pb:encode_msg(RouteEuisReq, route_euis_req_v1_pb),
+    Signed = RouteEuisReq#{signature => SigFun(Encoded)},
+
+    case maps:is_key(commit, Options) of
+        true ->
+            {ok, Connection} = grpc_client:connect(
+                tcp, erlang:binary_to_list(maps:get(host, Options)), maps:get(port, Options), []
+            ),
+            {ok, Response} = grpc_client:unary(
+                Connection, Signed, 'helium.config.route', euis, config_client_pb, []
+            ),
+            c_text("Migrating OUIs: ~p", [Response]);
+        false ->
+            c_text("With Options:~n~p~n~nRequest:~n~p", [Options, Signed])
+    end;
+send_euis_to_config_service(A, B, C) ->
+    io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
 %% ------------------------------------------------------------------

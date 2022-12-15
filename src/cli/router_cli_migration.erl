@@ -160,7 +160,7 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
         signer => PubKeyBin,
         signature => <<>>
     },
-    Encoded = config_client_pb:encode_msg(RouteEuisReq, route_euis_req_v1_pb),
+    Encoded = iot_config_client_pb:encode_msg(RouteEuisReq, route_euis_req_v1_pb),
     Signed = RouteEuisReq#{signature => SigFun(Encoded)},
 
     case maps:is_key(commit, Options) of
@@ -169,7 +169,7 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
                 tcp, erlang:binary_to_list(maps:get(host, Options)), maps:get(port, Options), []
             ),
             {ok, Response} = grpc_client:unary(
-                Connection, Signed, 'helium.config.route', euis, config_client_pb, []
+                Connection, Signed, 'helium.iot_config.route', euis, iot_config_client_pb, []
             ),
             c_text("Migrating OUIs: ~p", [Response]);
         false ->

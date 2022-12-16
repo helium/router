@@ -45,9 +45,10 @@
             {downlink_endpoint, <<"${ROUTER_CONSOLE_DOWNLINK_ENDPOINT}">>},
             {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
         ]},
+        {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
             host => "${ROUTER_ICS_HOST}"
-            port => ${ROUTER_ICS_PORT:-8080}
+            port => "${ROUTER_ICS_PORT}"
         }},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},

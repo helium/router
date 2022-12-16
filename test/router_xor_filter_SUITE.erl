@@ -61,24 +61,24 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        % publish_xor_test,
-        % max_filters_devices_test,
-        % ignore_largest_filter_test,
-        % migrate_filter_test,
-        % move_to_front_test,
-        % evenly_rebalance_filter_test,
-        % oddly_rebalance_filter_test,
-        % remove_devices_filter_test,
-        % remove_devices_filter_after_restart_test,
-        % report_device_status_test,
-        % remove_devices_single_txn_db_test,
-        % remove_devices_multiple_txn_db_test,
-        % send_updates_to_console_test,
-        % between_worker_device_add_remove_send_updates_to_console_test,
-        % device_add_multiple_send_updates_to_console_test,
-        % device_add_unique_and_matching_send_updates_to_console_test,
-        % device_removed_send_updates_to_console_test,
-        % estimate_cost_test
+        publish_xor_test,
+        max_filters_devices_test,
+        ignore_largest_filter_test,
+        migrate_filter_test,
+        move_to_front_test,
+        evenly_rebalance_filter_test,
+        oddly_rebalance_filter_test,
+        remove_devices_filter_test,
+        remove_devices_filter_after_restart_test,
+        report_device_status_test,
+        remove_devices_single_txn_db_test,
+        remove_devices_multiple_txn_db_test,
+        send_updates_to_console_test,
+        between_worker_device_add_remove_send_updates_to_console_test,
+        device_add_multiple_send_updates_to_console_test,
+        device_add_unique_and_matching_send_updates_to_console_test,
+        device_removed_send_updates_to_console_test,
+        estimate_cost_test
     ].
 
 %%--------------------------------------------------------------------

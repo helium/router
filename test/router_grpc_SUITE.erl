@@ -106,7 +106,8 @@ join_grpc_gateway_test(Config) ->
     Signed = Packet#packet_router_packet_up_v1_pb{
         signature = SigFun(packet_router_pb:encode_msg(Packet))
     },
-    ok = grpcbox_client:send(Stream, Signed),
+    EnvUp = #envelope_up_v1_pb{data = {packet, Signed}},
+    ok = grpcbox_client:send(Stream, EnvUp),
 
     timer:sleep(router_utils:join_timeout()),
     {ok, DownlinkMsg} = grpcbox_client:recv_data(Stream),
@@ -168,7 +169,8 @@ join_from_unknown_device_grpc_gateway_test(_Config) ->
     Signed = Packet#packet_router_packet_up_v1_pb{
         signature = SigFun(packet_router_pb:encode_msg(Packet))
     },
-    ok = grpcbox_client:send(Stream, Signed),
+    EnvUp = #envelope_up_v1_pb{data = {packet, Signed}},
+    ok = grpcbox_client:send(Stream, EnvUp),
 
     timer:sleep(router_utils:join_timeout()),
     %% no downlink should be returned
@@ -263,7 +265,8 @@ packet_from_known_device_no_downlink_gateway_test(Config) ->
     Signed = Packet#packet_router_packet_up_v1_pb{
         signature = SigFun(packet_router_pb:encode_msg(Packet))
     },
-    ok = grpcbox_client:send(Stream, Signed),
+    EnvUp0 = #envelope_up_v1_pb{data = {packet, Signed}},
+    ok = grpcbox_client:send(Stream, EnvUp0),
 
     timer:sleep(router_utils:join_timeout()),
     {ok, _JoinAcceptDownlinkMsg} = grpcbox_client:recv_data(Stream),
@@ -298,7 +301,8 @@ packet_from_known_device_no_downlink_gateway_test(Config) ->
         signature = SigFun(packet_router_pb:encode_msg(DataPacket1))
     },
     %% Send first packet to get CFList response
-    ok = grpcbox_client:send(Stream, DataSigned1),
+    EnvUp1 = #envelope_up_v1_pb{data = {packet, DataSigned1}},
+    ok = grpcbox_client:send(Stream, EnvUp1),
 
     timer:sleep(router_utils:frame_timeout()),
     {ok, Downlink1} = grpcbox_client:recv_data(Stream),
@@ -327,7 +331,8 @@ packet_from_known_device_no_downlink_gateway_test(Config) ->
     DataSigned2 = DataPacket2#packet_router_packet_up_v1_pb{
         signature = SigFun(packet_router_pb:encode_msg(DataPacket2))
     },
-    ok = grpcbox_client:send(Stream, DataSigned2),
+    EnvUp3 = #envelope_up_v1_pb{data = {packet, DataSigned2}},
+    ok = grpcbox_client:send(Stream, EnvUp3),
 
     timer:sleep(router_utils:frame_timeout()),
     %% Expect no downlink

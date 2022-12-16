@@ -50,15 +50,20 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+start_link(#{port := Port} = Args) when is_list(Port) ->
+    ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
+-spec add(list(binary())) -> ok.
 add(DeviceIDs) ->
     gen_server:cast(?SERVER, {add, DeviceIDs}).
 
+-spec update(list(binary())) -> ok.
 update(DeviceIDs) ->
     gen_server:cast(?SERVER, {update, DeviceIDs}).
 
+-spec remove(list(binary())) -> ok.
 remove(DeviceIDs) ->
     gen_server:cast(?SERVER, {remove, DeviceIDs}).
 
@@ -149,6 +154,7 @@ terminate(_Reason, #state{}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec fetch_device_euis(apis | cache, list(binary())) -> [map()].
 fetch_device_euis(apis, DeviceIDs) ->
     lists:filtermap(
         fun(DeviceID) ->

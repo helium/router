@@ -38,7 +38,7 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
-    host :: binary(),
+    host :: string(),
     port :: non_neg_integer(),
     conn :: undefined | grpc_client:connection(),
     conn_backoff :: backoff:backoff(),
@@ -73,7 +73,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
-        host = erlang:list_to_binary(Host),
+        host = Host,
         port = Port,
         conn_backoff = Backoff
     }}.
@@ -190,7 +190,7 @@ refetch(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
                         <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
                             kvc:path([<<"app_eui">>], APIDevice)
                         ),
-                        <<DevEUI:64/integer-unsigned-big>> = orawan_utils:hex_to_binary(
+                        <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
                             kvc:path([<<"dev_eui">>], APIDevice)
                         ),
                         #{app_eui => AppEUI, dev_eui => DevEUI}
@@ -221,12 +221,11 @@ euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
         signer => PubKeyBin
     },
     EncodedReq = iot_config_client_pb:encode_msg(Req, route_euis_req_v1_pb),
-    SignedReq = EncodedReq#{signature => SigFun(EncodedReq)},
-    {ok, EncodedRes} = grpc_client:unary(
+    SignedReq = Req#{signature => SigFun(EncodedReq)},
+    {ok, #{result := Result}} = grpc_client:unary(
         Conn, SignedReq, 'helium.iot_config.route', euis, iot_config_client_pb, []
     ),
-    DecodedRes = iot_config_client_pb:encode_msg(EncodedRes, route_euis_res_v1_pb),
-    maps:get(action, DecodedRes).
+    maps:get(action, Result).
 
 -spec get_route_id(
     Conn :: grpc_client:connection(),
@@ -241,12 +240,11 @@ get_route_id(Conn, PubKeyBin, SigFun) ->
         signer => PubKeyBin
     },
     EncodedReq = iot_config_client_pb:encode_msg(Req, route_list_req_v1_pb),
-    SignedReq = EncodedReq#{signature => SigFun(EncodedReq)},
-    {ok, EncodedRes} = grpc_client:unary(
+    SignedReq = Req#{signature => SigFun(EncodedReq)},
+    {ok, #{result := Result}} = grpc_client:unary(
         Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
     ),
-    DecodedRes = iot_config_client_pb:encode_msg(EncodedRes, route_list_res_v1_pb),
-    [Route | _] = DecodedRes,
+    [Route | _] = maps:get(routes, Result),
     maps:get(id, Route).
 
 %% ------------------------------------------------------------------

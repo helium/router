@@ -151,11 +151,27 @@ handle_info(
         DeviceIDs
     ),
     {noreply, State};
+%% Device add
+handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:add:devices">>, #{<<"devices">> := DeviceIDs}},
+    State
+) ->
+    ok = router_ics_worker:add(DeviceIDs),
+    {noreply, State};
+%% Device Update
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
+    ok = router_ics_worker:update(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
+    {noreply, State};
+%% Device remove
+handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:remove:devices">>, #{<<"devices">> := DeviceIDs}},
+    State
+) ->
+    ok = router_ics_worker:remove(DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refetch:router_address">>, _},

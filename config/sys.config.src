@@ -47,7 +47,7 @@
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
-            host => "${ROUTER_ICS_HOST}"
+            host => "${ROUTER_ICS_HOST}",
             port => "${ROUTER_ICS_PORT}"
         }},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},

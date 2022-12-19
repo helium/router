@@ -50,6 +50,10 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
+start_link(#{host := "localhost"}) ->
+    ignore;
+start_link(#{host := ""}) ->
+    ignore;
 start_link(#{port := Port} = Args) when is_list(Port) ->
     ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
 start_link(Args) ->

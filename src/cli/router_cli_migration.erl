@@ -113,10 +113,19 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
             PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
             case libp2p_peerbook:get(PeerBook, PubKeyBin) of
                 {error, _Reason} ->
-                    #{
-                        oui => OUI,
-                        route => address_not_found
-                    };
+                    P2P = libp2p_crypto:pubkey_bin_to_p2p(PubKeyBin),
+                    case libp2p_swarm:connect(Swarm, P2P) of
+                        {ok, _Pid} ->
+                            #{
+                                oui => OUI,
+                                route => connected
+                            };
+                        _ ->
+                            #{
+                                oui => OUI,
+                                route => address_not_found
+                            }
+                    end;
                 {ok, Peer} ->
                     [Address1 | _] = [
                         erlang:list_to_binary(lists:nth(2, string:tokens(A, "/")))

@@ -1,5 +1,9 @@
 -module(router_ics_worker_SUITE).
 
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("../src/grpc/autogen/server/iot_config_pb.hrl").
+
 -export([
     all/0,
     init_per_testcase/2,
@@ -9,9 +13,6 @@
 -export([
     main_test/1
 ]).
-
--include_lib("common_test/include/ct.hrl").
--include_lib("eunit/include/eunit.hrl").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -104,12 +105,25 @@ main_test(_Config) ->
         {ok, maps:get(DeviceID, Devices)}
     end),
 
-    timer:sleep(3000),
+    [{Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
+    ?assertEqual(list, Type0),
+    ?assertEqual(euis, Type1),
+    ?assertEqual(update_euis, Req1#route_euis_req_v1_pb.action),
+    ?assertEqual([#eui_v1_pb{app_eui = 8589934593, dev_eui = 1}], Req1#route_euis_req_v1_pb.euis),
 
     ok = router_ics_worker:add([ID1]),
+
+    [{Type2, Req2}] = rcv_loop([]),
+    ?assertEqual(euis, Type2),
+    ?assertEqual(add_euis, Req2#route_euis_req_v1_pb.action),
+    ?assertEqual([#eui_v1_pb{app_eui = 1, dev_eui = 1}], Req2#route_euis_req_v1_pb.euis),
+
     ok = router_ics_worker:remove([ID2]),
 
-    _Reqs = rcv_loop([]),
+    [{Type3, Req3}] = rcv_loop([]),
+    ?assertEqual(euis, Type3),
+    ?assertEqual(remove_euis, Req3#route_euis_req_v1_pb.action),
+    ?assertEqual([#eui_v1_pb{app_eui = 1, dev_eui = 2}], Req3#route_euis_req_v1_pb.euis),
 
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
@@ -124,5 +138,5 @@ rcv_loop(Acc) ->
         {router_test_ics_service, Type, Req} ->
             lager:notice("got router_test_ics_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])
-    after timer:seconds(2) -> ok
+    after timer:seconds(2) -> Acc
     end.

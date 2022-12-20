@@ -50,14 +50,14 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(#{host := "localhost"}) ->
-    ignore;
 start_link(#{host := ""}) ->
     ignore;
 start_link(#{port := Port} = Args) when is_list(Port) ->
     ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(Args) ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+start_link(#{host := Host, port := Port} = Args) when is_list(Host) andalso is_integer(Port) ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
+start_link(_Args) ->
+    ignore.
 
 -spec add(list(binary())) -> ok.
 add(DeviceIDs) ->
@@ -131,8 +131,10 @@ handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} 
             _ = erlang:monitor(process, Pid),
             {_, Backoff1} = backoff:succeed(Backoff0),
             self() ! ?REFETCH,
+            lager:info("connected via ~p", [Pid]),
             {noreply, State#state{conn = Conn, conn_backoff = Backoff1}};
         {error, _Reason} ->
+            lager:warning("fail to connect ~p", [_Reason]),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?CONNECT),
             {noreply, State#state{conn = undefined, conn_backoff = Backoff1}}
@@ -144,6 +146,9 @@ handle_info({'DOWN', _MonitorRef, process, _Pid, Info}, State) ->
     lager:info("connection went down ~p", [Info]),
     self() ! ?CONNECT,
     {noreply, State#state{conn = undefined}};
+handle_info({'EXIT', Pid, Reason}, State) ->
+    lager:debug("got exit ~p ~p", [Pid, Reason]),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -255,6 +260,7 @@ get_route_id(Conn, PubKeyBin, SigFun) ->
         Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
     ),
     [Route | _] = maps:get(routes, Result),
+    %% TODO: Handle empty list
     maps:get(id, Route).
 
 %% ------------------------------------------------------------------

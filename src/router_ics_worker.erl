@@ -102,7 +102,10 @@ handle_cast(
     #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
 ) ->
     Euis = fetch_device_euis(apis, DeviceIDs),
-    add_euis = euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, Euis),
+    case euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, Euis) of
+        true -> lager:info("added ~p", [Euis]);
+        false -> lager:warning("failed to add ~p", [Euis])
+    end,
     {noreply, State};
 handle_cast(
     {update, DeviceIDs},
@@ -110,15 +113,26 @@ handle_cast(
 ) ->
     CachedEuis = fetch_device_euis(cache, DeviceIDs),
     APIEuis = fetch_device_euis(apis, DeviceIDs),
-    remove_euis = euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, CachedEuis -- APIEuis),
-    add_euis = euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, APIEuis -- CachedEuis),
+    ToRemove = CachedEuis -- APIEuis,
+    case euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, ToRemove) of
+        true -> lager:info("removed ~p", [ToRemove]);
+        false -> lager:warning("failed to remove ~p", [ToRemove])
+    end,
+    ToAdd = APIEuis -- CachedEuis,
+    case euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, ToAdd) of
+        true -> lager:info("added ~p", [ToAdd]);
+        false -> lager:warning("failed to add ~p", [ToAdd])
+    end,
     {noreply, State};
 handle_cast(
     {remove, DeviceIDs},
     #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
 ) ->
     Euis = fetch_device_euis(cache, DeviceIDs),
-    remove_euis = euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, Euis),
+    case euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, Euis) of
+        true -> lager:info("removed ~p", [Euis]);
+        false -> lager:warning("failed to remove ~p", [Euis])
+    end,
     {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -139,9 +153,17 @@ handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} 
             _ = erlang:send_after(Delay, self(), ?CONNECT),
             {noreply, State#state{conn = undefined, conn_backoff = Backoff1}}
     end;
-handle_info(?REFETCH, State) ->
-    {ok, RouteID} = refetch(State),
-    {noreply, State#state{route_id = RouteID}};
+handle_info(?REFETCH, #state{conn_backoff = Backoff0} = State) ->
+    case get_route_id(State) of
+        {ok, RouteID} ->
+            _ = refetch(RouteID, State),
+            {noreply, State#state{route_id = RouteID}};
+        {error, _Reason} ->
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            _ = erlang:send_after(Delay, self(), ?REFETCH),
+            lager:warning("fail to get_route_id ~p", [_Reason]),
+            {noreply, State#state{conn_backoff = Backoff1}}
+    end;
 handle_info({'DOWN', _MonitorRef, process, _Pid, Info}, State) ->
     lager:info("connection went down ~p", [Info]),
     self() ! ?CONNECT,
@@ -193,11 +215,11 @@ fetch_device_euis(cache, DeviceIDs) ->
         DeviceIDs
     ).
 
--spec refetch(State :: state()) -> {ok, string()} | {error, any()}.
-refetch(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
+-spec refetch(RouteID :: string(), State :: state()) -> boolean().
+refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
     case router_console_api:get_json_devices() of
-        {error, _} = Err ->
-            Err;
+        {error, _} ->
+            false;
         {ok, APIDevices} ->
             APIEuis =
                 lists:map(
@@ -212,9 +234,7 @@ refetch(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
                     end,
                     APIDevices
                 ),
-            RouteID = get_route_id(Conn, PubKeyBin, SigFun),
-            update_euis = euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, APIEuis),
-            {ok, RouteID}
+            euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, APIEuis)
     end.
 
 -spec euis_req(
@@ -224,9 +244,9 @@ refetch(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
     RouteID :: string(),
     Type :: add_euis | remove_euis | update_euis,
     Euis :: list()
-) -> add_euis | remove_euis | update_euis.
-euis_req(_Conn, _PubKeyBin, _SigFun, _RouteID, Type, []) ->
-    Type;
+) -> boolean().
+euis_req(_Conn, _PubKeyBin, _SigFun, _RouteID, _Type, []) ->
+    true;
 euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
     Req = #{
         id => RouteID,
@@ -240,15 +260,10 @@ euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
     {ok, #{result := Result}} = grpc_client:unary(
         Conn, SignedReq, 'helium.iot_config.route', euis, iot_config_client_pb, []
     ),
-    maps:get(action, Result).
+    Type =:= maps:get(action, Result).
 
--spec get_route_id(
-    Conn :: grpc_client:connection(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    SigFun :: function()
-) ->
-    string().
-get_route_id(Conn, PubKeyBin, SigFun) ->
+-spec get_route_id(state()) -> {ok, string()} | {error, any()}.
+get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
     Req = #{
         oui => router_utils:get_oui(),
         timestamp => erlang:system_time(millisecond),
@@ -259,9 +274,12 @@ get_route_id(Conn, PubKeyBin, SigFun) ->
     {ok, #{result := Result}} = grpc_client:unary(
         Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
     ),
-    [Route | _] = maps:get(routes, Result),
-    %% TODO: Handle empty list
-    maps:get(id, Route).
+    case maps:get(routes, Result) of
+        [] ->
+            {error, no_routes};
+        [Route | _] ->
+            {ok, maps:get(id, Route)}
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

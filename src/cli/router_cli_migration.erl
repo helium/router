@@ -253,7 +253,7 @@ create_migration_oui_map(Options) ->
                             #{
                                 devaddr_ranges => DevAddrRanges,
                                 euis => EUIs,
-                                net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
+                                net_id => erlang:list_to_binary(io_lib:format("~6.16.0B", [IntNetID])),
                                 oui => OUI,
                                 server => #{
                                     host => Host,

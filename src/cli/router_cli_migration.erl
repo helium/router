@@ -272,7 +272,7 @@ create_migration_oui_map(Options) ->
 
 -spec euis() -> list(map()).
 euis() ->
-    {ok, Devices} = get_devices(),
+    {ok, Devices} = router_console_api:get_json_devices(),
     lists:usort([
         #{
             app_eui => kvc:path([<<"app_eui">>], JSONDevice),

@@ -155,7 +155,7 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
 
     RouteEuisReq = #{
         id => maps:get(route_id, Options, ""),
-        action => add,
+        action => add_euis,
         euis => euis(),
         timestamp => erlang:system_time(millisecond),
         signer => PubKeyBin,

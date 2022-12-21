@@ -156,22 +156,23 @@ handle_info(
     {ws_message, <<"device:all">>, <<"device:all:add:devices">>, #{<<"devices">> := DeviceIDs}},
     State
 ) ->
-    ok = router_ics_worker:add(DeviceIDs),
+    catch router_ics_worker:add(DeviceIDs),
     {noreply, State};
 %% Device Update
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    ok = router_ics_worker:update(DeviceIDs),
+    catch router_ics_worker:update(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device remove
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:remove:devices">>, #{<<"devices">> := DeviceIDs}},
-    State
+    #state{db = DB, cf = CF} = State
 ) ->
-    ok = router_ics_worker:remove(DeviceIDs),
+    catch router_ics_worker:remove(DeviceIDs),
+    update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refetch:router_address">>, _},
@@ -354,6 +355,10 @@ update_devices(DB, CF, DeviceIDs) ->
 ) -> ok.
 update_device_record(DB, CF, DeviceID) ->
     case router_console_api:get_device(DeviceID) of
+        {error, not_found} ->
+            ok = router_device:delete(DB, CF, DeviceID),
+            ok = router_device_cache:delete(DeviceID),
+            lager:info("device was removed, removing from DB and shutting down");
         {error, _Reason} ->
             lager:warning("failed to get device ~p ~p", [DeviceID, _Reason]);
         {ok, APIDevice} ->

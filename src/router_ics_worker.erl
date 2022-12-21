@@ -61,15 +61,15 @@ start_link(_Args) ->
 
 -spec add(list(binary())) -> ok.
 add(DeviceIDs) ->
-    gen_server:cast(?SERVER, {add, DeviceIDs}).
+    gen_server:call(?SERVER, {add, DeviceIDs}).
 
 -spec update(list(binary())) -> ok.
 update(DeviceIDs) ->
-    gen_server:cast(?SERVER, {update, DeviceIDs}).
+    gen_server:call(?SERVER, {update, DeviceIDs}).
 
 -spec remove(list(binary())) -> ok.
 remove(DeviceIDs) ->
-    gen_server:cast(?SERVER, {remove, DeviceIDs}).
+    gen_server:call(?SERVER, {remove, DeviceIDs}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -87,18 +87,15 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
         conn_backoff = Backoff
     }}.
 
-handle_call(_Msg, _From, State) ->
-    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
-    {reply, ok, State}.
-
-handle_cast(_Msg, #state{conn = undefined} = State) ->
-    lager:warning("can't handle cast msg: ~p", [_Msg]),
-    {noreply, State};
-handle_cast(_Msg, #state{route_id = undefined} = State) ->
-    lager:warning("can't handle cast msg: ~p", [_Msg]),
-    {noreply, State};
-handle_cast(
+handle_call(_Msg, _From, #state{conn = undefined} = State) ->
+    lager:warning("can't handle call msg: ~p", [_Msg]),
+    {reply, ok, State};
+handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
+    lager:warning("can't handle call msg: ~p", [_Msg]),
+    {reply, ok, State};
+handle_call(
     {add, DeviceIDs},
+    _From,
     #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
 ) ->
     Euis = fetch_device_euis(apis, DeviceIDs),
@@ -106,9 +103,10 @@ handle_cast(
         true -> lager:info("added ~p", [Euis]);
         false -> lager:warning("failed to add ~p", [Euis])
     end,
-    {noreply, State};
-handle_cast(
+    {reply, ok, State};
+handle_call(
     {update, DeviceIDs},
+    _From,
     #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
 ) ->
     CachedEuis = fetch_device_euis(cache, DeviceIDs),
@@ -123,9 +121,10 @@ handle_cast(
         true -> lager:info("added ~p", [ToAdd]);
         false -> lager:warning("failed to add ~p", [ToAdd])
     end,
-    {noreply, State};
-handle_cast(
+    {reply, ok, State};
+handle_call(
     {remove, DeviceIDs},
+    _From,
     #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
 ) ->
     Euis = fetch_device_euis(cache, DeviceIDs),
@@ -133,7 +132,11 @@ handle_cast(
         true -> lager:info("removed ~p", [Euis]);
         false -> lager:warning("failed to remove ~p", [Euis])
     end,
-    {noreply, State};
+    {reply, ok, State};
+handle_call(_Msg, _From, State) ->
+    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
+    {reply, ok, State}.
+
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.

@@ -253,7 +253,9 @@ create_migration_oui_map(Options) ->
                             #{
                                 devaddr_ranges => DevAddrRanges,
                                 euis => EUIs,
-                                net_id => erlang:list_to_binary(io_lib:format("~6.16.0B", [IntNetID])),
+                                net_id => erlang:list_to_binary(
+                                    io_lib:format("~6.16.0B", [IntNetID])
+                                ),
                                 oui => OUI,
                                 server => #{
                                     host => Host,
@@ -326,49 +328,6 @@ get_grpc_address(Options) ->
                 erlang:integer_to_list(Port)
             ]),
             {ok, RPCAddr}
-    end.
-
--spec get_devices() -> {ok, [map()]} | {error, any()}.
-get_devices() ->
-    {Endpoint, Token} = token_lookup(),
-    api_get_devices(Endpoint, Token, [], undefined).
-
--spec api_get_devices(
-    Endpoint :: binary(),
-    Token :: binary(),
-    AccDevices :: list(),
-    ResourceID :: binary() | undefined
-) -> {ok, [map()]} | {error, any()}.
-api_get_devices(Endpoint, Token, AccDevices, ResourceID) ->
-    Url =
-        case ResourceID of
-            undefined ->
-                <<Endpoint/binary, "/api/router/devices">>;
-            ResourceID when is_binary(ResourceID) ->
-                <<Endpoint/binary, "/api/router/devices?after=", ResourceID/binary>>
-        end,
-    Opts = [
-        with_body,
-        {connect_timeout, timer:seconds(10)},
-        {recv_timeout, timer:seconds(10)}
-    ],
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            case jsx:decode(Body, [return_maps]) of
-                #{<<"data">> := Devices, <<"after">> := NewResourceID} ->
-                    api_get_devices(Endpoint, Token, AccDevices ++ Devices, NewResourceID);
-                #{<<"data">> := Devices} ->
-                    {ok, AccDevices ++ Devices}
-            end;
-        Other ->
-            {error, Other}
-    end.
-
--spec token_lookup() -> {Endpoint :: binary(), Token :: binary()}.
-token_lookup() ->
-    case ets:lookup(router_console_api_ets, token) of
-        [] -> {<<>>, <<>>};
-        [{token, {Endpoint, _Downlink, Token}}] -> {Endpoint, Token}
     end.
 
 -spec c_text(string()) -> clique_status:status().

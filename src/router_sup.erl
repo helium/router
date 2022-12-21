@@ -129,7 +129,7 @@ init([]) ->
 
     {PubKey0, SigFun, _} = Key,
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey0),
-    ICSOptsDefault = application:get_env(router, ics, #{host => "localhost", port => 8080}),
+    ICSOptsDefault = application:get_env(router, ics, #{}),
     ICSOpts = ICSOptsDefault#{pubkey_bin => PubKeyBin, sig_fun => SigFun},
     {ok,
         {?FLAGS, [

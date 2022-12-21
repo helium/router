@@ -45,7 +45,7 @@
     route_id :: undefined | string()
 }).
 
--type state() :: state().
+-type state() :: #state{}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions

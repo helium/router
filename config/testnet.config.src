@@ -47,6 +47,10 @@
             {secret, <<"${ROUTER_CONSOLE_SECRET}">>}
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
+        {ics, #{
+            host => "${ROUTER_ICS_HOST}",
+            port => "${ROUTER_ICS_PORT}"
+        }},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},

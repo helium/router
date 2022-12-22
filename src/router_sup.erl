@@ -126,6 +126,11 @@ init([]) ->
                     denylist_check_timer => {immediate, timer:hours(12)}
                 }
         end,
+
+    {PubKey0, SigFun, _} = Key,
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey0),
+    ICSOptsDefault = application:get_env(router, ics, #{}),
+    ICSOpts = ICSOptsDefault#{pubkey_bin => PubKeyBin, sig_fun => SigFun},
     {ok,
         {?FLAGS, [
             ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
@@ -137,7 +142,8 @@ init([]) ->
             ?SUP(router_console_sup, []),
             ?SUP(router_decoder_sup, []),
             ?WORKER(router_device_devaddr, [#{}]),
-            ?WORKER(router_xor_filter_worker, [#{}])
+            ?WORKER(router_xor_filter_worker, [#{}]),
+            ?WORKER(router_ics_worker, [ICSOpts])
         ]}}.
 
 %%====================================================================

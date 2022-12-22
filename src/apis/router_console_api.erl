@@ -16,6 +16,7 @@
     get_device/1,
     get_devices_by_deveui_appeui/2,
     get_devices/0,
+    get_json_devices/0,
     get_channels/2,
     event/2,
     get_downlink_url/2,
@@ -122,6 +123,14 @@ get_devices() ->
                 )};
         Other ->
             {error, Other}
+    end.
+
+-spec get_json_devices() -> {ok, list()} | {error, any()}.
+get_json_devices() ->
+    {Endpoint, Token} = token_lookup(),
+    case get_devices(Endpoint, Token, [], undefined) of
+        {ok, _JSONDevices} = OK -> OK;
+        Other -> {error, Other}
     end.
 
 -spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->

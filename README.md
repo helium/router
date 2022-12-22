@@ -281,14 +281,6 @@ Here are some of the most commun queries that can be added into grafana.
 - 923.3 MHz increment by 600 kHz (RX1)
 - 923.3 MHz (RX2)
 
-### CN470
-**Uplink**
-- 470.3 MHz increment by 200 kHz
-
-**Downlink**
-- 500.3 MHz increment by 600 kHz (RX1)
-- 505.3 MHz (RX2)
-
 ### AU915
 **Uplink**
 - 915.2 MHz increment by 200 kHz
@@ -305,26 +297,35 @@ Here are some of the most commun queries that can be added into grafana.
 - 867.5 MHz
 - 867.7 MHz
 - 867.9 MHz
+- 868.1 MHz (Join)
+- 868.3 MHz (Join)
+- 868.5 MHz (Join)
 
 **Downlink**
 - Same as uplink (RX1)
 - 869.525 MHz (RX2)
 
-### AS923
-
-**Default Frequencies**
-- 923.2 MHz (uplink/downlink)
-- 923.4 MHz (uplink/downlink)
-- 923.2 MHz (RX2 downlink)
-
 ##### AS923_1
+- 923.2 MHz (Join)
+- 923.4 MHz (Join)
 - 923.6 MHz
 - 923.8 MHz
 - 924.0 MHz
 - 924.2 MHz
 - 924.4 MHz
 
+##### AS923_1B (Malaysia)
+- 922.0 MHz
+- 922.2 MHz
+- 922.4 MHz
+- 922.6 MHz
+- 922.8 MHz
+- 923.2 MHz (Join)
+- 923.4 MHz (Join)
+
 ##### AS923_2
+- 921.4 MHz (Join)
+- 921.6 MHz (Join)
 - 921.8 MHz
 - 922.0 MHz
 - 922.2 MHz
@@ -332,6 +333,8 @@ Here are some of the most commun queries that can be added into grafana.
 - 922.6 MHz
 
 ##### AS923_3
+- 916.6 MHz (Join)
+- 916.8 Mhz (Join)
 - 917.0 MHz
 - 917.2 MHz
 - 917.4 MHz
@@ -339,9 +342,30 @@ Here are some of the most commun queries that can be added into grafana.
 - 917.8 MHz
 
 ##### AS923_4
+- 917.3 MHz (Join)
+- 917.5 Mhz (Join)
 - 917.7 MHz
 - 917.9 MHz
 - 918.1 MHz
 - 918.3 MHz
 - 918.5 MHz
+
+### CN470
+**Uplink**
+- 486.3 MHz (Join)
+- 486.5 MHz (Join)
+- 486.7 MHz (Join)
+- 486.9 MHz
+- 487.1 MHz
+- 487.3 MHz
+- 487.5 MHz
+- 487.7 MHz
+
+**Downlink**
+- 506.7 MHz increment by 200 kHz (RX1)
+- 505.3 MHz (RX2)
  
+##### IN865
+- See code
+##### KR920
+- See code

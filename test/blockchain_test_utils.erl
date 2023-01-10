@@ -9,7 +9,7 @@
     init_chain/2, init_chain/3, init_chain/4,
     generate_keys/1, generate_keys/2,
     create_block/2, create_block/3,
-    add_block/4
+    add_block/3, add_block/4
 ]).
 
 -define(BASE_TMP_DIR, "./_build/test/tmp").
@@ -150,6 +150,9 @@ create_block(ConsensusMembers, Txs, Override) ->
         {_, Invalid} ->
             {error, {invalid_txns, Invalid}}
     end.
+
+add_block(Block, Sender, SwarmTID) ->
+    add_block(Block, blockchain_worker:blockchain(), Sender, SwarmTID).
 
 add_block(Block, Chain, Sender, SwarmTID) ->
     lager:debug("Sender: ~p, MyAddress: ~p", [Sender, blockchain_swarm:pubkey_bin()]),

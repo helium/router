@@ -13,8 +13,8 @@
     start_link/1,
     init_ets/0,
     refill/3,
-    has_enough_dc/3,
-    charge/3,
+    has_enough_dc/2,
+    charge/2,
     current_balance/1
 ]).
 
@@ -53,8 +53,7 @@
 -define(ETS, router_console_dc_tracker_ets).
 
 -record(state, {
-    pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    chain = undefined :: undefined | blockchain:blockchain()
+    pubkey_bin :: libp2p_crypto:pubkey_bin()
 }).
 
 %% ------------------------------------------------------------------
@@ -88,12 +87,10 @@ refill(OrgID, Nonce, Balance) ->
 
 -spec has_enough_dc(
     binary() | router_device:device(),
-    non_neg_integer(),
-    blockchain:blockchain()
+    non_neg_integer()
 ) -> {ok, binary(), non_neg_integer() | undefined, non_neg_integer()} | {error, any()}.
-has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_utils:calculate_dc_amount(Ledger, PayloadSize) of
+has_enough_dc(OrgID, PayloadSize) when is_binary(OrgID) ->
+    case router_blockchain:calculate_dc_amount(PayloadSize) of
         {error, _Reason} ->
             lager:warning("failed to calculate dc amount ~p", [_Reason]),
             {error, failed_calculate_dc};
@@ -117,20 +114,20 @@ has_enough_dc(OrgID, PayloadSize, Chain) when is_binary(OrgID) ->
                     {ok, OrgID, Balance1, Nonce}
             end
     end;
-has_enough_dc(Device, PayloadSize, Chain) ->
+has_enough_dc(Device, PayloadSize) ->
     Metadata0 = router_device:metadata(Device),
     case maps:get(organization_id, Metadata0, undefined) of
         undefined ->
             ok = router_device_worker:device_update(self()),
             {ok, undefined, 0, 0};
         OrgID ->
-            has_enough_dc(OrgID, PayloadSize, Chain)
+            has_enough_dc(OrgID, PayloadSize)
     end.
 
--spec charge(binary() | router_device:device(), non_neg_integer(), blockchain:blockchain()) ->
+-spec charge(binary() | router_device:device(), non_neg_integer()) ->
     {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
-charge(Device, PayloadSize, Chain) ->
-    case ?MODULE:has_enough_dc(Device, PayloadSize, Chain) of
+charge(Device, PayloadSize) ->
+    case ?MODULE:has_enough_dc(Device, PayloadSize) of
         {error, _Reason} = Error ->
             Error;
         {ok, _OrgID, _Balance, 0} ->
@@ -168,26 +165,11 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain = undefined} = State) ->
-    case router_utils:get_blockchain() of
-        undefined ->
-            erlang:send_after(500, self(), post_init),
-            {noreply, State};
-        Chain ->
-            {noreply, State#state{chain = Chain}}
-    end;
-handle_info(
-    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-    #state{chain = undefined} = State
-) ->
-    lager:info("got block ~p with not chain", [_BlockHash]),
-    erlang:send_after(500, self(), post_init),
-    {noreply, State};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, Ledger}},
-    #state{pubkey_bin = PubkeyBin, chain = Chain} = State
+    #state{pubkey_bin = PubkeyBin} = State
 ) ->
-    case blockchain:get_block(BlockHash, Chain) of
+    case router_blockchain:get_blockhash(BlockHash) of
         {error, Reason} ->
             lager:error("couldn't get block with hash: ~p, reason: ~p", [BlockHash, Reason]);
         {ok, Block} ->
@@ -326,10 +308,10 @@ has_enough_dc_test_() ->
         Balance = 2,
         PayloadSize = 48,
         ?assertEqual(
-            {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize, chain)
+            {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize)
         ),
         ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
-        ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize, chain)),
+        ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize)),
 
         ets:delete(?ETS),
         ?assert(meck:validate(router_console_api)),
@@ -355,11 +337,11 @@ charge_test_() ->
         Balance = 2,
         PayloadSize = 48,
         ?assertEqual(
-            {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize, chain)
+            {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize)
         ),
         ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
-        ?assertEqual({ok, 0, 1}, charge(OrgID, PayloadSize, chain)),
-        ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize, chain)),
+        ?assertEqual({ok, 0, 1}, charge(OrgID, PayloadSize)),
+        ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize)),
 
         ets:delete(?ETS),
         ?assert(meck:validate(router_console_api)),

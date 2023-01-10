@@ -61,7 +61,6 @@
 -define(RX_MAX_WINDOW, 2000).
 
 -record(state, {
-    chain :: blockchain:blockchain() | undefined,
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
     frame_timeout :: non_neg_integer(),
@@ -198,32 +197,17 @@ handle_continue({?INIT_ASYNC, ID}, #state{db = DB, cf = CF} = State) ->
     IsActive = router_device:is_active(Device),
     ok = router_utils:lager_md(Device),
     ok = ?MODULE:device_update(self()),
-    {noreply,
-        State#state{
-            db = DB,
-            cf = CF,
-            device = Device,
-            fcnt = router_device:fcnt(Device),
-            is_active = IsActive
-        },
-        {continue, ?INIT_BLOKCHAIN}};
-handle_continue(?INIT_BLOKCHAIN, #state{device = Device} = State) ->
-    case router_utils:get_blockchain() of
-        undefined ->
-            ok = timer:sleep(500),
-            {noreply, State, {continue, ?INIT_BLOKCHAIN}};
-        Blockchain ->
-            {ok, Pid} =
-                router_device_channels_worker:start_link(#{
-                    blockchain => Blockchain,
-                    device_worker => self(),
-                    device => Device
-                }),
-            {noreply, State#state{
-                chain = Blockchain,
-                channels_worker = Pid
-            }}
-    end;
+    {ok, Pid} = router_device_channels_worker:start_link(#{
+        device_worker => self(), device => Device
+    }),
+    {noreply, State#state{
+        db = DB,
+        cf = CF,
+        device = Device,
+        fcnt = router_device:fcnt(Device),
+        is_active = IsActive,
+        channels_worker = Pid
+    }};
 handle_continue(_Msg, State) ->
     lager:warning("rcvd unknown continue msg: ~p", [_Msg]),
     {noreply, State}.
@@ -517,7 +501,6 @@ handle_cast(
 handle_cast(
     {join, Packet0, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
     #state{
-        chain = Chain,
         db = DB,
         cf = CF,
         device = Device0,
@@ -541,7 +524,6 @@ handle_cast(
             APIDevice,
             AppKey,
             Device0,
-            Chain,
             OfferCache
         )
     of
@@ -580,7 +562,6 @@ handle_cast(
                         JoinCache#join_cache.uuid,
                         PacketTime,
                         Device1,
-                        Chain,
                         PubKeyBin,
                         Packet0,
                         Region,
@@ -604,7 +585,6 @@ handle_cast(
                         UUID,
                         PacketTime,
                         Device1,
-                        Chain,
                         PubKeyBin,
                         Packet0,
                         Region,
@@ -687,7 +667,6 @@ handle_cast(
 handle_cast(
     {frame, UsedNwkSKey, PacketFCnt, Packet0, PacketTime, HoldTime, PubKeyBin, Region, Pid},
     #state{
-        chain = Blockchain,
         frame_timeout = DefaultFrameTimeout,
         device = Device0,
         frame_cache = Cache0,
@@ -781,7 +760,6 @@ handle_cast(
             PubKeyBin,
             Region,
             Device1,
-            Blockchain,
             {LastSeenFCnt, DownlinkHandledAt},
             Cache0,
             OfferCache
@@ -821,7 +799,6 @@ handle_cast(
                         PacketTime,
                         PacketFCnt,
                         Device1,
-                        Blockchain,
                         PubKeyBin,
                         Packet0,
                         Region
@@ -858,7 +835,6 @@ handle_cast(
                             HoldTime,
                             Frame,
                             Device2,
-                            Blockchain,
                             PubKeyBin,
                             Packet0,
                             Region,
@@ -913,7 +889,6 @@ handle_cast(
                                     HoldTime,
                                     Frame,
                                     Device2,
-                                    Blockchain,
                                     PubKeyBin,
                                     Packet0,
                                     Region,
@@ -991,7 +966,6 @@ handle_info(stop_queue_updates, State) ->
 handle_info(
     {join_timeout, DevNonce},
     #state{
-        chain = Blockchain,
         channels_worker = ChannelsWorker,
         device = Device,
         join_cache = JoinCache
@@ -1052,7 +1026,7 @@ handle_info(
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker, Join),
     _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
-    ok = router_utils:event_join_accept(Device0, Blockchain, PubKeyBin, DownlinkPacket, Region),
+    ok = router_utils:event_join_accept(Device0, PubKeyBin, DownlinkPacket, Region),
     {noreply, State#state{
         last_dev_nonce = DevNonce,
         join_cache = maps:remove(DevNonce, JoinCache)
@@ -1060,7 +1034,6 @@ handle_info(
 handle_info(
     {frame_timeout, FCnt, PacketTime, BalanceNonce},
     #state{
-        chain = Blockchain,
         db = DB,
         cf = CF,
         frame_timeout = DefaultFrameTimeout,
@@ -1146,7 +1119,6 @@ handle_info(
                 Port,
                 Device0,
                 ChannelMap,
-                Blockchain,
                 PubKeyBin,
                 DownlinkPacket,
                 Region,
@@ -1244,7 +1216,6 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
     APIDevice :: router_device:device(),
     AppKey :: binary(),
     Device :: router_device:device(),
-    Blockchain :: blockchain:blockchain(),
     OfferCache :: map()
 ) ->
     {ok, router_device:device(), binary(), #join_accept_args{}, {
@@ -1262,7 +1233,6 @@ validate_join(
     APIDevice,
     AppKey,
     Device,
-    Blockchain,
     OfferCache
 ) when MType == ?JOIN_REQ ->
     case lists:member(DevNonce, router_device:dev_nonces(Device)) of
@@ -1271,7 +1241,7 @@ validate_join(
         false ->
             PayloadSize = erlang:byte_size(Payload),
             PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-            case maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
+            case maybe_charge(Device, PayloadSize, PubKeyBin, PHash, OfferCache) of
                 {error, _} = Error ->
                     Error;
                 {ok, Balance, Nonce} ->
@@ -1293,7 +1263,6 @@ validate_join(
     _APIDevice,
     _AppKey,
     _Device,
-    _Blockchain,
     _OfferCache
 ) ->
     {error, not_join_req}.
@@ -1471,7 +1440,6 @@ craft_join_reply(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
     Device :: router_device:device(),
-    Blockchain :: blockchain:blockchain(),
     {LastSeenFCnt :: undefined | non_neg_integer(), DownlinkHanldedAt :: {integer(), integer()}},
     FrameCache :: #{integer() => #frame_cache{}},
     OfferCache :: map()
@@ -1486,7 +1454,6 @@ validate_frame(
     PubKeyBin,
     Region,
     Device0,
-    Blockchain,
     {LastSeenFCnt, {DownlinkHandledAtFCnt, DownlinkHandledAtTime}},
     FrameCache,
     OfferCache
@@ -1507,7 +1474,6 @@ validate_frame(
                         Region,
                         Device0,
                         OfferCache,
-                        Blockchain,
                         false
                     );
                 undefined when FrameAck == 0 andalso LastSeenFCnt == undefined ->
@@ -1519,7 +1485,6 @@ validate_frame(
                         Region,
                         Device0,
                         OfferCache,
-                        Blockchain,
                         false
                     );
                 undefined when FrameAck == 0 andalso PacketFCnt =< LastSeenFCnt ->
@@ -1546,7 +1511,13 @@ validate_frame(
                         [PacketFCnt, DownlinkHandledAtFCnt, Window]
                     ),
                     validate_frame_(
-                        PacketFCnt, Packet, PubKeyBin, Region, Device0, OfferCache, Blockchain, true
+                        PacketFCnt,
+                        Packet,
+                        PubKeyBin,
+                        Region,
+                        Device0,
+                        OfferCache,
+                        true
                     );
                 undefined ->
                     lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
@@ -1557,7 +1528,6 @@ validate_frame(
                         Region,
                         Device0,
                         OfferCache,
-                        Blockchain,
                         false
                     )
             end;
@@ -1573,15 +1543,12 @@ validate_frame(
     HotspotRegion :: atom(),
     Device :: router_device:device(),
     OfferCache :: map(),
-    Blockchain :: blockchain:blockchain(),
     Replay :: boolean()
 ) ->
     {ok, #frame{}, router_device:device(), SendToChannel :: boolean(),
         {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}, Replay :: boolean()}
     | {error, any()}.
-validate_frame_(
-    PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Blockchain, Replay
-) ->
+validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCache, Replay) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, ADRACKReq:1, ACK:1, RFU:1, FOptsLen:4,
         _FCnt:16, FOpts:FOptsLen/binary,
         PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
@@ -1595,7 +1562,7 @@ validate_frame_(
     ]),
     PayloadSize = erlang:byte_size(FRMPayload),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    case maybe_charge(Device0, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) of
+    case maybe_charge(Device0, PayloadSize, PubKeyBin, PHash, OfferCache) of
         {error, Reason} ->
             %% REVIEW: Do we want to update region and datarate for an uncharged packet?
             DeviceUpdates = [{fcnt, PacketFCnt}, {location, PubKeyBin}],
@@ -1733,12 +1700,11 @@ validate_frame_(
 -spec maybe_charge(
     Device :: router_device:device(),
     PayloadSize :: non_neg_integer(),
-    Blockchain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     PHash :: binary(),
     OfferCache :: map()
 ) -> {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
-maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) ->
+maybe_charge(Device, PayloadSize, PubKeyBin, PHash, OfferCache) ->
     case maps:get({PubKeyBin, PHash}, OfferCache, undefined) of
         undefined ->
             case charge_when_no_offer() of
@@ -1753,10 +1719,10 @@ maybe_charge(Device, PayloadSize, Blockchain, PubKeyBin, PHash, OfferCache) ->
                         end,
                     {ok, Balance, Nonce};
                 true ->
-                    router_console_dc_tracker:charge(Device, PayloadSize, Blockchain)
+                    router_console_dc_tracker:charge(Device, PayloadSize)
             end;
         _ ->
-            router_console_dc_tracker:charge(Device, PayloadSize, Blockchain)
+            router_console_dc_tracker:charge(Device, PayloadSize)
     end.
 
 -spec charge_when_no_offer() -> boolean().

@@ -65,7 +65,6 @@
 -type balance_nonce() :: {Balance :: integer(), Nonce :: integer}.
 
 -record(state, {
-    chain = blockchain:blockchain(),
     event_mgr :: pid(),
     device_worker :: pid(),
     device :: router_device:device(),
@@ -186,7 +185,6 @@ refresh_channels(Pid) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
-    Blockchain = maps:get(blockchain, Args),
     DeviceWorkerPid = maps:get(device_worker, Args),
     Device = maps:get(device, Args),
     {ok, EventMgrRef} = router_channel:start_link(),
@@ -196,7 +194,6 @@ init(Args) ->
     ok = router_utils:lager_md(Device),
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, #state{
-        chain = Blockchain,
         event_mgr = EventMgrRef,
         device_worker = DeviceWorkerPid,
         device = Device
@@ -209,12 +206,11 @@ handle_call(_Msg, _From, State) ->
 handle_cast(
     {handle_join, JoinData = #join_cache{}},
     #state{
-        chain = Blockchain,
         event_mgr = EventMgrPid,
         device = Device
     } = State
 ) ->
-    {ok, Map} = send_join_to_channel(JoinData, Device, EventMgrPid, Blockchain),
+    {ok, Map} = send_join_to_channel(JoinData, Device, EventMgrPid),
     lager:debug("join_timeout for data: ~p", [Map]),
     {noreply, State};
 handle_cast({handle_device_update, Device}, State) ->
@@ -246,7 +242,6 @@ handle_cast(
     {frame_timeout, UUID, BalanceNonce},
     #state{
         data_cache = DataCache0,
-        chain = Blockchain,
         event_mgr = EventMgrPid,
         device = Device
     } = State
@@ -257,7 +252,6 @@ handle_cast(
                 CachedData,
                 Device,
                 EventMgrPid,
-                Blockchain,
                 BalanceNonce
             ),
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
@@ -610,8 +604,7 @@ format_metadata(Device) ->
 -spec send_join_to_channel(
     JoinCache :: #join_cache{},
     Device :: router_device:device(),
-    EventMgrRef :: pid(),
-    Blockchain :: blockchain:blockchain()
+    EventMgrRef :: pid()
 ) -> {ok, map()}.
 send_join_to_channel(
     #join_cache{
@@ -620,11 +613,10 @@ send_join_to_channel(
         packets = CollectedPackets
     },
     Device,
-    EventMgrRef,
-    Blockchain
+    EventMgrRef
 ) ->
     FormatHotspot = fun({Packet, PubKeyBin, Region, Time, HoldTime0}) ->
-        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime0, Blockchain)
+        format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime0)
     end,
 
     Metadata = format_metadata(Device),
@@ -653,13 +645,10 @@ send_join_to_channel(
     CachedData0 :: #{libp2p_crypto:pubkey_bin() => #data_cache{}},
     Device :: router_device:device(),
     EventMgrRef :: pid(),
-    Blockchain :: blockchain:blockchain(),
     BalanceNonce :: balance_nonce()
 ) -> {ok, map()}.
-send_data_to_channel(CachedData0, Device, EventMgrRef, Blockchain, BalanceNonce) ->
-    FormatHotspot = fun(DataCache) ->
-        format_hotspot(DataCache, Blockchain)
-    end,
+send_data_to_channel(CachedData0, Device, EventMgrRef, BalanceNonce) ->
+    FormatHotspot = fun(DataCache) -> format_hotspot(DataCache) end,
     CachedData1 = lists:sort(
         fun(A, B) -> A#data_cache.time < B#data_cache.time end,
         maps:values(CachedData0)
@@ -848,10 +837,7 @@ default_backoff() ->
 
     {backoff:type(Backoff, ?BACKOFF_TYPE), erlang:make_ref()}.
 
--spec format_hotspot(
-    DataCache :: #data_cache{},
-    Chain :: blockchain:blockchain()
-) -> map().
+-spec format_hotspot(DataCache :: #data_cache{}) -> map().
 format_hotspot(
     #data_cache{
         pubkey_bin = PubKeyBin,
@@ -859,24 +845,22 @@ format_hotspot(
         region = Region,
         time = Time,
         hold_time = HoldTime
-    },
-    Chain
+    }
 ) ->
-    format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain).
+    format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime).
 
 -spec format_hotspot(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: #packet_pb{},
     Region :: atom(),
     Time :: non_neg_integer(),
-    HoldTime :: non_neg_integer(),
-    Chain :: blockchain:blockchain()
+    HoldTime :: non_neg_integer()
 ) -> map().
-format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime, Chain) ->
+format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    {Lat, Long} = router_blockchain:get_hotspot_location(PubKeyBin),
     #{
         id => erlang:list_to_binary(B58),
         name => erlang:list_to_binary(HotspotName),

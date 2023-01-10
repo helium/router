@@ -1469,7 +1469,7 @@ handle_join_offer_test() ->
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
-    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
+    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),

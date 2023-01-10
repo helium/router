@@ -1208,18 +1208,41 @@ should_update_filters_test_() ->
     {timeout, 30, fun() ->
         OUI = 1,
 
-        meck:new(blockchain, [passthrough]),
         meck:new(router_console_api, [passthrough]),
-        meck:new(blockchain_ledger_v1, [passthrough]),
+        meck:new(router_blockchain),
+
+        SetMaxXorFilterNum = fun(Max) ->
+            ?assert(erlang:is_integer(Max)),
+            meck:expect(
+                router_blockchain,
+                max_xor_filter_num,
+                fun() -> {ok, Max} end
+            )
+        end,
+        SetRoutingForOui = fun(Routing) ->
+            ?assert(blockchain_ledger_routing_v1:is_routing(Routing)),
+            meck:expect(
+                router_blockchain,
+                routing_for_oui,
+                fun(_OUI) -> {ok, Routing} end
+            )
+        end,
+        SetConsoleDevices = fun(Devices) ->
+            ?assert(erlang:is_list(Devices)),
+            meck:expect(
+                router_console_api,
+                get_devices,
+                fun() -> {ok, Devices} end
+            )
+        end,
 
         %% ------------------------
         %% We start by testing if we got 0 device from API
-        meck:expect(blockchain, ledger, fun(_) -> ledger end),
         %% This set the max xor filter chain var
-        meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
         meck:expect(router_console_api, get_devices, fun() ->
             {error, no_devices_on_purpose}
         end),
+        ok = SetMaxXorFilterNum(2),
 
         ?assertEqual(noop, should_update_filters(OUI, #{})),
 
@@ -1230,15 +1253,11 @@ should_update_filters_test_() ->
             {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
         ],
         Device0 = router_device:update(Device0Updates, router_device:new(<<"ID0">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device0]}
-        end),
+        ok = SetConsoleDevices([Device0]),
 
         {ok, BinFilter} = new_xor_filter_bin([device_deveui_appeui(Device0)]),
         Routing0 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter, [], 1),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, Routing0}
-        end),
+        ok = SetRoutingForOui(Routing0),
 
         ?assertMatch({update_cache, _}, should_update_filters(OUI, #{})),
 
@@ -1248,9 +1267,7 @@ should_update_filters_test_() ->
         EmptyRouting = blockchain_ledger_routing_v1:new(
             OUI, <<"owner">>, [], BinEmptyFilter, [], 1
         ),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, EmptyRouting}
-        end),
+        ok = SetRoutingForOui(EmptyRouting),
 
         ExpectedNewFilter0 = [{new, get_devices_deveui_app_eui([Device0])}],
         ?assertMatch(
@@ -1260,18 +1277,15 @@ should_update_filters_test_() ->
 
         %% ------------------------
         %% Testing if a device was added but we have at our max filter (set to 1)
-        meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, Routing0}
-        end),
+        ok = SetMaxXorFilterNum(1),
+        ok = SetRoutingForOui(Routing0),
+
         DeviceUpdates1 = [
             {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 2>>},
             {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
         ],
         Device1 = router_device:update(DeviceUpdates1, router_device:new(<<"ID1">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device0, Device1]}
-        end),
+        ok = SetConsoleDevices([Device0, Device1]),
 
         ExpectedUpdateFilter0 = [
             {update, 0, [
@@ -1287,10 +1301,8 @@ should_update_filters_test_() ->
 
         %% ------------------------
         % Testing that we removed Device0
-        meck:expect(blockchain, config, fun(_, _) -> {ok, 2} end),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device1]}
-        end),
+        ok = SetMaxXorFilterNum(2),
+        ok = SetConsoleDevices([Device1]),
 
         %% We're not removing device0 from filter0. Need to add device1, that goes
         %% into a new filter because we have room.
@@ -1308,9 +1320,7 @@ should_update_filters_test_() ->
             {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
         ],
         Device2 = router_device:update(DeviceUpdates2, router_device:new(<<"ID2">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device1, Device2]}
-        end),
+        ok = SetConsoleDevices([Device1, Device2]),
 
         %% We're not removing device0 from filter0. Need ot add device1 and device2,
         %% that goes into a new filter because we have room.
@@ -1332,13 +1342,8 @@ should_update_filters_test_() ->
             {new_xor, BinFilter1},
             1
         ),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, RoutingRemoved1}
-        end),
-
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, []}
-        end),
+        ok = SetRoutingForOui(RoutingRemoved1),
+        ok = SetConsoleDevices([]),
 
         % Make are the devices are in the filters
         ?assert(xor16:contain({BinFilter0, ?HASH_FUN}, deveui_appeui(Device0))),
@@ -1355,7 +1360,8 @@ should_update_filters_test_() ->
 
         %% Adding a device to a filter should cause the remove to go through.
         %% Only the filter that is chosen for adds removes it device.
-        meck:expect(router_console_api, get_devices, fun() -> {ok, [Device2]} end),
+        ok = SetConsoleDevices([Device2]),
+
         ExpectedUpdateRemoveFitler = [{update, 1, get_devices_deveui_app_eui([Device2])}],
         ?assertMatch(
             {RoutingRemoved1, ExpectedUpdateRemoveFitler, _CurrentMapping},
@@ -1372,9 +1378,7 @@ should_update_filters_test_() ->
             {app_eui, <<0, 0, 0, 2, 1>>}
         ],
         Device3 = router_device:update(DeviceUpdates3, router_device:new(<<"ID3">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device3]}
-        end),
+        ok = SetConsoleDevices([Device3]),
 
         ?assertMatch(
             {update_cache, _},
@@ -1391,17 +1395,14 @@ should_update_filters_test_() ->
             {new_xor, BinFilter1},
             1
         ),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, RoutingEmptyMap1}
-        end),
+        ok = SetRoutingForOui(RoutingEmptyMap1),
+
         DeviceUpdates4 = [
             {dev_eui, <<0, 0, 0, 0, 0, 0, 0, 4>>},
             {app_eui, <<0, 0, 0, 2, 0, 0, 0, 1>>}
         ],
         Device4 = router_device:update(DeviceUpdates4, router_device:new(<<"ID2">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device4]}
-        end),
+        ok = SetConsoleDevices([Device4]),
 
         ExpectedUpdateFilter3 = [{update, 1, get_devices_deveui_app_eui([Device4])}],
         ?assertMatch(
@@ -1417,17 +1418,13 @@ should_update_filters_test_() ->
         ],
         Device5 = router_device:update(DeviceUpdates5, router_device:new(<<"ID0">>)),
         Device5Copy = router_device:update(DeviceUpdates5, router_device:new(<<"ID0Copy">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device5, Device5Copy]}
-        end),
+        ok = SetConsoleDevices([Device5, Device5Copy]),
 
         {ok, BinEmptyFilter2} = new_xor_filter_bin([]),
         EmptyRouting2 = blockchain_ledger_routing_v1:new(
             OUI, <<"owner">>, [], BinEmptyFilter2, [], 1
         ),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, EmptyRouting}
-        end),
+        ok = SetRoutingForOui(EmptyRouting),
 
         %% Devices with matching app/dev eui should be deduplicated
         ExpectedNewFilter3 = [{new, get_devices_deveui_app_eui([Device5, Device5Copy])}],
@@ -1442,13 +1439,9 @@ should_update_filters_test_() ->
         % Devices already in Filter should not cause updates
         {ok, BinFilterLast} = new_xor_filter_bin([device_deveui_appeui(Device5)]),
         RoutingLast = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilterLast, [], 1),
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) ->
-            {ok, RoutingLast}
-        end),
 
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device5Copy]}
-        end),
+        ok = SetRoutingForOui(RoutingLast),
+        ok = SetConsoleDevices([Device5Copy]),
 
         ?assertMatch(
             {update_cache, _},
@@ -1463,12 +1456,10 @@ should_update_filters_test_() ->
         ],
         Device6 = router_device:update(DeviceUpdates6, router_device:new(<<"ID6">>)),
         Device6Copy = router_device:update(DeviceUpdates6, router_device:new(<<"ID6Copy">>)),
-        meck:expect(router_console_api, get_devices, fun() ->
-            {ok, [Device6, Device6Copy]}
-        end),
+        ok = SetConsoleDevices([Device6, Device6Copy]),
 
         %% Force 1 filter so we update the existing
-        meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
+        ok = SetMaxXorFilterNum(1),
 
         ExpectedUpdateFilter4 = [{update, 0, get_devices_deveui_app_eui([Device6, Device6Copy])}],
         ?assertMatch(
@@ -1493,9 +1484,9 @@ should_update_filters_test_() ->
         {ok, BinFilter7} = new_xor_filter_bin([device_deveui_appeui(Device7)]),
         Routing7 = blockchain_ledger_routing_v1:new(OUI, <<"owner">>, [], BinFilter7, [], 1),
 
-        meck:expect(blockchain_ledger_v1, find_routing, fun(_OUI, _Ledger) -> {ok, Routing7} end),
-        meck:expect(router_console_api, get_devices, fun() -> {ok, [Device7, Device7, Device8]} end),
-        meck:expect(blockchain, config, fun(_, _) -> {ok, 1} end),
+        ok = SetRoutingForOui(Routing7),
+        ok = SetConsoleDevices([Device7, Device7, Device8]),
+        ok = SetMaxXorFilterNum(1),
 
         ExpectedUpdateFilter5 = [
             {update, 0, [
@@ -1508,9 +1499,8 @@ should_update_filters_test_() ->
             should_update_filters(OUI, #{})
         ),
 
-        meck:unload(blockchain_ledger_v1),
         meck:unload(router_console_api),
-        meck:unload(blockchain)
+        meck:unload(router_blockchain)
     end}.
 
 contained_in_filters_test_() ->

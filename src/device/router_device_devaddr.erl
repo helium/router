@@ -304,10 +304,9 @@ sort_devices_test() ->
         <<"C">> => ?INDEX_C,
         <<"D">> => ?INDEX_D
     },
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+
+    meck:new(router_blockchain, [passthrough]),
+    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
         {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
     end),
 
@@ -334,10 +333,8 @@ sort_devices_test() ->
      || D <- sort_devices(Devices, <<"D">>)
     ]),
 
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(router_blockchain)),
+    meck:unload(router_blockchain),
     ok.
 
 sort_devices_long_distance_test() ->
@@ -346,10 +343,9 @@ sort_devices_long_distance_test() ->
         <<"SUNNYVALE">> => ?SUNNYVALE,
         <<"SAN_JOSE">> => ?SAN_JOSE
     },
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+
+    meck:new(router_blockchain, [passthrough]),
+    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
         {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
     end),
 
@@ -371,10 +367,8 @@ sort_devices_long_distance_test() ->
      || D <- sort_devices(Devices, <<"HOUSTON">>)
     ]),
 
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(router_blockchain)),
+    meck:unload(router_blockchain),
     ok.
 
 indexes_to_lowest_res_test() ->

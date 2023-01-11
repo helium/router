@@ -113,7 +113,7 @@ get_location_info(Device) ->
         PubKeyBin ->
             B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
             HotspotName = blockchain_utils:addr2name(PubKeyBin),
-            case router_blockchain:get_hotspot_location(PubKeyBin) of
+            case router_blockchain:get_hotspot_lat_lon(PubKeyBin) of
                 {unknown, unknown} ->
                     {B58, HotspotName, 0.0, 0.0};
                 {Lat, Long} ->

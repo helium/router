@@ -860,7 +860,7 @@ format_hotspot(PubKeyBin, Packet, Region, Time, HoldTime) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = router_blockchain:get_hotspot_location(PubKeyBin),
+    {Lat, Long} = router_blockchain:get_hotspot_lat_lon(PubKeyBin),
     #{
         id => erlang:list_to_binary(B58),
         name => erlang:list_to_binary(HotspotName),

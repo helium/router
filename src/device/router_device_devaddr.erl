@@ -77,15 +77,7 @@ sort_devices(Devices, PubKeyBin) ->
 pubkeybin_to_loc(undefined) ->
     {error, undef_pubkeybin};
 pubkeybin_to_loc(PubKeyBin) ->
-    case router_blockchain:find_gateway_info(PubKeyBin) of
-        {error, _} = Error ->
-            Error;
-        {ok, Hotspot} ->
-            case blockchain_ledger_gateway_v2:location(Hotspot) of
-                undefined -> {error, undef_index};
-                Index -> {ok, Index}
-            end
-    end.
+    router_blockchain:get_hotspot_location_index(PubKeyBin).
 
 -spec net_id(number() | binary()) -> {ok, non_neg_integer()} | {error, invalid_net_id_type}.
 net_id(DevAddr) when erlang:is_number(DevAddr) ->
@@ -191,7 +183,7 @@ handle_info(
         [] ->
             {noreply, State};
         _ ->
-            Subnets = subnets(OUI),
+            Subnets = router_blockchain:subnets_for_oui(OUI),
             {noreply, State#state{subnets = Subnets}}
     end;
 handle_info(_Msg, State) ->
@@ -207,15 +199,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec subnets(OUI :: non_neg_integer()) -> [binary()].
-subnets(OUI) ->
-    case router_blockchain:routing_for_oui(OUI) of
-        {ok, RoutingEntry} ->
-            blockchain_ledger_routing_v1:subnets(RoutingEntry);
-        _ ->
-            []
-    end.
 
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->

@@ -7,10 +7,11 @@
     privileged_maybe_get_blockchain/0,
     %% router stuff
     calculate_dc_amount/1,
-    get_hotspot_location/1,
+    get_hotspot_lat_lon/1,
+    get_hotspot_location_index/1,
+    subnets_for_oui/1,
     routing_for_oui/1,
     get_ouis/0,
-    find_gateway_info/1,
     find_gateway_owner/1,
     track_offer/2,
     %% blockchain stuff ========
@@ -30,15 +31,20 @@
 ]).
 
 %% ===================================================================
+%% To be supplemented with Config Service
 %% ===================================================================
 
+%% DC Tracker
+%% Router Console Events
 -spec calculate_dc_amount(PayloadSize :: non_neg_integer()) -> pos_integer() | {error, any()}.
 calculate_dc_amount(PayloadSize) ->
     blockchain_utils:calculate_dc_amount(ledger(), PayloadSize).
 
--spec get_hotspot_location(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
+%% Router Console Events
+%% Channel Payloads
+-spec get_hotspot_lat_lon(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
     {float(), float()} | {unknown, unknown}.
-get_hotspot_location(PubKeyBin) ->
+get_hotspot_lat_lon(PubKeyBin) ->
     Ledger = ledger(),
     case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
         {error, _} ->
@@ -51,6 +57,44 @@ get_hotspot_location(PubKeyBin) ->
                     h3:to_geo(Loc)
             end
     end.
+
+%% Assigning DevAddrs
+%% Validating DevAddrs (redundant?)
+-spec subnets_for_oui(OUI :: non_neg_integer()) -> [binary()].
+subnets_for_oui(OUI) ->
+    case ?MODULE:routing_for_oui(OUI) of
+        {ok, RoutingEntry} ->
+            blockchain_ledger_routing_v1:subnets(RoutingEntry);
+        _ ->
+            []
+    end.
+
+%% Assigning DevAddrs
+-spec get_hotspot_location_index(PubKeybin :: libp2p_crypto:pubkey_bin()) ->
+    {ok, non_neg_integer()} | {error, any()}.
+get_hotspot_location_index(PubKeyBin) ->
+    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, ledger()) of
+        {error, _} = Error ->
+            Error;
+        {ok, Hotspot} ->
+            case blockchain_ledger_gateway_v2:location(Hotspot) of
+                undefined -> {error, undef_index};
+                Index -> {ok, Index}
+            end
+    end.
+
+%% ===================================================================
+%% Metrics only
+%% ===================================================================
+
+-spec privileged_maybe_get_blockchain() -> blockchain:blockchain() | undefined.
+privileged_maybe_get_blockchain() ->
+    Key = router_blockchain,
+    persistent_term:get(Key, undefined).
+
+%% ===================================================================
+%% DNR
+%% ===================================================================
 
 -spec height() -> {ok, non_neg_integer()} | {error, any()}.
 height() ->
@@ -83,11 +127,6 @@ get_ouis() ->
     {ok, blockchain_block:block()} | {error, any()}.
 get_blockhash(Hash) ->
     blockchain:get_block(Hash, blockchain()).
-
--spec find_gateway_info(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
-    {ok, blockchain_ledger_gateway_v2:gateway()} | {error, any()}.
-find_gateway_info(PubKeyBin) ->
-    blockchain_ledger_v1:find_gateway_info(PubKeyBin, ledger()).
 
 -spec find_gateway_owner(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
     {ok, libp2p_crypto:pubkey_bin()} | {error, any()}.
@@ -131,6 +170,7 @@ calculate_state_channel_open_fee(Txn) ->
     blockchain_txn_state_channel_open_v1:calculate_fee(Txn, blockchain()).
 
 %% ===================================================================
+%% Unexported, no touchy
 %% ===================================================================
 
 -spec blockchain() -> blockchain:blockchain().
@@ -148,8 +188,3 @@ blockchain() ->
 -spec ledger() -> blockchain:ledger().
 ledger() ->
     blockchain:ledger(blockchain()).
-
--spec privileged_maybe_get_blockchain() -> blockchain:blockchain() | undefined.
-privileged_maybe_get_blockchain() ->
-    Key = router_blockchain,
-    persistent_term:get(Key, undefined).

@@ -260,10 +260,18 @@ euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
     },
     EncodedReq = iot_config_client_pb:encode_msg(Req, route_euis_req_v1_pb),
     SignedReq = Req#{signature => SigFun(EncodedReq)},
-    {ok, #{result := Result}} = grpc_client:unary(
-        Conn, SignedReq, 'helium.iot_config.route', euis, iot_config_client_pb, []
-    ),
-    Type =:= maps:get(action, Result).
+    case
+        grpc_client:unary(
+            Conn, SignedReq, 'helium.iot_config.route', euis, iot_config_client_pb, []
+        )
+    of
+        {ok, #{result := Result}} ->
+            Type =:= maps:get(action, Result);
+        {error, #{status_message := Reason}} ->
+            lager:error("failed to push euis_req ~p", [Reason]),
+            lager:error("euis_req ~p", [SignedReq]),
+            false
+    end.
 
 -spec get_route_id(state()) -> {ok, string()} | {error, any()}.
 get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
@@ -274,14 +282,22 @@ get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
     },
     EncodedReq = iot_config_client_pb:encode_msg(Req, route_list_req_v1_pb),
     SignedReq = Req#{signature => SigFun(EncodedReq)},
-    {ok, #{result := Result}} = grpc_client:unary(
-        Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
-    ),
-    case maps:get(routes, Result) of
-        [] ->
-            {error, no_routes};
-        [Route | _] ->
-            {ok, maps:get(id, Route)}
+    case
+        grpc_client:unary(
+            Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
+        )
+    of
+        {ok, #{result := Result}} ->
+            case maps:get(routes, Result) of
+                [] ->
+                    {error, no_routes};
+                [Route | _] ->
+                    {ok, maps:get(id, Route)}
+            end;
+        {error, #{status_message := Reason}} ->
+            lager:error("failed to get_route_id ~p", [Reason]),
+            lager:error("req ~p", [SignedReq]),
+            {error, failed_to_get_routes}
     end.
 
 %% ------------------------------------------------------------------

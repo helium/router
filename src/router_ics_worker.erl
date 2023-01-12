@@ -251,10 +251,11 @@ refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) 
 euis_req(_Conn, _PubKeyBin, _SigFun, _RouteID, _Type, []) ->
     true;
 euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
+    {Euis1, _} = lists:split(10, Euis),
     Req = #{
         id => RouteID,
         action => Type,
-        euis => Euis,
+        euis => Euis1,
         timestamp => erlang:system_time(millisecond),
         signer => PubKeyBin
     },

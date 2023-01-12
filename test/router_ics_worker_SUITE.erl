@@ -11,7 +11,8 @@
 ]).
 
 -export([
-    main_test/1
+    main_test/1,
+    load_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -26,7 +27,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        main_test
+        main_test,
+        load_test
     ].
 
 %%--------------------------------------------------------------------
@@ -150,6 +152,49 @@ main_test(_Config) ->
     ?assertEqual(euis, Type4),
     ?assertEqual(remove_euis, Req4#route_euis_req_v1_pb.action),
     ?assertEqual([#eui_v1_pb{app_eui = 1, dev_eui = 1}], Req4#route_euis_req_v1_pb.euis),
+
+    meck:unload(router_console_api),
+    meck:unload(router_device_cache),
+    ok.
+
+load_test(_Config) ->
+    meck:new(router_console_api, [passthrough]),
+    meck:new(router_device_cache, [passthrough]),
+
+    [{Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
+    ?assertEqual(list, Type0),
+    ?assertEqual(euis, Type1),
+    ?assertEqual(update_euis, Req1#route_euis_req_v1_pb.action),
+    ?assertEqual([#eui_v1_pb{app_eui = 8589934593, dev_eui = 1}], Req1#route_euis_req_v1_pb.euis),
+
+    Min = 1,
+    Max = 1000,
+    APIDevice = lists:map(
+        fun(X) ->
+            Y = lorawan_utils:binary_to_hex(<<X:64/integer-unsigned-big>>),
+            #{<<"app_eui">> => Y, <<"dev_eui">> => Y}
+        end,
+        lists:seq(Min, Max)
+    ),
+
+    %% We add a duplicate to make sure it does not make it in
+    meck:expect(router_console_api, get_json_devices, fun() ->
+        lager:notice("router_console_api:get_json_devices()"),
+        {ok,
+            APIDevice ++
+                [
+                    #{
+                        <<"app_eui">> => lorawan_utils:binary_to_hex(<<1:64/integer-unsigned-big>>),
+                        <<"dev_eui">> => lorawan_utils:binary_to_hex(<<1:64/integer-unsigned-big>>)
+                    }
+                ]}
+    end),
+
+    erlang:whereis(router_ics_worker) ! refetch,
+
+    Got = rcv_loop([]),
+    %% 1 list req, 1 update_euis to [], 10 add_euis as we cut in chunck of 100
+    ?assertEqual(12, erlang:length(Got)),
 
     meck:unload(router_console_api),
     meck:unload(router_device_cache),

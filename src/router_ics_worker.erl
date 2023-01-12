@@ -237,7 +237,31 @@ refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) 
                     end,
                     APIDevices
                 ),
-            euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, APIEuis)
+            case erlang:length(APIEuis) > 100 of
+                false ->
+                    euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, APIEuis);
+                true ->
+                    euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, []),
+                    break_update_euis(Conn, PubKeyBin, SigFun, RouteID, lists:usort(APIEuis))
+            end
+    end.
+
+-spec break_update_euis(
+    Conn :: grpc_client:connection(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    SigFun :: function(),
+    RouteID :: string(),
+    Euis :: list()
+) -> boolean().
+break_update_euis(Conn, PubKeyBin, SigFun, RouteID, APIEuis) ->
+    Length = erlang:length(APIEuis),
+    case Length > 100 of
+        true ->
+            {APIEuis1, LeftOver} = lists:split(100, APIEuis),
+            euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, APIEuis1),
+            break_update_euis(Conn, PubKeyBin, SigFun, RouteID, LeftOver);
+        false ->
+            euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, APIEuis)
     end.
 
 -spec euis_req(
@@ -248,14 +272,11 @@ refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) 
     Type :: add_euis | remove_euis | update_euis,
     Euis :: list()
 ) -> boolean().
-euis_req(_Conn, _PubKeyBin, _SigFun, _RouteID, _Type, []) ->
-    true;
 euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
-    {Euis1, _} = lists:split(10, Euis),
     Req = #{
         id => RouteID,
         action => Type,
-        euis => Euis1,
+        euis => lists:usort(Euis),
         timestamp => erlang:system_time(millisecond),
         signer => PubKeyBin
     },

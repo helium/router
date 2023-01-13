@@ -253,8 +253,9 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                                     Offer, Ledger, self()
                                 ]),
                                 ok;
-                            {error, _} = E1 ->
-                                E1
+                            {error, _} ->
+                                lager:debug("packet accepted even if on denylist"),
+                                ok
                         end;
                     {error, ?LATE_PACKET} = E2 ->
                         ok = router_utils:event_uplink_dropped_late_packet(

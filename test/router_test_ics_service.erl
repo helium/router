@@ -1,7 +1,7 @@
 -module(router_test_ics_service).
 
 -behaviour(helium_iot_config_route_bhvr).
--include("../src/grpc/autogen/server/iot_config_pb.hrl").
+-include("../src/grpc/autogen/iot_config_pb.hrl").
 
 -export([
     init/2,
@@ -14,8 +14,12 @@
     create/2,
     update/2,
     delete/2,
-    euis/2,
-    devaddrs/2,
+    get_euis/2,
+    update_euis/2,
+    delete_euis/2,
+    get_devaddr_ranges/2,
+    update_devaddr_ranges/2,
+    delete_devaddr_ranges/2,
     stream/2
 ]).
 
@@ -30,8 +34,8 @@ list(Ctx, Req) ->
     case verify_list_req(Req) of
         true ->
             lager:notice("got list req ~p", [Req]),
-            Route = #route_v1_pb{id = "test_route_id"},
-            Res = #route_list_res_v1_pb{
+            Route = #iot_config_route_v1_pb{id = "test_route_id"},
+            Res = #iot_config_route_list_res_v1_pb{
                 routes = [Route]
             },
             catch persistent_term:get(?MODULE) ! {?MODULE, list, Req},
@@ -52,51 +56,37 @@ update(_Ctx, _Msg) ->
 delete(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
-euis(Ctx, Req) ->
-    case verify_euis_req(Req) of
-        true ->
-            lager:notice("got euis req ~p", [Req]),
-            Res = #route_euis_res_v1_pb{
-                id = Req#route_euis_req_v1_pb.id,
-                action = Req#route_euis_req_v1_pb.action,
-                euis = Req#route_euis_req_v1_pb.euis
-            },
-            catch persistent_term:get(?MODULE) ! {?MODULE, euis, Req},
-            {ok, Res, Ctx};
-        false ->
-            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
-    end.
+get_euis(_Msg, _StreamState) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
-devaddrs(_Ctx, _Msg) ->
+update_euis(_Msg, _StreamState) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+delete_euis(_Ctx, _Msg) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+get_devaddr_ranges(_Msg, _StreamState) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+update_devaddr_ranges(_Msg, _StreamState) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+delete_devaddr_ranges(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 stream(_RouteStreamReq, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
--spec verify_list_req(Req :: #route_list_req_v1_pb{}) -> boolean().
+-spec verify_list_req(Req :: #iot_config_route_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->
     EncodedReq = iot_config_pb:encode_msg(
-        Req#route_list_req_v1_pb{
+        Req#iot_config_route_list_req_v1_pb{
             signature = <<>>
         },
-        route_list_req_v1_pb
+        iot_config_route_list_req_v1_pb
     ),
     libp2p_crypto:verify(
         EncodedReq,
-        Req#route_list_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#route_list_req_v1_pb.signer)
-    ).
-
--spec verify_euis_req(Req :: #route_euis_req_v1_pb{}) -> boolean().
-verify_euis_req(Req) ->
-    EncodedReq = iot_config_pb:encode_msg(
-        Req#route_euis_req_v1_pb{
-            signature = <<>>
-        },
-        route_euis_req_v1_pb
-    ),
-    libp2p_crypto:verify(
-        EncodedReq,
-        Req#route_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#route_euis_req_v1_pb.signer)
+        Req#iot_config_route_list_req_v1_pb.signature,
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_list_req_v1_pb.signer)
     ).

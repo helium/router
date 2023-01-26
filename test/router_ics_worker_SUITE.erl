@@ -2,7 +2,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include("../src/grpc/autogen/server/iot_config_pb.hrl").
+-include("../src/grpc/autogen/iot_config_pb.hrl").
 
 -export([
     all/0,

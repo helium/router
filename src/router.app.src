@@ -32,7 +32,6 @@
         clique,
         inet_cidr,
         grpcbox,
-        grpc_client,
         erlang_lorawan,
         router_utils,
         throttle,

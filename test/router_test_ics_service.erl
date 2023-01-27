@@ -64,7 +64,9 @@ update_euis(Req, _StreamState) ->
     case verify_update_euis_req_req(Req) of
         true ->
             lager:info("got update_euis_req ~p", [Req]),
-            {ok, #iot_config_route_euis_res_v1_pb{}, ctx:new()};
+            catch persistent_term:get(?MODULE) ! {?MODULE, update_euis, Req},
+            % {ok, #iot_config_route_euis_res_v1_pb{}, ctx:new()};
+            {ok, _StreamState};
         false ->
             lager:error("failed to update_euis_req ~p", [Req]),
             {grpc_error, {7, <<"PERMISSION_DENIED">>}}
@@ -74,6 +76,7 @@ delete_euis(Ctx, Req) ->
     case verify_delete_euis_req_req(Req) of
         true ->
             lager:info("got delete_euis_req ~p", [Req]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, delete_euis, Req},
             {ok, #iot_config_route_euis_res_v1_pb{}, Ctx};
         false ->
             lager:error("failed to delete_euis_req ~p", [Req]),

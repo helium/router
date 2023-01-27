@@ -164,7 +164,7 @@ handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} 
             {noreply, State#state{stream = undefined, conn_backoff = Backoff1}};
         {ok, Stream} ->
             {_, Backoff1} = backoff:succeed(Backoff0),
-            lager:info("connected via"),
+            lager:info("connected via ~p", [Stream]),
             self() ! ?FETCH,
             {noreply, State#state{stream = Stream, conn_backoff = Backoff1}}
     end;
@@ -195,6 +195,13 @@ handle_info(?FETCH, #state{stream = Stream, conn_backoff = Backoff0} = State) wh
                     {noreply, State#state{route_id = RouteID}}
             end
     end;
+% handle_info({headers, _StreamID, _}, State) ->
+%     {noreply, State};
+% handle_info({trailers, _StreamID, _}, State) ->
+%     {noreply, State};
+% handle_info({eos, _StreamID}, State) ->
+%     self() ! ?CONNECT,
+%     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -240,7 +247,7 @@ get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
         timestamp = erlang:system_time(millisecond),
         signer = PubKeyBin
     },
-    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_list_req_v1_pb),
+    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_list_req_v1_pb),
     SignedReq = Req#iot_config_route_list_req_v1_pb{signature = SigFun(EncodedReq)},
     case helium_iot_config_route_client:list(SignedReq, #{channel => ?MODULE}) of
         {grpc_error, Reason} ->
@@ -260,7 +267,7 @@ delete_euis(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
         timestamp = erlang:system_time(millisecond),
         signer = PubKeyBin
     },
-    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_delete_euis_req_v1_pb),
+    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_delete_euis_req_v1_pb),
     SignedReq = Req#iot_config_route_delete_euis_req_v1_pb{signature = SigFun(EncodedReq)},
     case helium_iot_config_route_client:delete_euis(SignedReq, #{channel => ?MODULE}) of
         {grpc_error, Reason} -> {error, Reason};
@@ -278,7 +285,7 @@ update_euis(Action, EUIPair, #state{stream = Stream, pubkey_bin = PubKeyBin, sig
         timestamp = erlang:system_time(millisecond),
         signer = PubKeyBin
     },
-    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_update_euis_req_v1_pb),
+    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_update_euis_req_v1_pb),
     SignedReq = Req#iot_config_route_update_euis_req_v1_pb{signature = SigFun(EncodedReq)},
     ok = grpcbox_client:send(Stream, SignedReq).
 

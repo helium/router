@@ -29,7 +29,6 @@ ADD rebar3 rebar3
 ADD rebar.config rebar.config
 ADD rebar.lock rebar.lock
 ADD config/grpc_gen.config config/grpc_gen.config
-ADD config/grpc_packet_router_client_gen.config config/grpc_packet_router_client_gen.config
 RUN ./rebar3 get-deps
 RUN ./rebar3 as ${BUILD_NET} compile
 

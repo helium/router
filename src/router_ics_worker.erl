@@ -7,6 +7,8 @@
 
 -behavior(gen_server).
 
+-include("./grpc/autogen/iot_config_pb.hrl").
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -31,7 +33,7 @@
 
 -define(SERVER, ?MODULE).
 -define(CONNECT, connect).
--define(REFETCH, refetch).
+-define(FETCH, fetch).
 -define(BACKOFF_MIN, timer:seconds(10)).
 -define(BACKOFF_MAX, timer:minutes(1)).
 
@@ -40,7 +42,7 @@
     sig_fun :: function(),
     host :: string(),
     port :: non_neg_integer(),
-    conn :: undefined | grpc_client:connection(),
+    stream :: undefined | grpcbox_client:stream(),
     conn_backoff :: backoff:backoff(),
     route_id :: undefined | string()
 }).
@@ -87,7 +89,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
         conn_backoff = Backoff
     }}.
 
-handle_call(_Msg, _From, #state{conn = undefined} = State) ->
+handle_call(_Msg, _From, #state{stream = undefined} = State) ->
     lager:warning("can't handle call msg: ~p", [_Msg]),
     {reply, ok, State};
 handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
@@ -96,42 +98,54 @@ handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
 handle_call(
     {add, DeviceIDs},
     _From,
-    #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
+    #state{route_id = RouteID} = State
 ) ->
-    Euis = fetch_device_euis(apis, DeviceIDs),
-    case euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, Euis) of
-        true -> lager:info("added ~p", [Euis]);
-        false -> lager:warning("failed to add ~p", [Euis])
-    end,
-    {reply, ok, State};
-handle_call(
-    {update, DeviceIDs},
-    _From,
-    #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
-) ->
-    CachedEuis = fetch_device_euis(cache, DeviceIDs),
-    APIEuis = fetch_device_euis(apis, DeviceIDs),
-    ToRemove = CachedEuis -- APIEuis,
-    case euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, ToRemove) of
-        true -> lager:info("removed ~p", [ToRemove]);
-        false -> lager:warning("failed to remove ~p", [ToRemove])
-    end,
-    ToAdd = APIEuis -- CachedEuis,
-    case euis_req(Conn, PubKeyBin, SigFun, RouteID, add_euis, ToAdd) of
-        true -> lager:info("added ~p", [ToAdd]);
-        false -> lager:warning("failed to add ~p", [ToAdd])
-    end,
+    EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    lists:foreach(
+        fun(EUIPair) ->
+            ok = update_euis(add, EUIPair, State),
+            lager:info("added ~p", [EUIPair])
+        end,
+        EUIPairs
+    ),
     {reply, ok, State};
 handle_call(
     {remove, DeviceIDs},
     _From,
-    #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn, route_id = RouteID} = State
+    #state{route_id = RouteID} = State
 ) ->
-    Euis = fetch_device_euis(cache, DeviceIDs),
-    case euis_req(Conn, PubKeyBin, SigFun, RouteID, remove_euis, Euis) of
-        true -> lager:info("removed ~p", [Euis]);
-        false -> lager:warning("failed to remove ~p", [Euis])
-    end,
+    EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    lists:foreach(
+        fun(EUIPair) ->
+            ok = update_euis(remove, EUIPair, State),
+            lager:info("removed ~p", [EUIPair])
+        end,
+        EUIPairs
+    ),
+    {reply, ok, State};
+handle_call(
+    {update, DeviceIDs},
+    _From,
+    #state{route_id = RouteID} = State
+) ->
+    CachedEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    ToRemove = CachedEUIPairs -- APIEUIPairs,
+    lists:foreach(
+        fun(EUIPair) ->
+            ok = update_euis(add, EUIPair, State),
+            lager:info("added ~p", [EUIPair])
+        end,
+        ToRemove
+    ),
+    ToAdd = APIEUIPairs -- CachedEUIPairs,
+    lists:foreach(
+        fun(EUIPair) ->
+            ok = update_euis(remove, EUIPair, State),
+            lager:info("removed ~p", [EUIPair])
+        end,
+        ToAdd
+    ),
     {reply, ok, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -142,38 +156,45 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} = State) ->
-    case grpc_client:connect(tcp, Host, Port, []) of
-        {ok, Conn} ->
-            #{http_connection := Pid} = Conn,
-            _ = erlang:monitor(process, Pid),
-            {_, Backoff1} = backoff:succeed(Backoff0),
-            self() ! ?REFETCH,
-            lager:info("connected via ~p", [Pid]),
-            {noreply, State#state{conn = Conn, conn_backoff = Backoff1}};
+    case connect(Host, Port) of
         {error, _Reason} ->
             lager:warning("fail to connect ~p", [_Reason]),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?CONNECT),
-            {noreply, State#state{conn = undefined, conn_backoff = Backoff1}}
+            {noreply, State#state{stream = undefined, conn_backoff = Backoff1}};
+        {ok, Stream} ->
+            {_, Backoff1} = backoff:succeed(Backoff0),
+            lager:info("connected via"),
+            self() ! ?FETCH,
+            {noreply, State#state{stream = Stream, conn_backoff = Backoff1}}
     end;
-handle_info(?REFETCH, #state{conn_backoff = Backoff0} = State) ->
+handle_info(?FETCH, #state{stream = Stream, conn_backoff = Backoff0} = State) when
+    Stream =/= undefined
+->
     case get_route_id(State) of
-        {ok, RouteID} ->
-            _ = refetch(RouteID, State),
-            {noreply, State#state{route_id = RouteID}};
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?REFETCH),
+            _ = erlang:send_after(Delay, self(), ?FETCH),
             lager:warning("fail to get_route_id ~p", [_Reason]),
-            {noreply, State#state{conn_backoff = Backoff1}}
+            {noreply, State#state{conn_backoff = Backoff1}};
+        {ok, RouteID} ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} ->
+                    {Delay, Backoff1} = backoff:fail(Backoff0),
+                    _ = erlang:send_after(Delay, self(), ?FETCH),
+                    lager:warning("fail to get_route_id ~p", [_Reason]),
+                    {noreply, State#state{conn_backoff = Backoff1}};
+                {ok, EUIPairs} ->
+                    ok = delete_euis(RouteID, State),
+                    lists:foreach(
+                        fun(EUIPair) ->
+                            ok = update_euis(add, EUIPair, State)
+                        end,
+                        EUIPairs
+                    ),
+                    {noreply, State#state{route_id = RouteID}}
+            end
     end;
-handle_info({'DOWN', _MonitorRef, process, _Pid, Info}, State) ->
-    lager:info("connection went down ~p", [Info]),
-    self() ! ?CONNECT,
-    {noreply, State#state{conn = undefined}};
-handle_info({'EXIT', Pid, Reason}, State) ->
-    lager:debug("got exit ~p ~p", [Pid, Reason]),
-    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -188,43 +209,87 @@ terminate(_Reason, #state{}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec fetch_device_euis(apis | cache, list(binary())) -> [map()].
-fetch_device_euis(apis, DeviceIDs) ->
-    lists:filtermap(
-        fun(DeviceID) ->
-            case router_console_api:get_device(DeviceID) of
-                {error, _} ->
-                    false;
-                {ok, Device} ->
-                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #{app_eui => AppEUI, dev_eui => DevEUI}}
-            end
-        end,
-        DeviceIDs
-    );
-fetch_device_euis(cache, DeviceIDs) ->
-    lists:filtermap(
-        fun(DeviceID) ->
-            case router_device_cache:get(DeviceID) of
-                {error, _} ->
-                    false;
-                {ok, Device} ->
-                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #{app_eui => AppEUI, dev_eui => DevEUI}}
-            end
-        end,
-        DeviceIDs
-    ).
-
--spec refetch(RouteID :: string(), State :: state()) -> boolean().
-refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
-    case router_console_api:get_json_devices() of
+-spec connect(Host :: string(), Port :: non_neg_integer()) ->
+    {ok, grpcbox_client:stream()} | {error, any()}.
+connect(Host, Port) ->
+    case grpcbox_channel:pick(?MODULE, stream) of
         {error, _} ->
-            false;
+            case
+                grpcbox_client:connect(?MODULE, [{http, Host, Port, []}], #{
+                    sync_start => true
+                })
+            of
+                {ok, _Conn} -> connect(Host, Port);
+                {error, _Reason} = Error -> Error
+            end;
+        {ok, {_Conn, _Interceptor}} ->
+            case
+                helium_iot_config_route_client:update_euis(#{
+                    channel => ?MODULE
+                })
+            of
+                {error, _} = Error -> Error;
+                {ok, _Stream} = OK -> OK
+            end
+    end.
+
+-spec get_route_id(state()) -> {ok, string()} | {error, any()}.
+get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+    Req = #iot_config_route_list_req_v1_pb{
+        oui = router_utils:get_oui(),
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
+    },
+    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_list_req_v1_pb),
+    SignedReq = Req#iot_config_route_list_req_v1_pb{signature = SigFun(EncodedReq)},
+    case helium_iot_config_route_client:list(SignedReq, #{channel => ?MODULE}) of
+        {grpc_error, Reason} ->
+            {error, Reason};
+        {error, _} = Error ->
+            Error;
+        {ok, #iot_config_route_list_res_v1_pb{routes = []}, _Meta} ->
+            {error, no_routes};
+        {ok, #iot_config_route_list_res_v1_pb{routes = [Route | _]}, _Meta} ->
+            {ok, Route#iot_config_route_v1_pb.id}
+    end.
+
+-spec delete_euis(RouteID :: string(), state()) -> ok | {error, any()}.
+delete_euis(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+    Req = #iot_config_route_delete_euis_req_v1_pb{
+        route_id = RouteID,
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
+    },
+    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_delete_euis_req_v1_pb),
+    SignedReq = Req#iot_config_route_delete_euis_req_v1_pb{signature = SigFun(EncodedReq)},
+    case helium_iot_config_route_client:delete_euis(SignedReq, #{channel => ?MODULE}) of
+        {grpc_error, Reason} -> {error, Reason};
+        {error, _} = Error -> Error;
+        {ok, #iot_config_route_euis_res_v1_pb{}, _Meta} -> ok
+    end.
+
+-spec update_euis(
+    Action :: add | remove, EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), state()
+) -> ok.
+update_euis(Action, EUIPair, #state{stream = Stream, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+    Req = #iot_config_route_update_euis_req_v1_pb{
+        action = Action,
+        eui_pair = EUIPair,
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
+    },
+    EncodedReq = iot_config_client_pb:encode_msg(Req, iot_config_route_update_euis_req_v1_pb),
+    SignedReq = Req#iot_config_route_update_euis_req_v1_pb{signature = SigFun(EncodedReq)},
+    ok = grpcbox_client:send(Stream, SignedReq).
+
+-spec get_local_eui_pairs(RouteID :: string()) ->
+    {ok, [iot_config_pb:iot_config_eui_pair_v1_pb()]} | {error, any()}.
+get_local_eui_pairs(RouteID) ->
+    case router_console_api:get_json_devices() of
+        {error, _} = Error ->
+            Error;
         {ok, APIDevices} ->
-            APIEuis =
+            {ok,
                 lists:map(
                     fun(APIDevice) ->
                         <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
@@ -233,61 +298,45 @@ refetch(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) 
                         <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
                             kvc:path([<<"dev_eui">>], APIDevice)
                         ),
-                        #{app_eui => AppEUI, dev_eui => DevEUI}
+                        #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }
                     end,
                     APIDevices
-                ),
-            euis_req(Conn, PubKeyBin, SigFun, RouteID, update_euis, APIEuis)
+                )}
     end.
 
--spec euis_req(
-    Conn :: grpc_client:connection(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    SigFun :: function(),
-    RouteID :: string(),
-    Type :: add_euis | remove_euis | update_euis,
-    Euis :: list()
-) -> boolean().
-euis_req(_Conn, _PubKeyBin, _SigFun, _RouteID, _Type, []) ->
-    true;
-euis_req(Conn, PubKeyBin, SigFun, RouteID, Type, Euis) ->
-    Req = #{
-        id => RouteID,
-        action => Type,
-        euis => Euis,
-        timestamp => erlang:system_time(millisecond),
-        signer => PubKeyBin
-    },
-    EncodedReq = iot_config_client_pb:encode_msg(Req, route_euis_req_v1_pb),
-    SignedReq = Req#{signature => SigFun(EncodedReq)},
-    {ok, #{result := Result}} = grpc_client:unary(
-        Conn, SignedReq, 'helium.iot_config.route', euis, iot_config_client_pb, []
-    ),
-    Type =:= maps:get(action, Result).
-
--spec get_route_id(state()) -> {ok, string()} | {error, any()}.
-get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, conn = Conn}) ->
-    Req = #{
-        oui => router_utils:get_oui(),
-        timestamp => erlang:system_time(millisecond),
-        signer => PubKeyBin
-    },
-    EncodedReq = iot_config_client_pb:encode_msg(Req, route_list_req_v1_pb),
-    SignedReq = Req#{signature => SigFun(EncodedReq)},
-    {ok, #{result := Result}} = grpc_client:unary(
-        Conn, SignedReq, 'helium.iot_config.route', list, iot_config_client_pb, []
-    ),
-    case maps:get(routes, Result) of
-        [] ->
-            {error, no_routes};
-        [Route | _] ->
-            {ok, maps:get(id, Route)}
-    end.
-
-%% ------------------------------------------------------------------
-%% EUNIT Tests
-%% ------------------------------------------------------------------
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
--endif.
+-spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
+    [iot_config_pb:iot_config_eui_pair_v1_pb()].
+fetch_device_euis(apis, DeviceIDs, RouteID) ->
+    lists:filtermap(
+        fun(DeviceID) ->
+            case router_console_api:get_device(DeviceID) of
+                {error, _} ->
+                    false;
+                {ok, Device} ->
+                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+                    {true, #iot_config_eui_pair_v1_pb{
+                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                    }}
+            end
+        end,
+        DeviceIDs
+    );
+fetch_device_euis(cache, DeviceIDs, RouteID) ->
+    lists:filtermap(
+        fun(DeviceID) ->
+            case router_device_cache:get(DeviceID) of
+                {error, _} ->
+                    false;
+                {ok, Device} ->
+                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+                    {true, #iot_config_eui_pair_v1_pb{
+                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                    }}
+            end
+        end,
+        DeviceIDs
+    ).

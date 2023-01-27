@@ -166,13 +166,8 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
 
     case maps:is_key(commit, Options) of
         true ->
-            {ok, Connection} = grpc_client:connect(
-                tcp, erlang:binary_to_list(maps:get(host, Options)), maps:get(port, Options), []
-            ),
-            {ok, Response} = grpc_client:unary(
-                Connection, Signed, 'helium.iot_config.route', euis, iot_config_client_pb, []
-            ),
-            c_text("Migrating OUIs: ~p", [Response]);
+            %% TODO: do this from ics worker
+            c_text("Migrating OUIs: ~p", [todo]);
         false ->
             c_text("With Options:~n~p~n~nRequest:~n~p", [Options, Signed])
     end;

@@ -42,7 +42,6 @@
     sig_fun :: function(),
     host :: string(),
     port :: non_neg_integer(),
-    stream :: undefined | grpcbox_client:stream(),
     conn_backoff :: backoff:backoff(),
     route_id :: undefined | string()
 }).
@@ -61,15 +60,15 @@ start_link(#{host := Host, port := Port} = Args) when is_list(Host) andalso is_i
 start_link(_Args) ->
     ignore.
 
--spec add(list(binary())) -> ok.
+-spec add(list(binary())) -> ok | {error, any()}.
 add(DeviceIDs) ->
     gen_server:call(?SERVER, {add, DeviceIDs}).
 
--spec update(list(binary())) -> ok.
+-spec update(list(binary())) -> ok | {error, any()}.
 update(DeviceIDs) ->
     gen_server:call(?SERVER, {update, DeviceIDs}).
 
--spec remove(list(binary())) -> ok.
+-spec remove(list(binary())) -> ok | {error, any()}.
 remove(DeviceIDs) ->
     gen_server:call(?SERVER, {remove, DeviceIDs}).
 
@@ -89,9 +88,6 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
         conn_backoff = Backoff
     }}.
 
-handle_call(_Msg, _From, #state{stream = undefined} = State) ->
-    lager:warning("can't handle call msg: ~p", [_Msg]),
-    {reply, ok, State};
 handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
     lager:warning("can't handle call msg: ~p", [_Msg]),
     {reply, ok, State};
@@ -101,28 +97,16 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
-    lists:foreach(
-        fun(EUIPair) ->
-            ok = update_euis(add, EUIPair, State),
-            lager:info("added ~p", [EUIPair])
-        end,
-        EUIPairs
-    ),
-    {reply, ok, State};
+    Reply = update_euis([{add, EUIPairs}], State),
+    {reply, Reply, State};
 handle_call(
     {remove, DeviceIDs},
     _From,
     #state{route_id = RouteID} = State
 ) ->
     EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
-    lists:foreach(
-        fun(EUIPair) ->
-            ok = update_euis(remove, EUIPair, State),
-            lager:info("removed ~p", [EUIPair])
-        end,
-        EUIPairs
-    ),
-    {reply, ok, State};
+    Reply = update_euis([{remove, EUIPairs}], State),
+    {reply, Reply, State};
 handle_call(
     {update, DeviceIDs},
     _From,
@@ -131,22 +115,9 @@ handle_call(
     CachedEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
     APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
     ToRemove = CachedEUIPairs -- APIEUIPairs,
-    lists:foreach(
-        fun(EUIPair) ->
-            ok = update_euis(add, EUIPair, State),
-            lager:info("added ~p", [EUIPair])
-        end,
-        ToRemove
-    ),
     ToAdd = APIEUIPairs -- CachedEUIPairs,
-    lists:foreach(
-        fun(EUIPair) ->
-            ok = update_euis(remove, EUIPair, State),
-            lager:info("removed ~p", [EUIPair])
-        end,
-        ToAdd
-    ),
-    {reply, ok, State};
+    Reply = update_euis([{remove, ToRemove}, {add, ToAdd}], State),
+    {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -161,16 +132,14 @@ handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} 
             lager:warning("fail to connect ~p", [_Reason]),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?CONNECT),
-            {noreply, State#state{stream = undefined, conn_backoff = Backoff1}};
-        {ok, Stream} ->
+            {noreply, State#state{conn_backoff = Backoff1}};
+        ok ->
             {_, Backoff1} = backoff:succeed(Backoff0),
-            lager:info("connected via ~p", [Stream]),
+            lager:info("connected"),
             self() ! ?FETCH,
-            {noreply, State#state{stream = Stream, conn_backoff = Backoff1}}
+            {noreply, State#state{conn_backoff = Backoff1}}
     end;
-handle_info(?FETCH, #state{stream = Stream, conn_backoff = Backoff0} = State) when
-    Stream =/= undefined
-->
+handle_info(?FETCH, #state{conn_backoff = Backoff0} = State) ->
     case get_route_id(State) of
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
@@ -186,22 +155,22 @@ handle_info(?FETCH, #state{stream = Stream, conn_backoff = Backoff0} = State) wh
                     {noreply, State#state{conn_backoff = Backoff1}};
                 {ok, EUIPairs} ->
                     ok = delete_euis(RouteID, State),
-                    lists:foreach(
-                        fun(EUIPair) ->
-                            ok = update_euis(add, EUIPair, State)
-                        end,
-                        EUIPairs
-                    ),
+                    ok = update_euis([{add, EUIPairs}], State),
                     {noreply, State#state{route_id = RouteID}}
             end
     end;
-% handle_info({headers, _StreamID, _}, State) ->
-%     {noreply, State};
-% handle_info({trailers, _StreamID, _}, State) ->
-%     {noreply, State};
-% handle_info({eos, _StreamID}, State) ->
-%     self() ! ?CONNECT,
-%     {noreply, State};
+handle_info({headers, _StreamID, _Data}, State) ->
+    lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
+    {noreply, State};
+handle_info({trailers, _StreamID, _Data}, State) ->
+    lager:debug("got trailers for stream: ~p, ~p", [_StreamID, _Data]),
+    {noreply, State};
+handle_info({eos, _StreamID}, State) ->
+    lager:debug("got eos for stream: ~p", [_StreamID]),
+    {noreply, State};
+handle_info({'DOWN', _Ref, process, Pid, normal}, State) ->
+    lager:debug("got DOWN for Pid: ~p", [Pid]),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -216,8 +185,7 @@ terminate(_Reason, #state{}) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec connect(Host :: string(), Port :: non_neg_integer()) ->
-    {ok, grpcbox_client:stream()} | {error, any()}.
+-spec connect(Host :: string(), Port :: non_neg_integer()) -> ok | {error, any()}.
 connect(Host, Port) ->
     case grpcbox_channel:pick(?MODULE, stream) of
         {error, _} ->
@@ -230,14 +198,7 @@ connect(Host, Port) ->
                 {error, _Reason} = Error -> Error
             end;
         {ok, {_Conn, _Interceptor}} ->
-            case
-                helium_iot_config_route_client:update_euis(#{
-                    channel => ?MODULE
-                })
-            of
-                {error, _} = Error -> Error;
-                {ok, _Stream} = OK -> OK
-            end
+            ok
     end.
 
 -spec get_route_id(state()) -> {ok, string()} | {error, any()}.
@@ -276,9 +237,45 @@ delete_euis(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     end.
 
 -spec update_euis(
-    Action :: add | remove, EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), state()
-) -> ok.
-update_euis(Action, EUIPair, #state{stream = Stream, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+    List :: [{add | remove, [iot_config_pb:iot_config_eui_pair_v1_pb()]}],
+    State :: state()
+) ->
+    ok | {error, any()}.
+update_euis(List, State) ->
+    case
+        helium_iot_config_route_client:update_euis(#{
+            channel => ?MODULE
+        })
+    of
+        {error, _} = Error ->
+            Error;
+        {ok, Stream} ->
+            lists:foreach(
+                fun({Action, EUIPairs}) ->
+                    lists:foreach(
+                        fun(EUIPair) ->
+                            lager:info("~p ~p", [Action, EUIPair]),
+                            ok = update_euis(Action, EUIPair, Stream, State)
+                        end,
+                        EUIPairs
+                    )
+                end,
+                List
+            ),
+            ok = grpcbox_client:close_send(Stream),
+            case grpcbox_client:recv_data(Stream) of
+                {ok, #iot_config_route_euis_res_v1_pb{}} -> ok;
+                Reason -> {error, Reason}
+            end
+    end.
+
+-spec update_euis(
+    Action :: add | remove,
+    EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(),
+    Stream :: grpcbox_client:stream(),
+    state()
+) -> ok | {error, any()}.
+update_euis(Action, EUIPair, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     Req = #iot_config_route_update_euis_req_v1_pb{
         action = Action,
         eui_pair = EUIPair,

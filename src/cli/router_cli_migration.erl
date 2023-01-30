@@ -75,12 +75,7 @@ info_cmd() ->
         [
             ["migration", "euis"],
             [],
-            [
-                {host, [{longname, "host"}, {datatype, string}]},
-                {port, [{longname, "port"}, {datatype, integer}]},
-                {route_id, [{longname, "route_id"}, {datatype, string}]},
-                {commit, [{longname, "commit"}, {datatype, boolean}]}
-            ],
+            [],
             fun send_euis_to_config_service/3
         ]
     ].
@@ -147,30 +142,9 @@ migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
 migration_ouis_routes([_, _, _], [], _Flags) ->
     usage.
 
-send_euis_to_config_service(["migration", "euis"], [], Flags) ->
-    Options = maps:from_list(Flags),
-
-    PubKeyBin = blockchain_swarm:pubkey_bin(),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
-
-    RouteEuisReq = #{
-        id => maps:get(route_id, Options, ""),
-        action => add_euis,
-        euis => euis(),
-        timestamp => erlang:system_time(millisecond),
-        signer => PubKeyBin,
-        signature => <<>>
-    },
-    Encoded = iot_config_client_pb:encode_msg(RouteEuisReq, route_euis_req_v1_pb),
-    Signed = RouteEuisReq#{signature => SigFun(Encoded)},
-
-    case maps:is_key(commit, Options) of
-        true ->
-            %% TODO: do this from ics worker
-            c_text("Migrating OUIs: ~p", [todo]);
-        false ->
-            c_text("With Options:~n~p~n~nRequest:~n~p", [Options, Signed])
-    end;
+send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
+    ok = router_ics_worker:reconcile(),
+    c_text("Updating EUIS", []);
 send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.

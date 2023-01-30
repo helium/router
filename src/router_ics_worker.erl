@@ -17,7 +17,8 @@
     add/1,
     update/1,
     remove/1,
-    route_get_euis_data/1
+    route_get_euis_data/1,
+    reconcile/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -81,6 +82,10 @@ remove(DeviceIDs) ->
 -spec route_get_euis_data(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
 route_get_euis_data(List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, List}).
+
+-spec reconcile() -> ok.
+reconcile() ->
+    gen_server:cast(?SERVER, ?RECONCILE_START).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -147,13 +152,31 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
+    case get_euis(State) of
+        {error, _Reason} ->
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            _ = erlang:send_after(Delay, self(), ?INIT),
+            lager:warning("fail to get_euis ~p, retrying in ~wms", [
+                _Reason, Delay
+            ]),
+            {noreply, State#state{conn_backoff = Backoff1}};
+        {ok, _Stream} ->
+            {_, Backoff2} = backoff:succeed(Backoff0),
+            {noreply, State#state{
+                conn_backoff = Backoff2, route_id = RouteID
+            }}
+    end;
 handle_cast(
     {?RECONCILE_END, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     case get_local_eui_pairs(RouteID) of
         {error, _Reason} ->
-            _ = erlang:send_after(Delay, self(), ?RECONCILE_START),
+            _ = erlang:spawn(fun() ->
+                timer:sleep(Delay),
+                ok = ?MODULE:reconcile()
+            end),
             lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, LocalEUIPairs} ->
@@ -187,26 +210,11 @@ handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
                 {ok, RouteID} ->
                     lager:info("connected"),
                     {_, Backoff2} = backoff:succeed(Backoff0),
-                    self() ! ?RECONCILE_START,
+                    ok = ?MODULE:reconcile(),
                     {noreply, State#state{
                         conn_backoff = Backoff2, route_id = RouteID
                     }}
             end
-    end;
-handle_info(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
-    case get_euis(State) of
-        {error, _Reason} ->
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT),
-            lager:warning("fail to get_euis ~p, retrying in ~wms", [
-                _Reason, Delay
-            ]),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        {ok, _Stream} ->
-            {_, Backoff2} = backoff:succeed(Backoff0),
-            {noreply, State#state{
-                conn_backoff = Backoff2, route_id = RouteID
-            }}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
     lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),

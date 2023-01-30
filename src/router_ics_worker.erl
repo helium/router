@@ -16,7 +16,8 @@
     start_link/1,
     add/1,
     update/1,
-    remove/1
+    remove/1,
+    route_get_euis_data/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -32,10 +33,15 @@
 ]).
 
 -define(SERVER, ?MODULE).
--define(CONNECT, connect).
--define(FETCH, fetch).
+-define(INIT, init).
+-define(RECONCILE_START, reconcile_start).
+-define(RECONCILE_END, reconcile_end).
+-ifdef(TEST).
+-define(BACKOFF_MIN, 100).
+-else.
 -define(BACKOFF_MIN, timer:seconds(10)).
--define(BACKOFF_MAX, timer:minutes(1)).
+-endif.
+-define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
@@ -72,6 +78,10 @@ update(DeviceIDs) ->
 remove(DeviceIDs) ->
     gen_server:call(?SERVER, {remove, DeviceIDs}).
 
+-spec route_get_euis_data(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
+route_get_euis_data(List) ->
+    gen_server:cast(?SERVER, {?RECONCILE_END, List}).
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -79,7 +89,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! ?CONNECT,
+    self() ! ?INIT,
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
@@ -96,68 +106,107 @@ handle_call(
     _From,
     #state{route_id = RouteID} = State
 ) ->
+    lager:info("add ~p", [DeviceIDs]),
     EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
-    Reply = update_euis([{add, EUIPairs}], State),
-    {reply, Reply, State};
+    case update_euis([{add, EUIPairs}], State) of
+        {error, Reason} ->
+            {reply, {error, Reason}, update_euis_failed(Reason, State)};
+        ok ->
+            {reply, ok, State}
+    end;
 handle_call(
     {remove, DeviceIDs},
     _From,
     #state{route_id = RouteID} = State
 ) ->
+    lager:info("remove ~p", [DeviceIDs]),
     EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
-    Reply = update_euis([{remove, EUIPairs}], State),
-    {reply, Reply, State};
+    case update_euis([{remove, EUIPairs}], State) of
+        {error, Reason} ->
+            {reply, {error, Reason}, update_euis_failed(Reason, State)};
+        ok ->
+            {reply, ok, State}
+    end;
 handle_call(
     {update, DeviceIDs},
     _From,
     #state{route_id = RouteID} = State
 ) ->
+    lager:info("update ~p", [DeviceIDs]),
     CachedEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
     APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
     ToRemove = CachedEUIPairs -- APIEUIPairs,
     ToAdd = APIEUIPairs -- CachedEUIPairs,
-    Reply = update_euis([{remove, ToRemove}, {add, ToAdd}], State),
-    {reply, Reply, State};
+    case update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+        {error, Reason} ->
+            {reply, {error, Reason}, update_euis_failed(Reason, State)};
+        ok ->
+            {reply, ok, State}
+    end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast(
+    {?RECONCILE_END, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
+) ->
+    {Delay, Backoff1} = backoff:fail(Backoff0),
+    case get_local_eui_pairs(RouteID) of
+        {error, _Reason} ->
+            _ = erlang:send_after(Delay, self(), ?RECONCILE_START),
+            lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
+            {noreply, State#state{conn_backoff = Backoff1}};
+        {ok, LocalEUIPairs} ->
+            ToAdd = LocalEUIPairs -- EUIPairs,
+            ToRemove = EUIPairs -- LocalEUIPairs,
+            case update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+                {error, Reason} ->
+                    {noreply, update_euis_failed(Reason, State)};
+                ok ->
+                    lager:info("reconciling done"),
+                    {noreply, State}
+            end
+    end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?CONNECT, #state{host = Host, port = Port, conn_backoff = Backoff0} = State) ->
-    case connect(Host, Port) of
+handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
+    {Delay, Backoff1} = backoff:fail(Backoff0),
+    case connect(State) of
         {error, _Reason} ->
-            lager:warning("fail to connect ~p", [_Reason]),
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?CONNECT),
+            lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
+            _ = erlang:send_after(Delay, self(), ?INIT),
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
-            {_, Backoff1} = backoff:succeed(Backoff0),
-            lager:info("connected"),
-            self() ! ?FETCH,
-            {noreply, State#state{conn_backoff = Backoff1}}
+            case get_route_id(State) of
+                {error, _Reason} ->
+                    _ = erlang:send_after(Delay, self(), ?INIT),
+                    lager:warning("fail to get_route_id ~p, reconnecting in ~wms", [_Reason, Delay]),
+                    {noreply, State#state{conn_backoff = Backoff1}};
+                {ok, RouteID} ->
+                    lager:info("connected"),
+                    {_, Backoff2} = backoff:succeed(Backoff0),
+                    self() ! ?RECONCILE_START,
+                    {noreply, State#state{
+                        conn_backoff = Backoff2, route_id = RouteID
+                    }}
+            end
     end;
-handle_info(?FETCH, #state{conn_backoff = Backoff0} = State) ->
-    case get_route_id(State) of
+handle_info(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
+    case get_euis(State) of
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?FETCH),
-            lager:warning("fail to get_route_id ~p", [_Reason]),
+            _ = erlang:send_after(Delay, self(), ?INIT),
+            lager:warning("fail to get_euis ~p, retrying in ~wms", [
+                _Reason, Delay
+            ]),
             {noreply, State#state{conn_backoff = Backoff1}};
-        {ok, RouteID} ->
-            case get_local_eui_pairs(RouteID) of
-                {error, _Reason} ->
-                    {Delay, Backoff1} = backoff:fail(Backoff0),
-                    _ = erlang:send_after(Delay, self(), ?FETCH),
-                    lager:warning("fail to get_route_id ~p", [_Reason]),
-                    {noreply, State#state{conn_backoff = Backoff1}};
-                {ok, EUIPairs} ->
-                    ok = delete_euis(RouteID, State),
-                    ok = update_euis([{add, EUIPairs}], State),
-                    {noreply, State#state{route_id = RouteID}}
-            end
+        {ok, _Stream} ->
+            {_, Backoff2} = backoff:succeed(Backoff0),
+            {noreply, State#state{
+                conn_backoff = Backoff2, route_id = RouteID
+            }}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
     lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
@@ -168,8 +217,8 @@ handle_info({trailers, _StreamID, _Data}, State) ->
 handle_info({eos, _StreamID}, State) ->
     lager:debug("got eos for stream: ~p", [_StreamID]),
     {noreply, State};
-handle_info({'DOWN', _Ref, process, Pid, normal}, State) ->
-    lager:debug("got DOWN for Pid: ~p", [Pid]),
+handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
+    lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -178,15 +227,15 @@ handle_info(_Msg, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{}) ->
+terminate(_Reason, _State) ->
     ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec connect(Host :: string(), Port :: non_neg_integer()) -> ok | {error, any()}.
-connect(Host, Port) ->
+-spec connect(State :: state()) -> ok | {error, any()}.
+connect(#state{host = Host, port = Port} = State) ->
     case grpcbox_channel:pick(?MODULE, stream) of
         {error, _} ->
             case
@@ -194,8 +243,10 @@ connect(Host, Port) ->
                     sync_start => true
                 })
             of
-                {ok, _Conn} -> connect(Host, Port);
-                {error, _Reason} = Error -> Error
+                {ok, _Conn} ->
+                    connect(State);
+                {error, _Reason} = Error ->
+                    Error
             end;
         {ok, {_Conn, _Interceptor}} ->
             ok
@@ -221,20 +272,22 @@ get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
             {ok, Route#iot_config_route_v1_pb.id}
     end.
 
--spec delete_euis(RouteID :: string(), state()) -> ok | {error, any()}.
-delete_euis(RouteID, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
-    Req = #iot_config_route_delete_euis_req_v1_pb{
+-spec get_euis(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
+get_euis(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
+    Req = #iot_config_route_get_euis_req_v1_pb{
         route_id = RouteID,
         timestamp = erlang:system_time(millisecond),
         signer = PubKeyBin
     },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_delete_euis_req_v1_pb),
-    SignedReq = Req#iot_config_route_delete_euis_req_v1_pb{signature = SigFun(EncodedReq)},
-    case helium_iot_config_route_client:delete_euis(SignedReq, #{channel => ?MODULE}) of
-        {grpc_error, Reason} -> {error, Reason};
-        {error, _} = Error -> Error;
-        {ok, #iot_config_route_euis_res_v1_pb{}, _Meta} -> ok
-    end.
+    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_get_euis_req_v1_pb),
+    SignedReq = Req#iot_config_route_get_euis_req_v1_pb{signature = SigFun(EncodedReq)},
+    helium_iot_config_route_client:get_euis(SignedReq, #{
+        channel => ?MODULE,
+        callback_module => {
+            router_ics_route_get_euis_handler,
+            []
+        }
+    }).
 
 -spec update_euis(
     List :: [{add | remove, [iot_config_pb:iot_config_eui_pair_v1_pb()]}],
@@ -309,6 +362,15 @@ get_local_eui_pairs(RouteID) ->
                     APIDevices
                 )}
     end.
+
+-spec update_euis_failed(Reason :: any(), State :: state()) -> state().
+update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
+    {Delay, Backoff1} = backoff:fail(Backoff0),
+    _ = erlang:send_after(Delay, self(), ?INIT),
+    lager:warning("fail to update euis ~p, reconnecting in ~wms", [Reason, Delay]),
+    State#state{
+        conn_backoff = Backoff1, route_id = undefined
+    }.
 
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
     [iot_config_pb:iot_config_eui_pair_v1_pb()].

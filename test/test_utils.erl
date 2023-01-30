@@ -117,13 +117,19 @@ init_per_testcase(TestCase, Config) ->
                 {lager_console_backend, [{module, console_callback}], debug},
                 {lager_console_backend, [{module, router_test_ics_service}], debug},
                 {lager_console_backend, [{module, router_ics_worker_SUITE}], debug},
+                {lager_console_backend, [{module, router_ics_route_get_euis_handler}], debug},
                 {{lager_file_backend, "router.log"}, [{application, router}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_console_api}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_device_routing}], debug},
                 {{lager_file_backend, "device.log"}, [{device_id, <<"yolo_id">>}], debug},
                 {{lager_file_backend, "router.log"}, [{module, console_callback}], debug},
                 {{lager_file_backend, "router.log"}, [{module, router_test_ics_service}], debug},
-                {{lager_file_backend, "router.log"}, [{module, router_ics_worker_SUITE}], debug}
+                {{lager_file_backend, "router.log"}, [{module, router_ics_worker_SUITE}], debug},
+                {
+                    {lager_file_backend, "router.log"},
+                    [{module, router_ics_route_get_euis_handler}],
+                    debug
+                }
             ]);
         _ ->
             ok

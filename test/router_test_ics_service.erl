@@ -23,10 +23,20 @@
     stream/2
 ]).
 
+-export([
+    eui_pair/2
+]).
+
+-define(GET_EUIS_STREAM, get_euis_stream).
+
 -spec init(atom(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
-init(_RPC, StreamState) -> StreamState.
+init(_RPC, StreamState) ->
+    StreamState.
 
 -spec handle_info(Msg :: any(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
+handle_info({eui_pair, EUIPair, Last}, StreamState) ->
+    lager:info("got eui_pair ~p, eos: ~p", [EUIPair, Last]),
+    grpcbox_stream:send(Last, EUIPair, StreamState);
 handle_info(_Msg, StreamState) ->
     StreamState.
 
@@ -57,8 +67,19 @@ update(_Ctx, _Msg) ->
 delete(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
-get_euis(_Msg, _StreamState) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+get_euis(Req, StreamState) ->
+    case verify_get_euis_req_req(Req) of
+        true ->
+            lager:info("got update_euis_req ~p", [Req]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, get_euis, Req},
+            Self = self(),
+            true = erlang:register(?GET_EUIS_STREAM, self()),
+            lager:notice("register ~p @ ~p", [?GET_EUIS_STREAM, Self]),
+            {ok, StreamState};
+        false ->
+            lager:error("failed to update_euis_req ~p", [Req]),
+            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
+    end.
 
 update_euis(eos, StreamState) ->
     lager:info("got EOS"),
@@ -74,16 +95,8 @@ update_euis(Req, _StreamState) ->
             {grpc_error, {7, <<"PERMISSION_DENIED">>}}
     end.
 
-delete_euis(Ctx, Req) ->
-    case verify_delete_euis_req_req(Req) of
-        true ->
-            lager:info("got delete_euis_req ~p", [Req]),
-            catch persistent_term:get(?MODULE) ! {?MODULE, delete_euis, Req},
-            {ok, #iot_config_route_euis_res_v1_pb{}, Ctx};
-        false ->
-            lager:error("failed to delete_euis_req ~p", [Req]),
-            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
-    end.
+delete_euis(_Ctx, _Msg) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 get_devaddr_ranges(_Msg, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
@@ -96,6 +109,12 @@ delete_devaddr_ranges(_Ctx, _Msg) ->
 
 stream(_RouteStreamReq, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+-spec eui_pair(EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), Last :: boolean()) -> ok.
+eui_pair(EUIPair, Last) ->
+    lager:notice("eui_pair ~p  eos: ~p @ ~p", [EUIPair, Last, erlang:whereis(?GET_EUIS_STREAM)]),
+    ?GET_EUIS_STREAM ! {eui_pair, EUIPair, Last},
+    ok.
 
 -spec verify_list_req(Req :: #iot_config_route_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->
@@ -125,16 +144,16 @@ verify_update_euis_req_req(Req) ->
         libp2p_crypto:bin_to_pubkey(Req#iot_config_route_update_euis_req_v1_pb.signer)
     ).
 
--spec verify_delete_euis_req_req(Req :: #iot_config_route_delete_euis_req_v1_pb{}) -> boolean().
-verify_delete_euis_req_req(Req) ->
+-spec verify_get_euis_req_req(Req :: #iot_config_route_get_euis_req_v1_pb{}) -> boolean().
+verify_get_euis_req_req(Req) ->
     EncodedReq = iot_config_pb:encode_msg(
-        Req#iot_config_route_delete_euis_req_v1_pb{
+        Req#iot_config_route_get_euis_req_v1_pb{
             signature = <<>>
         },
-        iot_config_route_delete_euis_req_v1_pb
+        iot_config_route_get_euis_req_v1_pb
     ),
     libp2p_crypto:verify(
         EncodedReq,
-        Req#iot_config_route_delete_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_delete_euis_req_v1_pb.signer)
+        Req#iot_config_route_get_euis_req_v1_pb.signature,
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_get_euis_req_v1_pb.signer)
     ).

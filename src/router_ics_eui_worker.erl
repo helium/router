@@ -17,8 +17,8 @@
     add/1,
     update/1,
     remove/1,
-    route_get_euis_data/1,
-    reconcile/0
+    reconcile/0,
+    reconcile_end/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -80,13 +80,13 @@ update(DeviceIDs) ->
 remove(DeviceIDs) ->
     gen_server:call(?SERVER, {remove, DeviceIDs}).
 
--spec route_get_euis_data(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
-route_get_euis_data(List) ->
-    gen_server:cast(?SERVER, {?RECONCILE_END, List}).
-
 -spec reconcile() -> ok.
 reconcile() ->
     gen_server:cast(?SERVER, ?RECONCILE_START).
+
+-spec reconcile_end(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
+reconcile_end(List) ->
+    gen_server:cast(?SERVER, {?RECONCILE_END, List}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -153,7 +153,7 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
+handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0} = State) ->
     case get_euis(State) of
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
@@ -164,9 +164,7 @@ handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
             {_, Backoff2} = backoff:succeed(Backoff0),
-            {noreply, State#state{
-                conn_backoff = Backoff2, route_id = RouteID
-            }}
+            {noreply, State#state{conn_backoff = Backoff2}}
     end;
 handle_cast(
     {?RECONCILE_END, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State

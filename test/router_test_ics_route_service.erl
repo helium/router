@@ -1,4 +1,4 @@
--module(router_test_ics_service).
+-module(router_test_ics_route_service).
 
 -behaviour(helium_iot_config_route_bhvr).
 -include("../src/grpc/autogen/iot_config_pb.hrl").

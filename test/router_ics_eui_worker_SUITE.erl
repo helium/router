@@ -35,7 +35,7 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    persistent_term:put(router_test_ics_service, self()),
+    persistent_term:put(router_test_ics_route_service, self()),
     Port = 8085,
     ServerPid = start_server(Port),
     ok = application:set_env(
@@ -105,7 +105,7 @@ main_test(_Config) ->
         {ok, maps:get(DeviceID, Devices)}
     end),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -218,7 +218,7 @@ server_crash_test(Config) ->
         {ok, maps:get(DeviceID, Devices)}
     end),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -250,7 +250,7 @@ server_crash_test(Config) ->
     timer:sleep(1000),
     lager:notice("server started"),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -281,8 +281,8 @@ server_crash_test(Config) ->
 
 rcv_loop(Acc) ->
     receive
-        {router_test_ics_service, Type, Req} ->
-            lager:notice("got router_test_ics_service ~p req ~p", [Type, Req]),
+        {router_test_ics_route_service, Type, Req} ->
+            lager:notice("got router_test_ics_route_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
     end.
@@ -292,7 +292,7 @@ start_server(Port) ->
     {ok, ServerPid} = grpcbox:start_server(#{
         grpc_opts => #{
             service_protos => [iot_config_pb],
-            services => #{'helium.iot_config.route' => router_test_ics_service}
+            services => #{'helium.iot_config.route' => router_test_ics_route_service}
         },
         listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
     }),

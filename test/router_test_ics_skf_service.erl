@@ -39,8 +39,19 @@ list(Req, StreamState) ->
 get(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
-update(_Ctx, _Msg) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+update(eos, StreamState) ->
+    lager:info("got EOS"),
+    {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
+update(Req, StreamState) ->
+    case verify_skf_update_req(Req) of
+        true ->
+            lager:info("got skf_update ~p", [Req]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, update, Req},
+            {ok, StreamState};
+        false ->
+            lager:error("failed to skf_update ~p", [Req]),
+            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
+    end.
 
 stream(_RouteStreamReq, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
@@ -57,4 +68,18 @@ verify_list_req(Req) ->
         EncodedReq,
         Req#iot_config_session_key_filter_list_req_v1_pb.signature,
         libp2p_crypto:bin_to_pubkey(Req#iot_config_session_key_filter_list_req_v1_pb.signer)
+    ).
+
+-spec verify_skf_update_req(Req :: #iot_config_session_key_filter_update_req_v1_pb{}) -> boolean().
+verify_skf_update_req(Req) ->
+    EncodedReq = iot_config_pb:encode_msg(
+        Req#iot_config_session_key_filter_update_req_v1_pb{
+            signature = <<>>
+        },
+        iot_config_session_key_filter_update_req_v1_pb
+    ),
+    libp2p_crypto:verify(
+        EncodedReq,
+        Req#iot_config_session_key_filter_update_req_v1_pb.signature,
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_session_key_filter_update_req_v1_pb.signer)
     ).

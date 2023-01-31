@@ -71,6 +71,10 @@ main_test(_Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
+    timer:sleep(5000),
+
+    ?assertEqual([], rcv_loop([])),
+
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
     ok.
@@ -84,8 +88,16 @@ start_server(Port) ->
     {ok, ServerPid} = grpcbox:start_server(#{
         grpc_opts => #{
             service_protos => [iot_config_pb],
-            services => #{'helium.iot_config.route' => router_test_ics_route_service}
+            services => #{'helium.iot_config.skf' => router_test_ics_skf_service}
         },
         listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
     }),
     ServerPid.
+
+rcv_loop(Acc) ->
+    receive
+        {router_test_ics_skf_service, Type, Req} ->
+            lager:notice("got router_test_ics_skf_service ~p req ~p", [Type, Req]),
+            rcv_loop([{Type, Req} | Acc])
+    after timer:seconds(2) -> Acc
+    end.

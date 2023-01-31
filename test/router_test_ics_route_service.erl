@@ -85,7 +85,7 @@ update_euis(eos, StreamState) ->
     lager:info("got EOS"),
     {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
 update_euis(Req, _StreamState) ->
-    case verify_update_euis_req_req(Req) of
+    case verify_update_euis_req(Req) of
         true ->
             lager:info("got update_euis_req ~p", [Req]),
             catch persistent_term:get(?MODULE) ! {?MODULE, update_euis, Req},
@@ -130,8 +130,8 @@ verify_list_req(Req) ->
         libp2p_crypto:bin_to_pubkey(Req#iot_config_route_list_req_v1_pb.signer)
     ).
 
--spec verify_update_euis_req_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
-verify_update_euis_req_req(Req) ->
+-spec verify_update_euis_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
+verify_update_euis_req(Req) ->
     EncodedReq = iot_config_pb:encode_msg(
         Req#iot_config_route_update_euis_req_v1_pb{
             signature = <<>>

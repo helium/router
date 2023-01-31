@@ -67,17 +67,13 @@ docker-exec:
 	docker exec -it helium_router _build/default/rel/router/bin/router remote_console
 
 grpc:
-	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
-	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen
-	REBAR_CONFIG="config/grpc_packet_router_client_gen.config" $(REBAR) grpc gen
+	REBAR_CONFIG="config/grpc_gen.config" $(REBAR) grpc gen
 
-$(grpc_services_directory):
+$(grpc_services_directory): config/grpc_gen.config
 	@echo "grpc service directory $(directory) does not exist, generating services"
 	$(REBAR) get-deps
-	REBAR_CONFIG="config/grpc_server_gen.config" $(REBAR) grpc gen
-	REBAR_CONFIG="config/grpc_client_gen.config" $(REBAR) grpc gen
-	REBAR_CONFIG="config/grpc_packet_router_client_gen.config" $(REBAR) grpc gen
+	$(MAKE) grpc
 
 # Pass all unknown targets straight to rebar3 (e.g. `make dialyzer`)
-%: | $(grpc_services_directory)
+%:
 	$(REBAR) $@

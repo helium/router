@@ -18,7 +18,7 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
--include("../src/grpc/autogen/server/packet_router_pb.hrl").
+-include("../src/grpc/autogen/packet_router_pb.hrl").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS

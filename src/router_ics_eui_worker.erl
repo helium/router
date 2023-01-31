@@ -3,7 +3,7 @@
 %% == Router IOT Config Service Worker ==
 %% @end
 %%%-------------------------------------------------------------------
--module(router_ics_worker).
+-module(router_ics_eui_worker).
 
 -behavior(gen_server).
 
@@ -170,9 +170,9 @@ handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID
 handle_cast(
     {?RECONCILE_END, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
-    {Delay, Backoff1} = backoff:fail(Backoff0),
     case get_local_eui_pairs(RouteID) of
         {error, _Reason} ->
+            {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:spawn(fun() ->
                 timer:sleep(Delay),
                 ok = ?MODULE:reconcile()

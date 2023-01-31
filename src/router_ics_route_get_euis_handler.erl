@@ -35,6 +35,6 @@ handle_trailers(_Status, _Message, _Metadata, CBData) ->
 
 -spec handle_eos(state()) -> {ok, state()}.
 handle_eos(State) ->
-    lager:info("got eos, sending to router_ics_worker"),
-    ok = router_ics_worker:route_get_euis_data(State),
+    lager:info("got eos, sending to router_ics_eui_worker"),
+    ok = router_ics_eui_worker:route_get_euis_data(State),
     {ok, State}.

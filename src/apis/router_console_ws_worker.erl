@@ -156,14 +156,14 @@ handle_info(
     {ws_message, <<"device:all">>, <<"device:all:add:devices">>, #{<<"devices">> := DeviceIDs}},
     State
 ) ->
-    catch router_ics_worker:add(DeviceIDs),
+    catch router_ics_eui_worker:add(DeviceIDs),
     {noreply, State};
 %% Device Update
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_worker:update(DeviceIDs),
+    catch router_ics_eui_worker:update(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device remove
@@ -171,7 +171,7 @@ handle_info(
     {ws_message, <<"device:all">>, <<"device:all:remove:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_worker:remove(DeviceIDs),
+    catch router_ics_eui_worker:remove(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(

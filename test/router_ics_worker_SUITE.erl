@@ -1,4 +1,4 @@
--module(router_ics_worker_SUITE).
+-module(router_ics_eui_worker_SUITE).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -125,7 +125,7 @@ main_test(_Config) ->
         Req3#iot_config_route_update_euis_req_v1_pb.eui_pair
     ),
 
-    ok = router_ics_worker:add([ID1]),
+    ok = router_ics_eui_worker:add([ID1]),
 
     [{Type4, Req4}] = rcv_loop([]),
     ?assertEqual(update_euis, Type4),
@@ -135,7 +135,7 @@ main_test(_Config) ->
         Req4#iot_config_route_update_euis_req_v1_pb.eui_pair
     ),
 
-    ok = router_ics_worker:remove([ID2]),
+    ok = router_ics_eui_worker:remove([ID2]),
 
     [{Type5, Req5}] = rcv_loop([]),
     ?assertEqual(update_euis, Type5),
@@ -161,7 +161,7 @@ main_test(_Config) ->
         end
     end),
 
-    ok = router_ics_worker:update([ID1, ID2]),
+    ok = router_ics_eui_worker:update([ID1, ID2]),
 
     [{Type7, Req7}, {Type6, Req6}] = rcv_loop([]),
     ?assertEqual(update_euis, Type6),
@@ -243,7 +243,7 @@ server_crash_test(Config) ->
     lager:notice("server stoppped"),
     timer:sleep(250),
 
-    ?assertEqual({error, {shutdown, econnrefused}}, router_ics_worker:add([ID1])),
+    ?assertEqual({error, {shutdown, econnrefused}}, router_ics_eui_worker:add([ID1])),
 
     ServerPid = start_server(8085),
 

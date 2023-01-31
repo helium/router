@@ -143,7 +143,7 @@ migration_ouis_routes([_, _, _], [], _Flags) ->
     usage.
 
 send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
-    ok = router_ics_worker:reconcile(),
+    ok = router_ics_eui_worker:reconcile(),
     c_text("Updating EUIS", []);
 send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),

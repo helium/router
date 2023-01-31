@@ -733,11 +733,12 @@ handle_cast(
                     end,
                 {devaddr, DevAddr0} = blockchain_helium_packet_v1:routing_info(Packet0),
                 DevAddr1 = lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>),
+                Keys = router_device:keys(Device0),
                 DeviceUpdates = [
                     {keys,
                         lists:filter(
                             fun({NwkSKey, _}) -> NwkSKey == UsedNwkSKey end,
-                            router_device:keys(Device0)
+                            Keys
                         )},
                     {dev_nonces, DevNonces},
                     {devaddrs, [DevAddr1]},
@@ -745,6 +746,26 @@ handle_cast(
                 ],
                 D1 = router_device:update(DeviceUpdates, Device0),
                 ok = save_device(DB, CF, D1),
+
+                ToAdd = [{add, DevAddr0, UsedNwkSKey}],
+                ToRemove = lists:foldl(
+                    fun({NwkSKey, _}, Acc0) ->
+                        lists:foldl(
+                            fun(DevAddr, Acc1) ->
+                                <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
+                                    DevAddr
+                                ),
+                                [{remove, DevAddrInt, NwkSKey} | Acc1]
+                            end,
+                            router_device:devaddrs(Device0)
+                        ) ++ Acc0
+                    end,
+                    Keys
+                ),
+
+                ok = router_ics_skf_worker:update(ToAdd ++ ToRemove),
+                lager:debug("sending update sfk ~p", [ToAdd ++ ToRemove]),
+
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
                         router_device:dev_nonces(D1),
@@ -1319,6 +1340,11 @@ handle_join(
         true
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
+
+    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
+    ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
+    lager:debug("sending add sfk ~p ~p", [DevAddrInt, NwkSKey]),
+
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},

@@ -7,7 +7,7 @@
 
 -behavior(gen_server).
 
--include("./grpc/autogen/iot_config_pb.hrl").
+-include("./autogen/iot_config_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports

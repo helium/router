@@ -48,7 +48,9 @@
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
             host => "${ROUTER_ICS_HOST}",
-            port => "${ROUTER_ICS_PORT}"
+            port => "${ROUTER_ICS_PORT}",
+            eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
+            skf_enabled => "${ROUTER_ICS_SKF_ENABLED}"
         }},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},

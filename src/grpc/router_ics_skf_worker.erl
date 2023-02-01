@@ -62,7 +62,9 @@ start_link(#{host := ""}) ->
     ignore;
 start_link(#{port := Port} = Args) when is_list(Port) ->
     ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(#{host := Host, port := Port} = Args) when is_list(Host) andalso is_integer(Port) ->
+start_link(#{skf_enabled := "true", host := Host, port := Port} = Args) when
+    is_list(Host) andalso is_integer(Port)
+->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
 start_link(_Args) ->
     ignore.

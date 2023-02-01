@@ -231,14 +231,20 @@ skf_list(#state{oui = OUI, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(OUI) ->
     Devices = router_device_cache:get(),
-    lists:map(
+    lists:filtermap(
         fun(Device) ->
-            <<Devaddr:32/integer-unsigned-big>> = router_device:devaddr(Device),
-            #iot_config_session_key_filter_v1_pb{
-                oui = OUI,
-                devaddr = Devaddr,
-                session_key = router_device:nwk_s_key(Device)
-            }
+            case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+                {undefined, _} ->
+                    false;
+                {_, undefined} ->
+                    false;
+                {<<Devaddr:32/integer-unsigned-big>>, SessionKey} ->
+                    {true, #iot_config_session_key_filter_v1_pb{
+                        oui = OUI,
+                        devaddr = Devaddr,
+                        session_key = SessionKey
+                    }}
+            end
         end,
         Devices
     ).

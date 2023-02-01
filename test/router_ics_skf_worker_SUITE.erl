@@ -87,7 +87,8 @@ main_test(_Config) ->
 
     meck:expect(router_device_cache, get, fun() ->
         lager:notice("router_device_cache:get()"),
-        Devices
+        BadDevice = router_device:new(<<"bad_device">>),
+        [BadDevice | Devices]
     end),
 
     router_test_ics_skf_service:send_list(

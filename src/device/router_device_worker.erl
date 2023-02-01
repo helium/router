@@ -747,31 +747,29 @@ handle_cast(
                 ok = save_device(DB, CF, D1),
 
                 ToAdd = [{add, DevAddr0, UsedNwkSKey}],
-                ToRemove = lists:foldl(
-                    fun({NwkSKey, _}, Acc0) ->
-                        lists:foldl(
-                            fun(DevAddr, Acc1) ->
-                                <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                                    DevAddr
-                                ),
-                                [{remove, DevAddrInt, NwkSKey} | Acc1]
-                            end,
-                            Acc0,
-                            lists:filter(
-                                fun(DevAddr) -> DevAddr =/= DevAddr1 end,
+                %% We have to usort just in case DevAddr assigned is the same
+                ToRemove0 = lists:usort(
+                    lists:foldl(
+                        fun({NwkSKey, _}, Acc0) ->
+                            lists:foldl(
+                                fun(DevAddr, Acc1) ->
+                                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
+                                        DevAddr
+                                    ),
+                                    [{remove, DevAddrInt, NwkSKey} | Acc1]
+                                end,
+                                Acc0,
                                 router_device:devaddrs(Device0)
                             )
-                        )
-                    end,
-                    [],
-                    lists:filter(
-                        fun({NwkSKey, _}) -> NwkSKey =/= UsedNwkSKey end,
+                        end,
+                        [],
                         Keys
                     )
                 ),
-
-                ok = router_ics_skf_worker:update(ToAdd ++ ToRemove),
-                lager:debug("sending update sfk ~p", [ToAdd ++ ToRemove]),
+                %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
+                ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
+                ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),
+                lager:debug("sending update skf ~p", [ToAdd ++ ToRemove1]),
 
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
@@ -1350,7 +1348,7 @@ handle_join(
 
     <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
     ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
-    lager:debug("sending add sfk ~p ~p", [DevAddrInt, NwkSKey]),
+    lager:debug("sending add skf ~p ~p", [DevAddrInt, NwkSKey]),
 
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet

@@ -19,7 +19,7 @@
     send_list/2
 ]).
 
--define(SFK_LIST, sfk_list_stream).
+-define(SFK_LIST, skf_list_stream).
 
 -spec init(atom(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
 init(_RPC, StreamState) ->

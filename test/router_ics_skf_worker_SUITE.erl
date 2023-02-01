@@ -73,6 +73,7 @@ main_test(Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
+    %% creating couple devices for testing
     Devices = lists:map(
         fun(X) ->
             ID = router_utils:uuid_v4(),
@@ -87,12 +88,14 @@ main_test(Config) ->
         lists:seq(1, 2)
     ),
 
+    %% Add a device without any devaddr or session, it should be filtered out
     meck:expect(router_device_cache, get, fun() ->
         lager:notice("router_device_cache:get()"),
         BadDevice = router_device:new(<<"bad_device">>),
         [BadDevice | Devices]
     end),
 
+    %% Add a fake device to config service, as it is not in Router's cache it should get removed
     router_test_ics_skf_service:send_list(
         #iot_config_session_key_filter_v1_pb{
             oui = 0,
@@ -102,6 +105,7 @@ main_test(Config) ->
         true
     ),
 
+    %% Check after reconcile, we should get the list and then 3 updates, (1 remove and 2 adds)
     [{Type3, Req3}, {Type2, Req2}, {Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
     [Device1, Device2] = Devices,
 
@@ -135,36 +139,38 @@ main_test(Config) ->
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
+    %% Join a device to test device_worker code, we should see 1 add
     #{
-        stream := Stream,
-        pubkey_bin := PubKeyBin
+        stream := Stream1,
+        pubkey_bin := PubKeyBin1
     } = test_utils:join_device(Config),
 
     [{Type4, Req4}] = rcv_loop([]),
     ?assertEqual(update, Type4),
     ?assertEqual(add, Req4#iot_config_session_key_filter_update_req_v1_pb.action),
 
-    {ok, JoinedDevice} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    <<JoinedDevAddr:32/integer-unsigned-big>> = lorawan_utils:reverse(
-        router_device:devaddr(JoinedDevice)
+    {ok, JoinedDevice1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    <<JoinedDevAddr1:32/integer-unsigned-big>> = lorawan_utils:reverse(
+        router_device:devaddr(JoinedDevice1)
     ),
 
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr,
-            session_key = router_device:nwk_s_key(JoinedDevice)
+            devaddr = JoinedDevAddr1,
+            session_key = router_device:nwk_s_key(JoinedDevice1)
         },
         Req4#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
-    Stream !
+    %% Send first packet it should trigger another add (just in case)
+    Stream1 !
         {send,
             test_utils:frame_packet(
                 ?UNCONFIRMED_UP,
-                PubKeyBin,
-                router_device:nwk_s_key(JoinedDevice),
-                router_device:app_s_key(JoinedDevice),
+                PubKeyBin1,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
                 0
             )},
 
@@ -174,10 +180,67 @@ main_test(Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr,
-            session_key = router_device:nwk_s_key(JoinedDevice)
+            devaddr = JoinedDevAddr1,
+            session_key = router_device:nwk_s_key(JoinedDevice1)
         },
         Req5#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+
+    %% Join device again
+    #{
+        stream := Stream2,
+        pubkey_bin := PubKeyBin2
+    } = test_utils:join_device(Config),
+
+    [{Type6, Req6}] = rcv_loop([]),
+    ?assertEqual(update, Type6),
+    ?assertEqual(add, Req6#iot_config_session_key_filter_update_req_v1_pb.action),
+
+    {ok, JoinedDevice2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    <<JoinedDevAddr2:32/integer-unsigned-big>> = lorawan_utils:reverse(
+        router_device:devaddr(JoinedDevice2)
+    ),
+
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = JoinedDevAddr2,
+            session_key = router_device:nwk_s_key(JoinedDevice2)
+        },
+        Req6#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+
+    %% Send first packet again, we should see add and remove this time
+    Stream2 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                0
+            )},
+
+    [{Type7, Req7}, {Type8, Req8}] = rcv_loop([]),
+    ?assertEqual(update, Type7),
+    ?assertEqual(remove, Req7#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = JoinedDevAddr2,
+            session_key = router_device:nwk_s_key(JoinedDevice2)
+        },
+        Req7#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+    ?assertEqual(update, Type8),
+    ?assertEqual(add, Req8#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = JoinedDevAddr1,
+            session_key = router_device:nwk_s_key(JoinedDevice1)
+        },
+        Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
     meck:unload(router_console_api),

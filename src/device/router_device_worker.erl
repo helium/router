@@ -10,7 +10,6 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("public_key/include/public_key.hrl").
 -include_lib("erlang_lorawan/src/lora_adr.hrl").
-
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("lorawan_db.hrl").
@@ -757,10 +756,18 @@ handle_cast(
                                 ),
                                 [{remove, DevAddrInt, NwkSKey} | Acc1]
                             end,
-                            router_device:devaddrs(Device0)
-                        ) ++ Acc0
+                            Acc0,
+                            lists:filter(
+                                fun(DevAddr) -> DevAddr =/= DevAddr1 end,
+                                router_device:devaddrs(Device0)
+                            )
+                        )
                     end,
-                    Keys
+                    [],
+                    lists:filter(
+                        fun({NwkSKey, _}) -> NwkSKey =/= UsedNwkSKey end,
+                        Keys
+                    )
                 ),
 
                 ok = router_ics_skf_worker:update(ToAdd ++ ToRemove),

@@ -3,6 +3,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
+-include("console_test.hrl").
+-include("lorawan_vars.hrl").
 
 -export([
     all/0,
@@ -67,7 +69,7 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
-main_test(_Config) ->
+main_test(Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
@@ -131,6 +133,51 @@ main_test(_Config) ->
             session_key = router_device:nwk_s_key(Device2)
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+
+    #{
+        stream := Stream,
+        pubkey_bin := PubKeyBin
+    } = test_utils:join_device(Config),
+
+    [{Type4, Req4}] = rcv_loop([]),
+    ?assertEqual(update, Type4),
+    ?assertEqual(add, Req4#iot_config_session_key_filter_update_req_v1_pb.action),
+
+    {ok, JoinedDevice} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    <<JoinedDevAddr:32/integer-unsigned-big>> = lorawan_utils:reverse(
+        router_device:devaddr(JoinedDevice)
+    ),
+
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = JoinedDevAddr,
+            session_key = router_device:nwk_s_key(JoinedDevice)
+        },
+        Req4#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(JoinedDevice),
+                router_device:app_s_key(JoinedDevice),
+                0
+            )},
+
+    [{Type5, Req5}] = rcv_loop([]),
+    ?assertEqual(update, Type5),
+    ?assertEqual(add, Req5#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = JoinedDevAddr,
+            session_key = router_device:nwk_s_key(JoinedDevice)
+        },
+        Req5#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
     meck:unload(router_console_api),

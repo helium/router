@@ -16,7 +16,7 @@
     start_link/1,
     reconcile/0,
     reconcile_end/1,
-    updates/1
+    update/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -77,8 +77,8 @@ reconcile() ->
 reconcile_end(List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, List}).
 
--spec updates(Updates :: list({add | remove, non_neg_integer(), binary()})) -> ok.
-updates(Updates) ->
+-spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) -> ok.
+update(Updates) ->
     gen_server:cast(?SERVER, {?UPDATE, Updates}).
 
 %% ------------------------------------------------------------------
@@ -134,19 +134,26 @@ handle_cast(
 handle_cast(
     {?UPDATE, Updates0}, #state{oui = OUI} = State
 ) ->
-    Updates1 = [
-        {Action, #iot_config_session_key_filter_v1_pb{
-            oui = OUI,
-            devaddr = DevAdrr,
-            session_key = Key
-        }}
-     || {Action, DevAdrr, Key} <- Updates0
-    ],
+    Updates1 = maps:to_list(
+        lists:foldl(
+            fun({Action, DevAdrr, Key}, Acc) ->
+                Tail = maps:get(Action, Acc, []),
+                SKF = #iot_config_session_key_filter_v1_pb{
+                    oui = OUI,
+                    devaddr = DevAdrr,
+                    session_key = Key
+                },
+                Acc#{Action => [SKF | Tail]}
+            end,
+            #{},
+            Updates0
+        )
+    ),
     case skf_update(Updates1, State) of
         {error, Reason} ->
             {noreply, skf_update_failed(Reason, State)};
         ok ->
-            lager:info("reconciling done"),
+            lager:info("update done"),
             {noreply, State}
     end;
 handle_cast(_Msg, State) ->

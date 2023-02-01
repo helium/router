@@ -71,7 +71,7 @@ start_link(_Args) ->
 reconcile() ->
     gen_server:cast(?SERVER, ?RECONCILE_START).
 
--spec reconcile_end(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
+-spec reconcile_end(list(iot_config_pb:iot_config_session_key_filter_v1_pb())) -> ok.
 reconcile_end(List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, List}).
 
@@ -101,11 +101,12 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0} = State) ->
-    case get_skfs(State) of
+    lager:info("reconciling started"),
+    case skf_list(State) of
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
-            lager:warning("fail to get_euis ~p, retrying in ~wms", [
+            lager:warning("fail to skf_list ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
             {noreply, State#state{conn_backoff = Backoff1}};
@@ -119,9 +120,11 @@ handle_cast(
     LocalSFKs = get_local_skfs(OUI),
     ToAdd = LocalSFKs -- SKFs,
     ToRemove = SKFs -- LocalSFKs,
-    case update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+    lager:info("adding ~w", [erlang:length(ToAdd)]),
+    lager:info("removing ~w", [erlang:length(ToRemove)]),
+    case skf_update([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} ->
-            {noreply, update_skf_failed(Reason, State)};
+            {noreply, skf_update_failed(Reason, State)};
         ok ->
             lager:info("reconciling done"),
             {noreply, State}
@@ -137,9 +140,9 @@ handle_cast(
         }}
      || {Action, DevAdrr, Key} <- Updates0
     ],
-    case update_skf(Updates1, State) of
+    case skf_update(Updates1, State) of
         {error, Reason} ->
-            {noreply, update_skf_failed(Reason, State)};
+            {noreply, skf_update_failed(Reason, State)};
         ok ->
             lager:info("reconciling done"),
             {noreply, State}
@@ -161,6 +164,18 @@ handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
             ok = ?MODULE:reconcile(),
             {noreply, State#state{conn_backoff = Backoff2}}
     end;
+handle_info({headers, _StreamID, _Data}, State) ->
+    lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
+    {noreply, State};
+handle_info({trailers, _StreamID, _Data}, State) ->
+    lager:debug("got trailers for stream: ~p, ~p", [_StreamID, _Data]),
+    {noreply, State};
+handle_info({eos, _StreamID}, State) ->
+    lager:debug("got eos for stream: ~p", [_StreamID]),
+    {noreply, State};
+handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
+    lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -193,8 +208,8 @@ connect(#state{host = Host, port = Port} = State) ->
             ok
     end.
 
--spec get_skfs(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-get_skfs(#state{oui = OUI, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+-spec skf_list(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
+skf_list(#state{oui = OUI, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_list_req_v1_pb{
         oui = OUI,
         timestamp = erlang:system_time(millisecond),
@@ -226,12 +241,14 @@ get_local_skfs(OUI) ->
         Devices
     ).
 
--spec update_skf(
+-spec skf_update(
     List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
     State :: state()
 ) ->
     ok | {error, any()}.
-update_skf(List, State) ->
+skf_update([], _State) ->
+    ok;
+skf_update(List, State) ->
     case
         helium_iot_config_session_key_filter_client:update(#{
             channel => ?MODULE
@@ -245,7 +262,7 @@ update_skf(List, State) ->
                     lists:foreach(
                         fun(SKF) ->
                             lager:info("~p ~p", [Action, SKF]),
-                            ok = update_skf(Action, SKF, Stream, State)
+                            ok = skf_update(Action, SKF, Stream, State)
                         end,
                         SKFs
                     )
@@ -259,13 +276,13 @@ update_skf(List, State) ->
             end
     end.
 
--spec update_skf(
+-spec skf_update(
     Action :: add | remove,
     EUIPair :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
-update_skf(Action, SKF, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+skf_update(Action, SKF, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_update_req_v1_pb{
         action = Action,
         filter = SKF,
@@ -276,9 +293,9 @@ update_skf(Action, SKF, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}
     SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
     ok = grpcbox_client:send(Stream, SignedReq).
 
--spec update_skf_failed(Reason :: any(), State :: state()) -> state().
-update_skf_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
+-spec skf_update_failed(Reason :: any(), State :: state()) -> state().
+skf_update_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     _ = erlang:send_after(Delay, self(), ?INIT),
-    lager:warning("fail to update euis ~p, reconnecting in ~wms", [Reason, Delay]),
+    lager:warning("fail to update skf ~p, reconnecting in ~wms", [Reason, Delay]),
     State#state{conn_backoff = Backoff1}.

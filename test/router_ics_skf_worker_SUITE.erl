@@ -33,7 +33,7 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    persistent_term:put(router_test_ics_route_service, self()),
+    persistent_term:put(router_test_ics_skf_service, self()),
     Port = 8085,
     ServerPid = start_server(Port),
     ok = application:set_env(
@@ -71,9 +71,66 @@ main_test(_Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
-    timer:sleep(5000),
+    Devices = lists:map(
+        fun(X) ->
+            ID = router_utils:uuid_v4(),
+            router_device:update(
+                [
+                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
+                ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, 2)
+    ),
 
-    ?assertEqual([], rcv_loop([])),
+    meck:expect(router_device_cache, get, fun() ->
+        lager:notice("router_device_cache:get()"),
+        Devices
+    end),
+
+    router_test_ics_skf_service:send_list(
+        #iot_config_session_key_filter_v1_pb{
+            oui = 0,
+            devaddr = 0,
+            session_key = <<>>
+        },
+        true
+    ),
+
+    [{Type3, Req3}, {Type2, Req2}, {Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
+    [Device1, Device2] = Devices,
+
+    ?assertEqual(list, Type0),
+    ?assertEqual(update, Type1),
+    ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = 0, devaddr = 0, session_key = <<>>
+        },
+        Req1#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+    ?assertEqual(update, Type2),
+    ?assertEqual(add, Req2#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = 1,
+            session_key = router_device:nwk_s_key(Device1)
+        },
+        Req2#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+    ?assertEqual(update, Type3),
+    ?assertEqual(add, Req3#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = 2,
+            session_key = router_device:nwk_s_key(Device2)
+        },
+        Req3#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
 
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
@@ -88,7 +145,10 @@ start_server(Port) ->
     {ok, ServerPid} = grpcbox:start_server(#{
         grpc_opts => #{
             service_protos => [iot_config_pb],
-            services => #{'helium.iot_config.skf' => router_test_ics_skf_service}
+            services => #{
+                'helium.iot_config.route' => router_test_ics_route_service,
+                'helium.iot_config.session_key_filter' => router_test_ics_skf_service
+            }
         },
         listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
     }),

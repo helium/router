@@ -292,7 +292,10 @@ start_server(Port) ->
     {ok, ServerPid} = grpcbox:start_server(#{
         grpc_opts => #{
             service_protos => [iot_config_pb],
-            services => #{'helium.iot_config.route' => router_test_ics_route_service}
+            services => #{
+                'helium.iot_config.route' => router_test_ics_route_service,
+                'helium.iot_config.session_key_filter' => router_test_ics_skf_service
+            }
         },
         listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
     }),

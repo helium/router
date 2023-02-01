@@ -15,14 +15,20 @@
     stream/2
 ]).
 
+-export([
+    send_list/2
+]).
+
+-define(SFK_LIST, sfk_list_stream).
+
 -spec init(atom(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
 init(_RPC, StreamState) ->
     StreamState.
 
 -spec handle_info(Msg :: any(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
-handle_info({eui_pair, EUIPair, Last}, StreamState) ->
-    lager:info("got eui_pair ~p, eos: ~p", [EUIPair, Last]),
-    grpcbox_stream:send(Last, EUIPair, StreamState);
+handle_info({send_list, SKF, Last}, StreamState) ->
+    lager:info("got send_list ~p, eos: ~p", [SKF, Last]),
+    grpcbox_stream:send(Last, SKF, StreamState);
 handle_info(_Msg, StreamState) ->
     StreamState.
 
@@ -30,6 +36,10 @@ list(Req, StreamState) ->
     case verify_list_req(Req) of
         true ->
             lager:info("got list req ~p", [Req]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, list, Req},
+            Self = self(),
+            true = erlang:register(?SFK_LIST, Self),
+            lager:notice("register ~p @ ~p", [?SFK_LIST, Self]),
             {ok, StreamState};
         false ->
             lager:error("failed to verify list req ~p", [Req]),
@@ -55,6 +65,13 @@ update(Req, StreamState) ->
 
 stream(_RouteStreamReq, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+-spec send_list(SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(), Last :: boolean()) ->
+    ok.
+send_list(SKF, Last) ->
+    lager:notice("list ~p  eos: ~p @ ~p", [SKF, Last, erlang:whereis(?SFK_LIST)]),
+    ?SFK_LIST ! {send_list, SKF, Last},
+    ok.
 
 -spec verify_list_req(Req :: #iot_config_session_key_filter_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->

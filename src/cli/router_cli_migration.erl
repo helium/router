@@ -42,10 +42,7 @@ info_usage() ->
             "migration ouis  \n",
             "migration ouis routes \n",
             "migration euis   - Add Console EUIs to config service existing route\n",
-            "    --host=<config_service_host>\n"
-            "    --port=<config_service_port>\n"
-            "    --route_id=<route_id>\n"
-            "    [--commit]\n"
+            "migration skfs   - Add Session Keys to config service\n"
         ]
     ].
 
@@ -77,6 +74,12 @@ info_cmd() ->
             [],
             [],
             fun send_euis_to_config_service/3
+        ],
+        [
+            ["migration", "skfs"],
+            [],
+            [],
+            fun send_skfs_to_config_service/3
         ]
     ].
 
@@ -144,8 +147,22 @@ migration_ouis_routes([_, _, _], [], _Flags) ->
 
 send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
     ok = router_ics_eui_worker:reconcile(),
-    c_text("Updating EUIS", []);
+    c_text("Updating EUIs", []);
 send_euis_to_config_service(A, B, C) ->
+    io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
+    usage.
+
+send_skfs_to_config_service(["migration", "skfs"], [], _Flags) ->
+    ok = router_ics_skf_worker:reconcile(self()),
+    receive
+        {ok, Added, Removed} ->
+            c_text("Updating SKFs: added ~w, remove ~w", [Added, Removed]);
+        {error, _Reason} ->
+            c_text("Updating SKFs failed ~p", [_Reason])
+    after 5000 ->
+        c_text("Error timeout")
+    end;
+send_skfs_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 

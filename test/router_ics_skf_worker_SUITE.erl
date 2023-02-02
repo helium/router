@@ -13,7 +13,8 @@
 ]).
 
 -export([
-    main_test/1
+    main_test/1,
+    reconcile_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -28,7 +29,8 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        main_test
+        main_test,
+        reconcile_test
     ].
 
 %%--------------------------------------------------------------------
@@ -70,7 +72,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 main_test(Config) ->
-    meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
     %% creating couple devices for testing
@@ -243,7 +244,119 @@ main_test(Config) ->
         Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
-    meck:unload(router_console_api),
+    meck:unload(router_device_cache),
+    ok.
+
+reconcile_test(_Config) ->
+    meck:new(router_device_cache, [passthrough]),
+
+    %% creating couple devices for testing
+    Devices0 = lists:map(
+        fun(X) ->
+            ID = router_utils:uuid_v4(),
+            router_device:update(
+                [
+                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
+                ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, 2)
+    ),
+
+    %% Add a device without any devaddr or session, it should be filtered out
+    meck:expect(router_device_cache, get, fun() ->
+        lager:notice("router_device_cache:get()"),
+        BadDevice = router_device:new(<<"bad_device">>),
+        [BadDevice | Devices0]
+    end),
+
+    %% Add a fake device to config service, as it is not in Router's cache it should get removed
+    router_test_ics_skf_service:send_list(
+        #iot_config_session_key_filter_v1_pb{
+            oui = 0,
+            devaddr = 0,
+            session_key = <<>>
+        },
+        true
+    ),
+
+    %% Check after reconcile, we should get the list and then 3 updates, (1 remove and 2 adds)
+    [{Type3, Req3}, {Type2, Req2}, {Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
+    [Device1, Device2] = Devices0,
+
+    ?assertEqual(list, Type0),
+    ?assertEqual(update, Type1),
+    ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = 0, devaddr = 0, session_key = <<>>
+        },
+        Req1#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+    ?assertEqual(update, Type2),
+    ?assertEqual(add, Req2#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = 1,
+            session_key = router_device:nwk_s_key(Device1)
+        },
+        Req2#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+    ?assertEqual(update, Type3),
+    ?assertEqual(add, Req3#iot_config_session_key_filter_update_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_session_key_filter_v1_pb{
+            oui = router_utils:get_oui(),
+            devaddr = 2,
+            session_key = router_device:nwk_s_key(Device2)
+        },
+        Req3#iot_config_session_key_filter_update_req_v1_pb.filter
+    ),
+
+    %% Add 20 more devices
+    Devices1 = lists:map(
+        fun(X) ->
+            ID = router_utils:uuid_v4(),
+            router_device:update(
+                [
+                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
+                ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, 20)
+    ),
+
+    %% Add a device without any devaddr or session, it should be filtered out
+    meck:expect(router_device_cache, get, fun() ->
+        lager:notice("router_device_cache:get()"),
+        BadDevice = router_device:new(<<"bad_device">>),
+        [BadDevice | Devices1]
+    end),
+
+    ok = router_ics_skf_worker:reconcile(self()),
+
+    router_test_ics_skf_service:send_list(
+        #iot_config_session_key_filter_v1_pb{
+            oui = 0,
+            devaddr = 0,
+            session_key = <<>>
+        },
+        true
+    ),
+
+    receive
+        {router_ics_skf_worker, Result} ->
+            %% We added 20 and removed 1
+            ?assertEqual({ok, 20, 1}, Result)
+    after 5000 ->
+        ct:fail(timeout)
+    end,
+
     meck:unload(router_device_cache),
     ok.
 

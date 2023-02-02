@@ -155,9 +155,9 @@ send_euis_to_config_service(A, B, C) ->
 send_skfs_to_config_service(["migration", "skfs"], [], _Flags) ->
     ok = router_ics_skf_worker:reconcile(self()),
     receive
-        {ok, Added, Removed} ->
+        {router_ics_skf_worker, {ok, Added, Removed}} ->
             c_text("Updating SKFs: added ~w, remove ~w", [Added, Removed]);
-        {error, _Reason} ->
+        {router_ics_skf_worker, {error, _Reason}} ->
             c_text("Updating SKFs failed ~p", [_Reason])
     after 5000 ->
         c_text("Error timeout")

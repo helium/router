@@ -70,8 +70,14 @@ stream(_RouteStreamReq, _StreamState) ->
     ok.
 send_list(SKF, Last) ->
     lager:notice("list ~p  eos: ~p @ ~p", [SKF, Last, erlang:whereis(?SFK_LIST)]),
-    ?SFK_LIST ! {send_list, SKF, Last},
-    ok.
+    case erlang:whereis(?SFK_LIST) of
+        undefined ->
+            timer:sleep(100),
+            send_list(SKF, Last);
+        Pid ->
+            Pid ! {send_list, SKF, Last},
+            ok
+    end.
 
 -spec verify_list_req(Req :: #iot_config_session_key_filter_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->

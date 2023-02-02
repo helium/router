@@ -113,8 +113,14 @@ stream(_RouteStreamReq, _StreamState) ->
 -spec eui_pair(EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), Last :: boolean()) -> ok.
 eui_pair(EUIPair, Last) ->
     lager:notice("eui_pair ~p  eos: ~p @ ~p", [EUIPair, Last, erlang:whereis(?GET_EUIS_STREAM)]),
-    ?GET_EUIS_STREAM ! {eui_pair, EUIPair, Last},
-    ok.
+    case erlang:whereis(?GET_EUIS_STREAM) of
+        undefined ->
+            timer:sleep(100),
+            eui_pair(EUIPair, Last);
+        Pid ->
+            Pid ! {eui_pair, EUIPair, Last},
+            ok
+    end.
 
 -spec verify_list_req(Req :: #iot_config_route_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->

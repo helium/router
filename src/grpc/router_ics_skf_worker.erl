@@ -106,7 +106,7 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
-    lager:info("reconciling started"),
+    lager:info("reconciling started pid: ~p", [Pid]),
     case skf_list(Pid, State) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),

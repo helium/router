@@ -14,7 +14,7 @@
 
 -record(state, {
     pid :: pid() | undefined,
-    data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
+    data :: list(iot_config_pb:iot_config_eui_pair_v1_pb())
 }).
 
 -type stream_id() :: non_neg_integer().

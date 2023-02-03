@@ -747,25 +747,18 @@ handle_cast(
                 ok = save_device(DB, CF, D1),
 
                 ToAdd = [{add, DevAddr0, UsedNwkSKey}],
+
+                DevAddrToInt = fun(D) ->
+                    <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
+                    Int
+                end,
+
                 %% We have to usort just in case DevAddr assigned is the same
-                ToRemove0 = lists:usort(
-                    lists:foldl(
-                        fun({NwkSKey, _}, Acc0) ->
-                            lists:foldl(
-                                fun(DevAddr, Acc1) ->
-                                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                                        DevAddr
-                                    ),
-                                    [{remove, DevAddrInt, NwkSKey} | Acc1]
-                                end,
-                                Acc0,
-                                router_device:devaddrs(Device0)
-                            )
-                        end,
-                        [],
-                        Keys
-                    )
-                ),
+                ToRemove0 = lists:usort([
+                    {remove, DevAddrToInt(DevAddr), NwkSKey}
+                 || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
+                ]),
+
                 %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
                 ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
                 ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),

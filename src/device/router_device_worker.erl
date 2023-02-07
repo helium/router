@@ -10,7 +10,6 @@
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("public_key/include/public_key.hrl").
 -include_lib("erlang_lorawan/src/lora_adr.hrl").
-
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("lorawan_db.hrl").
@@ -733,11 +732,12 @@ handle_cast(
                     end,
                 {devaddr, DevAddr0} = blockchain_helium_packet_v1:routing_info(Packet0),
                 DevAddr1 = lorawan_utils:reverse(<<DevAddr0:32/integer-unsigned-big>>),
+                Keys = router_device:keys(Device0),
                 DeviceUpdates = [
                     {keys,
                         lists:filter(
                             fun({NwkSKey, _}) -> NwkSKey == UsedNwkSKey end,
-                            router_device:keys(Device0)
+                            Keys
                         )},
                     {dev_nonces, DevNonces},
                     {devaddrs, [DevAddr1]},
@@ -745,6 +745,25 @@ handle_cast(
                 ],
                 D1 = router_device:update(DeviceUpdates, Device0),
                 ok = save_device(DB, CF, D1),
+
+                ToAdd = [{add, DevAddr0, UsedNwkSKey}],
+
+                DevAddrToInt = fun(D) ->
+                    <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
+                    Int
+                end,
+
+                %% We have to usort just in case DevAddr assigned is the same
+                ToRemove0 = lists:usort([
+                    {remove, DevAddrToInt(DevAddr), NwkSKey}
+                 || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
+                ]),
+
+                %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
+                ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
+                ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),
+                lager:debug("sending update skf ~p", [ToAdd ++ ToRemove1]),
+
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [
                         router_device:dev_nonces(D1),
@@ -1319,6 +1338,11 @@ handle_join(
         true
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
+
+    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
+    ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
+    lager:debug("sending add skf ~p ~p", [DevAddrInt, NwkSKey]),
+
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},

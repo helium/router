@@ -7,7 +7,7 @@
 
 -behavior(gen_server).
 
--include("./grpc/autogen/iot_config_pb.hrl").
+-include("./autogen/iot_config_pb.hrl").
 
 %% ------------------------------------------------------------------
 %% API Function Exports
@@ -17,8 +17,8 @@
     add/1,
     update/1,
     remove/1,
-    route_get_euis_data/1,
-    reconcile/0
+    reconcile/1,
+    reconcile_end/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -63,7 +63,9 @@ start_link(#{host := ""}) ->
     ignore;
 start_link(#{port := Port} = Args) when is_list(Port) ->
     ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(#{host := Host, port := Port} = Args) when is_list(Host) andalso is_integer(Port) ->
+start_link(#{eui_enabled := "true", host := Host, port := Port} = Args) when
+    is_list(Host) andalso is_integer(Port)
+->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
 start_link(_Args) ->
     ignore.
@@ -80,13 +82,14 @@ update(DeviceIDs) ->
 remove(DeviceIDs) ->
     gen_server:call(?SERVER, {remove, DeviceIDs}).
 
--spec route_get_euis_data(list(iot_config_pb:iot_config_eui_pair_v1_pb())) -> ok.
-route_get_euis_data(List) ->
-    gen_server:cast(?SERVER, {?RECONCILE_END, List}).
+-spec reconcile(Pid :: pid() | undefined) -> ok.
+reconcile(Pid) ->
+    gen_server:cast(?SERVER, {?RECONCILE_START, Pid}).
 
--spec reconcile() -> ok.
-reconcile() ->
-    gen_server:cast(?SERVER, ?RECONCILE_START).
+-spec reconcile_end(Pid :: pid() | undefined, list(iot_config_pb:iot_config_eui_pair_v1_pb())) ->
+    ok.
+reconcile_end(Pid, List) ->
+    gen_server:cast(?SERVER, {?RECONCILE_END, Pid, List}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -153,40 +156,45 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
-    case get_euis(State) of
-        {error, _Reason} ->
+handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
+    lager:info("reconciling started pid: ~p", [Pid]),
+    case get_euis(Pid, State) of
+        {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
             lager:warning("fail to get_euis ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
+            ok = forward_reconcile(Pid, Error),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
             {_, Backoff2} = backoff:succeed(Backoff0),
-            {noreply, State#state{
-                conn_backoff = Backoff2, route_id = RouteID
-            }}
+            {noreply, State#state{conn_backoff = Backoff2}}
     end;
 handle_cast(
-    {?RECONCILE_END, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
+    {?RECONCILE_END, Pid, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
     case get_local_eui_pairs(RouteID) of
-        {error, _Reason} ->
+        {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:spawn(fun() ->
                 timer:sleep(Delay),
-                ok = ?MODULE:reconcile()
+                ok = ?MODULE:reconcile(undefined)
             end),
+            ok = forward_reconcile(Pid, Error),
             lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, LocalEUIPairs} ->
             ToAdd = LocalEUIPairs -- EUIPairs,
             ToRemove = EUIPairs -- LocalEUIPairs,
             case update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
-                {error, Reason} ->
+                {error, Reason} = Error ->
+                    ok = forward_reconcile(Pid, Error),
                     {noreply, update_euis_failed(Reason, State)};
                 ok ->
+                    ok = forward_reconcile(
+                        Pid, {ok, erlang:length(ToAdd), erlang:length(ToRemove)}
+                    ),
                     lager:info("reconciling done"),
                     {noreply, State}
             end
@@ -211,7 +219,7 @@ handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
                 {ok, RouteID} ->
                     lager:info("connected"),
                     {_, Backoff2} = backoff:succeed(Backoff0),
-                    ok = ?MODULE:reconcile(),
+                    ok = ?MODULE:reconcile(undefined),
                     {noreply, State#state{
                         conn_backoff = Backoff2, route_id = RouteID
                     }}
@@ -281,8 +289,8 @@ get_route_id(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
             {ok, Route#iot_config_route_v1_pb.id}
     end.
 
--spec get_euis(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-get_euis(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
+-spec get_euis(Pid :: pid() | undefined, state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
+get_euis(Pid, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
     Req = #iot_config_route_get_euis_req_v1_pb{
         route_id = RouteID,
         timestamp = erlang:system_time(millisecond),
@@ -294,7 +302,7 @@ get_euis(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) -
         channel => ?MODULE,
         callback_module => {
             router_ics_route_get_euis_handler,
-            []
+            Pid
         }
     }).
 
@@ -415,3 +423,12 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
         end,
         DeviceIDs
     ).
+
+-spec forward_reconcile(
+    Pid :: pid() | undefined, Result :: {ok, non_neg_integer(), non_neg_integer()} | {error, any()}
+) -> ok.
+forward_reconcile(undefined, _Result) ->
+    ok;
+forward_reconcile(Pid, Result) ->
+    catch Pid ! {?MODULE, Result},
+    ok.

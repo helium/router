@@ -12,6 +12,7 @@
 
 -export([
     main_test/1,
+    reconcile_test/1,
     server_crash_test/1
 ]).
 
@@ -28,6 +29,7 @@
 all() ->
     [
         main_test,
+        reconcile_test,
         server_crash_test
     ].
 
@@ -35,13 +37,13 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    persistent_term:put(router_test_ics_service, self()),
+    persistent_term:put(router_test_ics_route_service, self()),
     Port = 8085,
     ServerPid = start_server(Port),
     ok = application:set_env(
         router,
         ics,
-        #{host => "localhost", port => Port},
+        #{eui_enabled => "true", host => "localhost", port => Port},
         [{persistent, true}]
     ),
     test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
@@ -105,7 +107,7 @@ main_test(_Config) ->
         {ok, maps:get(DeviceID, Devices)}
     end),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -182,6 +184,94 @@ main_test(_Config) ->
     meck:unload(router_device_cache),
     ok.
 
+reconcile_test(_Config) ->
+    meck:new(router_console_api, [passthrough]),
+    meck:new(router_device_cache, [passthrough]),
+
+    RouteID = "test_route_id",
+    ID1 = router_utils:uuid_v4(),
+    Device1 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<1:64/integer-unsigned-big>>}
+        ],
+        router_device:new(ID1)
+    ),
+    ID2 = router_utils:uuid_v4(),
+    Device2 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<2:64/integer-unsigned-big>>}
+        ],
+        router_device:new(ID2)
+    ),
+    Devices = #{
+        ID1 => Device1,
+        ID2 => Device2
+    },
+
+    meck:expect(router_console_api, get_device, fun(DeviceID) ->
+        lager:notice("router_console_api:get_device(~p)", [DeviceID]),
+        {ok, maps:get(DeviceID, Devices)}
+    end),
+
+    meck:expect(router_device_cache, get, fun(DeviceID) ->
+        lager:notice("router_device_cache:get(~p)", [DeviceID]),
+        {ok, maps:get(DeviceID, Devices)}
+    end),
+
+    ok = router_test_ics_route_service:eui_pair(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
+    ),
+
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}, {Type0, _Req0}] = rcv_loop([]),
+    ?assertEqual(list, Type0),
+    ?assertEqual(get_euis, Type1),
+    ?assertEqual(update_euis, Type2),
+    ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0},
+        Req2#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+    ?assertEqual(update_euis, Type3),
+    ?assertEqual(add, Req3#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 8589934593, dev_eui = 1},
+        Req3#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    meck:expect(router_console_api, get_json_devices, fun() ->
+        lager:notice("router_console_api:get_json_devices()"),
+        JSONDevices = lists:map(
+            fun(X) ->
+                #{
+                    <<"app_eui">> => lorawan_utils:binary_to_hex(<<X:64/integer-unsigned-big>>),
+                    <<"dev_eui">> => lorawan_utils:binary_to_hex(<<X:64/integer-unsigned-big>>)
+                }
+            end,
+            lists:seq(1, 20)
+        ),
+        {ok, JSONDevices}
+    end),
+
+    ok = router_ics_eui_worker:reconcile(self()),
+
+    ok = router_test_ics_route_service:eui_pair(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
+    ),
+
+    receive
+        {router_ics_eui_worker, Result} ->
+            %% We added 20 and removed 1
+            ?assertEqual({ok, 20, 1}, Result)
+    after 5000 ->
+        ct:fail(timeout)
+    end,
+
+    meck:unload(router_console_api),
+    meck:unload(router_device_cache),
+    ok.
+
 server_crash_test(Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
@@ -218,7 +308,7 @@ server_crash_test(Config) ->
         {ok, maps:get(DeviceID, Devices)}
     end),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -250,7 +340,7 @@ server_crash_test(Config) ->
     timer:sleep(1000),
     lager:notice("server started"),
 
-    ok = router_test_ics_service:eui_pair(
+    ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
@@ -281,8 +371,8 @@ server_crash_test(Config) ->
 
 rcv_loop(Acc) ->
     receive
-        {router_test_ics_service, Type, Req} ->
-            lager:notice("got router_test_ics_service ~p req ~p", [Type, Req]),
+        {router_test_ics_route_service, Type, Req} ->
+            lager:notice("got router_test_ics_route_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
     end.
@@ -292,7 +382,9 @@ start_server(Port) ->
     {ok, ServerPid} = grpcbox:start_server(#{
         grpc_opts => #{
             service_protos => [iot_config_pb],
-            services => #{'helium.iot_config.route' => router_test_ics_service}
+            services => #{
+                'helium.iot_config.route' => router_test_ics_route_service
+            }
         },
         listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
     }),

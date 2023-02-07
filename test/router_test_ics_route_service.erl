@@ -1,4 +1,4 @@
--module(router_test_ics_service).
+-module(router_test_ics_route_service).
 
 -behaviour(helium_iot_config_route_bhvr).
 -include("../src/grpc/autogen/iot_config_pb.hrl").
@@ -85,7 +85,7 @@ update_euis(eos, StreamState) ->
     lager:info("got EOS"),
     {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
 update_euis(Req, _StreamState) ->
-    case verify_update_euis_req_req(Req) of
+    case verify_update_euis_req(Req) of
         true ->
             lager:info("got update_euis_req ~p", [Req]),
             catch persistent_term:get(?MODULE) ! {?MODULE, update_euis, Req},
@@ -113,8 +113,14 @@ stream(_RouteStreamReq, _StreamState) ->
 -spec eui_pair(EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), Last :: boolean()) -> ok.
 eui_pair(EUIPair, Last) ->
     lager:notice("eui_pair ~p  eos: ~p @ ~p", [EUIPair, Last, erlang:whereis(?GET_EUIS_STREAM)]),
-    ?GET_EUIS_STREAM ! {eui_pair, EUIPair, Last},
-    ok.
+    case erlang:whereis(?GET_EUIS_STREAM) of
+        undefined ->
+            timer:sleep(100),
+            eui_pair(EUIPair, Last);
+        Pid ->
+            Pid ! {eui_pair, EUIPair, Last},
+            ok
+    end.
 
 -spec verify_list_req(Req :: #iot_config_route_list_req_v1_pb{}) -> boolean().
 verify_list_req(Req) ->
@@ -130,8 +136,8 @@ verify_list_req(Req) ->
         libp2p_crypto:bin_to_pubkey(Req#iot_config_route_list_req_v1_pb.signer)
     ).
 
--spec verify_update_euis_req_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
-verify_update_euis_req_req(Req) ->
+-spec verify_update_euis_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
+verify_update_euis_req(Req) ->
     EncodedReq = iot_config_pb:encode_msg(
         Req#iot_config_route_update_euis_req_v1_pb{
             signature = <<>>

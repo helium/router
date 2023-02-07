@@ -2,7 +2,7 @@
 
 -behaviour(grpcbox_client_stream).
 
--include("./grpc/autogen/iot_config_pb.hrl").
+-include("./autogen/iot_config_pb.hrl").
 
 -export([
     init/3,
@@ -12,18 +12,23 @@
     handle_eos/1
 ]).
 
--type stream_id() :: non_neg_integer().
--type state() :: list(iot_config_pb:iot_config_eui_pair_v1_pb()).
+-record(state, {
+    pid :: pid() | undefined,
+    data :: list(iot_config_pb:iot_config_eui_pair_v1_pb())
+}).
 
--spec init(pid(), stream_id(), state()) -> {ok, state()}.
-init(_ConnectionPid, _StreamId, State) ->
-    lager:debug("init ~p: ~p", [_StreamId, State]),
-    {ok, State}.
+-type stream_id() :: non_neg_integer().
+-type state() :: #state{}.
+
+-spec init(pid(), stream_id(), Pid :: pid() | undefined) -> {ok, state()}.
+init(_ConnectionPid, _StreamId, Pid) ->
+    lager:debug("init ~p: ~p", [_StreamId, Pid]),
+    {ok, #state{pid = Pid, data = []}}.
 
 -spec handle_message(iot_config_pb:iot_config_eui_pair_v1_pb(), state()) -> {ok, state()}.
-handle_message(EUIPair, State) ->
+handle_message(EUIPair, #state{data = Data} = State) ->
     lager:debug("got ~p", [EUIPair]),
-    {ok, [EUIPair | State]}.
+    {ok, State#state{data = [EUIPair | Data]}}.
 
 -spec handle_headers(map(), state()) -> {ok, state()}.
 handle_headers(_Metadata, CBData) ->
@@ -34,7 +39,7 @@ handle_trailers(_Status, _Message, _Metadata, CBData) ->
     {ok, CBData}.
 
 -spec handle_eos(state()) -> {ok, state()}.
-handle_eos(State) ->
+handle_eos(#state{pid = Pid, data = Data} = State) ->
     lager:info("got eos, sending to router_ics_eui_worker"),
-    ok = router_ics_eui_worker:route_get_euis_data(State),
+    ok = router_ics_eui_worker:reconcile_end(Pid, Data),
     {ok, State}.

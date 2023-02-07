@@ -68,6 +68,8 @@ jobs:
         run: |
           mkdir _build
           tar -xvf build.tar.gz -C _build
+      - name: grpc
+        run: make grpc
       - name: xref
         run: make xref
   eunit:
@@ -89,6 +91,8 @@ jobs:
         run: |
           mkdir _build
           tar -xvf build.tar.gz -C _build
+      - name: grpc
+        run: make grpc
       - name: eunit
         run: make eunit -v
   dialyzer:
@@ -110,6 +114,8 @@ jobs:
         run: |
           mkdir _build
           tar -xvf build.tar.gz -C _build
+      - name: grpc
+        run: make grpc
       - name: dialyzer
         run: make dialyzer
   suites:

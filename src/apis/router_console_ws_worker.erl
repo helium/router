@@ -296,6 +296,16 @@ handle_info(
         end,
     WSPid ! {ws_resp, Payload},
     {noreply, State};
+handle_info(
+    {ws_message, <<"device:all">>, <<"device:all:skf">>, #{
+        <<"devices">> := DeviceIDs
+    }},
+    #state{ws = WSPid} = State
+) ->
+    lager:debug("got skf request for ~p", [DeviceIDs]),
+    Payload = get_devices_region_and_session_keys_msg(DeviceIDs),
+    WSPid ! {ws_resp, Payload},
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p, ~p", [_Msg, State]),
     {noreply, State}.
@@ -395,4 +405,44 @@ get_router_address_msg() ->
         <<"organization:all">>,
         <<"router:address">>,
         #{address => B58}
+    ).
+
+-spec get_devices_region_and_session_keys_msg(DeviceIDs :: list(binary())) -> binary().
+get_devices_region_and_session_keys_msg(DeviceIDs) ->
+    Map = lists:filtermap(
+        fun(DeviceID) ->
+            case router_device_cache:get(DeviceID) of
+                {error, _} ->
+                    false;
+                {ok, Device} ->
+                    case
+                        {
+                            router_device:region(Device),
+                            router_device:devaddr(Device),
+                            router_device:nwk_s_key(Device)
+                        }
+                    of
+                        {undefined, _, _} ->
+                            false;
+                        {_, undefined, _} ->
+                            false;
+                        {_, _, undefined} ->
+                            false;
+                        {Region, <<DevAddr:32/integer-unsigned-big>>, SessionKey} ->
+                            #{
+                                id => router_device:id(Device),
+                                region => erlang:atom_to_binary(Region),
+                                devaddr => DevAddr,
+                                nwk_s_key => lorawan_utils:binary_to_hex(SessionKey)
+                            }
+                    end
+            end
+        end,
+        DeviceIDs
+    ),
+    router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"device:all:skf">>,
+        #{devices => Map}
     ).

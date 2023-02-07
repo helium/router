@@ -133,7 +133,7 @@ verify_list_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_list_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_list_req_v1_pb.signer)
+        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
     ).
 
 -spec verify_update_euis_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
@@ -147,7 +147,7 @@ verify_update_euis_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_update_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_update_euis_req_v1_pb.signer)
+        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
     ).
 
 -spec verify_get_euis_req_req(Req :: #iot_config_route_get_euis_req_v1_pb{}) -> boolean().
@@ -161,5 +161,5 @@ verify_get_euis_req_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_get_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_get_euis_req_v1_pb.signer)
+        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
     ).

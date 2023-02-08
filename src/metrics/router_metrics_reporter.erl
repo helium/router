@@ -83,8 +83,8 @@ export_devaddr() ->
         undefined ->
             {error, <<"undefined_blockchain">>};
         _Chain ->
-        %% We don't use the chain here, we want to know it's in persistent_term
-        %% for downstream calls that do block.
+            %% We don't use the chain here, we want to know it's in persistent_term
+            %% for downstream calls that do block.
             Devices = lists:map(
                 fun(Device) ->
                     {HotspotID, HotspotName, Lat, Long} = get_location_info(Device),

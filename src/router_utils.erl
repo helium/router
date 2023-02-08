@@ -114,7 +114,7 @@ event_join_request(ID, Timestamp, Device, PubKeyBin, Packet, Region, {Balance, N
 
 -spec event_join_accept(
     Device :: router_device:device(),
-        PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom()
 ) -> ok.
@@ -182,7 +182,7 @@ event_uplink(
                 Payload0
         end,
     PayloadSize = erlang:byte_size(Payload1),
-    Used = router_blockchain:calculate_dc_amount( PayloadSize),
+    Used = router_blockchain:calculate_dc_amount(PayloadSize),
     Map = #{
         id => ID,
         category => uplink,

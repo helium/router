@@ -707,7 +707,8 @@ packet_offer_(Offer) ->
             end
     end.
 
--spec validate_packet_offer(blockchain_state_channel_offer_v1:offer()) -> {ok, router_device:device()} | {error, any()}.
+-spec validate_packet_offer(blockchain_state_channel_offer_v1:offer()) ->
+    {ok, router_device:device()} | {error, any()}.
 validate_packet_offer(Offer) ->
     #routing_information_pb{data = {devaddr, DevAddr0}} = blockchain_state_channel_offer_v1:routing(
         Offer

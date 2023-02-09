@@ -34,7 +34,7 @@
 
 %% Cache API
 -export([
-    get_device_for_offer/4,
+    get_device_for_offer/3,
     cache_device_for_hash/2,
     force_evict_packet_hash/1
 ]).
@@ -137,7 +137,7 @@ handle_offer(Offer, HandlerPid) ->
                             #routing_information_pb{data = {eui, _EUI}} ->
                                 join_offer(Offer, HandlerPid);
                             #routing_information_pb{data = {devaddr, _DevAddr}} ->
-                                packet_offer(Offer, HandlerPid)
+                                packet_offer(Offer)
                         end
                 end,
             End = erlang:system_time(millisecond),
@@ -174,8 +174,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
-    Chain = get_chain(),
-    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
         {error, Reason} = E ->
             ok = print_handle_packet_resp(
                 SCPacket, Pid, reason_to_single_atom(Reason)
@@ -203,8 +202,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
     Start = erlang:system_time(millisecond),
     HoldTime = 100,
-    Chain = get_chain(),
-    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, self(), Chain) of
+    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, self()) of
         {error, Reason} = E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
@@ -231,15 +229,12 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
-    Chain = get_chain(),
-
-    Ledger = blockchain:ledger(Chain),
 
     Payload = blockchain_helium_packet_v1:payload(Packet),
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
 
     UsePacket =
-        case get_device_for_payload(Payload, PubKeyBin, Chain) of
+        case get_device_for_payload(Payload, PubKeyBin) of
             {ok, Device, PacketFCnt} ->
                 ok = lager:md([{device_id, router_device:id(Device)}]),
                 case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
@@ -249,9 +244,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                         ),
                         case offer_check(Offer) of
                             ok ->
-                                erlang:spawn(blockchain_state_channels_server, track_offer, [
-                                    Offer, Ledger, self()
-                                ]),
+                                erlang:spawn(router_blockchain, track_offer, [Offer, self()]),
                                 ok;
                             {error, _} ->
                                 lager:debug("packet accepted even if on denylist"),
@@ -275,7 +268,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     case UsePacket of
         ok ->
             %% This is redondant but at least we dont have to redo all that code...
-            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid, Chain) of
+            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
                 {error, Reason} = Err ->
                     Pid ! {error, reason_to_single_atom(Reason)},
                     lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
@@ -315,22 +308,21 @@ clear_replay(DeviceID) ->
 
 -spec get_device_for_payload(
     Payload :: binary(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Chain :: blockchain:blockchain()
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> {ok, router_device:device(), non_neg_integer()} | {error, any()}.
-get_device_for_payload(Payload, PubKeyBin, Chain) ->
+get_device_for_payload(Payload, PubKeyBin) ->
     case Payload of
         <<?JOIN_REQ:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,
             MIC:4/binary>> ->
             Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
             {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
-            case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
+            case get_device(DevEUI, AppEUI, Msg, MIC) of
                 {ok, Device, _} -> {ok, Device, 0};
                 E1 -> E1
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
             MIC = payload_mic(Payload),
-            case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
+            case find_device(PubKeyBin, DevAddr, MIC, Payload) of
                 {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
                 E2 -> E2
             end
@@ -574,8 +566,7 @@ maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    Chain = get_chain(),
-                    case check_device_balance(PayloadSize, Device, Hotspot, Chain) of
+                    case check_device_balance(PayloadSize, Device, Hotspot) of
                         {error, _Reason} = Error ->
                             Error;
                         ok ->
@@ -629,11 +620,10 @@ check_device_rate(Hotspot, Device) ->
             ok
     end.
 
--spec packet_offer(blockchain_state_channel_offer_v1:offer(), pid()) ->
+-spec packet_offer(blockchain_state_channel_offer_v1:offer()) ->
     {ok, router_device:device()} | {error, any()}.
-packet_offer(Offer, Pid) ->
-    Chain = get_chain(),
-    Resp = packet_offer_(Offer, Pid, Chain),
+packet_offer(Offer) ->
+    Resp = packet_offer_(Offer),
     erlang:spawn(fun() ->
         case Resp of
             {ok, Device} ->
@@ -649,10 +639,10 @@ packet_offer(Offer, Pid) ->
     end),
     Resp.
 
--spec packet_offer_(blockchain_state_channel_offer_v1:offer(), pid(), blockchain:blockchain()) ->
+-spec packet_offer_(blockchain_state_channel_offer_v1:offer()) ->
     {ok, router_device:device()} | {error, any()}.
-packet_offer_(Offer, Pid, Chain) ->
-    case validate_packet_offer(Offer, Pid, Chain) of
+packet_offer_(Offer) ->
+    case validate_packet_offer(Offer) of
         {error, _} = Error ->
             Error;
         {ok, Device} ->
@@ -717,22 +707,19 @@ packet_offer_(Offer, Pid, Chain) ->
             end
     end.
 
--spec validate_packet_offer(
-    blockchain_state_channel_offer_v1:offer(),
-    pid(),
-    blockchain:blockchain()
-) -> {ok, router_device:device()} | {error, any()}.
-validate_packet_offer(Offer, _Pid, Chain) ->
+-spec validate_packet_offer(blockchain_state_channel_offer_v1:offer()) ->
+    {ok, router_device:device()} | {error, any()}.
+validate_packet_offer(Offer) ->
     #routing_information_pb{data = {devaddr, DevAddr0}} = blockchain_state_channel_offer_v1:routing(
         Offer
     ),
-    case validate_devaddr(DevAddr0, Chain) of
+    case validate_devaddr(DevAddr0) of
         {error, _} = Error ->
             Error;
         ok ->
             Hotspot = blockchain_state_channel_offer_v1:hotspot(Offer),
             DevAddr1 = lorawan_utils:reverse(devaddr_to_bin(DevAddr0)),
-            case get_device_for_offer(Offer, DevAddr1, Hotspot, Chain) of
+            case get_device_for_offer(Offer, DevAddr1, Hotspot) of
                 {error, _} = Err ->
                     Err;
                 {ok, Device} ->
@@ -755,23 +742,22 @@ check_device_all(Device, PayloadSize, Hotspot) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    Chain = get_chain(),
-                    case check_device_balance(PayloadSize, Device, Hotspot, Chain) of
+                    case check_device_balance(PayloadSize, Device, Hotspot) of
                         {error, _Reason} = Error -> Error;
                         ok -> {ok, Device}
                     end
             end
     end.
 
--spec validate_devaddr(binary() | non_neg_integer(), blockchain:blockchain()) ->
+-spec validate_devaddr(binary() | non_neg_integer()) ->
     ok | {error, any()}.
-validate_devaddr(DevNum, Chain) when erlang:is_integer(DevNum) ->
-    validate_devaddr(<<DevNum:32/integer-unsigned-little>>, Chain);
-validate_devaddr(DevAddr, Chain) ->
+validate_devaddr(DevNum) when erlang:is_integer(DevNum) ->
+    validate_devaddr(<<DevNum:32/integer-unsigned-little>>);
+validate_devaddr(DevAddr) ->
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
             OUI = router_utils:get_oui(),
-            try blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+            try router_blockchain:routing_for_oui(OUI) of
                 {ok, RoutingEntry} ->
                     Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
                     case
@@ -830,11 +816,10 @@ check_device_is_active(Device, PubKeyBin) ->
 -spec check_device_balance(
     PayloadSize :: non_neg_integer(),
     Device :: router_device:device(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Chain :: blockchain:blockchain()
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> ok | {error, ?DEVICE_NO_DC}.
-check_device_balance(PayloadSize, Device, PubKeyBin, Chain) ->
-    try router_console_dc_tracker:has_enough_dc(Device, PayloadSize, Chain) of
+check_device_balance(PayloadSize, Device, PubKeyBin) ->
+    try router_console_dc_tracker:has_enough_dc(Device, PayloadSize) of
         {error, _Reason} ->
             ok = router_utils:event_uplink_dropped_not_enough_dc(
                 erlang:system_time(millisecond),
@@ -875,8 +860,7 @@ lookup_bf(Key) ->
     HoldTime :: pos_integer(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Region :: atom(),
-    Pid :: pid(),
-    Chain :: blockchain:blockchain()
+    Pid :: pid()
 ) -> ok | {error, any()}.
 packet(
     #packet_pb{
@@ -888,13 +872,12 @@ packet(
     HoldTime,
     PubKeyBin,
     Region,
-    Pid,
-    Chain
+    Pid
 ) when MType == ?JOIN_REQ ->
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     AName = blockchain_utils:addr2name(PubKeyBin),
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
-    case get_device(DevEUI, AppEUI, Msg, MIC, Chain) of
+    case get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->
             case router_device:preferred_hotspots(APIDevice) of
                 [] ->
@@ -951,10 +934,9 @@ packet(
     HoldTime,
     PubKeyBin,
     Region,
-    Pid,
-    Chain
+    Pid
 ) when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
-    case validate_devaddr(DevAddr, Chain) of
+    case validate_devaddr(DevAddr) of
         {error, ?DEVADDR_MALFORMED} = Err ->
             Err;
         _ ->
@@ -969,11 +951,10 @@ packet(
                 Region,
                 DevAddr,
                 MIC,
-                Payload,
-                Chain
+                Payload
             )
     end;
-packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid, _Chain) ->
+packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 maybe_start_worker_and_handle_join(
@@ -1009,31 +990,29 @@ get_devices(DevEUI, AppEUI) ->
     DevEUI :: binary(),
     AppEUI :: binary(),
     Msg :: binary(),
-    MIC :: binary(),
-    Chain :: blockchain:blockchain()
+    MIC :: binary()
 ) -> {ok, router_device:device(), binary()} | {error, any()}.
-get_device(DevEUI, AppEUI, Msg, MIC, Chain) ->
+get_device(DevEUI, AppEUI, Msg, MIC) ->
     case router_console_api:get_devices_by_deveui_appeui(DevEUI, AppEUI) of
         [] ->
             {error, api_not_found};
         KeysAndDevices ->
-            find_device(Msg, MIC, KeysAndDevices, Chain)
+            find_device(Msg, MIC, KeysAndDevices)
     end.
 
 -spec find_device(
     Msg :: binary(),
     MIC :: binary(),
-    [{binary(), router_device:device()}],
-    Chain :: blockchain:blockchain()
+    [{binary(), router_device:device()}]
 ) -> {ok, Device :: router_device:device(), AppKey :: binary()} | {error, not_found}.
-find_device(_Msg, _MIC, [], _Chain) ->
+find_device(_Msg, _MIC, []) ->
     {error, not_found};
-find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
+find_device(Msg, MIC, [{AppKey, Device} | T]) ->
     case crypto:macN(cmac, aes_128_cbc, AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
-            find_device(Msg, MIC, T, Chain)
+            find_device(Msg, MIC, T)
     end.
 
 -spec send_to_device_worker(
@@ -1045,8 +1024,7 @@ find_device(Msg, MIC, [{AppKey, Device} | T], Chain) ->
     Region :: atom(),
     DevAddr :: binary(),
     MIC :: binary(),
-    Payload :: binary(),
-    Chain :: blockchain:blockchain()
+    Payload :: binary()
 ) -> ok | {error, any()}.
 send_to_device_worker(
     Packet,
@@ -1057,10 +1035,9 @@ send_to_device_worker(
     Region,
     DevAddr,
     MIC,
-    Payload,
-    Chain
+    Payload
 ) ->
-    case find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) of
+    case find_device(PubKeyBin, DevAddr, MIC, Payload) of
         {error, unknown_device} ->
             router_metrics:packet_routing_error(packet, device_not_found),
             lager:warning(
@@ -1140,11 +1117,10 @@ send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Regio
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     DevAddr :: binary(),
     MIC :: binary(),
-    Payload :: binary(),
-    Chain :: blockchain:blockchain()
+    Payload :: binary()
 ) -> {ok, {router_device:device(), binary(), non_neg_integer()}} | {error, unknown_device}.
-find_device(PubKeyBin, DevAddr, MIC, Payload, Chain) ->
-    Devices = get_and_sort_devices(DevAddr, PubKeyBin, Chain),
+find_device(PubKeyBin, DevAddr, MIC, Payload) ->
+    Devices = get_and_sort_devices(DevAddr, PubKeyBin),
     case get_device_by_mic(MIC, Payload, Devices) of
         undefined ->
             {error, unknown_device};
@@ -1179,15 +1155,14 @@ force_evict_packet_hash(PHash) ->
 -spec get_device_for_offer(
     Offer :: blockchain_state_channel_offer_v1:offer(),
     DevAddr :: binary(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Chain :: blockchain:blockchain()
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> {ok, router_device:device()} | {error, any()}.
-get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
+get_device_for_offer(Offer, DevAddr, PubKeyBin) ->
     PHash = blockchain_state_channel_offer_v1:packet_hash(Offer),
     %% interrogate the cache without inserting value
     case e2qc_nif:get(?PHASH_TO_DEVICE_CACHE, PHash) of
         notfound ->
-            case get_and_sort_devices(DevAddr, PubKeyBin, Chain) of
+            case get_and_sort_devices(DevAddr, PubKeyBin) of
                 [] ->
                     {error, ?DEVADDR_NO_DEVICE};
                 [Device | _] ->
@@ -1210,13 +1185,12 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin, Chain) ->
 
 -spec get_and_sort_devices(
     DevAddr :: binary(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Chain :: blockchain:blockchain()
+    PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> [router_device:device()].
-get_and_sort_devices(DevAddr, PubKeyBin, Chain) ->
+get_and_sort_devices(DevAddr, PubKeyBin) ->
     {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
     router_metrics:function_observe('router_device_cache:get_by_devaddr', Time1),
-    Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin, Chain),
+    Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin),
     Devices1.
 
 -spec get_device_by_mic(binary(), binary(), [router_device:device()]) ->
@@ -1379,10 +1353,6 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec get_chain() -> blockchain:blockchain().
-get_chain() ->
-    router_utils:get_blockchain().
-
 -spec handle_offer_metrics(
     #routing_information_pb{},
     {ok, router_device:device()} | {error, any()},
@@ -1500,7 +1470,7 @@ handle_join_offer_test() ->
     meck:new(blockchain_worker, [passthrough]),
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
-    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _, _) -> {ok, orgid, 0, 1} end),
+    meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _) -> {ok, orgid, 0, 1} end),
     meck:new(router_metrics, [passthrough]),
     meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
     meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),

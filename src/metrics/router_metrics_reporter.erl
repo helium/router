@@ -79,13 +79,15 @@ csv_format(Devices) ->
 
 -spec export_devaddr() -> {ok, list(map())} | {error, binary()}.
 export_devaddr() ->
-    case router_utils:get_blockchain() of
+    case router_blockchain:privileged_maybe_get_blockchain() of
         undefined ->
             {error, <<"undefined_blockchain">>};
-        Chain ->
+        _Chain ->
+            %% We don't use the chain here, we want to know it's in persistent_term
+            %% for downstream calls that do block.
             Devices = lists:map(
                 fun(Device) ->
-                    {HotspotID, HotspotName, Lat, Long} = get_location_info(Chain, Device),
+                    {HotspotID, HotspotName, Lat, Long} = get_location_info(Device),
                     #{
                         device_id => router_device:id(Device),
                         device_name => router_device:name(Device),
@@ -103,16 +105,15 @@ export_devaddr() ->
             {ok, Devices}
     end.
 
--spec get_location_info(blockchain:blockchain(), router_device:device()) ->
-    {list(), list(), float(), float()}.
-get_location_info(Chain, Device) ->
+-spec get_location_info(router_device:device()) -> {list(), list(), float(), float()}.
+get_location_info(Device) ->
     case router_device:location(Device) of
         undefined ->
             {"unasserted", "unasserted", 0.0, 0.0};
         PubKeyBin ->
             B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
             HotspotName = blockchain_utils:addr2name(PubKeyBin),
-            case router_utils:get_hotspot_location(PubKeyBin, Chain) of
+            case router_blockchain:get_hotspot_lat_lon(PubKeyBin) of
                 {unknown, unknown} ->
                     {B58, HotspotName, 0.0, 0.0};
                 {Lat, Long} ->

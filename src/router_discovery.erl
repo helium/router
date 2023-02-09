@@ -146,7 +146,7 @@ send_error(WorkerPid, Device, TxnID, PubKeyBin, Error) ->
     Sig :: binary()
 ) -> boolean().
 verify_signature(Hotspot, HotspotPubKeyBin, Sig) ->
-    case get_hotspot_owner(HotspotPubKeyBin) of
+    case router_blockchain:find_gateway_owner(HotspotPubKeyBin) of
         {error, _Reason} ->
             lager:info("failed to find owner for hotspot ~p: ~p", [
                 {Hotspot, HotspotPubKeyBin},
@@ -160,13 +160,6 @@ verify_signature(Hotspot, HotspotPubKeyBin, Sig) ->
                 libp2p_crypto:bin_to_pubkey(OwnerPubKeyBin)
             )
     end.
-
--spec get_hotspot_owner(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
-    {ok, libp2p_crypto:pubkey_bin()} | {error, any()}.
-get_hotspot_owner(PubKeyBin) ->
-    Chain = router_utils:get_blockchain(),
-    Ledger = blockchain:ledger(Chain),
-    blockchain_ledger_v1:find_gateway_owner(PubKeyBin, Ledger).
 
 -spec frame_payload(
     MType :: non_neg_integer(),

@@ -22,8 +22,8 @@
 -export([
     start_link/1,
     allocate/2,
-    sort_devices/3,
-    pubkeybin_to_loc/2,
+    sort_devices/2,
+    pubkeybin_to_loc/1,
     net_id/1
 ]).
 
@@ -45,7 +45,6 @@
 -define(BITS_23, 8388607).
 
 -record(state, {
-    chain = undefined :: blockchain:blockchain() | undefined,
     oui :: non_neg_integer(),
     subnets = [] :: [binary()],
     devaddr_used = #{} :: map()
@@ -62,36 +61,23 @@ start_link(Args) ->
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin(), blockchain:blockchain()) ->
+-spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) ->
     [router_device:device()].
-sort_devices(Devices, PubKeyBin, Chain) ->
-    case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
+sort_devices(Devices, PubKeyBin) ->
+    case ?MODULE:pubkeybin_to_loc(PubKeyBin) of
         {error, _Reason} ->
             Devices;
         {ok, Index} ->
-            [D || {_, D} <- lists:sort([{distance_between(D, Index, Chain), D} || D <- Devices])]
+            [D || {_, D} <- lists:sort([{distance_between(D, Index), D} || D <- Devices])]
     end.
 
 %% TODO: Maybe make this a ets table to avoid lookups all the time
--spec pubkeybin_to_loc(
-    undefined | libp2p_crypto:pubkey_bin(),
-    undefined | blockchain:blockchain()
-) -> {ok, non_neg_integer()} | {error, any()}.
-pubkeybin_to_loc(undefined, _Chain) ->
+-spec pubkeybin_to_loc(undefined | libp2p_crypto:pubkey_bin()) ->
+    {ok, non_neg_integer()} | {error, any()}.
+pubkeybin_to_loc(undefined) ->
     {error, undef_pubkeybin};
-pubkeybin_to_loc(_PubKeyBin, undefined) ->
-    {error, no_chain};
-pubkeybin_to_loc(PubKeyBin, Chain) ->
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _} = Error ->
-            Error;
-        {ok, Hotspot} ->
-            case blockchain_ledger_gateway_v2:location(Hotspot) of
-                undefined -> {error, undef_index};
-                Index -> {ok, Index}
-            end
-    end.
+pubkeybin_to_loc(PubKeyBin) ->
+    router_blockchain:get_hotspot_location_index(PubKeyBin).
 
 -spec net_id(number() | binary()) -> {ok, non_neg_integer()} | {error, invalid_net_id_type}.
 net_id(DevAddr) when erlang:is_number(DevAddr) ->
@@ -135,10 +121,10 @@ handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets = []} = State
 handle_call(
     {allocate, _Device, PubKeyBin},
     _From,
-    #state{chain = Chain, subnets = Subnets, devaddr_used = Used} = State
+    #state{subnets = Subnets, devaddr_used = Used} = State
 ) ->
     Index =
-        case ?MODULE:pubkeybin_to_loc(PubKeyBin, Chain) of
+        case ?MODULE:pubkeybin_to_loc(PubKeyBin) of
             {error, _} -> h3:from_geo({0.0, 0.0}, 12);
             {ok, IA} -> IA
         end,
@@ -175,29 +161,13 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
-    case router_utils:get_blockchain() of
-        undefined ->
-            erlang:send_after(100, self(), post_init),
-            {noreply, State};
-        Chain ->
-            Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain = Chain, subnets = Subnets}}
-    end;
 handle_info(post_init, State) ->
     {noreply, State};
 handle_info(
-    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-    #state{chain = undefined} = State
-) ->
-    lager:info("got block ~p with not chain", [_BlockHash]),
-    erlang:send_after(500, self(), post_init),
-    {noreply, State};
-handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
-    #state{chain = Chain, oui = OUI} = State
+    #state{oui = OUI} = State
 ) ->
-    {ok, Block} = blockchain:get_block(BlockHash, Chain),
+    {ok, Block} = router_blockchain:get_blockhash(BlockHash),
     FilterFun = fun(T) ->
         case blockchain_txn:type(T) of
             blockchain_txn_oui_v1 ->
@@ -213,7 +183,7 @@ handle_info(
         [] ->
             {noreply, State};
         _ ->
-            Subnets = subnets(OUI, Chain),
+            Subnets = router_blockchain:subnets_for_oui(OUI),
             {noreply, State#state{subnets = Subnets}}
     end;
 handle_info(_Msg, State) ->
@@ -230,15 +200,6 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec subnets(non_neg_integer(), blockchain:blockchain()) -> [binary()].
-subnets(OUI, Chain) ->
-    case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-        {ok, RoutingEntry} ->
-            blockchain_ledger_routing_v1:subnets(RoutingEntry);
-        _ ->
-            []
-    end.
-
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->
     case Nth + 1 > erlang:length(Subnets) of
@@ -246,13 +207,9 @@ next_subnet(Subnets, Nth) ->
         false -> {Nth + 1, lists:nth(Nth + 1, Subnets)}
     end.
 
--spec distance_between(
-    Device :: router_device:device(),
-    Index :: h3:index(),
-    Chain :: blockchain:blockchain()
-) -> non_neg_integer().
-distance_between(Device, Index, Chain) ->
-    case ?MODULE:pubkeybin_to_loc(router_device:location(Device), Chain) of
+-spec distance_between(Device :: router_device:device(), Index :: h3:index()) -> non_neg_integer().
+distance_between(Device, Index) ->
+    case ?MODULE:pubkeybin_to_loc(router_device:location(Device)) of
         {error, _Reason} ->
             %% We default to blockchain_utils:distance/2's default
             1000;
@@ -330,10 +287,9 @@ sort_devices_test() ->
         <<"C">> => ?INDEX_C,
         <<"D">> => ?INDEX_D
     },
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+
+    meck:new(router_blockchain, [passthrough]),
+    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
         {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
     end),
 
@@ -342,28 +298,26 @@ sort_devices_test() ->
 
     ?assertEqual([<<"A">>, <<"B">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"A">>, chain)
+     || D <- sort_devices(Devices, <<"A">>)
     ]),
 
     ?assertEqual([<<"B">>, <<"A">>, <<"C">>, <<"D">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"B">>, chain)
+     || D <- sort_devices(Devices, <<"B">>)
     ]),
 
     ?assertEqual([<<"C">>, <<"D">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"C">>, chain)
+     || D <- sort_devices(Devices, <<"C">>)
     ]),
 
     ?assertEqual([<<"D">>, <<"C">>, <<"B">>, <<"A">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"D">>, chain)
+     || D <- sort_devices(Devices, <<"D">>)
     ]),
 
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(router_blockchain)),
+    meck:unload(router_blockchain),
     ok.
 
 sort_devices_long_distance_test() ->
@@ -372,10 +326,9 @@ sort_devices_long_distance_test() ->
         <<"SUNNYVALE">> => ?SUNNYVALE,
         <<"SAN_JOSE">> => ?SAN_JOSE
     },
-    meck:new(blockchain, [passthrough]),
-    meck:expect(blockchain, ledger, fun(chain) -> ledger end),
-    meck:new(blockchain_ledger_v1, [passthrough]),
-    meck:expect(blockchain_ledger_v1, find_gateway_info, fun(PubKeyBin, ledger) ->
+
+    meck:new(router_blockchain, [passthrough]),
+    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
         {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
     end),
 
@@ -384,23 +337,21 @@ sort_devices_long_distance_test() ->
 
     ?assertEqual([<<"SAN_JOSE">>, <<"SUNNYVALE">>, <<"HOUSTON">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"SAN_JOSE">>, chain)
+     || D <- sort_devices(Devices, <<"SAN_JOSE">>)
     ]),
 
     ?assertEqual([<<"SUNNYVALE">>, <<"SAN_JOSE">>, <<"HOUSTON">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"SUNNYVALE">>, chain)
+     || D <- sort_devices(Devices, <<"SUNNYVALE">>)
     ]),
 
     ?assertEqual([<<"HOUSTON">>, <<"SAN_JOSE">>, <<"SUNNYVALE">>], [
         router_device:id(D)
-     || D <- sort_devices(Devices, <<"HOUSTON">>, chain)
+     || D <- sort_devices(Devices, <<"HOUSTON">>)
     ]),
 
-    ?assert(meck:validate(blockchain)),
-    meck:unload(blockchain),
-    ?assert(meck:validate(blockchain_ledger_v1)),
-    meck:unload(blockchain_ledger_v1),
+    ?assert(meck:validate(router_blockchain)),
+    meck:unload(router_blockchain),
     ok.
 
 indexes_to_lowest_res_test() ->

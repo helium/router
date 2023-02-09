@@ -28,7 +28,7 @@
     start_link/1,
     is_active/0,
     force_open/0,
-    counts/1,
+    counts/0,
     sc_hook_close_submit/2
 ]).
 
@@ -62,8 +62,6 @@
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
     sig_fun :: libp2p_crypto:sig_fun(),
-    chain = undefined :: undefined | blockchain:blockchain(),
-    height = undefined :: undefined | non_neg_integer(),
     oui = undefined :: undefined | non_neg_integer(),
     is_active = false :: boolean(),
     tref = undefined :: undefined | reference(),
@@ -95,9 +93,10 @@ force_open() ->
 %% OpenedCount includes the GettingCloseCount
 %% @end
 %%--------------------------------------------------------------------
--spec counts(Height :: non_neg_integer()) ->
+-spec counts() ->
     {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
-counts(Height) ->
+counts() ->
+    {ok, Height} = router_blockchain:height(),
     lists:foldl(
         fun({SC, SCState, _Pid}, {OpenedCount, OverspentCount, GettingCloseCount}) ->
             Closed = blockchain_state_channel_v1:state(SC) == closed,
@@ -152,8 +151,8 @@ init(Args) ->
 
 handle_call(is_active, _From, State) ->
     {reply, State#state.is_active, State};
-handle_call(force_open, _From, #state{height = Height, in_flight = InFlight} = State) ->
-    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Height),
+handle_call(force_open, _From, #state{in_flight = InFlight} = State) ->
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(),
     {ok, ID} = open_next_state_channel(OpenedCount, State),
     {reply, ID, State#state{in_flight = [ID | InFlight]}};
 handle_call(_Msg, _From, State) ->
@@ -164,56 +163,37 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain = undefined} = State) ->
-    %% No chain
-    case router_utils:get_blockchain() of
+handle_info(post_init, #state{} = State) ->
+    Limit = max_sc_open(),
+    case router_utils:get_oui() of
         undefined ->
-            erlang:send_after(500, self(), post_init),
-            {noreply, State};
-        Chain ->
-            {ok, Height} = blockchain:height(Chain),
-            Limit = max_sc_open(Chain),
-            case router_utils:get_oui() of
-                undefined ->
-                    lager:warning("OUI undefined"),
-                    {noreply, State#state{chain = Chain, height = Height, open_sc_limit = Limit}};
-                OUI ->
-                    %% We have a chain and an oui on chain
-                    %% Only activate if we're on sc_version=2
-                    case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
-                        {ok, 2} ->
-                            {noreply, State#state{
-                                chain = Chain,
-                                height = Height,
-                                oui = OUI,
-                                open_sc_limit = Limit,
-                                is_active = true
-                            }};
-                        _ ->
-                            {noreply, State#state{
-                                chain = Chain,
-                                height = Height,
-                                oui = OUI,
-                                open_sc_limit = Limit,
-                                is_active = false
-                            }}
-                    end
+            lager:warning("OUI undefined"),
+            {noreply, State#state{open_sc_limit = Limit}};
+        OUI ->
+            %% We have a chain and an oui on chain
+            %% Only activate if we're on sc_version=2
+            case router_blockchain:sc_version() of
+                {ok, 2} ->
+                    {noreply, State#state{
+                        oui = OUI,
+                        open_sc_limit = Limit,
+                        is_active = true
+                    }};
+                _ ->
+                    {noreply, State#state{
+                        oui = OUI,
+                        open_sc_limit = Limit,
+                        is_active = false
+                    }}
             end
     end;
 handle_info(post_init, State) ->
     {noreply, State};
-handle_info({blockchain_event, {new_chain, NC}}, State) ->
-    {noreply, State#state{chain = NC}};
-handle_info(
-    {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-    #state{chain = undefined} = State
-) ->
-    %% Got block without a chain, wut?
-    erlang:send_after(500, self(), post_init),
+handle_info({blockchain_event, {new_chain, _NC}}, State) ->
     {noreply, State};
 handle_info(
     {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-    #state{is_active = false, chain = Chain} = State
+    #state{is_active = false} = State
 ) ->
     %% We're inactive, check if we have an oui
     case router_utils:get_oui() of
@@ -222,20 +202,17 @@ handle_info(
             lager:warning("OUI undefined"),
             {noreply, State};
         OUI ->
-            {ok, Height} = blockchain:height(Chain),
-            Limit = max_sc_open(Chain),
+            Limit = max_sc_open(),
             %% Only activate if we're on sc_version=2
-            case blockchain:config(?sc_version, blockchain:ledger(Chain)) of
+            case router_blockchain:sc_version() of
                 {ok, 2} ->
                     {noreply, State#state{
-                        height = Height,
                         oui = OUI,
                         open_sc_limit = Limit,
                         is_active = true
                     }};
                 _ ->
                     {noreply, State#state{
-                        height = Height,
                         oui = OUI,
                         open_sc_limit = Limit,
                         is_active = false
@@ -244,11 +221,10 @@ handle_info(
     end;
 handle_info(
     {blockchain_event, {add_block, _BlockHash, _Syncing, _Ledger}},
-    #state{is_active = true, chain = Chain} = State
+    #state{is_active = true} = State
 ) ->
-    Limit = max_sc_open(Chain),
-    {ok, Height} = blockchain:height(Chain),
-    {noreply, State#state{open_sc_limit = Limit, height = Height}};
+    Limit = max_sc_open(),
+    {noreply, State#state{open_sc_limit = Limit}};
 handle_info(?SC_TICK, #state{is_active = false} = State) ->
     %% don't do anything if the server is inactive
     Tref = schedule_next_tick(),
@@ -293,10 +269,10 @@ terminate(_Reason, _State) ->
 %% Helper funs
 %% ------------------------------------------------------------------
 
--spec max_sc_open(Chain :: blockchain:blockchain()) -> pos_integer().
-max_sc_open(Chain) ->
+-spec max_sc_open() -> pos_integer().
+max_sc_open() ->
     MaxSCAllowed =
-        case blockchain:config(?max_open_sc, blockchain:ledger(Chain)) of
+        case router_blockchain:max_open_sc() of
             {ok, Max} -> Max;
             _ -> 5
         end,
@@ -325,8 +301,8 @@ schedule_next_tick() ->
     erlang:send_after(?SC_TICK_INTERVAL, self(), ?SC_TICK).
 
 -spec maybe_start_state_channel(state()) -> state().
-maybe_start_state_channel(#state{height = Height, in_flight = [], open_sc_limit = Limit} = State) ->
-    {OpenedCount, OverspentCount, GettingCloseCount} = ?MODULE:counts(Height),
+maybe_start_state_channel(#state{in_flight = [], open_sc_limit = Limit} = State) ->
+    {OpenedCount, OverspentCount, GettingCloseCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = 0,
     LeftOverOpened = OpenedCount - ActiveCount - GettingCloseCount,
@@ -380,9 +356,9 @@ maybe_start_state_channel(#state{height = Height, in_flight = [], open_sc_limit 
             State
     end;
 maybe_start_state_channel(
-    #state{height = Height, in_flight = InFlight, open_sc_limit = Limit} = State
+    #state{in_flight = InFlight, open_sc_limit = Limit} = State
 ) ->
-    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(Height),
+    {OpenedCount, _OverspentCount, _GettingCloseCount} = ?MODULE:counts(),
     ActiveCount = active_sc_count(),
     InFlightCount = erlang:length(InFlight),
     lager:info(
@@ -403,12 +379,10 @@ maybe_start_state_channel(
 open_next_state_channel(NumExistingSCs, #state{
     pubkey = PubKey,
     sig_fun = SigFun,
-    chain = Chain,
     oui = OUI,
     in_flight = InFlight
 }) ->
-    Ledger = blockchain:ledger(Chain),
-    {ok, ChainHeight} = blockchain:height(Chain),
+    {ok, ChainHeight} = router_blockchain:height(),
     NextExpiration =
         case sc_expiration() of
             {error, _Reason} ->
@@ -422,15 +396,14 @@ open_next_state_channel(NumExistingSCs, #state{
                     (get_sc_buffer() * NumExistingSCs)
         end,
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    Nonce = get_nonce(PubkeyBin, Ledger) + erlang:length(InFlight),
+    Nonce = get_nonce(PubkeyBin) + erlang:length(InFlight),
     Id = create_and_send_sc_open_txn(
         PubkeyBin,
         SigFun,
         Nonce + 1,
         OUI,
         NextExpiration,
-        get_sc_amount(),
-        Chain
+        get_sc_amount()
     ),
     {ok, Id}.
 
@@ -440,15 +413,14 @@ open_next_state_channel(NumExistingSCs, #state{
     Nonce :: pos_integer(),
     OUI :: non_neg_integer(),
     Expiration :: pos_integer(),
-    Amount :: non_neg_integer(),
-    Chain :: blockchain:blockchain()
+    Amount :: non_neg_integer()
 ) -> blockchain_txn_state_channel_open_v1:id().
-create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, Chain) ->
+create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount) ->
     %% Create and open a new state_channel
     %% With its expiration set to 2 * Expiration of the one with max nonce
     ID = crypto:strong_rand_bytes(32),
     Txn = blockchain_txn_state_channel_open_v1:new(ID, PubkeyBin, Expiration, OUI, Nonce, Amount),
-    Fee = blockchain_txn_state_channel_open_v1:calculate_fee(Txn, Chain),
+    Fee = router_blockchain:calculate_state_channel_open_fee(Txn),
     SignedTxn = blockchain_txn_state_channel_open_v1:sign(
         blockchain_txn_state_channel_open_v1:fee(Txn, Fee),
         SigFun
@@ -462,12 +434,9 @@ create_and_send_sc_open_txn(PubkeyBin, SigFun, Nonce, OUI, Expiration, Amount, C
     blockchain_worker:submit_txn(SignedTxn, fun(Result) -> handle_sc_result(Result, ID) end),
     ID.
 
--spec get_nonce(
-    PubkeyBin :: libp2p_crypto:pubkey_bin(),
-    Ledger :: blockchain_ledger_v1:ledger()
-) -> non_neg_integer().
-get_nonce(PubkeyBin, Ledger) ->
-    case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
+-spec get_nonce(PubkeyBin :: libp2p_crypto:pubkey_bin()) -> non_neg_integer().
+get_nonce(PubkeyBin) ->
+    case router_blockchain:find_dc_entry(PubkeyBin) of
         {error, _} ->
             0;
         {ok, DCEntry} ->

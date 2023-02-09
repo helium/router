@@ -178,7 +178,6 @@ send_skfs_to_config_service(A, B, C) ->
 %% ------------------------------------------------------------------
 
 get_ouis() ->
-    Ledger = blockchain:ledger(blockchain_worker:blockchain()),
     lists:map(
         fun({OUI, RoutingV1}) ->
             Owner = blockchain_ledger_routing_v1:owner(RoutingV1),
@@ -213,15 +212,13 @@ get_ouis() ->
                 devaddrs => DevAddrRanges
             }
         end,
-        blockchain_ledger_v1:snapshot_ouis(Ledger)
+        router_blockchain:get_ouis()
     ).
 
 -spec create_migration_oui_map(Options :: map()) -> {ok, map()} | {error, any()}.
 create_migration_oui_map(Options) ->
     OUI = router_utils:get_oui(),
-    Chain = router_utils:get_blockchain(),
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_ledger_v1:find_routing(OUI, Ledger) of
+    case router_blockchain:routing_for_oui(OUI) of
         {error, _} ->
             {error, oui_not_found};
         {ok, RoutingEntry} ->

@@ -39,16 +39,6 @@
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
--record(state, {
-    pubkey,
-    sig_fun,
-    chain,
-    oui,
-    pending_txns = #{},
-    filter_to_devices = #{},
-    check_filters_ref
-}).
-
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
@@ -89,10 +79,6 @@ init_per_testcase(TestCase, Config0) ->
     Config = test_utils:init_per_testcase(TestCase, Config0),
     ConsensusMembers = proplists:get_value(consensus_member, Config),
 
-    test_utils:wait_until(fun() ->
-        router_utils:get_blockchain() =/= undefined
-    end),
-
     meck:new(blockchain_worker, [passthrough, no_history]),
     meck:expect(blockchain_worker, submit_txn, fun(Txn, Callback) ->
         case blockchain_test_utils:create_block(ConsensusMembers, [Txn]) of
@@ -101,7 +87,6 @@ init_per_testcase(TestCase, Config0) ->
             {ok, Block} ->
                 _ = blockchain_test_utils:add_block(
                     Block,
-                    router_utils:get_blockchain(),
                     self(),
                     blockchain_swarm:tid()
                 ),
@@ -110,10 +95,9 @@ init_per_testcase(TestCase, Config0) ->
         ok
     end),
 
-    Chain = router_utils:get_blockchain(),
     Config2 = test_utils:add_oui(Config),
 
-    [{chain, Chain} | Config2].
+    Config2.
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
@@ -125,22 +109,15 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 publish_xor_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
+    %% Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
 
     %% init worker processing first filter
     application:set_env(router, router_xor_filter_worker, true),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
-    %% Wait until xor filter worker started properly
-    test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
     %% OUI with blank filter should be pushed a new filter to the chain
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     DeviceUpdates = [
         {dev_eui, ?DEVEUI},
@@ -151,8 +128,7 @@ publish_xor_test(Config) ->
 
     BaseEmpty = maps:from_list([{X, []} || X <- lists:seq(0, 4)]),
 
-    State0 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(#{}, State0#state.pending_txns),
+    ?assertEqual(#{}, get_pending_txns()),
     ?assertEqual(
         maps:merge(BaseEmpty, #{
             1 => [
@@ -163,10 +139,10 @@ publish_xor_test(Config) ->
                 }
             ]
         }),
-        State0#state.filter_to_devices
+        get_filter_to_devices()
     ),
 
-    Filters = get_filters(Chain, OUI1),
+    Filters = get_filters(OUI1),
     ?assertEqual(2, erlang:length(Filters)),
 
     [Filter1, Filter2] = Filters,
@@ -178,7 +154,6 @@ publish_xor_test(Config) ->
     ok.
 
 max_filters_devices_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
@@ -192,13 +167,6 @@ max_filters_devices_test(Config) ->
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
     %% ------------------------------------------------------------
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
@@ -206,9 +174,9 @@ max_filters_devices_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -228,20 +196,12 @@ max_filters_devices_test(Config) ->
 ignore_largest_filter_test(Config) ->
     %% If we have one really big filter, we should not update it when more
     %% devices come through
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker without processing first filter automatically
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
 
@@ -257,9 +217,9 @@ ignore_largest_filter_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -272,7 +232,7 @@ ignore_largest_filter_test(Config) ->
         ]
     ),
 
-    [One, Two, Three, Four, Five] = Filters = get_filters(Chain, OUI1),
+    [One, Two, Three, Four, Five] = Filters = get_filters(OUI1),
     ExpectedOrder = [Two, Four, Five, One, Three],
 
     %% ct:print("Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
@@ -297,20 +257,12 @@ ignore_largest_filter_test(Config) ->
     ok.
 
 migrate_filter_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(5),
@@ -325,9 +277,9 @@ migrate_filter_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -344,12 +296,12 @@ migrate_filter_test(Config) ->
     %%        Two   - 5 devices
     %%        Three - 5 devices
     %%        Four  - 10 devices
-    State0 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(5, erlang:length(maps:get(0, State0#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(1, State0#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(2, State0#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(3, State0#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(4, State0#state.filter_to_devices))),
+    FilterToDevices0 = get_filter_to_devices(),
+    ?assertEqual(5, erlang:length(maps:get(0, FilterToDevices0))),
+    ?assertEqual(5, erlang:length(maps:get(1, FilterToDevices0))),
+    ?assertEqual(5, erlang:length(maps:get(2, FilterToDevices0))),
+    ?assertEqual(5, erlang:length(maps:get(3, FilterToDevices0))),
+    ?assertEqual(5, erlang:length(maps:get(4, FilterToDevices0))),
 
     %% Migrate Four to Zero
     %% Order: Zero  - 10 devices
@@ -359,13 +311,13 @@ migrate_filter_test(Config) ->
     %%        Four  - 0 devices
     {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From0 = 4, _To0 = 0, _Commit0 = true),
     %% migration should be two blocks, 1 (block 8) for new big filter, 1 (block 9) for empty filter
-    ok = expect_block(9, Chain),
-    State1 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(10, erlang:length(maps:get(0, State1#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(1, State1#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(2, State1#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(3, State1#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(4, State1#state.filter_to_devices))),
+    ok = expect_block(9),
+    FilterToDevices1 = get_filter_to_devices(),
+    ?assertEqual(10, erlang:length(maps:get(0, FilterToDevices1))),
+    ?assertEqual(5, erlang:length(maps:get(1, FilterToDevices1))),
+    ?assertEqual(5, erlang:length(maps:get(2, FilterToDevices1))),
+    ?assertEqual(5, erlang:length(maps:get(3, FilterToDevices1))),
+    ?assertEqual(0, erlang:length(maps:get(4, FilterToDevices1))),
 
     %% Migrate Three to Zero
     %% Order: Zero  - 15 devices
@@ -375,18 +327,18 @@ migrate_filter_test(Config) ->
     %%        Four  - 0 devices
     {ok, _, _, _} = router_xor_filter_worker:migrate_filter(_From1 = 3, _To1 = 0, _Commit1 = true),
     %% migration should be two blocks, 1 (block 10) for new big filter, 1 (block 11) for empty filter
-    ok = expect_block(11, Chain),
+    ok = expect_block(11),
 
-    State2 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(15, erlang:length(maps:get(0, State2#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(1, State2#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(2, State2#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(3, State2#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(4, State2#state.filter_to_devices))),
+    FilterToDevices2 = get_filter_to_devices(),
+    ?assertEqual(15, erlang:length(maps:get(0, FilterToDevices2))),
+    ?assertEqual(5, erlang:length(maps:get(1, FilterToDevices2))),
+    ?assertEqual(5, erlang:length(maps:get(2, FilterToDevices2))),
+    ?assertEqual(0, erlang:length(maps:get(3, FilterToDevices2))),
+    ?assertEqual(0, erlang:length(maps:get(4, FilterToDevices2))),
 
     %% Make sure migrated filters are empty
     AllDevices = Round5Devices,
-    [_Zero, _One, _Two, Three, Four] = get_filters(Chain, OUI1),
+    [_Zero, _One, _Two, Three, Four] = get_filters(OUI1),
     ?assertEqual(
         [false],
         lists:usort([
@@ -414,13 +366,14 @@ migrate_filter_test(Config) ->
     Round6Devices = Round5Devices ++ n_rand_devices(3),
     true = ets:insert(Tab, {devices, Round6Devices}),
     ok = router_xor_filter_worker:check_filters(),
-    ok = expect_block(12, Chain),
-    State3 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(15, erlang:length(maps:get(0, State3#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(1, State3#state.filter_to_devices))),
-    ?assertEqual(5, erlang:length(maps:get(2, State3#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(3, State3#state.filter_to_devices))),
-    ?assertEqual(3, erlang:length(maps:get(4, State3#state.filter_to_devices))),
+    ok = expect_block(12),
+
+    FilterToDevices3 = get_filter_to_devices(),
+    ?assertEqual(15, erlang:length(maps:get(0, FilterToDevices3))),
+    ?assertEqual(5, erlang:length(maps:get(1, FilterToDevices3))),
+    ?assertEqual(5, erlang:length(maps:get(2, FilterToDevices3))),
+    ?assertEqual(0, erlang:length(maps:get(3, FilterToDevices3))),
+    ?assertEqual(3, erlang:length(maps:get(4, FilterToDevices3))),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
@@ -437,20 +390,12 @@ move_to_front_test(Config) ->
     %% 2 - cheap adding devices
     %% 3 - cheap adding devices
     %% 4 - cheap adding devices
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -465,9 +410,9 @@ move_to_front_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -487,7 +432,7 @@ move_to_front_test(Config) ->
     %%        Three - 200 devices
     %%        Four  - 30 devices
     %%        Five  - 6 devices
-    [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
+    [One, Two, Three, Four, Five] = Filters1 = get_filters(OUI1),
     ?assertEqual(sort_binaries_by_size(Filters1), [Five, Two, Four, One, Three]),
 
     {ok, _Old, _New, _Costs} = router_xor_filter_worker:move_to_front(
@@ -499,7 +444,7 @@ move_to_front_test(Config) ->
     %% Next filter would be 8
     %% Plus updating other filters (+4)
     %% Expecting 8 + 4 == 12
-    ok = expect_block(12, Chain),
+    ok = expect_block(12),
 
     %% ct:print("~nAfter Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
     %% Order: One   - 148 devices
@@ -507,14 +452,15 @@ move_to_front_test(Config) ->
     %%        Three - 0 devices
     %%        Four  - 0 devices
     %%        Five  - 0 devices
-    State = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(148, erlang:length(maps:get(0, State#state.filter_to_devices))),
-    ?assertEqual(148, erlang:length(maps:get(1, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(2, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(3, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(4, State#state.filter_to_devices))),
 
-    Filters2 = get_filters(Chain, OUI1),
+    FilterToDevices = get_filter_to_devices(),
+    ?assertEqual(148, erlang:length(maps:get(0, FilterToDevices))),
+    ?assertEqual(148, erlang:length(maps:get(1, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(2, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(3, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(4, FilterToDevices))),
+
+    Filters2 = get_filters(OUI1),
     [OneSize, TwoSize, ThreeSize, FourSize, FiveSize] = bin_sizes(Filters2),
     ?assertEqual(OneSize, TwoSize),
     ?assertEqual(ThreeSize, FourSize),
@@ -527,20 +473,12 @@ move_to_front_test(Config) ->
 evenly_rebalance_filter_test(Config) ->
     %% If we have one really big filter, we should not update it when more
     %% devices come through
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -555,9 +493,9 @@ evenly_rebalance_filter_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -577,7 +515,7 @@ evenly_rebalance_filter_test(Config) ->
     %%        Three - 200 devices
     %%        Four  - 30 devices
     %%        Five  - 5 devices
-    [One, Two, Three, Four, Five] = Filters1 = get_filters(Chain, OUI1),
+    [One, Two, Three, Four, Five] = Filters1 = get_filters(OUI1),
     ?assertEqual(sort_binaries_by_size(Filters1), [Five, Two, Four, One, Three]),
 
     ok = router_xor_filter_worker:rebalance_filters(),
@@ -586,7 +524,7 @@ evenly_rebalance_filter_test(Config) ->
     %% Next filter would be 8
     %% Plus updating other filters (+4)
     %% Expecting 8 + 4 == 12
-    ok = expect_block(12, Chain),
+    ok = expect_block(12),
 
     %% ct:print("~nAfter Sizes: ~n~w~n", [router_xor_filter_worker:report_filter_sizes()]),
     %% Order: One   - 59 devices
@@ -594,7 +532,7 @@ evenly_rebalance_filter_test(Config) ->
     %%        Three - 59 devices
     %%        Four  - 59 devices
     %%        Five  - 59 devices
-    Filters2 = get_filters(Chain, OUI1),
+    Filters2 = get_filters(OUI1),
     Sizes = bin_sizes(Filters2),
     Diff = lists:max(Sizes) - lists:min(Sizes),
     ?assertEqual(0, Diff, "Devices should be disbtributed evenly"),
@@ -606,20 +544,12 @@ evenly_rebalance_filter_test(Config) ->
 oddly_rebalance_filter_test(Config) ->
     %% If we have one really big filter, we should not update it when more
     %% devices come through
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(15),
@@ -634,9 +564,9 @@ oddly_rebalance_filter_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -658,7 +588,7 @@ oddly_rebalance_filter_test(Config) ->
     %%        Four  - 37 devices
     %%        Five  - 47 devices
     %% Total: 15 + 211 + 37 + 47 + 59 == 369
-    Filters1 = get_filters(Chain, OUI1),
+    Filters1 = get_filters(OUI1),
     Sizes1 = bin_sizes(Filters1),
     %% ct:print("~nBefore Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
     Diff1 = lists:max(Sizes1) - lists:min(Sizes1),
@@ -678,7 +608,7 @@ oddly_rebalance_filter_test(Config) ->
     %% Next filter would be 8
     %% Plus updating other filters (+4)
     %% Expecting 8 + 4 == 12
-    ok = expect_block(12, Chain),
+    ok = expect_block(12),
 
     %% Total: 0 + 15 + 211 + 37 + 47 + 59 == 369
     %% Distributed: 369/5 == 73.8
@@ -687,7 +617,7 @@ oddly_rebalance_filter_test(Config) ->
     %%        Three - 74 devices
     %%        Four  - 74 devices
     %%        Five  - 74 devices
-    Filters2 = get_filters(Chain, OUI1),
+    Filters2 = get_filters(OUI1),
     Sizes2 = bin_sizes(Filters2),
     %% ct:print("~nAfter Sizes: ~n~p~n", [router_xor_filter_worker:report_filter_sizes()]),
     Diff2 = lists:max(Sizes2) - lists:min(Sizes2),
@@ -698,20 +628,12 @@ oddly_rebalance_filter_test(Config) ->
     ok.
 
 remove_devices_filter_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     %% Filters are 0-indexed
@@ -727,22 +649,22 @@ remove_devices_filter_test(Config) ->
     % filter 3(?)
     Round5Devices = n_rand_devices(5) ++ Round4Devices,
 
-    Fitlers0 = get_filters(Chain, OUI1),
+    Fitlers0 = get_filters(OUI1),
     ?assertEqual(1, erlang:length(Fitlers0)),
 
     %% Add devices
     lists:foreach(
         fun(#{devices := Devices, block := ExpectedBlock, filter_count := ExpectedFilterNum}) ->
             %% Ensure we aren't starting farther ahead than we expect
-            ok = expect_block(ExpectedBlock - 1, Chain),
+            ok = expect_block(ExpectedBlock - 1),
 
             true = ets:insert(Tab, {devices, Devices}),
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -766,8 +688,7 @@ remove_devices_filter_test(Config) ->
     ok = router_xor_filter_worker:check_filters(),
 
     %% make sure no txns are about to go through.
-    State0 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(0, maps:size(State0#state.pending_txns)),
+    ?assertEqual(0, maps:size(get_pending_txns())),
 
     %% NOTE: not submitting txns for filters when only removing
     %% %% Should commit filter for removed devices
@@ -783,8 +704,7 @@ remove_devices_filter_test(Config) ->
     %%     lists:member(true, Containment),
     %%     "Removed devices are _NOT_ in filters"
     %% ),
-    State = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices = lists:flatten(maps:values(State#state.filter_to_devices)),
+    Devices = lists:flatten(maps:values(get_filter_to_devices())),
     ?assertEqual(
         [false, false],
         [lists:member(RemovedDevice, Devices) || RemovedDevice <- Removed],
@@ -796,20 +716,12 @@ remove_devices_filter_test(Config) ->
     ok.
 
 remove_devices_filter_after_restart_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -825,9 +737,9 @@ remove_devices_filter_after_restart_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -847,7 +759,7 @@ remove_devices_filter_after_restart_test(Config) ->
     LeftoverDevices = Round5Devices -- Removed,
 
     %% Make sure removed devices are not in those filters
-    Filters1 = get_filters(Chain, OUI1),
+    Filters1 = get_filters(OUI1),
     Containment1 = [
         xor16:contain(
             {Filter, fun xxhash:hash64/1},
@@ -885,8 +797,6 @@ remove_devices_filter_after_restart_test(Config) ->
     true = ets:insert(Tab, {devices, LeftoverDevices}),
     ok = router_xor_filter_worker:check_filters(),
 
-    State0 = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(0, maps:size(State0#state.pending_txns)),
     %% %% Should commit filter for removed devices
     %% ok = expect_block(8, Chain),
 
@@ -904,8 +814,7 @@ remove_devices_filter_after_restart_test(Config) ->
     %%     lists:member(true, Containment2),
     %%     "Removed devices are _NOT_ in filters"
     %% ),
-    State1 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+    Devices1 = lists:flatten(maps:values(get_filter_to_devices())),
     ?assertEqual(
         [false],
         lists:usort([lists:member(RemovedDevice, Devices1) || RemovedDevice <- Removed]),
@@ -915,8 +824,7 @@ remove_devices_filter_after_restart_test(Config) ->
     %% Refresh the cache to make sure we don't have anything lying around
     ok = router_xor_filter_worker:refresh_cache(),
 
-    State2 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices2 = lists:flatten(maps:values(State2#state.filter_to_devices)),
+    Devices2 = lists:flatten(maps:values(get_filter_to_devices())),
     ?assertEqual(
         length(LeftoverDevices),
         length(Devices2),
@@ -934,20 +842,12 @@ remove_devices_filter_after_restart_test(Config) ->
     ok.
 
 report_device_status_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -962,9 +862,9 @@ report_device_status_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -1029,7 +929,6 @@ report_device_status_test(Config) ->
     ok.
 
 remove_devices_single_txn_db_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
@@ -1037,18 +936,11 @@ remove_devices_single_txn_db_test(Config) ->
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
 
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
-
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
     Round1DevicesEUI = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round1Devices],
 
-    Fitlers0 = get_filters(Chain, OUI1),
+    Fitlers0 = get_filters(OUI1),
     ?assertEqual(1, erlang:length(Fitlers0)),
 
     %% Add devices
@@ -1058,9 +950,9 @@ remove_devices_single_txn_db_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -1082,8 +974,7 @@ remove_devices_single_txn_db_test(Config) ->
     %%     lists:usort(Containment),
     %%     "Removed devices are _NOT_ in filters"
     %% ),
-    State0 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
+    Devices0 = lists:flatten(maps:values(get_filter_to_devices())),
     ?assertEqual(
         [false],
         lists:usort([lists:member(RemovedDevice, Devices0) || RemovedDevice <- Round1DevicesEUI]),
@@ -1091,8 +982,7 @@ remove_devices_single_txn_db_test(Config) ->
     ),
     %% Refresh to make sure they don't load from the db
     router_xor_filter_worker:refresh_cache(),
-    State1 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+    Devices1 = lists:flatten(maps:values(get_filter_to_devices())),
     Membership = [lists:member(RemovedDevice, Devices1) || RemovedDevice <- Round1DevicesEUI],
     ?assertEqual(
         [false],
@@ -1105,20 +995,12 @@ remove_devices_single_txn_db_test(Config) ->
     ok.
 
 remove_devices_multiple_txn_db_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     OUI1 = proplists:get_value(oui, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -1128,7 +1010,7 @@ remove_devices_multiple_txn_db_test(Config) ->
     Round5Devices = n_rand_devices(50) ++ Round4Devices,
     DeviceEUIs = [router_xor_filter_worker:deveui_appeui(Device) || Device <- Round5Devices],
 
-    Fitlers0 = get_filters(Chain, OUI1),
+    Fitlers0 = get_filters(OUI1),
     ?assertEqual(1, erlang:length(Fitlers0)),
 
     %% Add devices
@@ -1138,9 +1020,9 @@ remove_devices_multiple_txn_db_test(Config) ->
             ok = router_xor_filter_worker:check_filters(),
 
             %% should have pushed a new filter to the chain
-            ok = expect_block(ExpectedBlock, Chain),
+            ok = expect_block(ExpectedBlock),
 
-            Filters1 = get_filters(Chain, OUI1),
+            Filters1 = get_filters(OUI1),
             ?assertEqual(ExpectedFilterNum, erlang:length(Filters1))
         end,
         [
@@ -1168,8 +1050,7 @@ remove_devices_multiple_txn_db_test(Config) ->
     %%     lists:usort(Containment),
     %%     "Removed devices are _NOT_ in filters"
     %% ),
-    State0 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices0 = lists:flatten(maps:values(State0#state.filter_to_devices)),
+    Devices0 = lists:flatten(maps:values(get_filter_to_devices())),
     ?assertEqual(
         [false],
         lists:usort([lists:member(RemovedDevice, Devices0) || RemovedDevice <- DeviceEUIs]),
@@ -1177,8 +1058,8 @@ remove_devices_multiple_txn_db_test(Config) ->
     ),
     %% Refresh to make sure they don't load from the db
     router_xor_filter_worker:refresh_cache(),
-    State1 = sys:get_state(whereis(router_xor_filter_worker)),
-    Devices1 = lists:flatten(maps:values(State1#state.filter_to_devices)),
+
+    Devices1 = lists:flatten(maps:values(get_filter_to_devices())),
     Membership = [lists:member(RemovedDevice, Devices1) || RemovedDevice <- DeviceEUIs],
     ?assertEqual(
         [false],
@@ -1191,19 +1072,11 @@ remove_devices_multiple_txn_db_test(Config) ->
     ok.
 
 send_updates_to_console_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -1213,7 +1086,7 @@ send_updates_to_console_test(Config) ->
     ok = router_xor_filter_worker:check_filters(),
 
     %% should have pushed a new filter to the chain
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     _ShouldBeRemovedNext =
         receive
@@ -1230,7 +1103,7 @@ send_updates_to_console_test(Config) ->
     ok = router_xor_filter_worker:check_filters(),
 
     %% should _NOT_ have pushed a new filter to the chain
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% NOTE: Nothing is being removed from filters because there are no adds
     %% receive
@@ -1249,19 +1122,11 @@ between_worker_device_add_remove_send_updates_to_console_test(Config) ->
     %% A device is removed and added with the same EUI pair, but different
     %% device IDs. Console should be notified about the devices, but we should
     %% not change any of the filters.
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
@@ -1274,7 +1139,7 @@ between_worker_device_add_remove_send_updates_to_console_test(Config) ->
     %% Queue up device-1
     true = ets:insert(Tab, {devices, [Device1]}),
     ok = router_xor_filter_worker:check_filters(),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows about device 1
     receive
@@ -1289,7 +1154,7 @@ between_worker_device_add_remove_send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, [Device2]}),
     ok = router_xor_filter_worker:check_filters(),
     timer:sleep(timer:seconds(1)),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows they are different devices
     receive
@@ -1308,19 +1173,11 @@ device_add_multiple_send_updates_to_console_test(Config) ->
     %% A device is added, then more devices with the same EUI pair but different
     %% device IDs. Console should be notified about the devices, but we should
     %% not change any of the filters.
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
@@ -1335,7 +1192,7 @@ device_add_multiple_send_updates_to_console_test(Config) ->
     %% Queue up device-1
     true = ets:insert(Tab, {devices, [Device1]}),
     ok = router_xor_filter_worker:check_filters(),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows about device 1
     receive
@@ -1350,7 +1207,7 @@ device_add_multiple_send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, [Device1, Device2, Device3]}),
     ok = router_xor_filter_worker:check_filters(),
     timer:sleep(timer:seconds(1)),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows they are different devices
     receive
@@ -1369,19 +1226,11 @@ device_add_unique_and_matching_send_updates_to_console_test(Config) ->
     %% A device is added, then more devices with the same EUI pair but different
     %% device IDs. Console should be notified about the devices, but we should
     %% not change any of the filters.
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
@@ -1398,7 +1247,7 @@ device_add_unique_and_matching_send_updates_to_console_test(Config) ->
     %% Queue up device-1
     true = ets:insert(Tab, {devices, [Device1]}),
     ok = router_xor_filter_worker:check_filters(),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows about device 1
     receive
@@ -1413,7 +1262,7 @@ device_add_unique_and_matching_send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, [Device1, Device1Copy, Device2]}),
     ok = router_xor_filter_worker:check_filters(),
     timer:sleep(timer:seconds(1)),
-    ok = expect_block(4, Chain),
+    ok = expect_block(4),
 
     %% Console knows they are different devices without needing a txn.
     receive
@@ -1439,19 +1288,11 @@ device_removed_send_updates_to_console_test(Config) ->
     %% A device is removed, but other devices with the same EUI pair still
     %% exist. Console should be notified about the devices, but we should not
     %% change any of the filters.
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     %% Two devices with the same eui pair, but different ids
@@ -1466,7 +1307,7 @@ device_removed_send_updates_to_console_test(Config) ->
     %% Queue up all devices
     true = ets:insert(Tab, {devices, [Device1, Device2, Device3]}),
     ok = router_xor_filter_worker:check_filters(),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows about all devices
     receive
@@ -1481,7 +1322,7 @@ device_removed_send_updates_to_console_test(Config) ->
     true = ets:insert(Tab, {devices, [Device1, Device3]}),
     ok = router_xor_filter_worker:check_filters(),
     timer:sleep(timer:seconds(1)),
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Console knows only device-2 was removed
     receive
@@ -1491,12 +1332,12 @@ device_removed_send_updates_to_console_test(Config) ->
     end,
 
     %% Device cache should no longer know about device-2
-    State = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(0, erlang:length(maps:get(0, State#state.filter_to_devices))),
-    ?assertEqual(2, erlang:length(maps:get(1, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(2, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(3, State#state.filter_to_devices))),
-    ?assertEqual(0, erlang:length(maps:get(4, State#state.filter_to_devices))),
+    FilterToDevices = get_filter_to_devices(),
+    ?assertEqual(0, erlang:length(maps:get(0, FilterToDevices))),
+    ?assertEqual(2, erlang:length(maps:get(1, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(2, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(3, FilterToDevices))),
+    ?assertEqual(0, erlang:length(maps:get(4, FilterToDevices))),
 
     %% ------------------------------------------------------------
 
@@ -1505,19 +1346,11 @@ device_removed_send_updates_to_console_test(Config) ->
     ok.
 
 estimate_cost_test(Config) ->
-    Chain = proplists:get_value(chain, Config),
     Tab = proplists:get_value(ets, Config),
 
     %% Init worker
     application:set_env(router, router_xor_filter_worker, false),
     erlang:whereis(router_xor_filter_worker) ! post_init,
-
-    %% Wait until xor filter worker started properly
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_xor_filter_worker),
-        State#state.chain =/= undefined andalso
-            State#state.oui =/= undefined
-    end),
 
     %% ------------------------------------------------------------
     Round1Devices = n_rand_devices(10),
@@ -1533,7 +1366,7 @@ estimate_cost_test(Config) ->
     ok = router_xor_filter_worker:check_filters(),
 
     %% should have pushed a new filter to the chain
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     %% Remove all Devices
     true = ets:insert(Tab, {devices, []}),
@@ -1542,23 +1375,39 @@ estimate_cost_test(Config) ->
         router_xor_filter_worker:estimate_cost()
     ),
     ok = router_xor_filter_worker:check_filters(),
-    State = sys:get_state(router_xor_filter_worker),
-    ?assertEqual(0, maps:size(State#state.pending_txns)),
+
+    ?assertEqual(0, maps:size(get_pending_txns())),
+
     %% should _NOT_ have pushed a new filter to the chain for only removed devices
-    ok = expect_block(3, Chain),
+    ok = expect_block(3),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
     ok.
 
+%%--------------------------------------------------------------------
+%% State Getters
+%%--------------------------------------------------------------------
+get_pending_txns() ->
+    {state, _PubKeyBin, _SigFun, _OUI, PendingTxns, _FilterToDevices, _CheckFiltersRef} = sys:get_state(
+        router_xor_filter_worker
+    ),
+    PendingTxns.
+
+get_filter_to_devices() ->
+    {state, _PubKeyBin, _SigFun, _OUI, _PendingTxns, FilterToDevices, _CheckFiltersRef} = sys:get_state(
+        router_xor_filter_worker
+    ),
+    FilterToDevices.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
 
-expect_block(BlockNum, Chain) ->
+expect_block(BlockNum) ->
     case
         test_utils:wait_until(fun() ->
-            {ok, Num} = blockchain:height(Chain),
+            {ok, Num} = router_blockchain:height(),
             if
                 Num == BlockNum -> true;
                 Num == BlockNum + 1 -> {fail, expected_block_passed};
@@ -1572,7 +1421,7 @@ expect_block(BlockNum, Chain) ->
         Err ->
             ct:fail("Expected Block ~p, got block ~p (~p)", [
                 BlockNum,
-                blockchain:height(Chain),
+                router_blockchain:height(),
                 Err
             ])
     end.
@@ -1591,9 +1440,8 @@ n_rand_devices(N) ->
         lists:seq(1, N)
     ).
 
-get_filters(Chain, OUI) ->
-    Ledger = blockchain:ledger(Chain),
-    {ok, Routing} = blockchain_ledger_v1:find_routing(OUI, Ledger),
+get_filters(OUI) ->
+    {ok, Routing} = router_blockchain:routing_for_oui(OUI),
     blockchain_ledger_routing_v1:filters(Routing).
 
 sort_binaries_by_size(Bins) ->

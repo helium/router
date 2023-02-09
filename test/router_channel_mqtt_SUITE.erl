@@ -461,16 +461,12 @@ mqtt_crash_test(Config) ->
 
     %% start device
     {ok, _DeviceWorkerPid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
-    DeviceChannelsWorkerPid = test_utils:get_device_channels_worker(?CONSOLE_DEVICE_ID),
 
     %% We do this because the channels_workers does not start right away on device_worker init
     ok = test_utils:wait_until(fun() ->
-        %% immediate connection failure should trigger backoff
-        State = sys:get_state(DeviceChannelsWorkerPid),
-
         %% NOTE: With no backoff handling, the test fails here because the handler was never successfully added
-        EventMgrSlot = 3,
-        case sys:get_state(element(EventMgrSlot, State)) of
+        EventMgrPid = test_utils:get_channel_worker_event_manager(?CONSOLE_DEVICE_ID),
+        case sys:get_state(EventMgrPid) of
             [{router_mqtt_channel, _Name, ChannelState}] ->
                 Backoff = element(6, ChannelState),
                 ?BACKOFF_MIN =/= backoff:get(Backoff);

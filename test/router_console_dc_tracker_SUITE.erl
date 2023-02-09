@@ -274,7 +274,6 @@ burned_test(Config) ->
 
     Swarm = proplists:get_value(swarm, Config),
     ConsensusMembers = proplists:get_value(consensus_member, Config),
-    Chain = router_utils:get_blockchain(),
 
     PayerPubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
     #{secret := PrivKey} = proplists:get_value(keys, Config),
@@ -288,9 +287,9 @@ burned_test(Config) ->
     SignedBurnTxn = blockchain_txn_token_burn_v1:sign(BurnTxn1, PayerSigFun),
 
     {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedBurnTxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
+    _ = blockchain_test_utils:add_block(Block0, self(), blockchain_swarm:tid()),
 
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+    ok = test_utils:wait_until(fun() -> {ok, 2} == router_blockchain:height() end),
 
     test_utils:wait_organizations_burned(#{
         <<"memo">> => 123,

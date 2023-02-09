@@ -221,7 +221,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(post_init, #state{chain = undefined} = State) ->
-    case router_utils:get_blockchain() of
+    case router_blockchain:privileged_maybe_get_blockchain() of
         undefined ->
             erlang:send_after(500, self(), post_init),
             {noreply, State};
@@ -257,7 +257,7 @@ handle_info(
     erlang:spawn_opt(
         fun() ->
             ok = record_dc_balance(Chain, PubkeyBin),
-            ok = record_state_channels(Chain),
+            ok = record_state_channels(),
             ok = record_chain_blocks(Chain),
             ok = record_vm_stats(),
             ok = record_ets(),
@@ -368,10 +368,9 @@ record_dc_balance(Chain, PubkeyBin) ->
             ok
     end.
 
--spec record_state_channels(Chain :: blockchain:blockchain()) -> ok.
-record_state_channels(Chain) ->
-    {ok, Height} = blockchain:height(Chain),
-    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(Height),
+-spec record_state_channels() -> ok.
+record_state_channels() ->
+    {OpenedCount, OverspentCount, _GettingCloseCount} = router_sc_worker:counts(),
     _ = prometheus_gauge:set(?METRICS_SC_OPENED_COUNT, OpenedCount),
     _ = prometheus_gauge:set(?METRICS_SC_OVERSPENT_COUNT, OverspentCount),
 

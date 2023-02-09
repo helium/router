@@ -414,17 +414,16 @@ packet_hash_cache_test(Config) ->
 
     %% -------------------------------------------------------------------
     %% Query for devices
-    Chain = router_utils:get_blockchain(),
     DevAddr = router_device:devaddr(Device1),
 
     %% make sure things go wrong first
     ?assertNotEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0)
     ),
     ?assertNotEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1)
     ),
 
     %% make it better
@@ -433,11 +432,11 @@ packet_hash_cache_test(Config) ->
     %% now we should go right
     ?assertEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0)
     ),
     ?assertEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1)
     ),
 
     %% go back to nothing
@@ -446,11 +445,11 @@ packet_hash_cache_test(Config) ->
     %% back to being wrong, and it feels so right
     ?assertNotEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin0)
     ),
     ?assertNotEqual(
         {ok, Device2},
-        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1, Chain)
+        router_device_routing:get_device_for_offer(Offer, DevAddr, PubKeyBin1)
     ),
 
     ok.

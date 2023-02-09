@@ -4,15 +4,14 @@
 -include("router_device_worker.hrl").
 
 -export([
-    get_blockchain/0,
-    event_join_request/8,
-    event_join_accept/5,
-    event_uplink/10,
+    event_join_request/7,
+    event_join_accept/4,
+    event_uplink/9,
     event_uplink_dropped_device_inactive/4,
     event_uplink_dropped_not_enough_dc/4,
     event_uplink_dropped_late_packet/5,
-    event_uplink_dropped_invalid_packet/8,
-    event_downlink/10,
+    event_uplink_dropped_invalid_packet/7,
+    event_downlink/9,
     event_downlink_dropped_payload_size_exceeded/5,
     event_downlink_dropped_misc/3,
     event_downlink_dropped_misc/5,
@@ -22,7 +21,6 @@
     event_misc_integration_error/3,
     uuid_v4/0,
     get_oui/0,
-    get_hotspot_location/2,
     to_bin/1,
     b0/4,
     either/2,
@@ -44,18 +42,6 @@
 -type uuid_v4() :: binary().
 
 -export_type([uuid_v4/0]).
-
--spec get_blockchain() -> blockchain:blockchain() | undefined.
-get_blockchain() ->
-    Key = router_blockchain,
-    case persistent_term:get(Key, undefined) of
-        undefined ->
-            Chain = blockchain_worker:blockchain(),
-            ok = persistent_term:put(Key, Chain),
-            Chain;
-        Chain ->
-            Chain
-    end.
 
 metadata_fun() ->
     try
@@ -90,20 +76,18 @@ metadata_fun() ->
     ID :: uuid_v4(),
     Timestamp :: non_neg_integer(),
     Device :: router_device:device(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom(),
     BalanceNonce :: {Balance :: integer(), Nonce :: integer()}
 ) -> ok.
-event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
+event_join_request(ID, Timestamp, Device, PubKeyBin, Packet, Region, {Balance, Nonce}) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
 
     Payload = blockchain_helium_packet_v1:payload(Packet),
     PayloadSize = erlang:byte_size(Payload),
-    Ledger = blockchain:ledger(Chain),
-    Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
+    Used = router_blockchain:calculate_dc_amount(PayloadSize),
 
     Map = #{
         id => ID,
@@ -119,7 +103,7 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
         raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet)),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        hotspot => format_hotspot(PubKeyBin, Packet, Region),
         dc => #{
             balance => Balance,
             nonce => Nonce,
@@ -130,12 +114,11 @@ event_join_request(ID, Timestamp, Device, Chain, PubKeyBin, Packet, Region, {Bal
 
 -spec event_join_accept(
     Device :: router_device:device(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom()
 ) -> ok.
-event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
+event_join_accept(Device, PubKeyBin, Packet, Region) ->
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
     Payload = blockchain_helium_packet_v1:payload(Packet),
@@ -152,7 +135,7 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
         payload => base64:encode(Payload),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+        hotspot => format_hotspot(PubKeyBin, Packet, Region)
     },
     ok = router_console_api:event(Device, Map).
 
@@ -162,7 +145,6 @@ event_join_accept(Device, Chain, PubKeyBin, Packet, Region) ->
     HoldTime :: non_neg_integer(),
     Frame :: #frame{},
     Device :: router_device:device(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom(),
@@ -174,7 +156,6 @@ event_uplink(
     HoldTime,
     Frame,
     Device,
-    Chain,
     PubKeyBin,
     Packet,
     Region,
@@ -201,8 +182,7 @@ event_uplink(
                 Payload0
         end,
     PayloadSize = erlang:byte_size(Payload1),
-    Ledger = blockchain:ledger(Chain),
-    Used = blockchain_utils:calculate_dc_amount(Ledger, PayloadSize),
+    Used = router_blockchain:calculate_dc_amount(PayloadSize),
     Map = #{
         id => ID,
         category => uplink,
@@ -216,7 +196,7 @@ event_uplink(
         raw_packet => base64:encode(blockchain_helium_packet_v1:payload(Packet)),
         port => FPort,
         devaddr => lorawan_utils:binary_to_hex(DevAddr),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        hotspot => format_hotspot(PubKeyBin, Packet, Region),
         dc => #{
             balance => Balance,
             nonce => Nonce,
@@ -299,7 +279,6 @@ event_uplink_dropped_late_packet(Timestamp, HoldTime, FCnt, Device, PubKeyBin) -
     Timestamp :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom()
@@ -309,7 +288,6 @@ event_uplink_dropped_invalid_packet(
     Timestamp,
     FCnt,
     Device,
-    Chain,
     PubKeyBin,
     Packet,
     Region
@@ -325,7 +303,7 @@ event_uplink_dropped_invalid_packet(
         payload => <<>>,
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region)
+        hotspot => format_hotspot(PubKeyBin, Packet, Region)
     },
 
     ok = router_console_api:event(Device, Map).
@@ -336,7 +314,6 @@ event_uplink_dropped_invalid_packet(
     Port :: non_neg_integer(),
     Device :: router_device:device(),
     ChannelMap :: map(),
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom(),
@@ -348,7 +325,6 @@ event_downlink(
     Port,
     Device,
     ChannelMap,
-    Chain,
     PubKeyBin,
     Packet,
     Region,
@@ -372,7 +348,7 @@ event_downlink(
         payload => base64:encode(Payload),
         port => Port,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_hotspot(Chain, PubKeyBin, Packet, Region),
+        hotspot => format_hotspot(PubKeyBin, Packet, Region),
         channel_id => maps:get(id, ChannelMap),
         channel_name => maps:get(name, ChannelMap),
         channel_status => <<"success">>,
@@ -565,24 +541,6 @@ get_oui() ->
             erlang:list_to_integer(OUI0);
         OUI0 ->
             OUI0
-    end.
-
--spec get_hotspot_location(
-    PubKeyBin :: libp2p_crypto:pubkey_bin(),
-    Blockchain :: blockchain:blockchain()
-) -> {float(), float()} | {unknown, unknown}.
-get_hotspot_location(PubKeyBin, Blockchain) ->
-    Ledger = blockchain:ledger(Blockchain),
-    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _} ->
-            {unknown, unknown};
-        {ok, Hotspot} ->
-            case blockchain_ledger_gateway_v2:location(Hotspot) of
-                undefined ->
-                    {unknown, unknown};
-                Loc ->
-                    h3:to_geo(Loc)
-            end
     end.
 
 -spec to_bin(any()) -> binary().
@@ -841,16 +799,15 @@ format_uncharged_hotspot(PubKeyBin) ->
     }.
 
 -spec format_hotspot(
-    Chain :: blockchain:blockchain(),
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     Packet :: blockchain_helium_packet_v1:packet(),
     Region :: atom()
 ) -> map().
-format_hotspot(Chain, PubKeyBin, Packet, Region) ->
+format_hotspot(PubKeyBin, Packet, Region) ->
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     Freq = blockchain_helium_packet_v1:frequency(Packet),
-    {Lat, Long} = router_utils:get_hotspot_location(PubKeyBin, Chain),
+    {Lat, Long} = router_blockchain:get_hotspot_lat_lon(PubKeyBin),
     #{
         id => erlang:list_to_binary(B58),
         name => erlang:list_to_binary(HotspotName),

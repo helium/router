@@ -36,16 +36,6 @@
     erlang:make_ref()
 }).
 
--record(state, {
-    chain = blockchain:blockchain(),
-    event_mgr :: pid(),
-    device_worker :: pid(),
-    device :: router_device:device(),
-    channels = #{} :: map(),
-    channels_backoffs = #{} :: map(),
-    data_cache = #{} :: map()
-}).
-
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
@@ -97,7 +87,6 @@ refresh_channels_test(Config) ->
     timer:sleep(250),
 
     %% Checking worker's channels, should only be "no_channel"
-    State0 = sys:get_state(DeviceChannelsWorkerPid),
     ?assertEqual(
         #{
             <<"no_channel">> => router_channel:new(
@@ -109,7 +98,7 @@ refresh_channels_test(Config) ->
                 DeviceChannelsWorkerPid
             )
         },
-        State0#state.channels
+        test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID)
     ),
 
     %% Add 2 http channels and force a refresh
@@ -140,21 +129,22 @@ refresh_channels_test(Config) ->
     ets:insert(Tab, {no_channel, false}),
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State1 = sys:get_state(DeviceChannelsWorkerPid),
+
+    Device1 = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
     ?assertEqual(
         #{
             <<"HTTP_1">> => convert_channel(
-                State1#state.device,
+                Device1,
                 DeviceChannelsWorkerPid,
                 HTTPChannel1
             ),
             <<"HTTP_2">> => convert_channel(
-                State1#state.device,
+                Device1,
                 DeviceChannelsWorkerPid,
                 HTTPChannel2
             )
         },
-        State1#state.channels
+        test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID)
     ),
 
     %% Modify HTTP Channel 2
@@ -171,37 +161,40 @@ refresh_channels_test(Config) ->
     },
     ets:insert(Tab, {channels, [HTTPChannel1, HTTPChannel2_1]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State2 = sys:get_state(DeviceChannelsWorkerPid),
-    ?assertEqual(2, maps:size(State2#state.channels)),
+
+    Device2 = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
+    Channels2 = test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID),
+    ?assertEqual(2, maps:size(Channels2)),
     ?assertEqual(
         #{
             <<"HTTP_1">> => convert_channel(
-                State2#state.device,
+                Device2,
                 DeviceChannelsWorkerPid,
                 HTTPChannel1
             ),
             <<"HTTP_2">> => convert_channel(
-                State2#state.device,
+                Device2,
                 DeviceChannelsWorkerPid,
                 HTTPChannel2_1
             )
         },
-        State2#state.channels
+        Channels2
     ),
 
     %% Remove HTTP Channel 1 and update 2 back to normal
     ets:insert(Tab, {channels, [HTTPChannel2]}),
     test_utils:force_refresh_channels(?CONSOLE_DEVICE_ID),
-    State3 = sys:get_state(DeviceChannelsWorkerPid),
+
+    Device3 = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
     ?assertEqual(
         #{
             <<"HTTP_2">> => convert_channel(
-                State3#state.device,
+                Device3,
                 DeviceChannelsWorkerPid,
                 HTTPChannel2
             )
         },
-        State3#state.channels
+        test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID)
     ),
 
     gen_server:stop(DeviceWorkerPid),
@@ -231,13 +224,13 @@ remove_channel_backoff_when_channel_changed_test(Config) ->
 
     %% Check that HTTP 1 is in there
     ok = test_utils:wait_until(fun() ->
-        State0 = sys:get_state(DeviceChannelsWorkerPid),
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
         ChannelName = maps:get(<<"id">>, Channel),
-        case maps:is_key(ChannelName, State0#state.channels_backoffs) of
+        case maps:is_key(ChannelName, ChannelsBackoffs) of
             false ->
                 false;
             true ->
-                {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
+                {Backoff0, _} = maps:get(ChannelName, ChannelsBackoffs),
                 case backoff:get(Backoff0) of
                     BackoffTime when BackoffTime >= (BackoffMin * 2) ->
                         true;
@@ -333,13 +326,13 @@ remove_channel_backoff_when_all_channels_removed_test(Config) ->
     %% We do this because the channels_workers does not start right away on device_worker init
     %% Check that HTTP 1 is in there
     ok = test_utils:wait_until(fun() ->
-        State0 = sys:get_state(DeviceChannelsWorkerPid),
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
         ChannelName = maps:get(<<"id">>, Channel),
-        case maps:is_key(ChannelName, State0#state.channels_backoffs) of
+        case maps:is_key(ChannelName, ChannelsBackoffs) of
             false ->
                 false;
             true ->
-                {Backoff0, _} = maps:get(ChannelName, State0#state.channels_backoffs),
+                {Backoff0, _} = maps:get(ChannelName, ChannelsBackoffs),
                 case backoff:get(Backoff0) of
                     BackoffTime when BackoffTime >= (BackoffMin * 2) ->
                         true;
@@ -440,22 +433,24 @@ crashing_http_channel_test(Config) ->
     %% Check that HTTP 1 is in there
     %% We do this because the channels_workers does not start right away on device_worker init
     ok = test_utils:wait_until(fun() ->
-        State0 = sys:get_state(DeviceChannelsWorkerPid),
-        {Backoff0, _} = maps:get(<<"HTTP_1">>, State0#state.channels_backoffs),
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
+        Device = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
+        Channels = test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID),
+
+        {Backoff0, _} = maps:get(<<"HTTP_1">>, ChannelsBackoffs),
         ChannelsMap = #{
             <<"HTTP_1">> => convert_channel(
-                State0#state.device,
+                Device,
                 DeviceChannelsWorkerPid,
                 HTTPChannel1
             )
         },
-        ChannelsMap == State0#state.channels andalso
+        ChannelsMap == Channels andalso
             ?BACKOFF_MIN == backoff:get(Backoff0)
     end),
 
     %% Crash channel
-    State0 = sys:get_state(DeviceChannelsWorkerPid),
-    EvtMgr = State0#state.event_mgr,
+    EvtMgr = test_utils:get_channel_worker_event_manager(?CONSOLE_DEVICE_ID),
     ?assert(erlang:is_pid(EvtMgr)),
     EvtMgr ! crash_http_channel,
     timer:sleep(250),
@@ -463,16 +458,19 @@ crashing_http_channel_test(Config) ->
     %% Check that HTTP 1 go restarted after crash
     %% We do this because the channels_workers does not start right away on device_worker init
     ok = test_utils:wait_until(fun() ->
-        State1 = sys:get_state(DeviceChannelsWorkerPid),
-        {Backoff1, _} = maps:get(<<"HTTP_1">>, State1#state.channels_backoffs),
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
+        Device = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
+        Channels = test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID),
+
+        {Backoff1, _} = maps:get(<<"HTTP_1">>, ChannelsBackoffs),
         ChannelsMap = #{
             <<"HTTP_1">> => convert_channel(
-                State1#state.device,
+                Device,
                 DeviceChannelsWorkerPid,
                 HTTPChannel1
             )
         },
-        ChannelsMap == State1#state.channels andalso
+        ChannelsMap == Channels andalso
             ?BACKOFF_MIN == backoff:get(Backoff1)
     end),
 
@@ -501,9 +499,11 @@ crashing_http_channel_test(Config) ->
 
     %% Check that HTTP 1 is gone and that backoff increased
     ok = test_utils:wait_until(fun() ->
-        State2 = sys:get_state(DeviceChannelsWorkerPid),
-        {Backoff2, _} = maps:get(<<"HTTP_1">>, State2#state.channels_backoffs),
-        #{} == State2#state.channels andalso
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
+        Channels = test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID),
+
+        {Backoff2, _} = maps:get(<<"HTTP_1">>, ChannelsBackoffs),
+        #{} == Channels andalso
             ?BACKOFF_MIN * 2 == backoff:get(Backoff2)
     end),
 
@@ -552,16 +552,19 @@ crashing_http_channel_test(Config) ->
     timer:sleep(?BACKOFF_MIN * 2 + 250),
 
     ok = test_utils:wait_until(fun() ->
-        State3 = sys:get_state(DeviceChannelsWorkerPid),
-        {Backoff3, _} = maps:get(<<"HTTP_1">>, State3#state.channels_backoffs),
+        ChannelsBackoffs = test_utils:get_channel_worker_backoff_map(?CONSOLE_DEVICE_ID),
+        Device = test_utils:get_channel_worker_device(?CONSOLE_DEVICE_ID),
+        Channels = test_utils:get_channel_worker_channels_map(?CONSOLE_DEVICE_ID),
+
+        {Backoff3, _} = maps:get(<<"HTTP_1">>, ChannelsBackoffs),
         ChannelsMap = #{
             <<"HTTP_1">> => convert_channel(
-                State3#state.device,
+                Device,
                 DeviceChannelsWorkerPid,
                 HTTPChannel1
             )
         },
-        ChannelsMap == State3#state.channels andalso
+        ChannelsMap == Channels andalso
             ?BACKOFF_MIN == backoff:get(Backoff3)
     end),
 

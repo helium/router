@@ -7,6 +7,9 @@
     start_swarm/3,
     get_device_channels_worker/1,
     get_channel_worker_event_manager/1,
+    get_channel_worker_channels_map/1,
+    get_channel_worker_device/1,
+    get_channel_worker_backoff_map/1,
     get_device_last_seen_fcnt/1,
     get_last_dev_nonce/1,
     get_device_worker_device/1,
@@ -199,6 +202,17 @@ init_per_testcase(TestCase, Config) ->
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
+    %% Chain = blockchain_worker:blockchain(),
+    %% ok = persistent_term:put(router_blockchain, Chain),
+
+    meck:new(router_blockchain, [passthrough]),
+    %% meck:expect(router_blockchain, calculate_dc_amount, fun(PayloadSize) ->
+    %%     blockchain_utils:do_calculate_dc_amount(PayloadSize, 24)
+    %% end),
+    %% meck:expect(router_blockchain, max_xor_filter_num, fun() -> 5 end),
+    %% meck:expect(router_blockchain, sc_version, fun() -> 2 end),
+    %% meck:expect(router_blockchain, max_open_sc, fun() -> 5 end),
+
     [
         {app_key, AppKey},
         {ets, Tab},
@@ -228,6 +242,7 @@ end_per_testcase(_TestCase, Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
     meck:unload(router_device_devaddr),
+    meck:unload(router_blockchain),
     ok.
 
 start_swarm(BaseDir, Name, Port) ->
@@ -378,8 +393,8 @@ join_device(Config, JoinOpts) ->
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
-        _OUI, ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
+    {state, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt, _OUI,
+        ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADREngine,
         _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
@@ -387,8 +402,8 @@ get_device_channels_worker(DeviceID) ->
 
 get_last_dev_nonce(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
-        _OUI, _ChannelsWorkerPid, LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
+    {state, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt, _OUI,
+        _ChannelsWorkerPid, LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
         _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
@@ -396,14 +411,36 @@ get_last_dev_nonce(DeviceID) ->
 
 get_channel_worker_event_manager(DeviceID) ->
     ChannelWorkerPid = get_device_channels_worker(DeviceID),
-    {state, _Chain, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs,
-        _DataCache} = sys:get_state(ChannelWorkerPid),
+    {state, EventManagerPid, _DeviceWorkerPid, _Device, _Channels, _ChannelsBackoffs, _DataCache} = sys:get_state(
+        ChannelWorkerPid
+    ),
     EventManagerPid.
+
+get_channel_worker_channels_map(DeviceID) ->
+    ChannelWorkerPid = get_device_channels_worker(DeviceID),
+    {state, _EventManagerPid, _DeviceWorkerPid, _Device, Channels, _ChannelsBackoffs, _DataCache} = sys:get_state(
+        ChannelWorkerPid
+    ),
+    Channels.
+
+get_channel_worker_device(DeviceID) ->
+    ChannelWorkerPid = get_device_channels_worker(DeviceID),
+    {state, _EventManagerPid, _DeviceWorkerPid, Device, _Channels, _ChannelsBackoffs, _DataCache} = sys:get_state(
+        ChannelWorkerPid
+    ),
+    Device.
+
+get_channel_worker_backoff_map(DeviceID) ->
+    ChannelWorkerPid = get_device_channels_worker(DeviceID),
+    {state, _EventManagerPid, _DeviceWorkerPid, _Device, _Channels, ChannelsBackoffs, _DataCache} = sys:get_state(
+        ChannelWorkerPid
+    ),
+    ChannelsBackoffs.
 
 get_device_last_seen_fcnt(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, FCnt,
-        _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
+    {state, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, FCnt, _OUI,
+        _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
         _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
@@ -411,8 +448,8 @@ get_device_last_seen_fcnt(DeviceID) ->
 
 get_device_worker_device(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _FrameTimeout, Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
-        _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
+    {state, _DB, _CF, _FrameTimeout, Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt, _OUI,
+        _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, _OfferCache, _ADRCache,
         _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),
@@ -420,8 +457,8 @@ get_device_worker_device(DeviceID) ->
 
 get_device_worker_offer_cache(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
-    {state, _Chain, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt,
-        _OUI, _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache,
+    {state, _DB, _CF, _FrameTimeout, _Device, _QueueUpdates, _DownlinkHandlkedAt, _FCnt, _OUI,
+        _ChannelsWorkerPid, _LastDevNonce, _JoinChache, _FrameCache, OfferCache, _ADRCache,
         _IsActive, _Discovery} = sys:get_state(
         WorkerPid
     ),

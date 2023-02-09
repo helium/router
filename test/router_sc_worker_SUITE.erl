@@ -17,8 +17,6 @@
 -record(state, {
     pubkey :: libp2p_crypto:public_key(),
     sig_fun :: libp2p_crypto:sig_fun(),
-    chain = undefined :: undefined | blockchain:blockchain(),
-    height = undefined :: undefined | non_neg_integer(),
     oui = undefined :: undefined | non_neg_integer(),
     is_active = false :: boolean(),
     tref = undefined :: undefined | reference(),
@@ -79,7 +77,6 @@ sc_worker_test(Config) ->
             {ok, Block} ->
                 _ = blockchain_test_utils:add_block(
                     Block,
-                    router_utils:get_blockchain(),
                     self(),
                     blockchain_swarm:tid()
                 ),
@@ -89,11 +86,10 @@ sc_worker_test(Config) ->
     end),
 
     _ = test_utils:add_oui(Config),
-    Chain = router_utils:get_blockchain(),
 
     % Force tick to open first SC
     router_sc_worker ! '__router_sc_tick',
-    ok = test_utils:wait_until(fun() -> {ok, 3} == blockchain:height(Chain) end),
+    ok = test_utils:wait_until(fun() -> {ok, 3} == router_blockchain:height() end),
 
     % We should have 1 SC and it should be active
     ?assertEqual(1, maps:size(blockchain_state_channels_server:get_all())),
@@ -101,7 +97,7 @@ sc_worker_test(Config) ->
 
     % Force tick to open another SC
     router_sc_worker ! '__router_sc_tick',
-    ok = test_utils:wait_until(fun() -> {ok, 4} == blockchain:height(Chain) end),
+    ok = test_utils:wait_until(fun() -> {ok, 4} == router_blockchain:height() end),
 
     % Now we should have 1 active and 2 opened SC, it gives us some room just in case
     ?assertEqual(2, maps:size(blockchain_state_channels_server:get_all())),
@@ -109,7 +105,7 @@ sc_worker_test(Config) ->
 
     % Force tick again, the first SC is getting close to expire so lets open more
     router_sc_worker ! '__router_sc_tick',
-    ok = test_utils:wait_until(fun() -> {ok, 5} == blockchain:height(Chain) end),
+    ok = test_utils:wait_until(fun() -> {ok, 5} == router_blockchain:height() end),
 
     ?assertEqual(3, maps:size(blockchain_state_channels_server:get_all())),
     ?assertEqual(1, blockchain_state_channels_server:get_actives_count()),
@@ -122,7 +118,6 @@ sc_worker_test(Config) ->
     ?assertEqual(1, blockchain_state_channels_server:get_actives_count()),
     State = sys:get_state(router_sc_worker),
     ?assertEqual(0, erlang:length(State#state.in_flight)),
-    ?assertEqual(5, State#state.height),
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),

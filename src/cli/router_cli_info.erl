@@ -58,10 +58,9 @@ info_cmd() ->
     ].
 
 info_height(["info", "height"], [], []) ->
-    Chain = router_utils:get_blockchain(),
-    {ok, Height} = blockchain:height(Chain),
-    {ok, SyncHeight} = blockchain:sync_height(Chain),
-    {ok, HeadBlock} = blockchain:head_block(Chain),
+    {ok, Height} = router_blockchain:height(),
+    {ok, SyncHeight} = router_blockchain:sync_height(),
+    {ok, HeadBlock} = router_blockchain:head_block(),
     {Epoch0, _} = blockchain_block_v1:election_info(HeadBlock),
     Epoch = integer_to_list(Epoch0),
     case SyncHeight == Height of
@@ -91,9 +90,7 @@ info_name([_, _, _], [], []) ->
     usage.
 
 info_block_age(["info", "block_age"], [], []) ->
-    Chain = router_utils:get_blockchain(),
-    {ok, Block} = blockchain:head_block(Chain),
-    Age = erlang:system_time(seconds) - blockchain_block:time(Block),
+    Age = erlang:system_time(seconds) - router_blockchain:head_block_time(),
     [clique_status:text(integer_to_list(Age))];
 info_block_age([_, _, _], [], []) ->
     usage.

@@ -223,11 +223,10 @@ connect(#state{host = Host, port = Port} = State) ->
     end.
 
 -spec skf_list(Pid :: pid() | undefined, state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-skf_list(Pid, #state{oui = OUI, pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+skf_list(Pid, #state{oui = OUI, sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_list_req_v1_pb{
         oui = OUI,
-        timestamp = erlang:system_time(millisecond),
-        signer = PubKeyBin
+        timestamp = erlang:system_time(millisecond)
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
     SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
@@ -250,10 +249,10 @@ get_local_skfs(OUI) ->
                     false;
                 {_, undefined} ->
                     false;
-                {<<Devaddr:32/integer-unsigned-big>>, SessionKey} ->
+                {<<DevAddr:32/integer-unsigned-big>>, SessionKey} ->
                     {true, #iot_config_session_key_filter_v1_pb{
                         oui = OUI,
-                        devaddr = Devaddr,
+                        devaddr = DevAddr,
                         session_key = SessionKey
                     }}
             end
@@ -302,12 +301,11 @@ skf_update(List, State) ->
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
-skf_update(Action, SKF, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
+skf_update(Action, SKF, Stream, #state{sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_update_req_v1_pb{
         action = Action,
         filter = SKF,
-        timestamp = erlang:system_time(millisecond),
-        signer = PubKeyBin
+        timestamp = erlang:system_time(millisecond)
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_update_req_v1_pb),
     SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},

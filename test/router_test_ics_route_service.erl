@@ -24,10 +24,12 @@
 ]).
 
 -export([
-    eui_pair/2
+    eui_pair/2,
+    devaddr_range/2
 ]).
 
 -define(GET_EUIS_STREAM, get_euis_stream).
+-define(GET_DEVADDRS_STREAM, get_devaddrs_stream).
 
 -spec init(atom(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
 init(_RPC, StreamState) ->
@@ -37,16 +39,24 @@ init(_RPC, StreamState) ->
 handle_info({eui_pair, EUIPair, Last}, StreamState) ->
     lager:info("got eui_pair ~p, eos: ~p", [EUIPair, Last]),
     grpcbox_stream:send(Last, EUIPair, StreamState);
+handle_info({devaddr_range, DevaddrRange, Last}, StreamState) ->
+    lager:info("got devaddr_range ~p, eos: ~p", [DevaddrRange, Last]),
+    grpcbox_stream:send(Last, DevaddrRange, StreamState);
 handle_info(_Msg, StreamState) ->
     StreamState.
 
 list(Ctx, Req) ->
     case verify_list_req(Req) of
         true ->
+            Routes = application:get_env(router, test_route_list, [
+                #iot_config_route_v1_pb{
+                    id = "test_route_id"
+                }
+            ]),
             lager:info("got list req ~p", [Req]),
-            Route = #iot_config_route_v1_pb{id = "test_route_id"},
+
             Res = #iot_config_route_list_res_v1_pb{
-                routes = [Route]
+                routes = Routes
             },
             catch persistent_term:get(?MODULE) ! {?MODULE, list, Req},
             {ok, Res, Ctx};
@@ -68,7 +78,7 @@ delete(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 get_euis(Req, StreamState) ->
-    case verify_get_euis_req_req(Req) of
+    case verify_get_euis_req(Req) of
         true ->
             lager:info("got update_euis_req ~p", [Req]),
             catch persistent_term:get(?MODULE) ! {?MODULE, get_euis, Req},
@@ -98,8 +108,18 @@ update_euis(Req, _StreamState) ->
 delete_euis(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
-get_devaddr_ranges(_Msg, _StreamState) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+get_devaddr_ranges(Req, StreamState) ->
+    case verify_get_devaddrs_req(Req) of
+        true ->
+            lager:notice("got get_devaddr_ranges_req ~p", [Req]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
+            Self = self(),
+            true = erlang:register(?GET_DEVADDRS_STREAM, self()),
+            lager:notice("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
+            {ok, StreamState};
+        false ->
+            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
+    end.
 
 update_devaddr_ranges(_Msg, _StreamState) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
@@ -119,6 +139,22 @@ eui_pair(EUIPair, Last) ->
             eui_pair(EUIPair, Last);
         Pid ->
             Pid ! {eui_pair, EUIPair, Last},
+            ok
+    end.
+
+-spec devaddr_range(
+    DevaddrRange :: iot_config_pb:iot_config_devaddr_range_v1_pb(), Last :: boolean()
+) -> ok.
+devaddr_range(DevaddrRange, Last) ->
+    lager:notice("devaddr_range ~p eos: ~p @ ~p", [
+        DevaddrRange, Last, erlang:whereis(?GET_DEVADDRS_STREAM)
+    ]),
+    case erlang:whereis(?GET_DEVADDRS_STREAM) of
+        undefined ->
+            timer:sleep(100),
+            devaddr_range(DevaddrRange, Last);
+        Pid ->
+            Pid ! {devaddr_range, DevaddrRange, Last},
             ok
     end.
 
@@ -150,8 +186,8 @@ verify_update_euis_req(Req) ->
         libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
     ).
 
--spec verify_get_euis_req_req(Req :: #iot_config_route_get_euis_req_v1_pb{}) -> boolean().
-verify_get_euis_req_req(Req) ->
+-spec verify_get_euis_req(Req :: #iot_config_route_get_euis_req_v1_pb{}) -> boolean().
+verify_get_euis_req(Req) ->
     EncodedReq = iot_config_pb:encode_msg(
         Req#iot_config_route_get_euis_req_v1_pb{
             signature = <<>>
@@ -161,5 +197,17 @@ verify_get_euis_req_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_get_euis_req_v1_pb.signature,
+        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
+    ).
+
+-spec verify_get_devaddrs_req(Req :: #iot_config_route_get_devaddr_ranges_req_v1_pb{}) -> boolean().
+verify_get_devaddrs_req(Req) ->
+    EncodedReq = iot_config_pb:encode_msg(
+        Req#iot_config_route_get_devaddr_ranges_req_v1_pb{signature = <<>>},
+        iot_config_route_get_devaddr_ranges_req_v1_pb
+    ),
+    libp2p_crypto:verify(
+        EncodedReq,
+        Req#iot_config_route_get_devaddr_ranges_req_v1_pb.signature,
         libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
     ).

@@ -53,7 +53,8 @@
             port => "${ROUTER_ICS_PORT}",
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
             skf_enabled => "${ROUTER_ICS_SKF_ENABLED}",
-            devaddr_enabled => "${ROUTER_ICS_DEVADDR_ENABLED}"
+            devaddr_enabled => "${ROUTER_ICS_DEVADDR_ENABLED}",
+            route_id => "${ROUTER_ICS_ROUTE_ID}"
         }},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},

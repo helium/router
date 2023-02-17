@@ -35,6 +35,7 @@
     get_env_bool/2,
     enumerate_0/1,
     enumerate_0_to_size/3,
+    enumerate_last/1,
     metadata_fun/0,
     random_non_miner_predicate/1
 ]).
@@ -869,6 +870,11 @@ trace_file(<<BinFileName:5/binary, _/binary>>) ->
 enumerate_0(L) ->
     lists:zip(lists:seq(0, erlang:length(L) - 1), L).
 
+-spec enumerate_last(list(T)) -> list({Last :: boolean(), T}).
+enumerate_last(L) ->
+    Last = erlang:length(L),
+    [{Idx + 1 == Last, El} || {Idx, El} <- enumerate_0(L)].
+
 -spec enumerate_0_to_size(list({integer(), T}), integer(), T) -> list({integer(), T}).
 enumerate_0_to_size(IndexedList, Max, Default) ->
     Needed = Max - length(IndexedList),
@@ -890,6 +896,13 @@ enumerate_0_to_size_test_() ->
     [
         ?_assertEqual([{0, default}], enumerate_0_to_size([], 1, default)),
         ?_assertEqual([{0, zero}, {1, default}], enumerate_0_to_size([{0, zero}], 2, default))
+    ].
+
+enumerate_last_test_() ->
+    [
+        ?_assertEqual([], enumerate_last([])),
+        ?_assertEqual([{true, val}], enumerate_last([val])),
+        ?_assertEqual([{false, val1}, {true, val2}], enumerate_last([val1, val2]))
     ].
 
 trace_test() ->

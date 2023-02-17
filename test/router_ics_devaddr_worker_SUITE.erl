@@ -11,9 +11,7 @@
 
 -export([
     main_test/1,
-    server_crash_test/1,
-    multiple_routes_test/1,
-    route_id_from_env_test/1
+    server_crash_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -29,9 +27,7 @@
 all() ->
     [
         main_test,
-        server_crash_test,
-        multiple_routes_test,
-        route_id_from_env_test
+        server_crash_test
     ].
 
 %%--------------------------------------------------------------------
@@ -45,33 +41,14 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(
         router,
         ics,
-        #{devaddr_enabled => "true", host => "localhost", port => Port},
+        #{
+            devaddr_enabled => "true",
+            host => "localhost",
+            port => Port,
+            route_id => "test_route_id"
+        },
         [{persistent, true}]
     ),
-    ok =
-        case TestCase of
-            multiple_routes_test ->
-                application:set_env(router, test_route_list, [
-                    #iot_config_route_v1_pb{id = "route-id-1"},
-                    #iot_config_route_v1_pb{id = "route-id-2"}
-                ]),
-                ok;
-            route_id_from_env_test ->
-                ok = application:set_env(
-                    router,
-                    ics,
-                    #{
-                        devaddr_enabled => "true",
-                        host => "localhost",
-                        port => Port,
-                        route_id => "route-id-from-env"
-                    },
-                    [{persistent, true}]
-                );
-            _ ->
-                ok
-        end,
-
     test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
 
 %%--------------------------------------------------------------------
@@ -98,58 +75,18 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 main_test(_Config) ->
-    RouteID = "test_route_id",
-    ok = router_test_ics_route_service:devaddr_range(
-        #iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2},
-        true
-    ),
+    Range = #iot_config_devaddr_range_v1_pb{
+        route_id = "test_route_id", start_addr = 1, end_addr = 2
+    },
 
-    [{Type0, _Req0}, {Type1, _Req1}] = rcv_loop(),
-    ?assertEqual(list, Type0),
-    ?assertEqual(get_devaddr_ranges, Type1),
 
-    ?assertEqual(
-        {ok, [#iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2}]},
-        router_ics_devaddr_worker:get_devaddr_ranges()
-    ),
+    ok = router_test_ics_route_service:devaddr_ranges([Range]),
+    timer:sleep(100),
 
-    ok.
-
-multiple_routes_test(_Config) ->
-    RouteID = "route-id-1",
-    ok = router_test_ics_route_service:devaddr_range(
-        #iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2},
-        true
-    ),
-
-    [{Type0, _Req0}, {Type1, Req1}] = rcv_loop(),
-    ?assertEqual(list, Type0),
-    ?assertEqual(get_devaddr_ranges, Type1),
-    %% Make sure we requested devaddr ranges for the first route in the list.
-    ?assertEqual(RouteID, Req1#iot_config_route_get_devaddr_ranges_req_v1_pb.route_id),
+    ?assertMatch([{get_devaddr_ranges, _Req}], rcv_loop()),
 
     ?assertEqual(
-        {ok, [#iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2}]},
-        router_ics_devaddr_worker:get_devaddr_ranges()
-    ),
-
-    ok.
-
-route_id_from_env_test(_Config) ->
-    RouteID = "route-id-from-env",
-    ok = router_test_ics_route_service:devaddr_range(
-        #iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2},
-        true
-    ),
-
-    [{Type0, Req0}] = rcv_loop(),
-    ?assertNotEqual(list, Type0),
-    ?assertEqual(get_devaddr_ranges, Type0),
-    %% Make sure we requested devaddr ranges for the first route in the list.
-    ?assertEqual(RouteID, Req0#iot_config_route_get_devaddr_ranges_req_v1_pb.route_id),
-
-    ?assertEqual(
-        {ok, [#iot_config_devaddr_range_v1_pb{route_id = RouteID, start_addr = 1, end_addr = 2}]},
+        {ok, [Range]},
         router_ics_devaddr_worker:get_devaddr_ranges()
     ),
 

@@ -49,7 +49,7 @@
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
-    route_id :: undefined | string(),
+    route_id :: string(),
     devaddr_ranges :: undefined | list(iot_config_pb:iot_config_devaddr_range_v1_pb())
 }).
 
@@ -65,7 +65,13 @@ start_link(#{port := Port} = Args) when is_list(Port) ->
 start_link(#{devaddr_enabled := "true", host := Host, port := Port} = Args) when
     is_list(Host) andalso is_integer(Port)
 ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
+    case maps:get(route_id, Args) of
+        undefined ->
+            lager:warn("~p enabled, but no route_id provided, ignoring", [?MODULE]),
+            ignore;
+        _ ->
+            gen_server:start_link({local, ?SERVER}, ?SERVER, Args, [])
+    end;
 start_link(_Args) ->
     ignore.
 
@@ -86,7 +92,10 @@ reconcile_end(Pid, List) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} = Args) ->
+init(
+    #{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port, route_id := RouteID} =
+        Args
+) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
@@ -97,7 +106,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
         host = Host,
         port = Port,
         conn_backoff = Backoff,
-        route_id = maps:get(route_id, Args, undefined)
+        route_id = RouteID
     }}.
 
 handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
@@ -137,7 +146,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
+handle_info(?INIT, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     case connect(State) of
         {error, _Reason} ->
@@ -145,19 +154,12 @@ handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
             _ = erlang:send_after(Delay, self(), ?INIT),
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
-            case get_route_id(State) of
-                {error, _Reason} ->
-                    _ = erlang:send_after(Delay, self(), ?INIT),
-                    lager:warning("fail to get_route_id ~p, reconnecting in ~wms", [_Reason, Delay]),
-                    {noreply, State#state{conn_backoff = Backoff1}};
-                {ok, RouteID} ->
-                    lager:info("connected"),
-                    {_, Backoff2} = backoff:succeed(Backoff0),
-                    ok = ?MODULE:reconcile(undefined),
-                    {noreply, State#state{
-                        conn_backoff = Backoff2, route_id = RouteID
-                    }}
-            end
+            lager:info("connected"),
+            {_, Backoff2} = backoff:succeed(Backoff0),
+            ok = ?MODULE:reconcile(undefined),
+            {noreply, State#state{
+                conn_backoff = Backoff2, route_id = RouteID
+            }}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
     ct:print("got headers for stream: ~p, ~p", [_StreamID, _Data]),
@@ -205,52 +207,6 @@ connect(#state{host = Host, port = Port} = State) ->
             erlang:monitor(process, _Conn),
             ok
     end.
-
--spec get_route_id(state()) -> {ok, string()} | {error, any()}.
-get_route_id(#state{sig_fun = SigFun, route_id = undefined}) ->
-    Req = #iot_config_route_list_req_v1_pb{
-        oui = router_utils:get_oui(),
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_list_req_v1_pb),
-    SignedReq = Req#iot_config_route_list_req_v1_pb{signature = SigFun(EncodedReq)},
-    case helium_iot_config_route_client:list(SignedReq, #{channel => ?MODULE}) of
-        {grpc_error, Reason} ->
-            {error, Reason};
-        {error, _} = Error ->
-            Error;
-        {ok, #iot_config_route_list_res_v1_pb{routes = []}, _Meta} ->
-            {error, no_routes};
-        {ok, #iot_config_route_list_res_v1_pb{routes = [Route]}, _Meta} ->
-            RouteID = Route#iot_config_route_v1_pb.id,
-            lager:info(
-                lists:join(" ", [
-                    "Picking devaddr range from route ~s.",
-                    "Add 'ROUTER_DEVADDR_CONFIG_SERVICE_ROUTE_ID=~s' to your .env file."
-                ]),
-                [RouteID, RouteID]
-            ),
-            {ok, RouteID};
-        {ok, #iot_config_route_list_res_v1_pb{routes = [Route | _] = Routes}, _Meta} ->
-            RouteID = Route#iot_config_route_v1_pb.id,
-
-            Count = io_lib:format("There are ~p routes, choosing ~s", [length(Routes), RouteID]),
-            Info = "Add one of the following to your .env file:",
-            Choices = lists:map(
-                fun(R) ->
-                    io_lib:format("  ROUTER_DEVADDR_CONFIG_SERVICE_ROUTE_ID=~s", [
-                        R#iot_config_route_v1_pb.id
-                    ])
-                end,
-                Routes
-            ),
-
-            lager:info("~p~n~p~n~p", [Count, Info, lists:join("\n", Choices)]),
-
-            {ok, RouteID}
-    end;
-get_route_id(#state{route_id = RouteID}) ->
-    {ok, RouteID}.
 
 -spec get_devaddrs(Pid :: pid() | undefined, state()) ->
     {ok, grpcbox_client:stream()} | {error, any()}.

@@ -25,7 +25,8 @@
 
 -export([
     eui_pair/2,
-    devaddr_range/2
+    devaddr_range/2,
+    devaddr_ranges/1
 ]).
 
 -define(GET_EUIS_STREAM, get_euis_stream).
@@ -42,6 +43,16 @@ handle_info({eui_pair, EUIPair, Last}, StreamState) ->
 handle_info({devaddr_range, DevaddrRange, Last}, StreamState) ->
     lager:info("got devaddr_range ~p, eos: ~p", [DevaddrRange, Last]),
     grpcbox_stream:send(Last, DevaddrRange, StreamState);
+handle_info({devaddr_ranges, Ranges}, StreamState) ->
+    ct:print("got ~p devaddr ranges", [erlang:length(Ranges)]),
+    lists:foreach(
+        fun({Last, Range}) ->
+            ct:print("sending devaddr range: ~p at ~p", [Range, Last]),
+            grpcbox_stream:send(Last, Range, StreamState)
+        end,
+        router_utils:enumerate_last(Ranges)
+    ),
+    StreamState;
 handle_info(_Msg, StreamState) ->
     StreamState.
 
@@ -87,7 +98,7 @@ get_euis(Req, StreamState) ->
             lager:notice("register ~p @ ~p", [?GET_EUIS_STREAM, Self]),
             {ok, StreamState};
         false ->
-            lager:error("failed to update_euis_req ~p", [Req]),
+            lager:error("failed to get_euis_req ~p", [Req]),
             {grpc_error, {7, <<"PERMISSION_DENIED">>}}
     end.
 
@@ -111,13 +122,13 @@ delete_euis(_Ctx, _Msg) ->
 get_devaddr_ranges(Req, StreamState) ->
     case verify_get_devaddrs_req(Req) of
         true ->
-            lager:notice("got get_devaddr_ranges_req ~p", [Req]),
-            catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
             Self = self(),
-            true = erlang:register(?GET_DEVADDRS_STREAM, self()),
+            true = erlang:register(?GET_DEVADDRS_STREAM, Self),
             lager:notice("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
+            catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
             {ok, StreamState};
         false ->
+            lager:error("failed to get_devaddr_ranges_req ~p", [Req]),
             {grpc_error, {7, <<"PERMISSION_DENIED">>}}
     end.
 
@@ -155,6 +166,20 @@ devaddr_range(DevaddrRange, Last) ->
             devaddr_range(DevaddrRange, Last);
         Pid ->
             Pid ! {devaddr_range, DevaddrRange, Last},
+            ok
+    end.
+
+-spec devaddr_ranges(DevaddrRanges :: list(iot_config_pb:iot_config_devaddr_range_v1_pb())) -> ok.
+devaddr_ranges(DevaddrRanges) ->
+    ct:print("~p devaddr_ranges @ ~p", [
+        erlang:length(DevaddrRanges), erlang:whereis(?GET_DEVADDRS_STREAM)
+    ]),
+    case erlang:whereis(?GET_DEVADDRS_STREAM) of
+        undefined ->
+            timer:sleep(100),
+            devaddr_ranges(DevaddrRanges);
+        Pid ->
+            Pid ! {devaddr_ranges, DevaddrRanges},
             ok
     end.
 

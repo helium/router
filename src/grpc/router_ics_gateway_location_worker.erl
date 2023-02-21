@@ -63,6 +63,10 @@ start_link(#{host := ""}) ->
     ignore;
 start_link(#{port := Port} = Args) when is_list(Port) ->
     ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
+start_link(#{host := Host, port := Port} = Args) when
+    is_list(Host) andalso is_integer(Port)
+->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
 start_link(_Args) ->
     ignore.
 
@@ -108,7 +112,7 @@ handle_call({get, PubKeyBin}, _From, #state{conn_backoff = Backoff0} = State) ->
         {ok, H3IndexString} ->
             H3Index = h3:from_string(H3IndexString),
             ok = insert(PubKeyBin, H3Index),
-            {ok, H3Index}
+            {reply, {ok, H3Index}, State}
     end;
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),

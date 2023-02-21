@@ -131,6 +131,9 @@ init([]) ->
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey0),
     ICSOptsDefault = application:get_env(router, ics, #{}),
     ICSOpts = ICSOptsDefault#{pubkey_bin => PubKeyBin, sig_fun => SigFun},
+
+    router_ics_gateway_location_worker:init_ets(),
+
     {ok,
         {?FLAGS, [
             ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
@@ -144,7 +147,8 @@ init([]) ->
             ?WORKER(router_device_devaddr, [#{}]),
             ?WORKER(router_xor_filter_worker, [#{}]),
             ?WORKER(router_ics_eui_worker, [ICSOpts]),
-            ?WORKER(router_ics_skf_worker, [ICSOpts])
+            ?WORKER(router_ics_skf_worker, [ICSOpts]),
+            ?WORKER(router_ics_gateway_location_worker, [ICSOpts])
         ]}}.
 
 %%====================================================================

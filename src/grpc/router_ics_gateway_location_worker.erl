@@ -192,8 +192,7 @@ connect(#state{host = Host, port = Port} = State) ->
     {ok, string()} | {error, any()}.
 get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
     Req = #iot_config_gateway_location_req_v1_pb{
-        gateway = PubKeyBin,
-        timestamp = erlang:system_time(millisecond)
+        gateway = PubKeyBin
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_gateway_location_req_v1_pb),
     SignedReq = Req#iot_config_gateway_location_req_v1_pb{signature = SigFun(EncodedReq)},

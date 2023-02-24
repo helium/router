@@ -117,7 +117,7 @@ handle_call(
 ) ->
     lager:info("add ~p", [DeviceIDs]),
     EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
-    case update_euis([{add, EUIPairs}], State) of
+    case maybe_update_euis([{add, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
@@ -130,7 +130,7 @@ handle_call(
 ) ->
     lager:info("remove ~p", [DeviceIDs]),
     EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
-    case update_euis([{remove, EUIPairs}], State) of
+    case maybe_update_euis([{remove, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
@@ -146,7 +146,7 @@ handle_call(
     APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
     ToRemove = CachedEUIPairs -- APIEUIPairs,
     ToAdd = APIEUIPairs -- CachedEUIPairs,
-    case update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
@@ -174,6 +174,7 @@ handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
 handle_cast(
     {?RECONCILE_END, Pid, EUIPairs}, #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
+    lager:info("got RECONCILE_END @ ~p, with ~w", [Pid, erlang:length(EUIPairs)]),
     case get_local_eui_pairs(RouteID) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
@@ -187,7 +188,7 @@ handle_cast(
         {ok, LocalEUIPairs} ->
             ToAdd = LocalEUIPairs -- EUIPairs,
             ToRemove = EUIPairs -- LocalEUIPairs,
-            case update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+            case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
                 {error, Reason} = Error ->
                     ok = forward_reconcile(Pid, Error),
                     {noreply, update_euis_failed(Reason, State)};
@@ -195,7 +196,9 @@ handle_cast(
                     ok = forward_reconcile(
                         Pid, {ok, erlang:length(ToAdd), erlang:length(ToRemove)}
                     ),
-                    lager:info("reconciling done"),
+                    lager:info("reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ]),
                     {noreply, State}
             end
     end;
@@ -233,6 +236,9 @@ handle_info({trailers, _StreamID, _Data}, State) ->
     {noreply, State};
 handle_info({eos, _StreamID}, State) ->
     lager:debug("got eos for stream: ~p", [_StreamID]),
+    {noreply, State};
+handle_info({'END_STREAM', _StreamID}, State) ->
+    lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
     {noreply, State};
 handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
     lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
@@ -304,11 +310,30 @@ get_euis(Pid, #state{sig_fun = SigFun, route_id = RouteID}) ->
         }
     }).
 
+-spec maybe_update_euis(
+    List :: [{add | remove, [iot_config_pb:iot_config_eui_pair_v1_pb()]}],
+    State :: state()
+) ->
+    ok | {error, any()}.
+maybe_update_euis([], _State) ->
+    ok;
+maybe_update_euis(List0, State) ->
+    List1 = lists:filter(
+        fun
+            ({_Action, []}) -> false;
+            ({_Action, _L}) -> true
+        end,
+        List0
+    ),
+    update_euis(List1, State).
+
 -spec update_euis(
     List :: [{add | remove, [iot_config_pb:iot_config_eui_pair_v1_pb()]}],
     State :: state()
 ) ->
     ok | {error, any()}.
+update_euis([], _State) ->
+    ok;
 update_euis(List, State) ->
     case
         helium_iot_config_route_client:update_euis(#{

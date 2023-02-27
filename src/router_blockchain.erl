@@ -3,8 +3,7 @@
 -include_lib("blockchain/include/blockchain_vars.hrl").
 
 -export([
-    %% special
-    privileged_maybe_get_blockchain/0,
+    is_chain_dead/0,
     %% router stuff
     calculate_dc_amount/1,
     get_hotspot_lat_lon/1,
@@ -14,11 +13,13 @@
     get_ouis/0,
     find_gateway_owner/1,
     track_offer/2,
+    %% special
+    privileged_maybe_get_blockchain/0,
     %% blockchain stuff ========
-    head_block_time/0,
     height/0,
     sync_height/0,
     head_block/0,
+    head_block_time/0,
     get_blockhash/1,
     %% xor filter =======
     max_xor_filter_num/0,
@@ -34,11 +35,16 @@
 %% To be supplemented with Config Service
 %% ===================================================================
 
+-spec is_chain_dead() -> boolean().
+is_chain_dead() ->
+    router_utils:get_env_bool(is_chain_dead, false).
+
 %% DC Tracker
 %% Router Console Events
 -spec calculate_dc_amount(PayloadSize :: non_neg_integer()) -> pos_integer() | {error, any()}.
 calculate_dc_amount(PayloadSize) ->
-    blockchain_utils:calculate_dc_amount(ledger(), PayloadSize).
+    % blockchain_utils:calculate_dc_amount(ledger(), PayloadSize).
+    erlang:ceil(PayloadSize / 24).
 
 %% Router Console Events
 %% Channel Payloads
@@ -59,17 +65,6 @@ get_hotspot_lat_lon(PubKeyBin) ->
     end.
 
 %% Assigning DevAddrs
-%% Validating DevAddrs (redundant?)
--spec subnets_for_oui(OUI :: non_neg_integer()) -> [binary()].
-subnets_for_oui(OUI) ->
-    case ?MODULE:routing_for_oui(OUI) of
-        {ok, RoutingEntry} ->
-            blockchain_ledger_routing_v1:subnets(RoutingEntry);
-        _ ->
-            []
-    end.
-
-%% Assigning DevAddrs
 -spec get_hotspot_location_index(PubKeybin :: libp2p_crypto:pubkey_bin()) ->
     {ok, non_neg_integer()} | {error, any()}.
 get_hotspot_location_index(PubKeyBin) ->
@@ -83,6 +78,36 @@ get_hotspot_location_index(PubKeyBin) ->
             end
     end.
 
+%% Assigning DevAddrs
+%% Validating DevAddrs (redundant?)
+-spec subnets_for_oui(OUI :: non_neg_integer()) -> [binary()].
+subnets_for_oui(OUI) ->
+    case ?MODULE:routing_for_oui(OUI) of
+        {ok, RoutingEntry} ->
+            blockchain_ledger_routing_v1:subnets(RoutingEntry);
+        _ ->
+            []
+    end.
+
+-spec routing_for_oui(OUI :: non_neg_integer()) ->
+    {ok, blockchain_ledger_routing_v1:routing()} | {error, any()}.
+routing_for_oui(OUI) ->
+    blockchain_ledger_v1:find_routing(OUI, ledger()).
+
+-spec get_ouis() -> [{binary(), binary()}].
+get_ouis() ->
+    blockchain_ledger_v1:snapshot_ouis(ledger()).
+
+-spec find_gateway_owner(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
+    {ok, libp2p_crypto:pubkey_bin()} | {error, any()}.
+find_gateway_owner(PubKeyBin) ->
+    blockchain_ledger_v1:find_gateway_owner(PubKeyBin, ledger()).
+
+-spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer(), HandlerPid :: pid()) ->
+    ok | reject.
+track_offer(Offer, HandlerPid) ->
+    blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid).
+
 %% ===================================================================
 %% Metrics only
 %% ===================================================================
@@ -95,7 +120,6 @@ privileged_maybe_get_blockchain() ->
 %% ===================================================================
 %% DNR
 %% ===================================================================
-
 -spec height() -> {ok, non_neg_integer()} | {error, any()}.
 height() ->
     blockchain:height(blockchain()).
@@ -114,29 +138,10 @@ head_block_time() ->
     {ok, Block} = head_block(),
     blockchain_block:time(Block).
 
--spec routing_for_oui(OUI :: non_neg_integer()) ->
-    {ok, blockchain_ledger_routing_v1:routing()} | {error, any()}.
-routing_for_oui(OUI) ->
-    blockchain_ledger_v1:find_routing(OUI, ledger()).
-
--spec get_ouis() -> [{binary(), binary()}].
-get_ouis() ->
-    blockchain_ledger_v1:snapshot_ouis(ledger()).
-
 -spec get_blockhash(Hash :: blockchain_block:hash() | integer()) ->
     {ok, blockchain_block:block()} | {error, any()}.
 get_blockhash(Hash) ->
     blockchain:get_block(Hash, blockchain()).
-
--spec find_gateway_owner(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
-    {ok, libp2p_crypto:pubkey_bin()} | {error, any()}.
-find_gateway_owner(PubKeyBin) ->
-    blockchain_ledger_v1:find_gateway_owner(PubKeyBin, ledger()).
-
--spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer(), HandlerPid :: pid()) ->
-    ok | reject.
-track_offer(Offer, HandlerPid) ->
-    blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid).
 
 %% XOR Filter=======
 

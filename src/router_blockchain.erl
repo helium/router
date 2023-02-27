@@ -43,8 +43,11 @@ is_chain_dead() ->
 %% Router Console Events
 -spec calculate_dc_amount(PayloadSize :: non_neg_integer()) -> pos_integer() | {error, any()}.
 calculate_dc_amount(PayloadSize) ->
-    % blockchain_utils:calculate_dc_amount(ledger(), PayloadSize).
-    erlang:ceil(PayloadSize / 24).
+    case ?MODULE:is_chain_dead() of
+        false -> blockchain_utils:calculate_dc_amount(ledger(), PayloadSize);
+        %% 1 DC per 24 bytes of data
+        true -> erlang:ceil(PayloadSize / 24)
+    end.
 
 %% Router Console Events
 %% Channel Payloads

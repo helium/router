@@ -289,8 +289,8 @@ sort_devices_test() ->
     },
 
     meck:new(router_blockchain, [passthrough]),
-    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
-        {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
+    meck:expect(router_blockchain, get_hotspot_location_index, fun(PubKeyBin) ->
+        {ok, maps:get(PubKeyBin, Hotspots)}
     end),
 
     Randomized = lists:sort([{rand:uniform(), N} || N <- maps:keys(Hotspots)]),
@@ -328,8 +328,8 @@ sort_devices_long_distance_test() ->
     },
 
     meck:new(router_blockchain, [passthrough]),
-    meck:expect(router_blockchain, find_gateway_info, fun(PubKeyBin) ->
-        {ok, blockchain_ledger_gateway_v2:new(PubKeyBin, maps:get(PubKeyBin, Hotspots))}
+    meck:expect(router_blockchain, get_hotspot_location_index, fun(PubKeyBin) ->
+        {ok, maps:get(PubKeyBin, Hotspots)}
     end),
 
     Randomized = lists:sort([{rand:uniform(), N} || N <- maps:keys(Hotspots)]),

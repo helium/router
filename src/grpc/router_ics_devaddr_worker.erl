@@ -67,7 +67,7 @@ start_link(#{devaddr_enabled := "true", host := Host, port := Port} = Args) when
 ->
     case maps:get(route_id, Args) of
         undefined ->
-            lager:warn("~p enabled, but no route_id provided, ignoring", [?MODULE]),
+            lager:warning("~p enabled, but no route_id provided, ignoring", [?MODULE]),
             ignore;
         _ ->
             gen_server:start_link({local, ?SERVER}, ?SERVER, Args, [])

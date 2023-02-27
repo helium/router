@@ -2,7 +2,7 @@
 
 -behaviour(grpcbox_client_stream).
 
--include("./autogen/iot_config_pb.hrl").
+%% -include("./autogen/iot_config_pb.hrl").
 
 -export([
     init/3,

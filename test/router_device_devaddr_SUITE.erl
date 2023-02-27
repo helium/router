@@ -6,17 +6,20 @@
     end_per_testcase/2
 ]).
 
--export([allocate/1, route_packet/1]).
+-export([
+    allocate/1,
+    allocate_config_service_single_address/1,
+    allocate_config_service_multiple_address/1,
+    allocate_config_service_noncontigious_address/1,
+    allocate_config_service_noncontigious_addresss_wrap/1,
+    route_packet/1
+]).
 
--include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
 
--define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
 -define(DEVEUI, <<0, 0, 0, 0, 0, 0, 0, 1>>).
 
@@ -31,7 +34,14 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [allocate, route_packet].
+    [
+        allocate,
+        allocate_config_service_single_address,
+        allocate_config_service_multiple_address,
+        allocate_config_service_noncontigious_address,
+        allocate_config_service_noncontigious_addresss_wrap,
+        route_packet
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -59,8 +69,7 @@ allocate(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(2, State) =/= undefined andalso
-            erlang:element(4, State) =/= []
+        erlang:element(3, State) =/= []
     end),
 
     DevAddrs = lists:foldl(
@@ -79,6 +88,144 @@ allocate(Config) ->
      || I <- lists:seq(1, 8)
     ],
     ?assertEqual(lists:sort(Expected ++ Expected), lists:sort(DevAddrs)),
+    ok.
+
+allocate_config_service_single_address(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_device_devaddr),
+        erlang:element(3, State) =/= []
+    end),
+
+    %% Override after picking up from chain
+    ok = router_device_devaddr:set_devaddr_bases([{1, 1}]),
+
+    DevAddrs = lists:map(
+        fun(_I) ->
+            {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
+            DevAddr
+        end,
+        lists:seq(1, 16)
+    ),
+    ?assertEqual(16, erlang:length(DevAddrs)),
+    ?assertEqual(1, erlang:length(lists:usort(DevAddrs))),
+
+    ok.
+
+allocate_config_service_multiple_address(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_device_devaddr),
+        erlang:element(3, State) =/= []
+    end),
+
+    %% Override after picking up from chain
+    ok = router_device_devaddr:set_devaddr_bases([{1, 5}]),
+
+    DevAddrs = lists:map(
+        fun(_I) ->
+            {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
+            DevAddr
+        end,
+        lists:seq(1, 16)
+    ),
+    ?assertEqual(16, erlang:length(DevAddrs)),
+    ?assertEqual(5, erlang:length(lists:usort(DevAddrs))),
+    ok.
+
+allocate_config_service_noncontigious_address(Config) ->
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_device_devaddr),
+        erlang:element(3, State) =/= []
+    end),
+
+    %% Override after picking up from chain
+    ok = router_device_devaddr:set_devaddr_bases([{1, 3}, {5, 8}]),
+
+    DevAddrs = lists:map(
+        fun(_I) ->
+            {ok, DevAddr} = router_device_devaddr:allocate(undef, PubKeyBin),
+            DevAddr
+        end,
+        lists:seq(1, 16)
+    ),
+    ?assertEqual(16, erlang:length(DevAddrs)),
+    ?assertEqual(
+        [
+            <<1, 0, 0, 72>>,
+            <<2, 0, 0, 72>>,
+            <<3, 0, 0, 72>>,
+            <<5, 0, 0, 72>>,
+            <<6, 0, 0, 72>>,
+            <<7, 0, 0, 72>>,
+            <<8, 0, 0, 72>>
+        ],
+        lists:usort(DevAddrs)
+    ),
+
+    ok.
+
+allocate_config_service_noncontigious_addresss_wrap(_Config) ->
+    %% Using a single pubkeybin and a standin for multiple pubkeybins that
+    %% resolve the same h3 parent index. Make sure the devaddrs wrap independent
+    %% of each other.
+    meck:delete(router_device_devaddr, allocate, 2, false),
+
+    [Key1, Key2, Key3] = lists:map(
+        fun(_Idx) ->
+            #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+            libp2p_crypto:pubkey_to_bin(PubKey)
+        end,
+        lists:seq(1, 3)
+    ),
+
+    meck:expect(router_device_devaddr, h3_parent_for_pubkeybin, fun(Key) ->
+        {ok, maps:get(Key, #{Key1 => 1, Key2 => 2, Key3 => 3})}
+    end),
+
+    ok = test_utils:wait_until(fun() ->
+        State = sys:get_state(router_device_devaddr),
+        erlang:element(3, State) =/= []
+    end),
+
+    %% Override after picking up from chain
+    ok = router_device_devaddr:set_devaddr_bases([{1, 3}]),
+
+    CollectNAddrsForKey = fun(N, Key) ->
+        lists:map(
+            fun(_I) ->
+                {ok, DevAddr} = router_device_devaddr:allocate(undef, Key),
+                DevAddr
+            end,
+            lists:seq(1, N)
+        )
+    end,
+
+    AsDevaddrs = fun(Nums) ->
+        lists:map(fun(Num) -> <<Num, 0, 0, $H>> end, Nums)
+    end,
+
+    ?assertEqual(AsDevaddrs([1, 2, 3, 1]), CollectNAddrsForKey(4, Key1)),
+    ?assertEqual(AsDevaddrs([1, 2, 3]), CollectNAddrsForKey(3, Key2)),
+    ?assertEqual(AsDevaddrs([1, 2]), CollectNAddrsForKey(2, Key3)),
+
+    ?assertEqual(AsDevaddrs([2, 3, 1, 2]), CollectNAddrsForKey(4, Key1)),
+    ?assertEqual(AsDevaddrs([1, 2, 3]), CollectNAddrsForKey(3, Key2)),
+    ?assertEqual(AsDevaddrs([3, 1]), CollectNAddrsForKey(2, Key3)),
+
     ok.
 
 route_packet(Config) ->

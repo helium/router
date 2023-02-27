@@ -315,8 +315,6 @@ get_euis(Pid, #state{sig_fun = SigFun, route_id = RouteID}) ->
     State :: state()
 ) ->
     ok | {error, any()}.
-maybe_update_euis([], _State) ->
-    ok;
 maybe_update_euis(List0, State) ->
     List1 = lists:filter(
         fun

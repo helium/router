@@ -248,7 +248,7 @@ get_devaddrs(Pid, #state{sig_fun = SigFun, route_id = RouteID}) ->
 
 -spec forward_reconcile(
     Pid :: pid() | undefined,
-    Result :: {ok, non_neg_integer(), non_neg_integer()} | {error, any()}
+    Result :: list(iot_config_pb:iot_config_devaddr_range_v1_pb()) | {error, any()}
 ) -> ok.
 forward_reconcile(undefined, _Result) ->
     ok;

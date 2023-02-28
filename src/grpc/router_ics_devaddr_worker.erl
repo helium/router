@@ -187,6 +187,9 @@ handle_info({trailers, _StreamID, _Data}, State) ->
 handle_info({eos, _StreamID}, State) ->
     lager:debug("got eos for stream: ~p", [_StreamID]),
     {noreply, State};
+handle_info({'END_STREAM', _StreamID}, State) ->
+    lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
+    {noreply, State};
 handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
     lager:debug("~p got DOWN for ~p: ~p ~p with state ~p", [self(), Type, Pid, Reason, State]),
     {noreply, State};

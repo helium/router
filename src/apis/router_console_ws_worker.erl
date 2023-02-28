@@ -168,7 +168,7 @@ handle_info(
     {noreply, State};
 %% Device remove
 handle_info(
-    {ws_message, <<"device:all">>, <<"device:all:remove:devices">>, #{<<"devices">> := DeviceIDs}},
+    {ws_message, <<"device:all">>, <<"device:all:delete:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
     catch router_ics_eui_worker:remove(DeviceIDs),

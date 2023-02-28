@@ -110,9 +110,6 @@ init(
         route_id = RouteID
     }}.
 
-handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
-    lager:warning("can't handle call msg: ~p", [_Msg]),
-    {reply, ok, State};
 handle_call(get_devaddr_ranges, _From, #state{devaddr_ranges = DevaddrRanges} = State) ->
     Reply =
         case DevaddrRanges of

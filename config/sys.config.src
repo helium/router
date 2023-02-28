@@ -33,6 +33,7 @@
         {sc_hook_close_submit, router_sc_worker}
     ]},
     {router, [
+        {is_chain_dead, "${ROUTER_IS_CHAIN_DEAD}"},
         {grpc_port, ${GRPC_PORT:-8080}},
         {max_v8_context, 1000},
         {oui, "${ROUTER_OUI}"},

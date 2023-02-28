@@ -179,19 +179,19 @@ handle_info(?INIT, #state{conn_backoff = Backoff0, route_id = RouteID} = State) 
             }}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
-    ct:print("got headers for stream: ~p, ~p", [_StreamID, _Data]),
+    lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};
 handle_info({trailers, _StreamID, _Data}, State) ->
-    ct:print("got trailers for stream: ~p, ~p", [_StreamID, _Data]),
+    lager:debug("got trailers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};
 handle_info({eos, _StreamID}, State) ->
-    ct:print("got eos for stream: ~p", [_StreamID]),
+    lager:debug("got eos for stream: ~p", [_StreamID]),
     {noreply, State};
 handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
-    ct:print("~p got DOWN for ~p: ~p ~p with state ~p", [self(), Type, Pid, Reason, State]),
+    lager:debug("~p got DOWN for ~p: ~p ~p with state ~p", [self(), Type, Pid, Reason, State]),
     {noreply, State};
 handle_info(_Msg, State) ->
-    ct:print("rcvd unknown info msg: ~p", [_Msg]),
+    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->

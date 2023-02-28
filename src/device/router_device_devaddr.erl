@@ -69,7 +69,8 @@ set_devaddr_bases(Ranges) ->
 get_devaddr_bases() ->
     gen_server:call(?MODULE, get_devaddr_bases).
 
--spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) -> [router_device:device()].
+-spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) ->
+    [router_device:device()].
 sort_devices(Devices, PubKeyBin) ->
     case ?MODULE:pubkeybin_to_loc(PubKeyBin) of
         {error, _Reason} ->
@@ -121,7 +122,7 @@ handle_call({allocate, _Device, _PubKeyBin}, _From, #state{devaddr_bases = []} =
 handle_call(
     {allocate, _Device, PubKeyBin},
     _From,
-    #state{ devaddr_bases = Numbers, keys = Keys} = State
+    #state{devaddr_bases = Numbers, keys = Keys} = State
 ) ->
     Parent = ?MODULE:h3_parent_for_pubkeybin(PubKeyBin),
 
@@ -195,19 +196,11 @@ subnets_to_ranges(Subnets) ->
     ).
 
 -spec expand_ranges(list({Min, Max})) -> [non_neg_integer()] when
-    Min :: non_neg_integer() | binary(),
-    Max :: non_neg_integer() | binary().
+    Min :: non_neg_integer(),
+    Max :: non_neg_integer().
 expand_ranges(Ranges) ->
     lists:flatmap(
-        fun
-            ({Start, End}) when erlang:is_number(Start) ->
-                lists:seq(Start, End);
-            ({StartHex, EndHex}) ->
-                lists:seq(
-                    erlang:binary_to_integer(StartHex, 16),
-                    erlang:binary_to_integer(EndHex, 16)
-                )
-        end,
+        fun({Start, End}) -> lists:seq(Start, End) end,
         Ranges
     ).
 
@@ -346,7 +339,6 @@ set_range_allocation_test_() ->
     [
         ?_test(test_no_subnet()),
         ?_test(test_subnet_wrap()),
-        %% ?_test(test_multiple_keys()),
         ?_test(test_non_sequential_subnet()),
         ?_test(test_replace_range())
     ].

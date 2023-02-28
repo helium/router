@@ -16,7 +16,8 @@
     start_link/1,
     get_devaddr_ranges/0,
     reconcile/1,
-    reconcile_end/2
+    reconcile_end/2,
+    devaddr_num_to_base_num/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -124,7 +125,6 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
-    ct:print("reconciling started pid: ~p", [Pid]),
     case get_devaddrs(Pid, State) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
@@ -139,8 +139,28 @@ handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
             {noreply, State#state{conn_backoff = Backoff2}}
     end;
 handle_cast({?RECONCILE_END, Pid, DevaddrRanges}, #state{} = State) ->
-    ct:print("reconciling done: ~p", [{?RECONCILE_END, Pid, DevaddrRanges}]),
     ok = forward_reconcile(Pid, DevaddrRanges),
+    %% Drop ranges that may fall outside the configured devaddr_prefix
+    Ranges = lists:filtermap(
+        fun(DevaddrRange) ->
+            #iot_config_devaddr_range_v1_pb{
+                start_addr = StartAddr,
+                end_addr = EndAddr
+            } = DevaddrRange,
+            try
+                MinBase = router_ics_devaddr_worker:devaddr_num_to_base_num(StartAddr),
+                MaxBase = router_ics_devaddr_worker:devaddr_num_to_base_num(EndAddr),
+                {true, {MinBase, MaxBase}}
+            catch
+                _Error:Reason ->
+                    lager:warning("ignoring devaddr range [reason: ~p]", [Reason]),
+                    false
+            end
+        end,
+        DevaddrRanges
+    ),
+    ok = router_device_devaddr:set_devaddr_bases(Ranges),
+
     {noreply, State#state{devaddr_ranges = DevaddrRanges}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -235,3 +255,11 @@ forward_reconcile(undefined, _Result) ->
 forward_reconcile(Pid, Result) ->
     catch Pid ! {?MODULE, Result},
     ok.
+
+-spec devaddr_num_to_base_num(non_neg_integer()) -> non_neg_integer().
+devaddr_num_to_base_num(DevaddrNum) ->
+    Prefix = application:get_env(blockchain, devaddr_prefix, $H),
+    <<Base:25/integer-unsigned-little, Prefix:7/integer>> = lorawan_utils:reverse(
+        binary:encode_unsigned(DevaddrNum)
+    ),
+    Base.

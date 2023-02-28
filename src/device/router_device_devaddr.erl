@@ -23,6 +23,7 @@
     start_link/1,
     allocate/2,
     set_devaddr_bases/1,
+    get_devaddr_bases/0,
     sort_devices/2,
     pubkeybin_to_loc/1,
     h3_parent_for_pubkeybin/1
@@ -63,6 +64,10 @@ allocate(Device, PubKeyBin) ->
 set_devaddr_bases(Ranges) ->
     ExpandedRanges = expand_ranges(Ranges),
     gen_server:call(?MODULE, {set_devaddr_bases, ExpandedRanges}).
+
+-spec get_devaddr_bases() -> {ok, {non_neg_integer(), non_neg_integer()}}.
+get_devaddr_bases() ->
+    gen_server:call(?MODULE, get_devaddr_bases).
 
 -spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) -> [router_device:device()].
 sort_devices(Devices, PubKeyBin) ->
@@ -107,8 +112,10 @@ init(Args) ->
     {ok, #state{oui = OUI}}.
 
 handle_call({set_devaddr_bases, Ranges}, _From, State) ->
-    NewState = State#state{devaddr_bases = Ranges, keys = #{}},
+    NewState = State#state{devaddr_bases = lists:usort(Ranges), keys = #{}},
     {reply, ok, NewState};
+handle_call(get_devaddr_bases, _From, #state{devaddr_bases = DevaddrBases} = State) ->
+    {reply, {ok, DevaddrBases}, State};
 handle_call({allocate, _Device, _PubKeyBin}, _From, #state{devaddr_bases = []} = State) ->
     {reply, {error, no_subnets}, State};
 handle_call(

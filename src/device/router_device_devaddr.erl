@@ -118,6 +118,9 @@ init(Args) ->
         end,
     {ok, #state{oui = OUI}}.
 
+handle_call({set_devaddr_bases, []}, _From, State) ->
+    lager:info("trying to set empty devaddr bases, ignoring"),
+    {reply, ok, State};
 handle_call({set_devaddr_bases, Ranges}, _From, State) ->
     NewState = State#state{devaddr_bases = lists:usort(Ranges), keys = #{}},
     {reply, ok, NewState};
@@ -148,7 +151,7 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init_chain, #state{oui = OUI} = State0) ->
+handle_info(post_init_chain, #state{oui = OUI, devaddr_bases = []} = State0) ->
     Subnets = router_blockchain:subnets_for_oui(OUI),
     Ranges = expand_ranges(subnets_to_ranges(Subnets)),
     {noreply, State0#state{devaddr_bases = Ranges}};

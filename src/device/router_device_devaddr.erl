@@ -341,12 +341,22 @@ to_res_test() ->
     ok.
 
 set_range_allocation_test_() ->
-    [
-        ?_test(test_no_subnet()),
-        ?_test(test_subnet_wrap()),
-        ?_test(test_non_sequential_subnet()),
-        ?_test(test_replace_range())
-    ].
+    {
+        foreach,
+        fun() ->
+            meck:new(router_blockchain),
+            meck:expect(router_blockchain, get_hotspot_location_index, fun(_) ->
+                {error, use_default_index}
+            end)
+        end,
+        fun(_) -> meck:unload() end,
+        [
+            ?_test(test_no_subnet()),
+            ?_test(test_subnet_wrap()),
+            ?_test(test_non_sequential_subnet()),
+            ?_test(test_replace_range())
+        ]
+    }.
 
 test_no_subnet() ->
     #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),

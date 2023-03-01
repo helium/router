@@ -345,7 +345,17 @@ update_euis(List, State) ->
                 fun({Action, EUIPairs}) ->
                     lists:foreach(
                         fun(EUIPair) ->
-                            lager:info("~p ~p", [Action, EUIPair]),
+                            lager:info("~p app_eui=~s (~w) dev_eui=~s (~w)", [
+                                Action,
+                                lorawan_utils:binary_to_hex(<<
+                                    (EUIPair#iot_config_eui_pair_v1_pb.app_eui):64/integer-unsigned-big
+                                >>),
+                                EUIPair#iot_config_eui_pair_v1_pb.app_eui,
+                                lorawan_utils:binary_to_hex(<<
+                                    (EUIPair#iot_config_eui_pair_v1_pb.dev_eui):64/integer-unsigned-big
+                                >>),
+                                EUIPair#iot_config_eui_pair_v1_pb.dev_eui
+                            ]),
                             ok = update_euis(Action, EUIPair, Stream, State)
                         end,
                         EUIPairs

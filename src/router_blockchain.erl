@@ -54,16 +54,26 @@ calculate_dc_amount(PayloadSize) ->
 -spec get_hotspot_lat_lon(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
     {float(), float()} | {unknown, unknown}.
 get_hotspot_lat_lon(PubKeyBin) ->
-    Ledger = ledger(),
-    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
-        {error, _} ->
-            {unknown, unknown};
-        {ok, Hotspot} ->
-            case blockchain_ledger_gateway_v2:location(Hotspot) of
-                undefined ->
+    case ?MODULE:is_chain_dead() of
+        false ->
+            Ledger = ledger(),
+            case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
+                {error, _} ->
                     {unknown, unknown};
-                Loc ->
-                    h3:to_geo(Loc)
+                {ok, Hotspot} ->
+                    case blockchain_ledger_gateway_v2:location(Hotspot) of
+                        undefined ->
+                            {unknown, unknown};
+                        Loc ->
+                            h3:to_geo(Loc)
+                    end
+            end;
+        true ->
+            case router_ics_gateway_location_worker:get(PubKeyBin) of
+                {error, _} ->
+                    {unknown, unknown};
+                {ok, Index} ->
+                    h3:to_geo(Index)
             end
     end.
 
@@ -71,14 +81,19 @@ get_hotspot_lat_lon(PubKeyBin) ->
 -spec get_hotspot_location_index(PubKeybin :: libp2p_crypto:pubkey_bin()) ->
     {ok, non_neg_integer()} | {error, any()}.
 get_hotspot_location_index(PubKeyBin) ->
-    case blockchain_ledger_v1:find_gateway_info(PubKeyBin, ledger()) of
-        {error, _} = Error ->
-            Error;
-        {ok, Hotspot} ->
-            case blockchain_ledger_gateway_v2:location(Hotspot) of
-                undefined -> {error, undef_index};
-                Index -> {ok, Index}
-            end
+    case ?MODULE:is_chain_dead() of
+        false ->
+            case blockchain_ledger_v1:find_gateway_info(PubKeyBin, ledger()) of
+                {error, _} = Error ->
+                    Error;
+                {ok, Hotspot} ->
+                    case blockchain_ledger_gateway_v2:location(Hotspot) of
+                        undefined -> {error, undef_index};
+                        Index -> {ok, Index}
+                    end
+            end;
+        true ->
+            router_ics_gateway_location_worker:get(PubKeyBin)
     end.
 
 %% Assigning DevAddrs

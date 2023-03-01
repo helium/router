@@ -103,13 +103,19 @@ h3_parent_for_pubkeybin(PubKeyBin) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ok = blockchain_event:add_handler(self()),
+    case router_blockchain:is_chain_dead() of
+        true ->
+            ok;
+        false ->
+            ok = blockchain_event:add_handler(self()),
+            erlang:send_after(500, self(), post_init_chain)
+    end,
+
     OUI =
         case router_utils:get_oui() of
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    erlang:send_after(250, self(), post_init),
     {ok, #state{oui = OUI}}.
 
 handle_call({set_devaddr_bases, Ranges}, _From, State) ->
@@ -142,11 +148,10 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{oui = OUI} = State) ->
+handle_info(post_init_chain, #state{oui = OUI} = State0) ->
     Subnets = router_blockchain:subnets_for_oui(OUI),
-    {noreply, State#state{subnets = Subnets}};
-handle_info(post_init, State) ->
-    {noreply, State};
+    Ranges = expand_ranges(subnets_to_ranges(Subnets)),
+    {noreply, State0#state{devaddr_bases = Ranges}};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
     #state{oui = OUI} = State

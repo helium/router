@@ -40,7 +40,6 @@ info_usage() ->
             "    [--no_euis] default: false (EUIs included)\n",
             "    [--ignore_no_address] default: false\n"
             "migration ouis  \n",
-            "migration ouis routes \n",
             "migration euis   - Add Console EUIs to config service existing route\n",
             "migration skfs   - Add Session Keys to config service\n"
         ]
@@ -62,12 +61,6 @@ info_cmd() ->
             [],
             [],
             fun migration_ouis/3
-        ],
-        [
-            ["migration", "ouis", "routes"],
-            [],
-            [],
-            fun migration_ouis_routes/3
         ],
         [
             ["migration", "euis"],
@@ -100,49 +93,6 @@ migration_ouis(["migration", "ouis"], [], _Flags) ->
     OUIsList = get_ouis(),
     c_text("~n~s~n", [jsx:prettify(jsx:encode(OUIsList))]);
 migration_ouis([_, _, _], [], _Flags) ->
-    usage.
-
-migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
-    OUIsList = get_ouis(),
-    Swarm = blockchain_swarm:swarm(),
-    PeerBook = libp2p_swarm:peerbook(Swarm),
-    RouteList = lists:map(
-        fun(#{oui := OUI, payer := Payer} = Map) ->
-            PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
-            case libp2p_peerbook:get(PeerBook, PubKeyBin) of
-                {error, _Reason} ->
-                    ok = libp2p_peerbook:refresh(PeerBook, PubKeyBin),
-                    #{
-                        oui => OUI,
-                        route => address_not_found
-                    };
-                {ok, Peer} ->
-                    [Address1 | _] = [
-                        erlang:list_to_binary(lists:nth(2, string:tokens(A, "/")))
-                     || A <- libp2p_peer:listen_addrs(Peer)
-                    ],
-                    #{devaddrs := DevRanges} = Map,
-                    [#{start_addr := HexMin} | _] = DevRanges,
-                    {ok, IntNetID} = lora_subnet:parse_netid(binary:decode_hex(HexMin), big),
-                    #{
-                        net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
-                        devaddr_ranges => DevRanges,
-                        euis => [],
-                        oui => OUI,
-                        server => #{
-                            host => Address1,
-                            port => 8080,
-                            protocol => packet_router
-                        },
-                        max_copies => 3,
-                        nonce => 1
-                    }
-            end
-        end,
-        OUIsList
-    ),
-    c_text("~n~s~n", [jsx:prettify(jsx:encode(RouteList))]);
-migration_ouis_routes([_, _, _], [], _Flags) ->
     usage.
 
 send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
@@ -195,7 +145,7 @@ get_ouis() ->
                         <<Base:25/integer-unsigned-little, Prefix:7/integer>>
                     ),
                     Max = lorawan_utils:reverse(<<
-                        (Base + Size):25/integer-unsigned-little, Prefix:7/integer
+                        (Base + Size - 1):25/integer-unsigned-little, Prefix:7/integer
                     >>),
                     #{start_addr => binary:encode_hex(Min), end_addr => binary:encode_hex(Max)}
                 end,

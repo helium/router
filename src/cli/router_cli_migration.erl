@@ -6,6 +6,8 @@
 
 -behavior(clique_handler).
 
+-include("../grpc/autogen/iot_config_pb.hrl").
+
 -export([register_cli/0]).
 
 -define(USAGE, fun(_, _, _) -> usage end).
@@ -41,6 +43,7 @@ info_usage() ->
             "    [--ignore_no_address] default: false\n"
             "migration ouis  \n",
             "migration euis   - Add Console EUIs to config service existing route\n",
+            "    [--commit] default: false (compute delta and send to Config Service)\n",
             "migration skfs   - Add Session Keys to config service\n"
         ]
     ].
@@ -65,7 +68,7 @@ info_cmd() ->
         [
             ["migration", "euis"],
             [],
-            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun send_euis_to_config_service/3
         ],
         [
@@ -95,14 +98,40 @@ migration_ouis(["migration", "ouis"], [], _Flags) ->
 migration_ouis([_, _, _], [], _Flags) ->
     usage.
 
-send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
-    ok = router_ics_eui_worker:reconcile(self()),
+send_euis_to_config_service(["migration", "euis"], [], Flags) ->
+    Commit = maps:is_key(commit, Flags),
+    ok = router_ics_eui_worker:reconcile(self(), Commit),
+    DryRun =
+        case Commit of
+            true -> "";
+            false -> "DRY RUN"
+        end,
     receive
         {router_ics_eui_worker, {ok, Added, Removed}} ->
-            c_text("Updating EUIs: added ~w, remove ~w", [Added, Removed]);
+            ToMap = fun(Pairs) ->
+                lists:map(
+                    fun(EUIPair) ->
+                        AppEUI = lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.app_eui):64/integer-unsigned-big
+                        >>),
+                        DevEUI = lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.dev_eui):64/integer-unsigned-big
+                        >>),
+                        #{
+                            app_eui => AppEUI,
+                            dev_eui => DevEUI,
+                            route_id => EUIPair#iot_config_eui_pair_v1_pb.route_id
+                        }
+                    end,
+                    Pairs
+                )
+            end,
+            PrintAdded = ToMap(Added),
+            PrintRemoved = ToMap(Removed),
+            c_text("~s~n~s~n~s~n", [DryRun, PrintAdded, PrintRemoved]);
         {router_ics_eui_worker, {error, _Reason}} ->
-            c_text("Updating EUIs failed ~p", [_Reason])
-    after 5000 ->
+            c_text("~s Updating EUIs failed ~p", [DryRun, _Reason])
+    after 900000 ->
         c_text("Error timeout")
     end;
 send_euis_to_config_service(A, B, C) ->

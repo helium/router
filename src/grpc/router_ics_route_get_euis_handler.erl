@@ -13,22 +13,22 @@
 ]).
 
 -record(state, {
-    pid :: pid() | undefined,
-    data :: list(iot_config_pb:iot_config_eui_pair_v1_pb())
+    options :: map(),
+    euis :: list(iot_config_pb:iot_config_eui_pair_v1_pb())
 }).
 
 -type stream_id() :: non_neg_integer().
 -type state() :: #state{}.
 
--spec init(pid(), stream_id(), Pid :: pid() | undefined) -> {ok, state()}.
-init(_ConnectionPid, _StreamId, Pid) ->
-    lager:debug("init ~p: ~p", [_StreamId, Pid]),
-    {ok, #state{pid = Pid, data = []}}.
+-spec init(pid(), stream_id(), Options :: map()) -> {ok, state()}.
+init(_ConnectionPid, _StreamId, Options) ->
+    lager:debug("init ~p: ~p", [_StreamId, Options]),
+    {ok, #state{options = Options, euis = []}}.
 
 -spec handle_message(iot_config_pb:iot_config_eui_pair_v1_pb(), state()) -> {ok, state()}.
-handle_message(EUIPair, #state{data = Data} = State) ->
+handle_message(EUIPair, #state{euis = EUIPairs} = State) ->
     lager:debug("got ~p", [EUIPair]),
-    {ok, State#state{data = [EUIPair | Data]}}.
+    {ok, State#state{euis = [EUIPair | EUIPairs]}}.
 
 -spec handle_headers(map(), state()) -> {ok, state()}.
 handle_headers(_Metadata, CBData) ->
@@ -39,7 +39,7 @@ handle_trailers(_Status, _Message, _Metadata, CBData) ->
     {ok, CBData}.
 
 -spec handle_eos(state()) -> {ok, state()}.
-handle_eos(#state{pid = Pid, data = Data} = State) ->
+handle_eos(#state{options = Options, euis = EUIPairs} = State) ->
     lager:info("got eos, sending to router_ics_eui_worker"),
-    ok = router_ics_eui_worker:reconcile_end(Pid, Data),
+    ok = router_ics_eui_worker:reconcile_end(Options, EUIPairs),
     {ok, State}.

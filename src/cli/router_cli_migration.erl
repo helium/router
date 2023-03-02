@@ -99,7 +99,8 @@ migration_ouis([_, _, _], [], _Flags) ->
     usage.
 
 send_euis_to_config_service(["migration", "euis"], [], Flags) ->
-    Commit = maps:is_key(commit, Flags),
+    Options = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
     ok = router_ics_eui_worker:reconcile(self(), Commit),
     DryRun =
         case Commit of

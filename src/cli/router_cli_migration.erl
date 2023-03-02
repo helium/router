@@ -131,7 +131,11 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
                 {[], []} ->
                     c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
                 {PrintAdded, PrintRemoved} ->
-                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [DryRun, PrintAdded, PrintRemoved])
+                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [
+                        DryRun,
+                        jsx:prettify(jsx:encode(PrintAdded)),
+                        jsx:prettify(jsx:encode(PrintRemoved))
+                    ])
             end;
         {router_ics_eui_worker, {error, _Reason}} ->
             c_text("~s Updating EUIs failed ~p", [DryRun, _Reason])

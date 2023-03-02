@@ -6,6 +6,8 @@
 
 -behavior(clique_handler).
 
+-include("../grpc/autogen/iot_config_pb.hrl").
+
 -export([register_cli/0]).
 
 -define(USAGE, fun(_, _, _) -> usage end).
@@ -40,8 +42,8 @@ info_usage() ->
             "    [--no_euis] default: false (EUIs included)\n",
             "    [--ignore_no_address] default: false\n"
             "migration ouis  \n",
-            "migration ouis routes \n",
             "migration euis   - Add Console EUIs to config service existing route\n",
+            "    [--commit] default: false (compute delta and send to Config Service)\n",
             "migration skfs   - Add Session Keys to config service\n"
         ]
     ].
@@ -64,15 +66,9 @@ info_cmd() ->
             fun migration_ouis/3
         ],
         [
-            ["migration", "ouis", "routes"],
-            [],
-            [],
-            fun migration_ouis_routes/3
-        ],
-        [
             ["migration", "euis"],
             [],
-            [],
+            [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun send_euis_to_config_service/3
         ],
         [
@@ -102,57 +98,50 @@ migration_ouis(["migration", "ouis"], [], _Flags) ->
 migration_ouis([_, _, _], [], _Flags) ->
     usage.
 
-migration_ouis_routes(["migration", "ouis", "routes"], [], _Flags) ->
-    OUIsList = get_ouis(),
-    Swarm = blockchain_swarm:swarm(),
-    PeerBook = libp2p_swarm:peerbook(Swarm),
-    RouteList = lists:map(
-        fun(#{oui := OUI, payer := Payer} = Map) ->
-            PubKeyBin = libp2p_crypto:b58_to_bin(erlang:binary_to_list(Payer)),
-            case libp2p_peerbook:get(PeerBook, PubKeyBin) of
-                {error, _Reason} ->
-                    ok = libp2p_peerbook:refresh(PeerBook, PubKeyBin),
-                    #{
-                        oui => OUI,
-                        route => address_not_found
-                    };
-                {ok, Peer} ->
-                    [Address1 | _] = [
-                        erlang:list_to_binary(lists:nth(2, string:tokens(A, "/")))
-                     || A <- libp2p_peer:listen_addrs(Peer)
-                    ],
-                    #{devaddrs := DevRanges} = Map,
-                    [#{start_addr := HexMin} | _] = DevRanges,
-                    {ok, IntNetID} = lora_subnet:parse_netid(binary:decode_hex(HexMin), big),
-                    #{
-                        net_id => erlang:list_to_binary(io_lib:format("~.16B", [IntNetID])),
-                        devaddr_ranges => DevRanges,
-                        euis => [],
-                        oui => OUI,
-                        server => #{
-                            host => Address1,
-                            port => 8080,
-                            protocol => packet_router
-                        },
-                        max_copies => 3,
-                        nonce => 1
-                    }
-            end
+send_euis_to_config_service(["migration", "euis"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
+    ok = router_ics_eui_worker:reconcile(self(), Commit),
+    DryRun =
+        case Commit of
+            true -> "";
+            false -> "DRY RUN"
         end,
-        OUIsList
-    ),
-    c_text("~n~s~n", [jsx:prettify(jsx:encode(RouteList))]);
-migration_ouis_routes([_, _, _], [], _Flags) ->
-    usage.
-
-send_euis_to_config_service(["migration", "euis"], [], _Flags) ->
-    ok = router_ics_eui_worker:reconcile(self()),
     receive
         {router_ics_eui_worker, {ok, Added, Removed}} ->
-            c_text("Updating EUIs: added ~w, remove ~w", [Added, Removed]);
+            ToMap = fun(Pairs) ->
+                lists:map(
+                    fun(EUIPair) ->
+                        AppEUI = lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.app_eui):64/integer-unsigned-big
+                        >>),
+                        DevEUI = lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.dev_eui):64/integer-unsigned-big
+                        >>),
+                        #{
+                            app_eui => AppEUI,
+                            dev_eui => DevEUI,
+                            route_id => erlang:list_to_binary(
+                                EUIPair#iot_config_eui_pair_v1_pb.route_id
+                            )
+                        }
+                    end,
+                    Pairs
+                )
+            end,
+            case {ToMap(Added), ToMap(Removed)} of
+                {[], []} ->
+                    c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
+                {PrintAdded, PrintRemoved} ->
+                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [
+                        DryRun,
+                        jsx:prettify(jsx:encode(PrintAdded)),
+                        jsx:prettify(jsx:encode(PrintRemoved))
+                    ])
+            end;
         {router_ics_eui_worker, {error, _Reason}} ->
-            c_text("Updating EUIs failed ~p", [_Reason])
-    after 5000 ->
+            c_text("~s Updating EUIs failed ~p", [DryRun, _Reason])
+    after 900000 ->
         c_text("Error timeout")
     end;
 send_euis_to_config_service(A, B, C) ->
@@ -195,7 +184,7 @@ get_ouis() ->
                         <<Base:25/integer-unsigned-little, Prefix:7/integer>>
                     ),
                     Max = lorawan_utils:reverse(<<
-                        (Base + Size):25/integer-unsigned-little, Prefix:7/integer
+                        (Base + Size - 1):25/integer-unsigned-little, Prefix:7/integer
                     >>),
                     #{start_addr => binary:encode_hex(Min), end_addr => binary:encode_hex(Max)}
                 end,

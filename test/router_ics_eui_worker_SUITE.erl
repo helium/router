@@ -254,16 +254,23 @@ reconcile_test(_Config) ->
         {ok, JSONDevices}
     end),
 
-    ok = router_ics_eui_worker:reconcile(self()),
+    ok = router_ics_eui_worker:reconcile(self(), true),
 
     ok = router_test_ics_route_service:eui_pair(
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
+    ToBeAdded = lists:map(
+        fun(X) ->
+            #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = X, dev_eui = X}
+        end,
+        lists:seq(1, 20)
+    ),
+    ToBeRemoved = [#iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}],
     receive
         {router_ics_eui_worker, Result} ->
             %% We added 20 and removed 1
-            ?assertEqual({ok, 20, 1}, Result)
+            ?assertEqual({ok, ToBeAdded, ToBeRemoved}, Result)
     after 5000 ->
         ct:fail(timeout)
     end,

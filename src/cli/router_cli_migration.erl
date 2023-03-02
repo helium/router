@@ -121,7 +121,9 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
                         #{
                             app_eui => AppEUI,
                             dev_eui => DevEUI,
-                            route_id => EUIPair#iot_config_eui_pair_v1_pb.route_id
+                            route_id => erlang:list_to_binary(
+                                EUIPair#iot_config_eui_pair_v1_pb.route_id
+                            )
                         }
                     end,
                     Pairs

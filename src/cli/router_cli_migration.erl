@@ -129,9 +129,9 @@ send_euis_to_config_service(["migration", "euis"], [], Flags) ->
             end,
             case {ToMap(Added), ToMap(Removed)} of
                 {[], []} ->
-                    c_text("~s~n Nothing to do,e verythingt is up to date", [DryRun]);
+                    c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
                 {PrintAdded, PrintRemoved} ->
-                    c_text("~s~nAdding~n~s~Removing~s~n", [DryRun, PrintAdded, PrintRemoved])
+                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [DryRun, PrintAdded, PrintRemoved])
             end;
         {router_ics_eui_worker, {error, _Reason}} ->
             c_text("~s Updating EUIs failed ~p", [DryRun, _Reason])

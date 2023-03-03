@@ -25,9 +25,13 @@ start_link_args(#{transport := "http"} = Args) ->
 start_link_args(#{transport := "https"} = Args) ->
     start_link_args(Args#{transport => https});
 start_link_args(#{port := Port} = Args) when is_list(Port) ->
-    Args#{port => erlang:list_to_integer(Port)};
-start_link_args(Args) when is_map(Args) ->
-    Args.
+    start_link_args(Args#{port => erlang:list_to_integer(Port)});
+start_link_args(#{transport := Transport, host := Host, port := Port} = Args) when
+    is_atom(Transport) andalso is_list(Host) andalso is_integer(Port)
+->
+    Args;
+start_link_args(_) ->
+    ignore.
 
 channel() ->
     ?ICS_CHANNEL.

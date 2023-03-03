@@ -272,7 +272,7 @@ devaddr_ranges(RoutingEntry) ->
             Prefix = $H,
             Min = lorawan_utils:reverse(<<Base:25/integer-unsigned-little, Prefix:7/integer>>),
             Max = lorawan_utils:reverse(<<
-                (Base + Size):25/integer-unsigned-little, Prefix:7/integer
+                (Base + Size - 1):25/integer-unsigned-little, Prefix:7/integer
             >>),
             {ok, IntNetID} = lora_subnet:parse_netid(Min, big),
             {

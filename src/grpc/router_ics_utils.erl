@@ -44,6 +44,8 @@ connect(Transport, Host, Port) ->
             of
                 {ok, _Conn} ->
                     connect(Transport, Host, Port);
+                {error, {already_started, _}} ->
+                    connect(Transport, Host, Port);
                 {error, _Reason} = Error ->
                     Error
             end;

@@ -48,7 +48,7 @@
     oui :: non_neg_integer(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
-    transport :: https | https,
+    transport :: http | https,
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff()

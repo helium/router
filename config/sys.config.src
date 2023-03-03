@@ -48,6 +48,7 @@
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
+            transport => "${ROUTER_ICS_TRANSPORT}",
             host => "${ROUTER_ICS_HOST}",
             port => "${ROUTER_ICS_PORT}",
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",

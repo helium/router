@@ -43,7 +43,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(
         router,
         ics,
-        #{eui_enabled => "true", host => "localhost", port => Port},
+        #{eui_enabled => "true", transport => "http", host => "localhost", port => Port},
         [{persistent, true}]
     ),
     test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).

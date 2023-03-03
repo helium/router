@@ -48,6 +48,7 @@
     oui :: non_neg_integer(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
+    transport :: https | https,
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff()
@@ -58,16 +59,13 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(#{host := ""}) ->
-    ignore;
-start_link(#{port := Port} = Args) when is_list(Port) ->
-    ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(#{skf_enabled := "true", host := Host, port := Port} = Args) when
-    is_list(Host) andalso is_integer(Port)
-->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
-start_link(_Args) ->
-    ignore.
+start_link(Args) ->
+    case router_ics_utils:start_link_args(Args) of
+        #{skf_enabled := "true"} = Map ->
+            gen_server:start_link({local, ?SERVER}, ?SERVER, Map, []);
+        _ ->
+            ignore
+    end.
 
 -spec reconcile(Pid :: pid() | undefined) -> ok.
 reconcile(Pid) ->
@@ -87,7 +85,15 @@ update(Updates) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} = Args) ->
+init(
+    #{
+        pubkey_bin := PubKeyBin,
+        sig_fun := SigFun,
+        transport := Transport,
+        host := Host,
+        port := Port
+    } = Args
+) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
@@ -96,6 +102,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
         oui = router_utils:get_oui(),
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
+        transport = Transport,
         host = Host,
         port = Port,
         conn_backoff = Backoff
@@ -166,8 +173,16 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
-    case connect(State) of
+handle_info(
+    ?INIT,
+    #state{
+        transport = Transport,
+        host = Host,
+        port = Port,
+        conn_backoff = Backoff0
+    } = State
+) ->
+    case router_ics_utils:connect(Transport, Host, Port) of
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
@@ -187,6 +202,9 @@ handle_info({trailers, _StreamID, _Data}, State) ->
 handle_info({eos, _StreamID}, State) ->
     lager:debug("got eos for stream: ~p", [_StreamID]),
     {noreply, State};
+handle_info({'END_STREAM', _StreamID}, State) ->
+    lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
+    {noreply, State};
 handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
     lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
     {noreply, State};
@@ -204,24 +222,6 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec connect(State :: state()) -> ok | {error, any()}.
-connect(#state{host = Host, port = Port} = State) ->
-    case grpcbox_channel:pick(?MODULE, stream) of
-        {error, _} ->
-            case
-                grpcbox_client:connect(?MODULE, [{http, Host, Port, []}], #{
-                    sync_start => true
-                })
-            of
-                {ok, _Conn} ->
-                    connect(State);
-                {error, _Reason} = Error ->
-                    Error
-            end;
-        {ok, {_Conn, _Interceptor}} ->
-            ok
-    end.
-
 -spec skf_list(Pid :: pid() | undefined, state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
 skf_list(Pid, #state{oui = OUI, sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_list_req_v1_pb{
@@ -231,7 +231,7 @@ skf_list(Pid, #state{oui = OUI, sig_fun = SigFun}) ->
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
     SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
     helium_iot_config_session_key_filter_client:list(SignedReq, #{
-        channel => ?MODULE,
+        channel => router_ics_utils:channel(),
         callback_module => {
             router_ics_skf_list_handler,
             Pid
@@ -270,7 +270,7 @@ skf_update([], _State) ->
 skf_update(List, State) ->
     case
         helium_iot_config_session_key_filter_client:update(#{
-            channel => ?MODULE
+            channel => router_ics_utils:channel()
         })
     of
         {error, _} = Error ->

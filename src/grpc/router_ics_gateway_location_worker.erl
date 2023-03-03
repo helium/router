@@ -118,7 +118,7 @@ handle_call({get, PubKeyBin}, _From, #state{conn_backoff = Backoff0} = State) ->
             lager:warning("fail to get_gateway_location ~p, reconnecting in ~wms", [Reason, Delay]),
             {reply, Error, State#state{conn_backoff = Backoff1}};
         {ok, H3IndexString} ->
-            H3Index = erlang:list_to_integer(H3IndexString),
+            H3Index = h3:from_string(H3IndexString),
             ok = insert(PubKeyBin, H3Index),
             {reply, {ok, H3Index}, State}
     end;

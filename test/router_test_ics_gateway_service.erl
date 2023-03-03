@@ -32,8 +32,9 @@ location(Ctx, Req) ->
     case verify_location_req(Req) of
         true ->
             lager:info("got location req ~p", [Req]),
+            ExpectedIndex = h3:from_string("8828308281fffff"),
             Res = #iot_config_gateway_location_res_v1_pb{
-                location = "8828308281fffff"
+                location = erlang:integer_to_list(ExpectedIndex)
             },
             catch persistent_term:get(?MODULE) ! {?MODULE, location, Req},
             {ok, Res, Ctx};

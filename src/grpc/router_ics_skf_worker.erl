@@ -135,7 +135,7 @@ handle_cast(
     ToRemove = SKFs -- LocalSFKs,
     lager:info("adding ~w", [erlang:length(ToAdd)]),
     lager:info("removing ~w", [erlang:length(ToRemove)]),
-    case skf_update([{remove, ToRemove}, {add, ToAdd}], State) of
+    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} = Error ->
             ok = forward_reconcile(Pid, Error),
             {noreply, skf_update_failed(Reason, State)};
@@ -162,7 +162,7 @@ handle_cast(
             Updates0
         )
     ),
-    case skf_update(Updates1, State) of
+    case maybe_update_skf(Updates1, State) of
         {error, Reason} ->
             {noreply, skf_update_failed(Reason, State)};
         ok ->
@@ -260,14 +260,29 @@ get_local_skfs(OUI) ->
         Devices
     ).
 
--spec skf_update(
+-spec maybe_update_skf(
     List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
     State :: state()
 ) ->
     ok | {error, any()}.
-skf_update([], _State) ->
+maybe_update_skf(List0, State) ->
+    List1 = lists:filter(
+        fun
+            ({_Action, []}) -> false;
+            ({_Action, _L}) -> true
+        end,
+        List0
+    ),
+    update_skf(List1, State).
+
+-spec update_skf(
+    List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
+    State :: state()
+) ->
+    ok | {error, any()}.
+update_skf([], _State) ->
     ok;
-skf_update(List, State) ->
+update_skf(List, State) ->
     case
         helium_iot_config_session_key_filter_client:update(#{
             channel => router_ics_utils:channel()
@@ -281,7 +296,7 @@ skf_update(List, State) ->
                     lists:foreach(
                         fun(SKF) ->
                             lager:info("~p ~p", [Action, SKF]),
-                            ok = skf_update(Action, SKF, Stream, State)
+                            ok = update_skf(Action, SKF, Stream, State)
                         end,
                         SKFs
                     )
@@ -295,13 +310,13 @@ skf_update(List, State) ->
             end
     end.
 
--spec skf_update(
+-spec update_skf(
     Action :: add | remove,
     EUIPair :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
-skf_update(Action, SKF, Stream, #state{sig_fun = SigFun}) ->
+update_skf(Action, SKF, Stream, #state{sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_update_req_v1_pb{
         action = Action,
         filter = SKF,

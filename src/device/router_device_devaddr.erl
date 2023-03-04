@@ -47,7 +47,8 @@
 -record(state, {
     oui :: non_neg_integer(),
     subnets = [] :: [binary()],
-    devaddr_used = #{} :: map()
+    devaddr_used = #{} :: map(),
+    chain :: blockchain:blockchain()
 }).
 
 %% ------------------------------------------------------------------
@@ -161,6 +162,15 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
+    case router_blockchain:blockchain() of
+        undefined ->
+            erlang:send_after(100, self(), post_init),
+            {noreply, State};
+        Chain ->
+            Subnets = subnets(OUI, Chain),
+            {noreply, State#state{chain = Chain, subnets = Subnets}}
+    end;
 handle_info(post_init, State) ->
     {noreply, State};
 handle_info(

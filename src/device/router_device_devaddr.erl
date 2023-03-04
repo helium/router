@@ -114,7 +114,7 @@ init(Args) ->
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    self() ! post_init,
+    erlang:send_after(250, self(), post_init),
     {ok, #state{oui = OUI}}.
 
 handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets = []} = State) ->
@@ -162,15 +162,9 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{chain = undefined, oui = OUI} = State) ->
-    case router_blockchain:blockchain() of
-        undefined ->
-            erlang:send_after(100, self(), post_init),
-            {noreply, State};
-        Chain ->
-            Subnets = subnets(OUI, Chain),
-            {noreply, State#state{chain = Chain, subnets = Subnets}}
-    end;
+handle_info(post_init, #state{oui = OUI} = State) ->
+    Subnets = router_blockchain:subnets_for_oui(OUI),
+    {noreply, State#state{subnets = Subnets}};
 handle_info(post_init, State) ->
     {noreply, State};
 handle_info(
@@ -209,15 +203,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec subnets(non_neg_integer(), blockchain:blockchain()) -> [binary()].
-subnets(OUI, Chain) ->
-    case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
-        {ok, RoutingEntry} ->
-            blockchain_ledger_routing_v1:subnets(RoutingEntry);
-        _ ->
-            []
-    end.
 
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->

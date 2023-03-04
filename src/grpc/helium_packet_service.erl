@@ -36,6 +36,11 @@ route(_EnvUp, StreamState) ->
     {ok, StreamState}.
 
 -spec handle_info(Msg :: any(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
+handle_info(
+    {send_purchase, _PurchaseSC, _Hotspot, _PacketHash, _Region, _OwnerSigFun}, StreamState
+) ->
+    lager:info("~p ignoring send_purchase", [self()]),
+    StreamState;
 handle_info({send_response, Reply}, StreamState) ->
     grpcbox_stream:send(false, from_sc_packet(Reply), StreamState);
 handle_info(_Msg, StreamState) ->

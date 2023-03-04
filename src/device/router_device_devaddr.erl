@@ -210,6 +210,15 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
+-spec subnets(non_neg_integer(), blockchain:blockchain()) -> [binary()].
+subnets(OUI, Chain) ->
+    case blockchain_ledger_v1:find_routing(OUI, blockchain:ledger(Chain)) of
+        {ok, RoutingEntry} ->
+            blockchain_ledger_routing_v1:subnets(RoutingEntry);
+        _ ->
+            []
+    end.
+
 -spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
 next_subnet(Subnets, Nth) ->
     case Nth + 1 > erlang:length(Subnets) of

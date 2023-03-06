@@ -47,8 +47,7 @@
 -record(state, {
     oui :: non_neg_integer(),
     subnets = [] :: [binary()],
-    devaddr_used = #{} :: map(),
-    chain :: blockchain:blockchain()
+    devaddr_used = #{} :: map()
 }).
 
 %% ------------------------------------------------------------------

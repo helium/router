@@ -113,7 +113,7 @@ init(Args) ->
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    self() ! post_init,
+    erlang:send_after(250, self(), post_init),
     {ok, #state{oui = OUI}}.
 
 handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets = []} = State) ->
@@ -161,6 +161,9 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{oui = OUI} = State) ->
+    Subnets = router_blockchain:subnets_for_oui(OUI),
+    {noreply, State#state{subnets = Subnets}};
 handle_info(post_init, State) ->
     {noreply, State};
 handle_info(

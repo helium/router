@@ -48,6 +48,7 @@
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
+            transport => "${ROUTER_ICS_TRANSPORT}",
             host => "${ROUTER_ICS_HOST}",
             port => "${ROUTER_ICS_PORT}",
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
@@ -144,6 +145,7 @@
             {{lager_file_backend, "router.log"}, [{module, router_ics_route_get_euis_handler}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_skf_list_handler}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_skf_worker}], info},
+            {{lager_file_backend, "router.log"}, [{module, router_ics_gateway_location_worker}], info},
 
             {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], info},
             {

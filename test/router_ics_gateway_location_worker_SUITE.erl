@@ -47,7 +47,7 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(
         router,
         ics,
-        #{host => "localhost", port => Port},
+        #{transport => "http", host => "localhost", port => Port},
         [{persistent, true}]
     ),
     test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).

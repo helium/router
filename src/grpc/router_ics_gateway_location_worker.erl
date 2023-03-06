@@ -43,6 +43,7 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
+    transport :: http | https,
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff()
@@ -59,16 +60,14 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(#{host := ""}) ->
-    ignore;
-start_link(#{port := Port} = Args) when is_list(Port) ->
-    ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(#{host := Host, port := Port} = Args) when
-    is_list(Host) andalso is_integer(Port)
-->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
-start_link(_Args) ->
-    ignore.
+
+start_link(Args) ->
+    case router_ics_utils:start_link_args(Args) of
+        ignore ->
+            ignore;
+        Map ->
+            gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])
+    end.
 
 -spec init_ets() -> ok.
 init_ets() ->
@@ -89,7 +88,15 @@ get(PubKeyBin) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} = Args) ->
+init(
+    #{
+        pubkey_bin := PubKeyBin,
+        sig_fun := SigFun,
+        transport := Transport,
+        host := Host,
+        port := Port
+    } = Args
+) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {ok, _, SigFun, _} = blockchain_swarm:keys(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
@@ -97,6 +104,7 @@ init(#{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port} =
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
+        transport = Transport,
         host = Host,
         port = Port,
         conn_backoff = Backoff
@@ -122,9 +130,17 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?INIT, #state{conn_backoff = Backoff0} = State) ->
+handle_info(
+    ?INIT,
+    #state{
+        transport = Transport,
+        host = Host,
+        port = Port,
+        conn_backoff = Backoff0
+    } = State
+) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    case connect(State) of
+    case router_ics_utils:connect(Transport, Host, Port) of
         {error, _Reason} ->
             lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
             _ = erlang:send_after(Delay, self(), ?INIT),
@@ -170,24 +186,6 @@ insert(PubKeyBin, H3Index) ->
     }),
     ok.
 
--spec connect(State :: state()) -> ok | {error, any()}.
-connect(#state{host = Host, port = Port} = State) ->
-    case grpcbox_channel:pick(?MODULE, stream) of
-        {error, _} ->
-            case
-                grpcbox_client:connect(?MODULE, [{http, Host, Port, []}], #{
-                    sync_start => true
-                })
-            of
-                {ok, _Conn} ->
-                    connect(State);
-                {error, _Reason} = Error ->
-                    Error
-            end;
-        {ok, {_Conn, _Interceptor}} ->
-            ok
-    end.
-
 -spec get_gateway_location(PubKeyBin :: libp2p_crypto:pubkey_bin(), state()) ->
     {ok, string()} | {error, any()}.
 get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
@@ -196,7 +194,11 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_gateway_location_req_v1_pb),
     SignedReq = Req#iot_config_gateway_location_req_v1_pb{signature = SigFun(EncodedReq)},
-    case helium_iot_config_gateway_client:location(SignedReq, #{channel => ?MODULE}) of
+    case
+        helium_iot_config_gateway_client:location(SignedReq, #{
+            channel => router_ics_utils:channel()
+        })
+    of
         {grpc_error, Reason} ->
             {error, Reason};
         {error, _} = Error ->

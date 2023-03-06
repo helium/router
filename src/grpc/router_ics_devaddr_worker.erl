@@ -47,6 +47,7 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
+    transport :: http | https,
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
@@ -59,22 +60,19 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(#{host := ""}) ->
-    ignore;
-start_link(#{port := Port} = Args) when is_list(Port) ->
-    ?MODULE:start_link(Args#{port => erlang:list_to_integer(Port)});
-start_link(#{devaddr_enabled := "true", host := Host, port := Port} = Args) when
-    is_list(Host) andalso is_integer(Port)
-->
-    case maps:get(route_id, Args) of
-        undefined ->
-            lager:warning("~p enabled, but no route_id provided, ignoring", [?MODULE]),
-            ignore;
+start_link(Args) ->
+    case router_ics_utils:start_link_args(Args) of
+        #{devaddr_enabled := "true"} = Map ->
+            case maps:get(route_id, Map) of
+                undefined ->
+                    lager:warning("~p enabled, but no route_id provided, ignoring", [?MODULE]),
+                    ignore;
+                _ ->
+                    gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])
+            end;
         _ ->
-            gen_server:start_link({local, ?SERVER}, ?SERVER, Args, [])
-    end;
-start_link(_Args) ->
-    ignore.
+            ignore
+    end.
 
 -spec get_devaddr_ranges() ->
     {ok, list(iot_config_pb:iot_config_devaddr_range_v1_pb())} | {error, any()}.
@@ -94,7 +92,14 @@ reconcile_end(Pid, List) ->
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(
-    #{pubkey_bin := PubKeyBin, sig_fun := SigFun, host := Host, port := Port, route_id := RouteID} =
+    #{
+        pubkey_bin := PubKeyBin,
+        sig_fun := SigFun,
+        transport := Transport,
+        host := Host,
+        port := Port,
+        route_id := RouteID
+    } =
         Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
@@ -104,6 +109,7 @@ init(
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
+        transport = Transport,
         host = Host,
         port = Port,
         conn_backoff = Backoff,
@@ -163,9 +169,18 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(?INIT, #state{conn_backoff = Backoff0, route_id = RouteID} = State) ->
+handle_info(
+    ?INIT,
+    #state{
+        transport = Transport,
+        host = Host,
+        port = Port,
+        conn_backoff = Backoff0,
+        route_id = RouteID
+    } = State
+) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    case connect(State) of
+    case router_ics_utils:connect(Transport, Host, Port) of
         {error, _Reason} ->
             lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
             _ = erlang:send_after(Delay, self(), ?INIT),
@@ -191,10 +206,10 @@ handle_info({'END_STREAM', _StreamID}, State) ->
     lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
     {noreply, State};
 handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
-    lager:debug("~p got DOWN for ~p: ~p ~p with state ~p", [self(), Type, Pid, Reason, State]),
+    lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
     {noreply, State};
 handle_info(_Msg, State) ->
-    lager:debug("rcvd unknown info msg: ~p", [_Msg]),
+    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -206,27 +221,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec connect(State :: state()) -> ok | {error, any()}.
-connect(#state{host = Host, port = Port} = State) ->
-    case grpcbox_channel:pick(?MODULE, stream) of
-        {error, _} ->
-            case
-                grpcbox_client:connect(?MODULE, [{http, Host, Port, []}], #{
-                    sync_start => true
-                })
-            of
-                {ok, _Conn} ->
-                    ct:print("initial connected: ~p", [_Conn]),
-                    connect(State);
-                {error, _Reason} = Error ->
-                    Error
-            end;
-        {ok, {_Conn, _Interceptor}} ->
-            ct:print("found connected: ~p and ~p", [_Conn, _Interceptor]),
-            erlang:monitor(process, _Conn),
-            ok
-    end.
 
 -spec get_devaddrs(Pid :: pid() | undefined, state()) ->
     {ok, grpcbox_client:stream()} | {error, any()}.

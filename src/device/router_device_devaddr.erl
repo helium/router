@@ -22,9 +22,11 @@
 -export([
     start_link/1,
     allocate/2,
+    set_devaddr_bases/1,
+    get_devaddr_bases/0,
     sort_devices/2,
     pubkeybin_to_loc/1,
-    net_id/1
+    h3_parent_for_pubkeybin/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -40,14 +42,11 @@
 ]).
 
 -define(SERVER, ?MODULE).
--define(ETS, router_device_devaddr_ets).
-%%
--define(BITS_23, 8388607).
 
 -record(state, {
     oui :: non_neg_integer(),
-    subnets = [] :: [binary()],
-    devaddr_used = #{} :: map()
+    devaddr_bases = [] :: list(non_neg_integer()),
+    keys = #{} :: #{any() := non_neg_integer()}
 }).
 
 %% ------------------------------------------------------------------
@@ -60,6 +59,15 @@ start_link(Args) ->
     {ok, binary()} | {error, any()}.
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
+
+-spec set_devaddr_bases(list(Range)) -> ok when Range :: non_neg_integer() | binary().
+set_devaddr_bases(Ranges) ->
+    ExpandedRanges = expand_ranges(Ranges),
+    gen_server:call(?MODULE, {set_devaddr_bases, ExpandedRanges}).
+
+-spec get_devaddr_bases() -> {ok, {non_neg_integer(), non_neg_integer()}}.
+get_devaddr_bases() ->
+    gen_server:call(?MODULE, get_devaddr_bases).
 
 -spec sort_devices([router_device:device()], libp2p_crypto:pubkey_bin()) ->
     [router_device:device()].
@@ -79,80 +87,62 @@ pubkeybin_to_loc(undefined) ->
 pubkeybin_to_loc(PubKeyBin) ->
     router_blockchain:get_hotspot_location_index(PubKeyBin).
 
--spec net_id(number() | binary()) -> {ok, non_neg_integer()} | {error, invalid_net_id_type}.
-net_id(DevAddr) when erlang:is_number(DevAddr) ->
-    net_id(<<DevAddr:32/integer-unsigned>>);
-net_id(DevAddr) ->
-    try
-        Type = net_id_type(DevAddr),
-        NetID =
-            case Type of
-                0 -> get_net_id(DevAddr, 1, 6);
-                1 -> get_net_id(DevAddr, 2, 6);
-                2 -> get_net_id(DevAddr, 3, 9);
-                3 -> get_net_id(DevAddr, 4, 11);
-                4 -> get_net_id(DevAddr, 5, 12);
-                5 -> get_net_id(DevAddr, 6, 13);
-                6 -> get_net_id(DevAddr, 7, 15);
-                7 -> get_net_id(DevAddr, 8, 17)
-            end,
-        {ok, NetID bor (Type bsl 21)}
-    catch
-        throw:invalid_net_id_type:_ ->
-            {error, invalid_net_id_type}
-    end.
+-spec h3_parent_for_pubkeybin(undefined | libp2p_crypto:pubkey_bin()) -> non_neg_integer().
+h3_parent_for_pubkeybin(PubKeyBin) ->
+    Index =
+        case ?MODULE:pubkeybin_to_loc(PubKeyBin) of
+            {error, _} -> h3:from_geo({0.0, 0.0}, 12);
+            {ok, IA} -> IA
+        end,
+    h3:to_geo(
+        h3:parent(Index, router_utils:get_env_int(devaddr_allocate_resolution, 3))
+    ).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ok = blockchain_event:add_handler(self()),
+    case router_blockchain:is_chain_dead() of
+        true ->
+            ok;
+        false ->
+            ok = blockchain_event:add_handler(self()),
+            erlang:send_after(500, self(), post_init_chain)
+    end,
+
     OUI =
         case router_utils:get_oui() of
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    erlang:send_after(250, self(), post_init),
     {ok, #state{oui = OUI}}.
 
-handle_call({allocate, _Device, _PubKeyBin}, _From, #state{subnets = []} = State) ->
-    {reply, {error, no_subnet}, State};
+handle_call({set_devaddr_bases, []}, _From, State) ->
+    lager:info("trying to set empty devaddr bases, ignoring"),
+    {reply, ok, State};
+handle_call({set_devaddr_bases, Ranges}, _From, State) ->
+    NewState = State#state{devaddr_bases = lists:usort(Ranges), keys = #{}},
+    {reply, ok, NewState};
+handle_call(get_devaddr_bases, _From, #state{devaddr_bases = DevaddrBases} = State) ->
+    {reply, {ok, DevaddrBases}, State};
+handle_call({allocate, _Device, _PubKeyBin}, _From, #state{devaddr_bases = []} = State) ->
+    {reply, {error, no_subnets}, State};
 handle_call(
     {allocate, _Device, PubKeyBin},
     _From,
-    #state{subnets = Subnets, devaddr_used = Used} = State
+    #state{devaddr_bases = Numbers, keys = Keys} = State
 ) ->
-    Index =
-        case ?MODULE:pubkeybin_to_loc(PubKeyBin) of
-            {error, _} -> h3:from_geo({0.0, 0.0}, 12);
-            {ok, IA} -> IA
-        end,
-    Parent = h3:to_geo(
-        h3:parent(Index, router_utils:get_env_int(devaddr_allocate_resolution, 3))
-    ),
-    {NthSubnet, DevaddrBase} =
-        case maps:get(Parent, Used, undefined) of
-            undefined ->
-                <<Base:25/integer-unsigned-big, _Mask:23/integer-unsigned-big>> = hd(Subnets),
-                {1, Base};
-            {Nth, LastBase} ->
-                Subnet = lists:nth(Nth, Subnets),
-                <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> = Subnet,
-                Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
-                case LastBase + 1 >= Base + Max of
-                    true ->
-                        {NextNth, NextSubnet} = next_subnet(Subnets, Nth),
-                        <<NextBase:25/integer-unsigned-big, _:23/integer-unsigned-big>> =
-                            NextSubnet,
-                        {NextNth, NextBase};
-                    false ->
-                        {Nth, LastBase + 1}
-                end
-        end,
+    Parent = ?MODULE:h3_parent_for_pubkeybin(PubKeyBin),
+
+    CurrentIndex = maps:get(Parent, Keys, 0),
+    DevaddrBase = lists:nth(CurrentIndex + 1, Numbers),
+    NextIndex = (CurrentIndex + 1) rem length(Numbers),
     DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+
     Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
-    {reply, Reply, State#state{devaddr_used = maps:put(Parent, {NthSubnet, DevaddrBase}, Used)}};
+
+    {reply, Reply, State#state{keys = Keys#{Parent => NextIndex}}};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -161,11 +151,10 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(post_init, #state{oui = OUI} = State) ->
+handle_info(post_init_chain, #state{oui = OUI, devaddr_bases = []} = State0) ->
     Subnets = router_blockchain:subnets_for_oui(OUI),
-    {noreply, State#state{subnets = Subnets}};
-handle_info(post_init, State) ->
-    {noreply, State};
+    Ranges = expand_ranges(subnets_to_ranges(Subnets)),
+    {noreply, State0#state{devaddr_bases = Ranges}};
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, _Ledger}},
     #state{oui = OUI} = State
@@ -187,7 +176,8 @@ handle_info(
             {noreply, State};
         _ ->
             Subnets = router_blockchain:subnets_for_oui(OUI),
-            {noreply, State#state{subnets = Subnets}}
+            Ranges = expand_ranges(subnets_to_ranges(Subnets)),
+            {noreply, State#state{devaddr_bases = Ranges}}
     end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -203,12 +193,24 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec next_subnet([binary()], non_neg_integer()) -> {non_neg_integer(), binary()}.
-next_subnet(Subnets, Nth) ->
-    case Nth + 1 > erlang:length(Subnets) of
-        true -> {1, lists:nth(1, Subnets)};
-        false -> {Nth + 1, lists:nth(Nth + 1, Subnets)}
-    end.
+-spec subnets_to_ranges(Subnets :: list(binary)) -> list({non_neg_integer(), non_neg_integer()}).
+subnets_to_ranges(Subnets) ->
+    lists:map(
+        fun(<<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>>) ->
+            Max = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
+            {Base, Base + Max - 1}
+        end,
+        Subnets
+    ).
+
+-spec expand_ranges(list({Min, Max})) -> [non_neg_integer()] when
+    Min :: non_neg_integer(),
+    Max :: non_neg_integer().
+expand_ranges(Ranges) ->
+    lists:flatmap(
+        fun({Start, End}) -> lists:seq(Start, End) end,
+        Ranges
+    ).
 
 -spec distance_between(Device :: router_device:device(), Index :: h3:index()) -> non_neg_integer().
 distance_between(Device, Index) ->
@@ -238,35 +240,6 @@ indexes_to_lowest_res(Indexes) ->
 -spec to_res(h3:index(), non_neg_integer()) -> h3:index().
 to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
-
--spec net_id_type(binary()) -> 0..7.
-net_id_type(<<First:8/integer-unsigned, _/binary>>) ->
-    net_id_type(First, 7).
-
--spec net_id_type(non_neg_integer(), non_neg_integer()) -> 0..7.
-net_id_type(_, -1) ->
-    throw(invalid_net_id_type);
-net_id_type(Prefix, Index) ->
-    case Prefix band (1 bsl Index) of
-        0 -> 7 - Index;
-        _ -> net_id_type(Prefix, Index - 1)
-    end.
-
--spec get_net_id(binary(), non_neg_integer(), non_neg_integer()) -> non_neg_integer().
-get_net_id(DevAddr, PrefixLength, NwkIDBits) ->
-    <<Temp:32/integer-unsigned>> = DevAddr,
-    %% Remove type prefix
-    One = uint32(Temp bsl PrefixLength),
-    %% Remove NwkAddr suffix
-    Two = uint32(One bsr (32 - NwkIDBits)),
-
-    IgnoreSize = 32 - NwkIDBits,
-    <<_:IgnoreSize, NetID:NwkIDBits/integer-unsigned>> = <<Two:32/integer-unsigned>>,
-    NetID.
-
--spec uint32(integer()) -> integer().
-uint32(Num) ->
-    Num band 4294967295.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests
@@ -370,84 +343,86 @@ to_res_test() ->
     ?assertEqual(?INDEX_D, to_res(?INDEX_D, 12)),
     ok.
 
-net_id_test() ->
-    lists:foreach(
-        fun(#{expect := Expect, bin := Bin, num := Num, msg := Msg}) ->
-            %% Make sure Bin and Num are the same thing
-            Bin = <<Num:32>>,
-            ?assertEqual(Expect, net_id(Bin), "BIN: " ++ Msg),
-            ?assertEqual(Expect, net_id(Num), "NUM: " ++ Msg)
+set_range_allocation_test_() ->
+    {
+        foreach,
+        fun() ->
+            meck:new(router_blockchain),
+            meck:expect(router_blockchain, get_hotspot_location_index, fun(_) ->
+                {error, use_default_index}
+            end)
         end,
+        fun(_) -> meck:unload() end,
         [
-            #{
-                expect => {ok, 16#00002D},
-                num => 1543503871,
-                bin => <<91, 255, 255, 255>>,
-                %% truncated byte output == hex == integer
-                msg => "[45] == 2D == 45 type 0"
-            },
-            #{
-                expect => {ok, 16#20002D},
-                num => 2919235583,
-                bin => <<173, 255, 255, 255>>,
-                msg => "[45] == 2D == 45 type 1"
-            },
-            #{
-                expect => {ok, 16#40016D},
-                num => 3605004287,
-                bin => <<214, 223, 255, 255>>,
-                msg => "[1,109] == 16D == 365 type 2"
-            },
-            #{
-                expect => {ok, 16#6005B7},
-                num => 3949985791,
-                bin => <<235, 111, 255, 255>>,
-                msg => "[5,183] == 5B7 == 1463 type 3"
-            },
-            #{
-                expect => {ok, 16#800B6D},
-                num => 4122411007,
-                bin => <<245, 182, 255, 255>>,
-                msg => "[11, 109] == B6D == 2925 type 4"
-            },
-            #{
-                expect => {ok, 16#A016DB},
-                num => 4208689151,
-                bin => <<250, 219, 127, 255>>,
-                msg => "[22,219] == 16DB == 5851 type 5"
-            },
-            #{
-                expect => {ok, 16#C05B6D},
-                num => 4251826175,
-                bin => <<253, 109, 183, 255>>,
-                msg => "[91, 109] == 5B6D == 23405 type 6"
-            },
-            #{
-                expect => {ok, 16#E16DB6},
-                num => 4273396607,
-                bin => <<254, 182, 219, 127>>,
-                msg => "[1,109,182] == 16DB6 == 93622 type 7"
-            },
-            #{
-                expect => {error, invalid_net_id_type},
-                num => 4294967295,
-                bin => <<255, 255, 255, 255>>,
-                msg => "Invalid DevAddr"
-            },
-            #{
-                expect => {ok, 16#000000},
-                %% Way under 32 bit number
-                num => 46377,
-                bin => <<0, 0, 181, 41>>,
-                msg => "[0] == 0 == 0"
-            },
-            #{
-                expect => {ok, 16#200029},
-                num => 2838682043,
-                bin => <<169, 50, 217, 187>>,
-                msg => "[41] == 29 == 41 type 1"
-            }
+            ?_test(test_no_subnet()),
+            ?_test(test_subnet_wrap()),
+            ?_test(test_non_sequential_subnet()),
+            ?_test(test_replace_range())
         ]
+    }.
+
+test_no_subnet() ->
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    ?assertMatch(
+        {reply, {error, no_subnets}, _State},
+        handle_call({allocate, no_device, PubKeyBin}, self(), #state{})
+    ),
+    ok.
+
+test_subnet_wrap() ->
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    {Addrs, _State} = collect_n_addrs(10, PubKeyBin, #state{devaddr_bases = expand_ranges([{1, 5}])}),
+
+    ?assertEqual(as_devaddrs([1, 2, 3, 4, 5, 1, 2, 3, 4, 5]), Addrs),
+    ok.
+
+test_non_sequential_subnet() ->
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    State = #state{devaddr_bases = expand_ranges([{1, 2}, {9, 10}])},
+    {Addrs, _State} = collect_n_addrs(9, PubKeyBin, State),
+
+    ?assertEqual(as_devaddrs([1, 2, 9, 10, 1, 2, 9, 10, 1]), Addrs),
+    ok.
+
+test_replace_range() ->
+    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+
+    %% ok = ?MODULE:set_devaddr_bases([{1, 3}]),
+    State0 = #state{devaddr_bases = expand_ranges([{1, 3}])},
+    {Addrs1, State1} = collect_n_addrs(5, PubKeyBin, State0),
+    ?assertEqual(as_devaddrs([1, 2, 3, 1, 2]), Addrs1),
+
+    {reply, ok, State2} = handle_call(
+        {set_devaddr_bases, expand_ranges([{10, 30}])}, self(), State1
+    ),
+    {Addrs2, _State3} = collect_n_addrs(5, PubKeyBin, State2),
+    ?assertEqual(as_devaddrs([10, 11, 12, 13, 14]), Addrs2),
+    ok.
+
+collect_n_addrs(N, Key, StartState) ->
+    lists:foldl(
+        fun(_Idx, {Addrs, State0}) ->
+            {reply, {ok, Addr}, State1} = ?MODULE:handle_call(
+                {allocate, no_device, Key}, self(), State0
+            ),
+            {Addrs ++ [Addr], State1}
+        end,
+        {[], StartState},
+        lists:seq(1, N)
     ).
+
+as_devaddrs(Xs) -> lists:reverse(as_devaddrs(Xs, [])).
+
+as_devaddrs([], Acc) ->
+    Acc;
+as_devaddrs([X | Xs], Acc) ->
+    as_devaddrs(Xs, [<<X, 0, 0, $H>> | Acc]).
 
 -endif.

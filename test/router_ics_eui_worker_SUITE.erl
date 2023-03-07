@@ -1,6 +1,5 @@
 -module(router_ics_eui_worker_SUITE).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
 

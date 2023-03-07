@@ -65,6 +65,7 @@ start_link(Args) ->
         #{eui_enabled := "true"} = Map ->
             gen_server:start_link({local, ?SERVER}, ?SERVER, Map, []);
         _ ->
+            lager:warning("~s ignored ~p", [?MODULE, Args]),
             ignore
     end.
 

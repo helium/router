@@ -146,6 +146,7 @@ init([]) ->
             ?SUP(router_decoder_sup, []),
             ?WORKER(router_device_devaddr, [#{}]),
             ?WORKER(router_xor_filter_worker, [#{}]),
+            ?WORKER(router_ics_devaddr_worker, [ICSOpts]),
             ?WORKER(router_ics_eui_worker, [ICSOpts]),
             ?WORKER(router_ics_skf_worker, [ICSOpts]),
             ?WORKER(router_ics_gateway_location_worker, [ICSOpts])

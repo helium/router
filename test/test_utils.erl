@@ -205,17 +205,6 @@ init_per_testcase(TestCase, Config) ->
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
-    %% Chain = blockchain_worker:blockchain(),
-    %% ok = persistent_term:put(router_blockchain, Chain),
-
-    meck:new(router_blockchain, [passthrough]),
-    %% meck:expect(router_blockchain, calculate_dc_amount, fun(PayloadSize) ->
-    %%     blockchain_utils:do_calculate_dc_amount(PayloadSize, 24)
-    %% end),
-    %% meck:expect(router_blockchain, max_xor_filter_num, fun() -> 5 end),
-    %% meck:expect(router_blockchain, sc_version, fun() -> 2 end),
-    %% meck:expect(router_blockchain, max_open_sc, fun() -> 5 end),
-
     [
         {app_key, AppKey},
         {ets, Tab},
@@ -245,7 +234,6 @@ end_per_testcase(_TestCase, Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
     meck:unload(router_device_devaddr),
-    meck:unload(router_blockchain),
     ok.
 
 start_swarm(BaseDir, Name, Port) ->

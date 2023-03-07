@@ -2,8 +2,6 @@
 
 -behaviour(grpcbox_client_stream).
 
--include("./autogen/iot_config_pb.hrl").
-
 -export([
     init/3,
     handle_message/2,

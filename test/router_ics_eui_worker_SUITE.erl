@@ -12,7 +12,8 @@
 -export([
     main_test/1,
     reconcile_test/1,
-    server_crash_test/1
+    server_crash_test/1,
+    ignore_start_when_no_route_id/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -29,7 +30,8 @@ all() ->
     [
         main_test,
         reconcile_test,
-        server_crash_test
+        server_crash_test,
+        ignore_start_when_no_route_id
     ].
 
 %%--------------------------------------------------------------------
@@ -39,10 +41,22 @@ init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_route_service, self()),
     Port = 8085,
     ServerPid = start_server(Port),
+    ICSOpts0 = #{
+        eui_enabled => "true",
+        transport => "http",
+        host => "localhost",
+        port => Port,
+        route_id => "test_route_id"
+    },
+    ICSOpts1 =
+        case TestCase of
+            ignore_start_when_no_route_id -> maps:remove(route_id, ICSOpts0);
+            _ -> ICSOpts0
+        end,
     ok = application:set_env(
         router,
         ics,
-        #{eui_enabled => "true", transport => "http", host => "localhost", port => Port},
+        ICSOpts1,
         [{persistent, true}]
     ),
     test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
@@ -369,6 +383,10 @@ server_crash_test(Config) ->
     ok = gen_server:stop(ServerPid),
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
+    ok.
+
+ignore_start_when_no_route_id(_Config) ->
+    ?assertEqual(undefined, whereis(router_ics_eui_worker)),
     ok.
 
 %% ------------------------------------------------------------------

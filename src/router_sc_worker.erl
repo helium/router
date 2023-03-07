@@ -19,7 +19,6 @@
 -behavior(gen_server).
 
 -include_lib("blockchain/include/blockchain_utils.hrl").
--include_lib("blockchain/include/blockchain_vars.hrl").
 
 %% ------------------------------------------------------------------
 %% API
@@ -75,7 +74,13 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+    case enabled() of
+        true ->
+            gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []);
+        false ->
+            lager:info("~p not enabled, ignoring", [?MODULE]),
+            ignore
+    end.
 
 -spec is_active() -> boolean().
 is_active() ->
@@ -96,33 +101,39 @@ force_open() ->
 -spec counts() ->
     {non_neg_integer(), non_neg_integer(), non_neg_integer()}.
 counts() ->
-    {ok, Height} = router_blockchain:height(),
-    lists:foldl(
-        fun({SC, SCState, _Pid}, {OpenedCount, OverspentCount, GettingCloseCount}) ->
-            Closed = blockchain_state_channel_v1:state(SC) == closed,
-            Overspent = SCState == overspent,
-            Used = blockchain_state_channel_v1:total_dcs(SC),
-            Max = blockchain_state_channel_v1:amount(SC),
-            ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
-            ExpireIn = ExpireAtBlock - Height,
-            PercentUsage = (100 * Used) / Max,
-            GettingClose = PercentUsage > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
-            SCName = blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC)),
-            lager:debug("~p expires in ~p (usage=~p%)", [SCName, ExpireIn, PercentUsage]),
-            case {Closed, Overspent, GettingClose} of
-                {true, _, _} ->
-                    {OpenedCount, OverspentCount, GettingCloseCount};
-                {_, true, _} ->
-                    {OpenedCount, OverspentCount + 1, GettingCloseCount};
-                {_, _, true} ->
-                    {OpenedCount + 1, OverspentCount, GettingCloseCount + 1};
-                {_, _, false} ->
-                    {OpenedCount + 1, OverspentCount, GettingCloseCount}
-            end
-        end,
-        {0, 0, 0},
-        maps:values(blockchain_state_channels_server:get_all())
-    ).
+    case enabled() of
+        false ->
+            {0, 0, 0};
+        true ->
+            {ok, Height} = router_blockchain:height(),
+            lists:foldl(
+                fun({SC, SCState, _Pid}, {OpenedCount, OverspentCount, GettingCloseCount}) ->
+                    Closed = blockchain_state_channel_v1:state(SC) == closed,
+                    Overspent = SCState == overspent,
+                    Used = blockchain_state_channel_v1:total_dcs(SC),
+                    Max = blockchain_state_channel_v1:amount(SC),
+                    ExpireAtBlock = blockchain_state_channel_v1:expire_at_block(SC),
+                    ExpireIn = ExpireAtBlock - Height,
+                    PercentUsage = (100 * Used) / Max,
+                    GettingClose =
+                        PercentUsage > ?GETTING_CLOSE_DC orelse ExpireIn < ?GETTING_CLOSE_EXPIRE,
+                    SCName = blockchain_utils:addr2name(blockchain_state_channel_v1:id(SC)),
+                    lager:debug("~p expires in ~p (usage=~p%)", [SCName, ExpireIn, PercentUsage]),
+                    case {Closed, Overspent, GettingClose} of
+                        {true, _, _} ->
+                            {OpenedCount, OverspentCount, GettingCloseCount};
+                        {_, true, _} ->
+                            {OpenedCount, OverspentCount + 1, GettingCloseCount};
+                        {_, _, true} ->
+                            {OpenedCount + 1, OverspentCount, GettingCloseCount + 1};
+                        {_, _, false} ->
+                            {OpenedCount + 1, OverspentCount, GettingCloseCount}
+                    end
+                end,
+                {0, 0, 0},
+                maps:values(blockchain_state_channels_server:get_all())
+            )
+    end.
 
 -spec sc_hook_close_submit(
     any(),
@@ -497,3 +508,8 @@ sc_expiration() ->
 -spec active_sc_count() -> non_neg_integer().
 active_sc_count() ->
     blockchain_state_channels_server:get_actives_count().
+
+-spec enabled() -> boolean().
+enabled() ->
+    router_utils:get_env_bool(router_sc_worker, true) andalso
+        not router_blockchain:is_chain_dead().

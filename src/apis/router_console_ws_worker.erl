@@ -442,7 +442,7 @@ get_devices_region_and_session_keys_msg(DeviceIDs) ->
     ),
     router_console_ws_handler:encode_msg(
         <<"0">>,
-        <<"organization:all">>,
+        <<"device:all">>,
         <<"device:all:skf">>,
         #{devices => Map}
     ).

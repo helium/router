@@ -26,7 +26,8 @@
 
 -export([
     deveui_appeui/1,
-    get_devices_deveui_app_eui/1
+    get_devices_deveui_app_eui/1,
+    enabled/0
 ]).
 
 -export([
@@ -1138,11 +1139,8 @@ schedule_check_filters(Timer) ->
 
 -spec enabled() -> boolean().
 enabled() ->
-    case application:get_env(router, router_xor_filter_worker, false) of
-        "true" -> true;
-        true -> true;
-        _ -> false
-    end.
+    router_utils:get_env_bool(router_xor_filter_worker, false) andalso
+        not router_blockchain:is_chain_dead().
 
 -spec default_timer() -> non_neg_integer().
 default_timer() ->

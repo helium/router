@@ -44,10 +44,10 @@ handle_info({devaddr_range, DevaddrRange, Last}, StreamState) ->
     lager:info("got devaddr_range ~p, eos: ~p", [DevaddrRange, Last]),
     grpcbox_stream:send(Last, DevaddrRange, StreamState);
 handle_info({devaddr_ranges, Ranges}, StreamState) ->
-    ct:print("got ~p devaddr ranges", [erlang:length(Ranges)]),
+    lager:info("got ~p devaddr ranges", [erlang:length(Ranges)]),
     lists:foreach(
         fun({Last, Range}) ->
-            ct:print("sending devaddr range: ~p at ~p", [Range, Last]),
+            lager:info("sending devaddr range: ~p at ~p", [Range, Last]),
             grpcbox_stream:send(Last, Range, StreamState)
         end,
         router_utils:enumerate_last(Ranges)
@@ -171,7 +171,7 @@ devaddr_range(DevaddrRange, Last) ->
 
 -spec devaddr_ranges(DevaddrRanges :: list(iot_config_pb:iot_config_devaddr_range_v1_pb())) -> ok.
 devaddr_ranges(DevaddrRanges) ->
-    ct:print("~p devaddr_ranges @ ~p", [
+    lager:info("~p devaddr_ranges @ ~p", [
         erlang:length(DevaddrRanges), erlang:whereis(?GET_DEVADDRS_STREAM)
     ]),
     case erlang:whereis(?GET_DEVADDRS_STREAM) of

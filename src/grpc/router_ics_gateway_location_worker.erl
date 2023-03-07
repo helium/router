@@ -64,6 +64,7 @@
 start_link(Args) ->
     case router_ics_utils:start_link_args(Args) of
         ignore ->
+            lager:warning("~s ignored ~p", [?MODULE, Args]),
             ignore;
         Map ->
             gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])

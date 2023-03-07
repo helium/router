@@ -71,6 +71,7 @@ start_link(Args) ->
                     gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])
             end;
         _ ->
+            lager:warning("~s ignored ~p", [?MODULE, Args]),
             ignore
     end.
 
@@ -233,7 +234,7 @@ get_devaddrs(Pid, #state{sig_fun = SigFun, route_id = RouteID}) ->
     SignedReq = Req#iot_config_route_get_devaddr_ranges_req_v1_pb{signature = SigFun(EncodedReq)},
 
     helium_iot_config_route_client:get_devaddr_ranges(SignedReq, #{
-        channel => ?MODULE,
+        channel => router_ics_utils:channel(),
         callback_module => {
             router_ics_route_get_devaddrs_handler,
             Pid

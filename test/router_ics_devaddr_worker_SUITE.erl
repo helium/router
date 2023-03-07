@@ -45,6 +45,7 @@ init_per_testcase(TestCase, Config) ->
         ics,
         #{
             devaddr_enabled => "true",
+            transport => http,
             host => "localhost",
             port => Port,
             route_id => "test_route_id"

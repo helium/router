@@ -48,9 +48,9 @@
         ]},
         {router_xor_filter_worker, "${ROUTER_XOR_FILTER_WORKER}"},
         {ics, #{
-            transport => "${ROUTER_ICS_TRANSPORT}",
-            host => "${ROUTER_ICS_HOST}",
-            port => "${ROUTER_ICS_PORT}",
+            transport => https,
+            host => "alb.iot.mainnet.helium.io",
+            port => 6080,
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
             skf_enabled => "${ROUTER_ICS_SKF_ENABLED}",
             devaddr_enabled => "${ROUTER_ICS_DEVADDR_ENABLED}",

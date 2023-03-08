@@ -52,7 +52,7 @@ init_per_testcase(TestCase, Config) ->
     },
     ICSOpts1 =
         case TestCase of
-            ignore_start_when_no_route_id -> maps:remove(route_id, ICSOpts0);
+            ignore_start_when_no_route_id -> maps:put(route_id, "", ICSOpts0);
             _ -> ICSOpts0
         end,
     ok = application:set_env(

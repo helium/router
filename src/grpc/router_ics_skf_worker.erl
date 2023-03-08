@@ -14,7 +14,7 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    reconcile/1,
+    reconcile/2,
     reconcile_end/2,
     update/1
 ]).
@@ -68,16 +68,16 @@ start_link(Args) ->
             ignore
     end.
 
--spec reconcile(Pid :: pid() | undefined) -> ok.
-reconcile(Pid) ->
-    gen_server:cast(?SERVER, {?RECONCILE_START, Pid}).
+-spec reconcile(Pid :: pid() | undefined, Commit :: boolean()) -> ok.
+reconcile(Pid, Commit) ->
+    gen_server:cast(?SERVER, {?RECONCILE_START, #{forward_pid => Pid, commit => Commit}}).
 
 -spec reconcile_end(
-    Pid :: pid() | undefined,
+    Options :: map(),
     List :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
 ) -> ok.
-reconcile_end(Pid, List) ->
-    gen_server:cast(?SERVER, {?RECONCILE_END, Pid, List}).
+reconcile_end(Options, List) ->
+    gen_server:cast(?SERVER, {?RECONCILE_END, Options, List}).
 
 -spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) -> ok.
 update(Updates) ->
@@ -113,36 +113,76 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
-    lager:info("reconciling started pid: ~p", [Pid]),
-    case skf_list(Pid, State) of
+handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State) ->
+    lager:info("reconciling started pid: ~p", [Options]),
+    case skf_list(Options, State) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
             lager:warning("fail to skf_list ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
-            ok = forward_reconcile(Pid, Error),
+            ok = forward_reconcile(Options, Error),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
             {_, Backoff2} = backoff:succeed(Backoff0),
             {noreply, State#state{conn_backoff = Backoff2}}
     end;
 handle_cast(
-    {?RECONCILE_END, Pid, SKFs}, #state{oui = OUI} = State
-) ->
-    LocalSFKs = get_local_skfs(OUI),
-    ToAdd = LocalSFKs -- SKFs,
-    ToRemove = SKFs -- LocalSFKs,
-    lager:info("adding ~w", [erlang:length(ToAdd)]),
-    lager:info("removing ~w", [erlang:length(ToRemove)]),
+    {?RECONCILE_END, #{forward_pid := Pid, commit := false} = Options, SKFs},
+    #state{oui = OUI} = State
+) when is_pid(Pid) ->
+    lager:info("DRY RUN, got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
+    LocalSKFs = get_local_skfs(OUI),
+    ToAdd = LocalSKFs -- SKFs,
+    ToRemove = SKFs -- LocalSKFs,
+    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+    lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
+        erlang:length(ToAdd), erlang:length(ToRemove)
+    ]),
+    {noreply, State};
+handle_cast(
+    {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
+    #state{oui = OUI} = State
+) when is_pid(Pid) ->
+    lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
+    LocalSKFs = get_local_skfs(OUI),
+    ToAdd = LocalSKFs -- SKFs,
+    ToRemove = SKFs -- LocalSKFs,
+    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+    lager:info("reconciling done adding ~w removing ~w", [
+        erlang:length(ToAdd), erlang:length(ToRemove)
+    ]),
     case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} = Error ->
-            ok = forward_reconcile(Pid, Error),
+            ok = forward_reconcile(Options, Error),
             {noreply, skf_update_failed(Reason, State)};
         ok ->
-            ok = forward_reconcile(Pid, {ok, erlang:length(ToAdd), erlang:length(ToRemove)}),
-            lager:info("reconciling done"),
+            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+            lager:info("reconciling done adding ~w removing ~w", [
+                erlang:length(ToAdd), erlang:length(ToRemove)
+            ]),
+            {noreply, State}
+    end;
+handle_cast(
+    {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, SKFs},
+    #state{oui = OUI} = State
+) ->
+    lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
+    LocalSKFs = get_local_skfs(OUI),
+    ToAdd = LocalSKFs -- SKFs,
+    ToRemove = SKFs -- LocalSKFs,
+    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+    lager:info("reconciling done adding ~w removing ~w", [
+        erlang:length(ToAdd), erlang:length(ToRemove)
+    ]),
+    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+        {error, Reason} ->
+            {noreply, skf_update_failed(Reason, State)};
+        ok ->
+            lager:info("reconciling done adding ~w removing ~w", [
+                erlang:length(ToAdd), erlang:length(ToRemove)
+            ]),
             {noreply, State}
     end;
 handle_cast(
@@ -191,7 +231,7 @@ handle_info(
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
             lager:info("connected"),
-            ok = ?MODULE:reconcile(undefined),
+            ok = ?MODULE:reconcile(undefined, true),
             {noreply, State}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
@@ -223,8 +263,9 @@ terminate(_Reason, _State) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 
--spec skf_list(Pid :: pid() | undefined, state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-skf_list(Pid, #state{oui = OUI, sig_fun = SigFun}) ->
+-spec skf_list(Options :: map() | undefined, state()) ->
+    {ok, grpcbox_client:stream()} | {error, any()}.
+skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
     Req = #iot_config_session_key_filter_list_req_v1_pb{
         oui = OUI,
         timestamp = erlang:system_time(millisecond)
@@ -235,7 +276,7 @@ skf_list(Pid, #state{oui = OUI, sig_fun = SigFun}) ->
         channel => router_ics_utils:channel(),
         callback_module => {
             router_ics_skf_list_handler,
-            Pid
+            Options
         }
     }).
 
@@ -335,10 +376,10 @@ skf_update_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     State#state{conn_backoff = Backoff1}.
 
 -spec forward_reconcile(
-    Pid :: pid() | undefined, Result :: {ok, non_neg_integer(), non_neg_integer()} | {error, any()}
+    map(), Result :: {ok, list(), list()} | {error, any()}
 ) -> ok.
-forward_reconcile(undefined, _Result) ->
+forward_reconcile(#{forward_pid := undefined}, _Result) ->
     ok;
-forward_reconcile(Pid, Result) ->
+forward_reconcile(#{forward_pid := Pid}, Result) when is_pid(Pid) ->
     catch Pid ! {?MODULE, Result},
     ok.

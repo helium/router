@@ -148,13 +148,48 @@ send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
-send_skfs_to_config_service(["migration", "skfs"], [], _Flags) ->
-    ok = router_ics_skf_worker:reconcile(self()),
+send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
+    Options = maps:from_list(Flags),
+    Commit = maps:is_key(commit, Options),
+    ok = router_ics_skf_worker:reconcile(self(), Commit),
+    DryRun =
+        case Commit of
+            true -> "";
+            false -> "DRY RUN"
+        end,
     receive
         {router_ics_skf_worker, {ok, Added, Removed}} ->
-            c_text("Updating SKFs: added ~w, remove ~w", [Added, Removed]);
+            ToMap = fun(SKFs) ->
+                lists:map(
+                    fun(
+                        #iot_config_session_key_filter_v1_pb{
+                            oui = OUI,
+                            devaddr = DevNum,
+                            session_key = SessionKey
+                        }
+                    ) ->
+                        DevAddr = <<DevNum:32/integer-unsigned-big>>,
+                        #{
+                            oui => OUI,
+                            devaddr => lorawan_utils:binary_to_hex(DevAddr),
+                            session_key => lorawan_utils:binary_to_hex(SessionKey)
+                        }
+                    end,
+                    SKFs
+                )
+            end,
+            case {ToMap(Added), ToMap(Removed)} of
+                {[], []} ->
+                    c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
+                {PrintAdded, PrintRemoved} ->
+                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [
+                        DryRun,
+                        jsx:prettify(jsx:encode(PrintAdded)),
+                        jsx:prettify(jsx:encode(PrintRemoved))
+                    ])
+            end;
         {router_ics_skf_worker, {error, _Reason}} ->
-            c_text("Updating SKFs failed ~p", [_Reason])
+            c_text("~s Updating SKFs failed ~p", [DryRun, _Reason])
     after 5000 ->
         c_text("Error timeout")
     end;

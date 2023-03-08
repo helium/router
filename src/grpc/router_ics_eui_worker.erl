@@ -105,7 +105,8 @@ init(
         sig_fun := SigFun,
         transport := Transport,
         host := Host,
-        port := Port
+        port := Port,
+        route_id := RouteID
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
@@ -118,12 +119,10 @@ init(
         transport = Transport,
         host = Host,
         port = Port,
-        conn_backoff = Backoff
+        conn_backoff = Backoff,
+        route_id = RouteID
     }}.
 
-handle_call(_Msg, _From, #state{route_id = undefined} = State) ->
-    lager:warning("can't handle call msg: ~p", [_Msg]),
-    {reply, ok, State};
 handle_call(
     {add, DeviceIDs},
     _From,
@@ -280,19 +279,12 @@ handle_info(
             _ = erlang:send_after(Delay, self(), ?INIT),
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
-            case get_route_id(State) of
-                {error, _Reason} ->
-                    _ = erlang:send_after(Delay, self(), ?INIT),
-                    lager:warning("fail to get_route_id ~p, reconnecting in ~wms", [_Reason, Delay]),
-                    {noreply, State#state{conn_backoff = Backoff1}};
-                {ok, RouteID} ->
-                    lager:info("connected"),
-                    {_, Backoff2} = backoff:succeed(Backoff0),
-                    ok = ?MODULE:reconcile(undefined, true),
-                    {noreply, State#state{
-                        conn_backoff = Backoff2, route_id = RouteID
-                    }}
-            end
+            lager:info("connected"),
+            {_, Backoff2} = backoff:succeed(Backoff0),
+            ok = ?MODULE:reconcile(undefined, true),
+            {noreply, State#state{
+                conn_backoff = Backoff2
+            }}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
     lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
@@ -322,25 +314,6 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-
--spec get_route_id(state()) -> {ok, string()} | {error, any()}.
-get_route_id(#state{sig_fun = SigFun}) ->
-    Req = #iot_config_route_list_req_v1_pb{
-        oui = router_utils:get_oui(),
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_list_req_v1_pb),
-    SignedReq = Req#iot_config_route_list_req_v1_pb{signature = SigFun(EncodedReq)},
-    case helium_iot_config_route_client:list(SignedReq, #{channel => router_ics_utils:channel()}) of
-        {grpc_error, Reason} ->
-            {error, Reason};
-        {error, _} = Error ->
-            Error;
-        {ok, #iot_config_route_list_res_v1_pb{routes = []}, _Meta} ->
-            {error, no_routes};
-        {ok, #iot_config_route_list_res_v1_pb{routes = [Route | _]}, _Meta} ->
-            {ok, Route#iot_config_route_v1_pb.id}
-    end.
 
 -spec get_euis(Options :: map(), state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
 get_euis(Options, #state{sig_fun = SigFun, route_id = RouteID}) ->
@@ -464,7 +437,7 @@ update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     _ = erlang:send_after(Delay, self(), ?INIT),
     lager:warning("fail to update euis ~p, reconnecting in ~wms", [Reason, Delay]),
     State#state{
-        conn_backoff = Backoff1, route_id = undefined
+        conn_backoff = Backoff1
     }.
 
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->

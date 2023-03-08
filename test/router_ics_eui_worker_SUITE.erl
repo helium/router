@@ -16,6 +16,8 @@
     ignore_start_when_no_route_id/1
 ]).
 
+-define(ROUTE_ID, "test_route_id").
+
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
@@ -46,7 +48,7 @@ init_per_testcase(TestCase, Config) ->
         transport => "http",
         host => "localhost",
         port => Port,
-        route_id => "test_route_id"
+        route_id => ?ROUTE_ID
     },
     ICSOpts1 =
         case TestCase of
@@ -88,7 +90,7 @@ main_test(_Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
-    RouteID = "test_route_id",
+    RouteID = ?ROUTE_ID,
     ID1 = router_utils:uuid_v4(),
     Device1 = router_device:update(
         [
@@ -124,8 +126,7 @@ main_test(_Config) ->
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
-    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}, {Type0, _Req0}] = rcv_loop([]),
-    ?assertEqual(list, Type0),
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}] = rcv_loop([]),
     ?assertEqual(get_euis, Type1),
     ?assertEqual(update_euis, Type2),
     ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
@@ -201,7 +202,7 @@ reconcile_test(_Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
-    RouteID = "test_route_id",
+    RouteID = ?ROUTE_ID,
     ID1 = router_utils:uuid_v4(),
     Device1 = router_device:update(
         [
@@ -237,8 +238,7 @@ reconcile_test(_Config) ->
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
-    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}, {Type0, _Req0}] = rcv_loop([]),
-    ?assertEqual(list, Type0),
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}] = rcv_loop([]),
     ?assertEqual(get_euis, Type1),
     ?assertEqual(update_euis, Type2),
     ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
@@ -296,7 +296,7 @@ server_crash_test(Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
-    RouteID = "test_route_id",
+    RouteID = ?ROUTE_ID,
     ID1 = router_utils:uuid_v4(),
     Device1 = router_device:update(
         [
@@ -332,8 +332,7 @@ server_crash_test(Config) ->
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
-    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}, {Type0, _Req0}] = rcv_loop([]),
-    ?assertEqual(list, Type0),
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}] = rcv_loop([]),
     ?assertEqual(get_euis, Type1),
     ?assertEqual(update_euis, Type2),
     ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
@@ -364,8 +363,7 @@ server_crash_test(Config) ->
         #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
     ),
 
-    [{Type7, Req7}, {Type6, Req6}, {Type5, _Req5}, {Type4, _Req4}] = rcv_loop([]),
-    ?assertEqual(list, Type4),
+    [{Type7, Req7}, {Type6, Req6}, {Type5, _Req5}] = rcv_loop([]),
     ?assertEqual(get_euis, Type5),
     ?assertEqual(update_euis, Type6),
     ?assertEqual(remove, Req6#iot_config_route_update_euis_req_v1_pb.action),

@@ -338,7 +338,7 @@ reconcile_test(_Config) ->
         [BadDevice | Devices1]
     end),
 
-    ok = router_ics_skf_worker:reconcile(self()),
+    ok = router_ics_skf_worker:reconcile(self(), true),
 
     router_test_ics_skf_service:send_list(
         #iot_config_session_key_filter_v1_pb{
@@ -349,10 +349,25 @@ reconcile_test(_Config) ->
         true
     ),
 
+    ExpectedToAdd = lists:map(
+        fun(Device) ->
+            #iot_config_session_key_filter_v1_pb{
+                oui = 1,
+                devaddr = binary:decode_unsigned(router_device:devaddr(Device)),
+                session_key = router_device:nwk_s_key(Device)
+            }
+        end,
+        Devices1
+    ),
+
+    ExpectedToRemove = [
+        #iot_config_session_key_filter_v1_pb{oui = 0, devaddr = 0, session_key = <<>>}
+    ],
+
     receive
         {router_ics_skf_worker, Result} ->
             %% We added 20 and removed 1
-            ?assertEqual({ok, 20, 1}, Result)
+            ?assertEqual({ok, ExpectedToAdd, ExpectedToRemove}, Result)
     after 5000 ->
         ct:fail(timeout)
     end,

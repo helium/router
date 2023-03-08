@@ -63,7 +63,13 @@
 start_link(Args) ->
     case router_ics_utils:start_link_args(Args) of
         #{eui_enabled := "true"} = Map ->
-            gen_server:start_link({local, ?SERVER}, ?SERVER, Map, []);
+            case maps:get(route_id, Map, undefined) of
+                undefined ->
+                    lager:warning("~p enabled, but not route_id provided, ignoring", [?MODULE]),
+                    ignore;
+                _ ->
+                    gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])
+            end;
         _ ->
             lager:warning("~s ignored ~p", [?MODULE, Args]),
             ignore

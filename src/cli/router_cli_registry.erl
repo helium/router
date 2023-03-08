@@ -11,4 +11,9 @@
 -export([register_cli/0]).
 
 register_cli() ->
-    clique:register(?CLI_MODULES).
+    Modules =
+        case router_xor_filter_worker:enabled() of
+            true -> ?CLI_MODULES;
+            false -> lists:delete(router_cli_xor_filter, ?CLI_MODULES)
+        end,
+    clique:register(Modules).

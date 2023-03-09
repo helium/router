@@ -82,14 +82,8 @@
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
-start_link(#{ics_options := ICSOpts} = Args) ->
-    case maps:get(eui_enabled, ICSOpts, undefined) of
-        "true" ->
-            lager:info("config service EUI worker enabled, ignoring ~p", [?MODULE]),
-            ignore;
-        _ ->
-            gen_server:start_link({local, ?SERVER}, ?SERVER, Args, [])
-    end.
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 -spec estimate_cost() ->
     noop

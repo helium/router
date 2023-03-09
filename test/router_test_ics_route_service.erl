@@ -56,25 +56,8 @@ handle_info({devaddr_ranges, Ranges}, StreamState) ->
 handle_info(_Msg, StreamState) ->
     StreamState.
 
-list(Ctx, Req) ->
-    case verify_list_req(Req) of
-        true ->
-            Routes = application:get_env(router, test_route_list, [
-                #iot_config_route_v1_pb{
-                    id = "test_route_id"
-                }
-            ]),
-            lager:info("got list req ~p", [Req]),
-
-            Res = #iot_config_route_list_res_v1_pb{
-                routes = Routes
-            },
-            catch persistent_term:get(?MODULE) ! {?MODULE, list, Req},
-            {ok, Res, Ctx};
-        false ->
-            lager:error("failed to verify list req ~p", [Req]),
-            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
-    end.
+list(_Ctx, _Req) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 get(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
@@ -95,7 +78,7 @@ get_euis(Req, StreamState) ->
             catch persistent_term:get(?MODULE) ! {?MODULE, get_euis, Req},
             Self = self(),
             true = erlang:register(?GET_EUIS_STREAM, self()),
-            lager:notice("register ~p @ ~p", [?GET_EUIS_STREAM, Self]),
+            lager:info("register ~p @ ~p", [?GET_EUIS_STREAM, Self]),
             {ok, StreamState};
         false ->
             lager:error("failed to get_euis_req ~p", [Req]),
@@ -124,7 +107,7 @@ get_devaddr_ranges(Req, StreamState) ->
         true ->
             Self = self(),
             true = erlang:register(?GET_DEVADDRS_STREAM, Self),
-            lager:notice("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
+            lager:info("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
             catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
             {ok, StreamState};
         false ->
@@ -143,7 +126,7 @@ stream(_RouteStreamReq, _StreamState) ->
 
 -spec eui_pair(EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), Last :: boolean()) -> ok.
 eui_pair(EUIPair, Last) ->
-    lager:notice("eui_pair ~p  eos: ~p @ ~p", [EUIPair, Last, erlang:whereis(?GET_EUIS_STREAM)]),
+    lager:info("eui_pair ~p  eos: ~p @ ~p", [EUIPair, Last, erlang:whereis(?GET_EUIS_STREAM)]),
     case erlang:whereis(?GET_EUIS_STREAM) of
         undefined ->
             timer:sleep(100),
@@ -157,7 +140,7 @@ eui_pair(EUIPair, Last) ->
     DevaddrRange :: iot_config_pb:iot_config_devaddr_range_v1_pb(), Last :: boolean()
 ) -> ok.
 devaddr_range(DevaddrRange, Last) ->
-    lager:notice("devaddr_range ~p eos: ~p @ ~p", [
+    lager:info("devaddr_range ~p eos: ~p @ ~p", [
         DevaddrRange, Last, erlang:whereis(?GET_DEVADDRS_STREAM)
     ]),
     case erlang:whereis(?GET_DEVADDRS_STREAM) of
@@ -182,20 +165,6 @@ devaddr_ranges(DevaddrRanges) ->
             Pid ! {devaddr_ranges, DevaddrRanges},
             ok
     end.
-
--spec verify_list_req(Req :: #iot_config_route_list_req_v1_pb{}) -> boolean().
-verify_list_req(Req) ->
-    EncodedReq = iot_config_pb:encode_msg(
-        Req#iot_config_route_list_req_v1_pb{
-            signature = <<>>
-        },
-        iot_config_route_list_req_v1_pb
-    ),
-    libp2p_crypto:verify(
-        EncodedReq,
-        Req#iot_config_route_list_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
-    ).
 
 -spec verify_update_euis_req(Req :: #iot_config_route_update_euis_req_v1_pb{}) -> boolean().
 verify_update_euis_req(Req) ->

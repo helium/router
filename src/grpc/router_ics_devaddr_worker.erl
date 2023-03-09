@@ -63,8 +63,8 @@
 start_link(Args) ->
     case router_ics_utils:start_link_args(Args) of
         #{devaddr_enabled := "true"} = Map ->
-            case maps:get(route_id, Map, undefined) of
-                undefined ->
+            case maps:get(route_id, Map, "") of
+                "" ->
                     lager:warning("~p enabled, but no route_id provided, ignoring", [?MODULE]),
                     ignore;
                 _ ->

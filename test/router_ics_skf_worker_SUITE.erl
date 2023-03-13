@@ -234,7 +234,6 @@ main_test(Config) ->
         Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
-    lager:notice("MARKER"),
     %% Send packet 1 and nothing should happen
     Stream2 !
         {send,

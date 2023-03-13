@@ -115,8 +115,6 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-%% TODO: LOCK ME UNTIL RECONCILE DONE
-
 handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State) ->
     lager:info("reconciling started pid: ~p", [Options]),
     case skf_list(Options, State) of

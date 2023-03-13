@@ -197,11 +197,11 @@ handle_cast(
 ) ->
     Updates1 = maps:to_list(
         lists:foldl(
-            fun({Action, DevAdrr, Key}, Acc) ->
+            fun({Action, DevAddr, Key}, Acc) ->
                 Tail = maps:get(Action, Acc, []),
                 SKF = #iot_config_session_key_filter_v1_pb{
                     oui = OUI,
-                    devaddr = DevAdrr,
+                    devaddr = DevAddr,
                     session_key = Key
                 },
                 Acc#{Action => [SKF | Tail]}

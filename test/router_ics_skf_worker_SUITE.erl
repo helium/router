@@ -164,7 +164,7 @@ main_test(Config) ->
         Req4#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
-    %% Send first packet it should trigger another add (just in case)
+    %% Send first packet nothing should happen
     Stream1 !
         {send,
             test_utils:frame_packet(
@@ -175,17 +175,7 @@ main_test(Config) ->
                 0
             )},
 
-    [{Type5, Req5}] = rcv_loop([]),
-    ?assertEqual(update, Type5),
-    ?assertEqual(add, Req5#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr1,
-            session_key = router_device:nwk_s_key(JoinedDevice1)
-        },
-        Req5#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
+    [] = rcv_loop([]),
 
     %% Join device again
     #{
@@ -243,6 +233,19 @@ main_test(Config) ->
         },
         Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
+
+    lager:notice("MARKER"),
+    %% Send packet 1 and nothing should happen
+    Stream2 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                1
+            )},
+    [] = rcv_loop([]),
 
     meck:unload(router_device_cache),
     ok.

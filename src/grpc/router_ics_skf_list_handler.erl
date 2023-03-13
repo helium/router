@@ -13,7 +13,7 @@
 ]).
 
 -record(state, {
-    options ::  map(),
+    options :: map(),
     data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
 }).
 

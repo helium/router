@@ -80,7 +80,8 @@ main_test(Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -124,7 +125,8 @@ main_test(Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 1,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
             session_key = router_device:nwk_s_key(Device1)
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -134,7 +136,8 @@ main_test(Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 2,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
             session_key = router_device:nwk_s_key(Device2)
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -164,7 +167,7 @@ main_test(Config) ->
         Req4#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
-    %% Send first packet it should trigger another add (just in case)
+    %% Send first packet nothing should happen
     Stream1 !
         {send,
             test_utils:frame_packet(
@@ -175,17 +178,7 @@ main_test(Config) ->
                 0
             )},
 
-    [{Type5, Req5}] = rcv_loop([]),
-    ?assertEqual(update, Type5),
-    ?assertEqual(add, Req5#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr1,
-            session_key = router_device:nwk_s_key(JoinedDevice1)
-        },
-        Req5#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
+    [] = rcv_loop([]),
 
     %% Join device again
     #{
@@ -244,6 +237,18 @@ main_test(Config) ->
         Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
 
+    %% Send packet 1 and nothing should happen
+    Stream2 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                1
+            )},
+    [] = rcv_loop([]),
+
     meck:unload(router_device_cache),
     ok.
 
@@ -256,7 +261,8 @@ reconcile_test(_Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -300,7 +306,8 @@ reconcile_test(_Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 1,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
             session_key = router_device:nwk_s_key(Device1)
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -310,7 +317,8 @@ reconcile_test(_Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 2,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
             session_key = router_device:nwk_s_key(Device2)
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -322,7 +330,8 @@ reconcile_test(_Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -353,7 +362,10 @@ reconcile_test(_Config) ->
         fun(Device) ->
             #iot_config_session_key_filter_v1_pb{
                 oui = 1,
-                devaddr = binary:decode_unsigned(router_device:devaddr(Device)),
+                %% Config service talks of devaddrs of BE
+                devaddr = binary:decode_unsigned(
+                    lorawan_utils:reverse(router_device:devaddr(Device))
+                ),
                 session_key = router_device:nwk_s_key(Device)
             }
         end,
@@ -367,6 +379,7 @@ reconcile_test(_Config) ->
     receive
         {router_ics_skf_worker, Result} ->
             %% We added 20 and removed 1
+
             ?assertEqual({ok, ExpectedToAdd, ExpectedToRemove}, Result)
     after 5000 ->
         ct:fail(timeout)

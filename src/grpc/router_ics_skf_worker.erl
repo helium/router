@@ -51,7 +51,8 @@
     transport :: http | https,
     host :: string(),
     port :: non_neg_integer(),
-    conn_backoff :: backoff:backoff()
+    conn_backoff :: backoff:backoff(),
+    reconciling = false :: boolean()
 }).
 
 -type state() :: #state{}.
@@ -79,7 +80,8 @@ reconcile(Pid, Commit) ->
 reconcile_end(Options, List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, Options, List}).
 
--spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) -> ok.
+-spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) ->
+    ok.
 update(Updates) ->
     gen_server:cast(?SERVER, {?UPDATE, Updates}).
 
@@ -126,7 +128,7 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
             {_, Backoff2} = backoff:succeed(Backoff0),
-            {noreply, State#state{conn_backoff = Backoff2}}
+            {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := false} = Options, SKFs},
@@ -140,7 +142,7 @@ handle_cast(
     lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
     ]),
-    {noreply, State};
+    {noreply, State#state{reconciling = false}};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
@@ -156,13 +158,13 @@ handle_cast(
     case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} = Error ->
             ok = forward_reconcile(Options, Error),
-            {noreply, skf_update_failed(Reason, State)};
+            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
         ok ->
             ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State}
+            {noreply, State#state{reconciling = false}}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, SKFs},
@@ -178,23 +180,28 @@ handle_cast(
     ]),
     case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
         {error, Reason} ->
-            {noreply, skf_update_failed(Reason, State)};
+            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
         ok ->
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State}
+            {noreply, State#state{reconciling = false}}
     end;
 handle_cast(
-    {?UPDATE, Updates0}, #state{oui = OUI} = State
+    {?UPDATE, _Updates}, #state{reconciling = true} = State
+) ->
+    %% We ignore updates while we reconcile
+    {noreply, State};
+handle_cast(
+    {?UPDATE, Updates0}, #state{oui = OUI, reconciling = false} = State
 ) ->
     Updates1 = maps:to_list(
         lists:foldl(
-            fun({Action, DevAdrr, Key}, Acc) ->
+            fun({Action, DevAddr, Key}, Acc) ->
                 Tail = maps:get(Action, Acc, []),
                 SKF = #iot_config_session_key_filter_v1_pb{
                     oui = OUI,
-                    devaddr = DevAdrr,
+                    devaddr = DevAddr,
                     session_key = Key
                 },
                 Acc#{Action => [SKF | Tail]}
@@ -235,19 +242,14 @@ handle_info(
             {noreply, State}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
-    lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};
 handle_info({trailers, _StreamID, _Data}, State) ->
-    lager:debug("got trailers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};
 handle_info({eos, _StreamID}, State) ->
-    lager:debug("got eos for stream: ~p", [_StreamID]),
     {noreply, State};
 handle_info({'END_STREAM', _StreamID}, State) ->
-    lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
     {noreply, State};
-handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
-    lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
+handle_info({'DOWN', _Ref, _Type, _Pid, _Reason}, State) ->
     {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
@@ -291,7 +293,8 @@ get_local_skfs(OUI) ->
                     false;
                 {_, undefined} ->
                     false;
-                {<<DevAddr:32/integer-unsigned-big>>, SessionKey} ->
+                %% devices store devaddrs reversed. Config service expects them BE.
+                {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                     {true, #iot_config_session_key_filter_v1_pb{
                         oui = OUI,
                         devaddr = DevAddr,

@@ -725,23 +725,28 @@ handle_cast(
                 D1 = router_device:update(DeviceUpdates, Device0),
                 ok = save_device(DB, CF, D1),
 
-                ToAdd = [{add, DevAddr0, UsedNwkSKey}],
+                case erlang:length(Keys) > 1 of
+                    false ->
+                        ok;
+                    true ->
+                        ToAdd = [{add, DevAddr0, UsedNwkSKey}],
 
-                DevAddrToInt = fun(D) ->
-                    <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
-                    Int
+                        DevAddrToInt = fun(D) ->
+                            <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
+                            Int
+                        end,
+
+                        %% We have to usort just in case DevAddr assigned is the same
+                        ToRemove0 = lists:usort([
+                            {remove, DevAddrToInt(DevAddr), NwkSKey}
+                         || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
+                        ]),
+
+                        %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
+                        ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
+                        ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),
+                        lager:debug("sending update skf ~p", [ToAdd ++ ToRemove1])
                 end,
-
-                %% We have to usort just in case DevAddr assigned is the same
-                ToRemove0 = lists:usort([
-                    {remove, DevAddrToInt(DevAddr), NwkSKey}
-                 || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
-                ]),
-
-                %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
-                ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
-                ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),
-                lager:debug("sending update skf ~p", [ToAdd ++ ToRemove1]),
 
                 lager:debug(
                     "we got our first uplink after join dev nonces=~p keys=~p, DevAddrs=~p", [

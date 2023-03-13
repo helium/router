@@ -293,7 +293,8 @@ get_local_skfs(OUI) ->
                     false;
                 {_, undefined} ->
                     false;
-                {<<DevAddr:32/integer-unsigned-big>>, SessionKey} ->
+                %% devices store devaddrs reversed. Config service expects them BE.
+                {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                     {true, #iot_config_session_key_filter_v1_pb{
                         oui = OUI,
                         devaddr = DevAddr,

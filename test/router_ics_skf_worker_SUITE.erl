@@ -80,7 +80,8 @@ main_test(Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -124,7 +125,8 @@ main_test(Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 1,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
             session_key = router_device:nwk_s_key(Device1)
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -134,7 +136,8 @@ main_test(Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 2,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
             session_key = router_device:nwk_s_key(Device2)
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -258,7 +261,8 @@ reconcile_test(_Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -302,7 +306,8 @@ reconcile_test(_Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 1,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
             session_key = router_device:nwk_s_key(Device1)
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -312,7 +317,8 @@ reconcile_test(_Config) ->
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
-            devaddr = 2,
+            %% Config service talks of devaddrs of BE
+            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
             session_key = router_device:nwk_s_key(Device2)
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
@@ -324,7 +330,8 @@ reconcile_test(_Config) ->
             ID = router_utils:uuid_v4(),
             router_device:update(
                 [
-                    {devaddrs, [<<X:32/integer-unsigned-big>>]},
+                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
+                    {devaddrs, [<<X, 0, 0, 72>>]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)
@@ -355,7 +362,10 @@ reconcile_test(_Config) ->
         fun(Device) ->
             #iot_config_session_key_filter_v1_pb{
                 oui = 1,
-                devaddr = binary:decode_unsigned(router_device:devaddr(Device)),
+                %% Config service talks of devaddrs of BE
+                devaddr = binary:decode_unsigned(
+                    lorawan_utils:reverse(router_device:devaddr(Device))
+                ),
                 session_key = router_device:nwk_s_key(Device)
             }
         end,
@@ -369,6 +379,7 @@ reconcile_test(_Config) ->
     receive
         {router_ics_skf_worker, Result} ->
             %% We added 20 and removed 1
+
             ?assertEqual({ok, ExpectedToAdd, ExpectedToRemove}, Result)
     after 5000 ->
         ct:fail(timeout)

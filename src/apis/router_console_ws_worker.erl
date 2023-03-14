@@ -428,7 +428,8 @@ get_devices_region_and_session_keys_msg(DeviceIDs) ->
                             false;
                         {_, _, undefined} ->
                             false;
-                        {Region, <<DevAddr:32/integer-unsigned-big>>, SessionKey} ->
+                        %% devices store devaddrs reversed.
+                        {Region, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                             #{
                                 id => router_device:id(Device),
                                 region => erlang:atom_to_binary(Region),

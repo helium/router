@@ -202,7 +202,7 @@ handle_cast(
                 SKF = #iot_config_session_key_filter_v1_pb{
                     oui = OUI,
                     devaddr = DevAddr,
-                    session_key = Key
+                    session_key = binary:encode_hex(Key)
                 },
                 Acc#{Action => [SKF | Tail]}
             end,
@@ -298,7 +298,7 @@ get_local_skfs(OUI) ->
                     {true, #iot_config_session_key_filter_v1_pb{
                         oui = OUI,
                         devaddr = DevAddr,
-                        session_key = SessionKey
+                        session_key = binary:encode_hex(SessionKey)
                     }}
             end
         end,

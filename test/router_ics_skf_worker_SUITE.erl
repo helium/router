@@ -116,7 +116,10 @@ main_test(Config) ->
     ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
-            oui = 0, devaddr = 0, session_key = <<>>
+            oui = 0,
+            devaddr = 0,
+            %% Can be a binary, but empty string fields are lists
+            session_key = []
         },
         Req1#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -127,7 +130,7 @@ main_test(Config) ->
             oui = router_utils:get_oui(),
             %% Config service talks of devaddrs of BE
             devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
-            session_key = router_device:nwk_s_key(Device1)
+            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device1)))
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -138,7 +141,7 @@ main_test(Config) ->
             oui = router_utils:get_oui(),
             %% Config service talks of devaddrs of BE
             devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
-            session_key = router_device:nwk_s_key(Device2)
+            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device2)))
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -162,7 +165,9 @@ main_test(Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
             devaddr = JoinedDevAddr1,
-            session_key = router_device:nwk_s_key(JoinedDevice1)
+            session_key = erlang:binary_to_list(
+                binary:encode_hex(router_device:nwk_s_key(JoinedDevice1))
+            )
         },
         Req4#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -199,7 +204,9 @@ main_test(Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
             devaddr = JoinedDevAddr2,
-            session_key = router_device:nwk_s_key(JoinedDevice2)
+            session_key = erlang:binary_to_list(
+                binary:encode_hex(router_device:nwk_s_key(JoinedDevice2))
+            )
         },
         Req6#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -222,7 +229,9 @@ main_test(Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
             devaddr = JoinedDevAddr2,
-            session_key = router_device:nwk_s_key(JoinedDevice2)
+            session_key = erlang:binary_to_list(
+                binary:encode_hex(router_device:nwk_s_key(JoinedDevice2))
+            )
         },
         Req7#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -232,7 +241,9 @@ main_test(Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = router_utils:get_oui(),
             devaddr = JoinedDevAddr1,
-            session_key = router_device:nwk_s_key(JoinedDevice1)
+            session_key = erlang:binary_to_list(
+                binary:encode_hex(router_device:nwk_s_key(JoinedDevice1))
+            )
         },
         Req8#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -297,7 +308,10 @@ reconcile_test(_Config) ->
     ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
     ?assertEqual(
         #iot_config_session_key_filter_v1_pb{
-            oui = 0, devaddr = 0, session_key = <<>>
+            oui = 0,
+            devaddr = 0,
+            %% Can be a binary, but empty string fields are lists
+            session_key = []
         },
         Req1#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -308,7 +322,7 @@ reconcile_test(_Config) ->
             oui = router_utils:get_oui(),
             %% Config service talks of devaddrs of BE
             devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
-            session_key = router_device:nwk_s_key(Device1)
+            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device1)))
         },
         Req2#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -319,7 +333,7 @@ reconcile_test(_Config) ->
             oui = router_utils:get_oui(),
             %% Config service talks of devaddrs of BE
             devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
-            session_key = router_device:nwk_s_key(Device2)
+            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device2)))
         },
         Req3#iot_config_session_key_filter_update_req_v1_pb.filter
     ),
@@ -353,7 +367,8 @@ reconcile_test(_Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = 0,
             devaddr = 0,
-            session_key = <<>>
+            %% Can be a binary, but empty string fields are lists
+            session_key = []
         },
         true
     ),
@@ -366,14 +381,14 @@ reconcile_test(_Config) ->
                 devaddr = binary:decode_unsigned(
                     lorawan_utils:reverse(router_device:devaddr(Device))
                 ),
-                session_key = router_device:nwk_s_key(Device)
+                session_key = binary:encode_hex(router_device:nwk_s_key(Device))
             }
         end,
         Devices1
     ),
 
     ExpectedToRemove = [
-        #iot_config_session_key_filter_v1_pb{oui = 0, devaddr = 0, session_key = <<>>}
+        #iot_config_session_key_filter_v1_pb{oui = 0, devaddr = 0, session_key = []}
     ],
 
     receive
@@ -412,3 +427,4 @@ rcv_loop(Acc) ->
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
     end.
+

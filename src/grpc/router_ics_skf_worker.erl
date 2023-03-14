@@ -351,6 +351,7 @@ update_skf(List, State) ->
             ok = grpcbox_client:close_send(Stream),
             case grpcbox_client:recv_data(Stream) of
                 {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
+                stream_finished -> ok;
                 Reason -> {error, Reason}
             end
     end.

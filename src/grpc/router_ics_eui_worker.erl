@@ -416,19 +416,21 @@ get_local_eui_pairs(RouteID) ->
             Error;
         {ok, APIDevices} ->
             {ok,
-                lists:map(
-                    fun(APIDevice) ->
-                        <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
-                            kvc:path([<<"app_eui">>], APIDevice)
-                        ),
-                        <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
-                            kvc:path([<<"dev_eui">>], APIDevice)
-                        ),
-                        #iot_config_eui_pair_v1_pb{
-                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                        }
-                    end,
-                    APIDevices
+                lists:usort(
+                    lists:map(
+                        fun(APIDevice) ->
+                            <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
+                                kvc:path([<<"app_eui">>], APIDevice)
+                            ),
+                            <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
+                                kvc:path([<<"dev_eui">>], APIDevice)
+                            ),
+                            #iot_config_eui_pair_v1_pb{
+                                route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                            }
+                        end,
+                        APIDevices
+                    )
                 )}
     end.
 

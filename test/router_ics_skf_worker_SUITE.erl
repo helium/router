@@ -427,4 +427,3 @@ rcv_loop(Acc) ->
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
     end.
-

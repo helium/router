@@ -286,23 +286,25 @@ skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(OUI) ->
     Devices = router_device_cache:get(),
-    lists:filtermap(
-        fun(Device) ->
-            case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
-                {undefined, _} ->
-                    false;
-                {_, undefined} ->
-                    false;
-                %% devices store devaddrs reversed. Config service expects them BE.
-                {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
-                    {true, #iot_config_session_key_filter_v1_pb{
-                        oui = OUI,
-                        devaddr = DevAddr,
-                        session_key = binary:encode_hex(SessionKey)
-                    }}
-            end
-        end,
-        Devices
+    lists:usort(
+        lists:filtermap(
+            fun(Device) ->
+                case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+                    {undefined, _} ->
+                        false;
+                    {_, undefined} ->
+                        false;
+                    %% devices store devaddrs reversed. Config service expects them BE.
+                    {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                        {true, #iot_config_session_key_filter_v1_pb{
+                            oui = OUI,
+                            devaddr = DevAddr,
+                            session_key = binary:encode_hex(SessionKey)
+                        }}
+                end
+            end,
+            Devices
+        )
     ).
 
 -spec maybe_update_skf(

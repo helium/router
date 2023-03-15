@@ -53,7 +53,7 @@ update(eos, StreamState) ->
     Timeout = application:get_env(router, test_skf_update_eos_timeout, 0),
     lager:info("got EOS, waiting ~wms to return with close", [Timeout]),
     timer:sleep(Timeout),
-    lager:info("closing server side of update stream"),
+    lager:info("closing server side of skf update stream"),
     {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
 update(Req, StreamState) ->
     case verify_skf_update_req(Req) of

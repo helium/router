@@ -57,6 +57,7 @@
             route_id => "${ROUTER_ICS_ROUTE_ID}"
         }},
         {skf_max_timeout_attempt, 5},
+        {eui_max_timeout_attempt, 5},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},

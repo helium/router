@@ -157,8 +157,6 @@ send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
-% TODO: Do the delete
-
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),

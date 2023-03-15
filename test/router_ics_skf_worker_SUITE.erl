@@ -266,6 +266,15 @@ main_test(Config) ->
 reconcile_test(_Config) ->
     meck:new(router_device_cache, [passthrough]),
 
+    %% Simulate server side processsing by telling the test service to wait
+    %% before closing it's side of the stream after the client has signaled it
+    %% is done sending updates.
+
+    %% NOTE: Settting this value over the number of TimeoutAttempt will wait for
+    %% a tream close will cause this test to fail, it will look like the worker
+    %% has tried to reconcile again.
+    ok = application:set_env(router, test_skf_update_eos_timeout, timer:seconds(2)),
+
     %% creating couple devices for testing
     Devices0 = lists:map(
         fun(X) ->

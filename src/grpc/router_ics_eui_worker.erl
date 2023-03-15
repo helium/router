@@ -408,11 +408,16 @@ wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
 wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
     ok;
 wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
-    wait_for_stream_close(grpcbox_client:recv_data(Stream), Stream, TimeoutAttempts, MaxAttempts);
+    wait_for_stream_close(
+        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        Stream,
+        TimeoutAttempts,
+        MaxAttempts
+    );
 wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
     timer:sleep(250),
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream),
+        grpcbox_client:recv_data(Stream, timer:seconds(2)),
         Stream,
         TimeoutAttempts + 1,
         MaxAttempts

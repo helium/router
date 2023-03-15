@@ -349,12 +349,38 @@ update_skf(List, State) ->
                 List
             ),
             ok = grpcbox_client:close_send(Stream),
-            case grpcbox_client:recv_data(Stream) of
-                {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
-                stream_finished -> ok;
-                Reason -> {error, Reason}
-            end
+            wait_for_stream_close(
+                init,
+                Stream,
+                0,
+                router_utils:get_env_int(skf_max_timeout_attempt, 5)
+            )
     end.
+
+-spec wait_for_stream_close(
+    Result :: init | stream_finished | timeout | {ok, any()} | {error, any()},
+    Stream :: map(),
+    CurrentAttempts :: non_neg_integer(),
+    MaxAttempts :: non_neg_integer()
+) -> ok | {error, any()}.
+wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+    {error, {max_timeouts_reached, MaxAttempts}};
+wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    Err;
+wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    ok;
+wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    ok;
+wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
+    wait_for_stream_close(grpcbox_client:recv_data(Stream), Stream, TimeoutAttempts, MaxAttempts);
+wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
+    timer:sleep(250),
+    wait_for_stream_close(
+        grpcbox_client:recv_data(Stream),
+        Stream,
+        TimeoutAttempts + 1,
+        MaxAttempts
+    ).
 
 -spec update_skf(
     Action :: add | remove,

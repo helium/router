@@ -364,6 +364,7 @@ update_skf(List, State) ->
     MaxAttempts :: non_neg_integer()
 ) -> ok | {error, any()}.
 wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
 wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
     Err;
@@ -379,6 +380,7 @@ wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
         MaxAttempts
     );
 wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
+    lager:warning("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
         grpcbox_client:recv_data(Stream, timer:seconds(2)),

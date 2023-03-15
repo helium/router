@@ -86,7 +86,10 @@ get_euis(Req, StreamState) ->
     end.
 
 update_euis(eos, StreamState) ->
-    lager:info("got EOS"),
+    Timeout = application:get_env(router, test_eui_update_eos_timeout, 0),
+    lager:info("got EOS, waiting ~wms to return with close", [Timeout]),
+    timer:sleep(Timeout),
+    lager:info("closing server side of eui update stream"),
     {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
 update_euis(Req, _StreamState) ->
     case verify_update_euis_req(Req) of

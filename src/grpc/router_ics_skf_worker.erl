@@ -98,7 +98,7 @@ init(
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! ?INIT,
     {ok, #state{
@@ -286,23 +286,25 @@ skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(OUI) ->
     Devices = router_device_cache:get(),
-    lists:filtermap(
-        fun(Device) ->
-            case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
-                {undefined, _} ->
-                    false;
-                {_, undefined} ->
-                    false;
-                %% devices store devaddrs reversed. Config service expects them BE.
-                {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
-                    {true, #iot_config_session_key_filter_v1_pb{
-                        oui = OUI,
-                        devaddr = DevAddr,
-                        session_key = binary:encode_hex(SessionKey)
-                    }}
-            end
-        end,
-        Devices
+    lists:usort(
+        lists:filtermap(
+            fun(Device) ->
+                case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+                    {undefined, _} ->
+                        false;
+                    {_, undefined} ->
+                        false;
+                    %% devices store devaddrs reversed. Config service expects them BE.
+                    {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                        {true, #iot_config_session_key_filter_v1_pb{
+                            oui = OUI,
+                            devaddr = DevAddr,
+                            session_key = binary:encode_hex(SessionKey)
+                        }}
+                end
+            end,
+            Devices
+        )
     ).
 
 -spec maybe_update_skf(
@@ -358,7 +360,7 @@ update_skf(List, State) ->
 
 -spec update_skf(
     Action :: add | remove,
-    EUIPair :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
+    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.

@@ -159,7 +159,7 @@ init(Args) ->
     ],
     {ok, _Pid} = elli:start_link(ElliOpts),
     ok = blockchain_event:add_handler(self()),
-    {ok, PubKey, _, _} = blockchain_swarm:keys(),
+    {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = erlang:send_after(500, self(), post_init),
     {ok, #state{

@@ -96,6 +96,8 @@ init([]) ->
                 ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
                 {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
         end,
+    ok = router_blockchain:save_key(Key),
+
     BlockchainOpts = [
         {key, Key},
         {seed_nodes, SeedNodes},

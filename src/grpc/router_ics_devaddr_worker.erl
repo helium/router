@@ -104,7 +104,7 @@ init(
         Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! ?INIT,
     {ok, #state{

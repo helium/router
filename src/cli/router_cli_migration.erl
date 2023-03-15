@@ -148,6 +148,8 @@ send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
+% TODO: Do the delete
+
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
@@ -172,7 +174,7 @@ send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
                         #{
                             oui => OUI,
                             devaddr => lorawan_utils:binary_to_hex(DevAddr),
-                            session_key => lorawan_utils:binary_to_hex(SessionKey)
+                            session_key => erlang:list_to_binary(SessionKey)
                         }
                     end,
                     SKFs

@@ -98,7 +98,7 @@ init(
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, _, SigFun, _} = blockchain_swarm:keys(),
+    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! ?INIT,
     {ok, #state{
@@ -360,7 +360,7 @@ update_skf(List, State) ->
 
 -spec update_skf(
     Action :: add | remove,
-    EUIPair :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
+    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.

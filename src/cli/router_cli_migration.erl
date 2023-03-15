@@ -46,7 +46,7 @@ info_usage() ->
             "    [--commit] default: false (compute delta and send to Config Service)\n",
             "migration skfs   - Add Session Keys to config service\n",
             "    [--commit] default: false (compute delta and send to Config Service)\n",
-            "migration skfs delete  - Remove All Session Keys to config service\n",
+            "migration skfs remove  - Remove All Session Key Filters from config service\n",
             "    [--commit] default: false\n"
         ]
     ].
@@ -81,7 +81,7 @@ info_cmd() ->
             fun send_skfs_to_config_service/3
         ],
         [
-            ["migration", "skfs", "delete"],
+            ["migration", "skfs", "remove"],
             [],
             [{commit, [{longname, "commit"}, {datatype, boolean}]}],
             fun delete_skfs/3
@@ -206,7 +206,7 @@ send_skfs_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
-delete_skfs(["migration", "skfs", "delete"], [], Flags) ->
+delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
     DryRun =

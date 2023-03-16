@@ -60,17 +60,11 @@ calculate_dc_amount(PayloadSize) ->
 get_hotspot_lat_lon(PubKeyBin) ->
     case ?MODULE:is_chain_dead() of
         false ->
-            Ledger = ledger(),
-            case blockchain_ledger_v1:find_gateway_info(PubKeyBin, Ledger) of
+            case ?MODULE:get_hotspot_location_index(PubKeyBin) of
                 {error, _} ->
                     {unknown, unknown};
-                {ok, Hotspot} ->
-                    case blockchain_ledger_gateway_v2:location(Hotspot) of
-                        undefined ->
-                            {unknown, unknown};
-                        Loc ->
-                            h3:to_geo(Loc)
-                    end
+                {ok, Loc} ->
+                    h3:to_geo(Loc)
             end;
         true ->
             case router_ics_gateway_location_worker:get(PubKeyBin) of
@@ -87,14 +81,13 @@ get_hotspot_lat_lon(PubKeyBin) ->
 get_hotspot_location_index(PubKeyBin) ->
     case ?MODULE:is_chain_dead() of
         false ->
-            case blockchain_ledger_v1:find_gateway_info(PubKeyBin, ledger()) of
-                {error, _} = Error ->
-                    Error;
-                {ok, Hotspot} ->
-                    case blockchain_ledger_gateway_v2:location(Hotspot) of
-                        undefined -> {error, undef_index};
-                        Index -> {ok, Index}
-                    end
+            case persistent_term:get(hotspot_location_cache, undefined) of
+                undefined ->
+                    blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger());
+                Cache ->
+                    cream:cache(Cache, PubKeyBin, fun() ->
+                        blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger())
+                    end)
             end;
         true ->
             router_ics_gateway_location_worker:get(PubKeyBin)

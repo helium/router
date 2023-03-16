@@ -83,10 +83,16 @@ get_hotspot_location_index(PubKeyBin) ->
         false ->
             case persistent_term:get(hotspot_location_cache, undefined) of
                 undefined ->
-                    blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger());
+                    case blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger()) of
+                        {ok, undefined} -> {error, undef_index};
+                        {ok, Index} -> {ok, Index}
+                    end;
                 Cache ->
                     cream:cache(Cache, PubKeyBin, fun() ->
-                        blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger())
+                        case blockchain_ledger_v1:find_gateway_location(PubKeyBin, ledger()) of
+                            {ok, undefined} -> {error, undef_index};
+                            {ok, Index} -> {ok, Index}
+                        end
                     end)
             end;
         true ->

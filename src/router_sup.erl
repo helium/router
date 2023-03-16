@@ -136,6 +136,16 @@ init([]) ->
 
     router_ics_gateway_location_worker:init_ets(),
 
+    {ok, HLC} =
+        cream:new(
+            200_000,
+            [
+                {initial_capacity, 20_000},
+                {seconds_to_live, 600}
+            ]
+        ),
+    ok = persistent_term:put(hotspot_location_cache, HLC),
+
     {ok,
         {?FLAGS, [
             ?WORKER(ru_poc_denylist, [POCDenyListArgs]),

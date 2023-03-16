@@ -174,7 +174,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
     Packet = blockchain_state_channel_packet_v1:packet(SCPacket),
     Region = blockchain_state_channel_packet_v1:region(SCPacket),
     HoldTime = blockchain_state_channel_packet_v1:hold_time(SCPacket),
-    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
+    case packet(undefined, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
         {error, Reason} = E ->
             ok = print_handle_packet_resp(
                 SCPacket, Pid, reason_to_single_atom(Reason)
@@ -202,7 +202,7 @@ handle_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
 handle_packet(Packet, PacketTime, PubKeyBin, Region) ->
     Start = erlang:system_time(millisecond),
     HoldTime = 100,
-    case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, self()) of
+    case packet(undefined, Packet, PacketTime, HoldTime, PubKeyBin, Region, self()) of
         {error, Reason} = E ->
             lager:info("failed to handle packet ~p : ~p", [Packet, Reason]),
             ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
@@ -245,10 +245,10 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                         case offer_check(Offer) of
                             ok ->
                                 erlang:spawn(router_blockchain, track_offer, [Offer, self()]),
-                                ok;
+                                {ok, Device};
                             {error, _} ->
                                 lager:debug("packet accepted even if on denylist"),
-                                ok
+                                {ok, Device}
                         end;
                     {error, ?LATE_PACKET} = E2 ->
                         ok = router_utils:event_uplink_dropped_late_packet(
@@ -266,9 +266,9 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                 E4
         end,
     case UsePacket of
-        ok ->
+        {ok, Device1} ->
             %% This is redondant but at least we dont have to redo all that code...
-            case packet(Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
+            case packet(Device1, Packet, PacketTime, HoldTime, PubKeyBin, Region, Pid) of
                 {error, Reason} = Err ->
                     Pid ! {error, reason_to_single_atom(Reason)},
                     lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
@@ -855,6 +855,7 @@ lookup_bf(Key) ->
 %% @end
 %%%-------------------------------------------------------------------
 -spec packet(
+    Device :: undefined | router_device:device(),
     Packet :: blockchain_helium_packet_v1:packet(),
     PacketTime :: pos_integer(),
     HoldTime :: pos_integer(),
@@ -863,6 +864,7 @@ lookup_bf(Key) ->
     Pid :: pid()
 ) -> ok | {error, any()}.
 packet(
+    _Device,
     #packet_pb{
         payload =
             <<MType:3, _MHDRRFU:3, _Major:2, AppEUI0:8/binary, DevEUI0:8/binary, _DevNonce:2/binary,
@@ -924,6 +926,7 @@ packet(
             {error, bad_mic}
     end;
 packet(
+    Device,
     #packet_pb{
         payload =
             <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
@@ -943,6 +946,7 @@ packet(
             MIC = binary:part(PayloadAndMIC, {erlang:byte_size(PayloadAndMIC), -4}),
             %% ok device is in one of our subnets
             send_to_device_worker(
+                Device,
                 Packet,
                 PacketTime,
                 HoldTime,
@@ -954,7 +958,7 @@ packet(
                 Payload
             )
     end;
-packet(#packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid) ->
+packet(_Device, #packet_pb{payload = Payload}, _PacketTime, _HoldTime, AName, _Region, _Pid) ->
     {error, {bad_packet, lorawan_utils:binary_to_hex(Payload), AName}}.
 
 maybe_start_worker_and_handle_join(
@@ -1016,6 +1020,7 @@ find_device(Msg, MIC, [{AppKey, Device} | T]) ->
     end.
 
 -spec send_to_device_worker(
+    Device :: undefined | router_device:device(),
     Packet :: blockchain_helium_packet_v1:packet(),
     PacketTime :: non_neg_integer(),
     HoldTime :: non_neg_integer(),
@@ -1027,6 +1032,7 @@ find_device(Msg, MIC, [{AppKey, Device} | T]) ->
     Payload :: binary()
 ) -> ok | {error, any()}.
 send_to_device_worker(
+    Device0,
     Packet,
     PacketTime,
     HoldTime,
@@ -1037,24 +1043,47 @@ send_to_device_worker(
     MIC,
     Payload
 ) ->
-    case find_device(PubKeyBin, DevAddr, MIC, Payload) of
-        {error, unknown_device} ->
-            router_metrics:packet_routing_error(packet, device_not_found),
-            lager:warning(
-                "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
-                [
-                    DevAddr,
-                    lorawan_utils:binary_to_hex(DevAddr),
-                    blockchain_utils:addr2name(PubKeyBin)
-                ]
-            ),
-            {error, unknown_device};
-        {ok, {Device, NwkSKey, FCnt}} ->
-            ok = router_device_stats:track_packet(Packet, PubKeyBin, Device),
-            case router_device:preferred_hotspots(Device) of
+    DeviceInfo =
+        case Device0 of
+            undefined ->
+                case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+                    {error, unknown_device} ->
+                        router_metrics:packet_routing_error(packet, device_not_found),
+                        lager:warning(
+                            "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
+                            [
+                                DevAddr,
+                                lorawan_utils:binary_to_hex(DevAddr),
+                                blockchain_utils:addr2name(PubKeyBin)
+                            ]
+                        ),
+                        {error, unknown_device};
+                    {ok, {_Device, _NwkSKey, _FCnt} = DeviceInfo0} ->
+                        DeviceInfo0
+                end;
+            _Device ->
+                case get_device_by_mic(MIC, Payload, [Device0]) of
+                    undefined -> {error, mismatched_device};
+                    DeviceInfo0 -> DeviceInfo0
+                end
+        end,
+    case DeviceInfo of
+        {error, _} = Err ->
+            Err;
+        {Device1, NwkSKey, FCnt} ->
+            ok = router_device_stats:track_packet(Packet, PubKeyBin, Device1),
+            case router_device:preferred_hotspots(Device1) of
                 [] ->
                     send_to_device_worker_(
-                        FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey
+                        FCnt,
+                        Packet,
+                        PacketTime,
+                        HoldTime,
+                        Pid,
+                        PubKeyBin,
+                        Region,
+                        Device1,
+                        NwkSKey
                     );
                 PreferredHotspots when
                     is_list(PreferredHotspots)
@@ -1069,7 +1098,7 @@ send_to_device_worker(
                                 Pid,
                                 PubKeyBin,
                                 Region,
-                                Device,
+                                Device1,
                                 NwkSKey
                             );
                         _ ->

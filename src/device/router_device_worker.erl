@@ -1810,17 +1810,25 @@ handle_frame_timeout(
                 Device0
             ),
             Plan = lora_plan:region_to_plan(Region),
-            #txq{
-                time = TxTime,
-                datr = TxDataRate,
-                freq = TxFreq
-            } = lora_plan:rx1_or_rx2_window(
-                Plan,
-                RxDelay,
-                0,
-                packet_to_rxq(Packet0)
-            ),
-            Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
+
+            {
+                #txq{
+                    time = TxTime,
+                    datr = TxDataRate,
+                    freq = TxFreq
+                },
+                Rx2Window
+            } =
+                case
+                    {
+                        lora_plan:rx1_or_rx2_window(Plan, RxDelay, 0, packet_to_rxq(Packet0)),
+                        rx2_from_packet(Region, Packet0, RxDelay)
+                    }
+                of
+                    {Same, Same} -> {Same, undefined};
+                    Rx1AndRx2 -> Rx1AndRx2
+                end,
+
             Packet1 = blockchain_helium_packet_v1:new_downlink(
                 Reply,
                 lora_plan:max_tx_power(Plan, TxFreq),
@@ -1914,17 +1922,25 @@ handle_frame_timeout(
         Device0
     ),
     Plan = lora_plan:region_to_plan(Region),
-    #txq{
-        time = TxTime,
-        datr = TxDataRate,
-        freq = TxFreq
-    } = lora_plan:rx1_or_rx2_window(
-        Plan,
-        RxDelay,
-        0,
-        packet_to_rxq(Packet0)
-    ),
-    Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
+
+    {
+        #txq{
+            time = TxTime,
+            datr = TxDataRate,
+            freq = TxFreq
+        },
+        Rx2Window
+    } =
+        case
+            {
+                lora_plan:rx1_or_rx2_window(Plan, RxDelay, 0, packet_to_rxq(Packet0)),
+                rx2_from_packet(Region, Packet0, RxDelay)
+            }
+        of
+            {Same, Same} -> {Same, undefined};
+            Rx1AndRx2 -> Rx1AndRx2
+        end,
+
     Packet1 = blockchain_helium_packet_v1:new_downlink(
         Reply,
         lora_plan:max_tx_power(Plan, TxFreq),

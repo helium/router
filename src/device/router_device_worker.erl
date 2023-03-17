@@ -997,26 +997,14 @@ handle_info(
         erlang:length(Packets) + 1
     ]),
     Plan = lora_plan:region_to_plan(Region),
-    #txq{
-        time = TxTime,
-        datr = TxDataRate,
-        freq = TxFreq
-    } = lora_plan:join1_window(
-        Plan,
-        0,
-        packet_to_rxq(Packet)
-    ),
-    Rx2Window = join2_from_packet(Region, Packet),
     Metadata = lorawan_rxdelay:adjust_on_join(Device),
     Device1 = router_device:metadata(Metadata, Device),
-    DownlinkPacket = blockchain_helium_packet_v1:new_downlink(
+    DownlinkPacket = new_join_downlink(
         craft_join_reply(Device1, JoinAcceptArgs),
-        lora_plan:max_tx_power(Plan, TxFreq),
-        TxTime,
-        TxFreq,
-        binary_to_list(TxDataRate),
-        Rx2Window
+        Packet,
+        Plan
     ),
+
     lager:debug("sending join response ~p", [DownlinkPacket]),
     catch blockchain_state_channel_common:send_response(
         Pid,
@@ -1810,25 +1798,8 @@ handle_frame_timeout(
                 Device0
             ),
             Plan = lora_plan:region_to_plan(Region),
-            #txq{
-                time = TxTime,
-                datr = TxDataRate,
-                freq = TxFreq
-            } = lora_plan:rx1_or_rx2_window(
-                Plan,
-                RxDelay,
-                0,
-                packet_to_rxq(Packet0)
-            ),
-            Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
-            Packet1 = blockchain_helium_packet_v1:new_downlink(
-                Reply,
-                lora_plan:max_tx_power(Plan, TxFreq),
-                adjust_rx_time(TxTime),
-                TxFreq,
-                binary_to_list(TxDataRate),
-                Rx2Window
-            ),
+            Packet1 = new_data_downlink(Reply, Packet0, Plan, RxDelay),
+
             DeviceUpdates = [
                 {channel_correction, ChannelsCorrected},
                 {fcntdown, router_device:fcntdown_next_val(Device0)},
@@ -1914,25 +1885,8 @@ handle_frame_timeout(
         Device0
     ),
     Plan = lora_plan:region_to_plan(Region),
-    #txq{
-        time = TxTime,
-        datr = TxDataRate,
-        freq = TxFreq
-    } = lora_plan:rx1_or_rx2_window(
-        Plan,
-        RxDelay,
-        0,
-        packet_to_rxq(Packet0)
-    ),
-    Rx2Window = rx2_from_packet(Region, Packet0, RxDelay),
-    Packet1 = blockchain_helium_packet_v1:new_downlink(
-        Reply,
-        lora_plan:max_tx_power(Plan, TxFreq),
-        adjust_rx_time(TxTime),
-        TxFreq,
-        binary_to_list(TxDataRate),
-        Rx2Window
-    ),
+    Packet1 = new_data_downlink(Reply, Packet0, Plan, RxDelay),
+
     EventTuple = {ACK, ConfirmedDown, Port, router_channel:to_map(Channel), FOpts2},
     DeviceUpdateMetadata = {metadata, Metadata},
     case ConfirmedDown of
@@ -2103,29 +2057,65 @@ frame_to_packet_payload(Frame, Device) ->
     ),
     <<Msg/binary, MIC/binary>>.
 
--spec join2_from_packet(atom(), blockchain_helium_packet_v1:packet()) ->
-    blockchain_helium_packet_v1:window().
-join2_from_packet(Region, Packet) ->
+-spec new_join_downlink(
+    Reply :: binary(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Plan :: lora_plan:plan()
+) -> blockchain_helium_packet_v1:packet().
+new_join_downlink(Reply, Packet, Plan) ->
     Rxq = packet_to_rxq(Packet),
-    Plan = lora_plan:region_to_plan(Region),
-    #txq{
-        time = TxTime,
-        datr = TxDataRate,
-        freq = TxFreq
-    } = lora_plan:join2_window(Plan, Rxq),
-    blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
+    Rx1Window = lora_plan:join1_window(Plan, 0, Rxq),
+    Rx2Window = lora_plan:join2_window(Plan, Rxq),
 
--spec rx2_from_packet(atom(), blockchain_helium_packet_v1:packet(), number()) ->
-    blockchain_helium_packet_v1:window().
-rx2_from_packet(Region, Packet, RxDelay) ->
+    #txq{time = TxTime, datr = TxDataRate, freq = TxFreq} = Rx1Window,
+
+    blockchain_helium_packet_v1:new_downlink(
+        Reply,
+        lora_plan:max_tx_power(Plan, TxFreq),
+        TxTime,
+        TxFreq,
+        binary_to_list(TxDataRate),
+        window_from_txq(Rx2Window)
+    ).
+
+-spec new_data_downlink(
+    Reply :: binary(),
+    Packet :: blockchain_helium_packet_v1:packet(),
+    Plan :: lora_plan:plan(),
+    RxDelay :: number()
+) -> blockchain_helium_packet_v1:packet().
+new_data_downlink(Reply, Packet, Plan, RxDelay) ->
     Rxq = packet_to_rxq(Packet),
-    Plan = lora_plan:region_to_plan(Region),
-    #txq{
-        time = TxTime,
-        datr = TxDataRate,
-        freq = TxFreq
-    } = lora_plan:rx2_window(Plan, RxDelay, Rxq),
-    blockchain_helium_packet_v1:window(adjust_rx_time(TxTime), TxFreq, binary_to_list(TxDataRate)).
+    Rx1 = lora_plan:rx1_or_rx2_window(Plan, RxDelay, 0, Rxq),
+    Rx2 = lora_plan:rx2_window(Plan, RxDelay, Rxq),
+
+    {Rx1Window, Rx2Window} =
+        case {Rx1, Rx2} of
+            {Same, Same} -> {Rx1, undefined};
+            Windows -> Windows
+        end,
+    #txq{time = TxTime, datr = TxDataRate, freq = TxFreq} = Rx1Window,
+
+    blockchain_helium_packet_v1:new_downlink(
+        Reply,
+        lora_plan:max_tx_power(Plan, TxFreq),
+        adjust_rx_time(TxTime),
+        TxFreq,
+        binary_to_list(TxDataRate),
+        window_from_txq(Rx2Window)
+    ).
+
+-spec window_from_txq
+    (undefined) -> undefined;
+    (#txq{}) -> blockchain_helium_packet_v1:window().
+window_from_txq(undefined) ->
+    undefined;
+window_from_txq(#txq{time = TxTime, datr = TxDataRate, freq = TxFreq}) ->
+    blockchain_helium_packet_v1:window(
+        adjust_rx_time(TxTime),
+        TxFreq,
+        binary_to_list(TxDataRate)
+    ).
 
 -spec adjust_rx_time(non_neg_integer()) -> non_neg_integer().
 adjust_rx_time(Time) ->

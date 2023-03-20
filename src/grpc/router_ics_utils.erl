@@ -8,7 +8,8 @@
 -export([
     start_link_args/1,
     channel/0,
-    connect/3
+    connect/3,
+    batch_update/3
 ]).
 
 -define(ICS_CHANNEL, ics_channel).
@@ -56,3 +57,36 @@ connect(Transport, Host, Port) ->
         {ok, {_Conn, _Interceptor}} ->
             ok
     end.
+
+-spec batch_update(
+    Fun :: fun((Action, T) -> ok),
+    List :: [{Action, [T]}],
+    BatchSleep :: non_neg_integer()
+) ->
+    ok | {error, any()}
+when
+    Action :: add | remove.
+batch_update(Fun, List, BatchSleep) ->
+    lists:foreach(
+        fun({Action, Els}) ->
+            lager:info(
+                "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms]",
+                [Action, erlang:length(Els), BatchSleep]
+            ),
+            lists:foldl(
+                fun(El, Idx) ->
+                    %% we pause between every batch of 1k to not oversaturate
+                    %% our connection to the config service.
+                    case Idx rem 1000 of
+                        0 -> timer:sleep(BatchSleep);
+                        _ -> ok
+                    end,
+                    ok = Fun(Action, El),
+                    Idx + 1
+                end,
+                0,
+                Els
+            )
+        end,
+        List
+    ).

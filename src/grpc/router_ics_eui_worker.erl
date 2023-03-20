@@ -354,6 +354,9 @@ maybe_update_euis(List0, State) ->
 update_euis([], _State) ->
     ok;
 update_euis(List, State) ->
+    BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
+    MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+
     case
         helium_iot_config_route_client:update_euis(#{
             channel => router_ics_utils:channel()
@@ -362,35 +365,29 @@ update_euis(List, State) ->
         {error, _} = Error ->
             Error;
         {ok, Stream} ->
-            lists:foreach(
-                fun({Action, EUIPairs}) ->
-                    lists:foreach(
-                        fun(EUIPair) ->
-                            lager:info("~p app_eui=~s (~w) dev_eui=~s (~w)", [
-                                Action,
-                                lorawan_utils:binary_to_hex(<<
-                                    (EUIPair#iot_config_eui_pair_v1_pb.app_eui):64/integer-unsigned-big
-                                >>),
-                                EUIPair#iot_config_eui_pair_v1_pb.app_eui,
-                                lorawan_utils:binary_to_hex(<<
-                                    (EUIPair#iot_config_eui_pair_v1_pb.dev_eui):64/integer-unsigned-big
-                                >>),
-                                EUIPair#iot_config_eui_pair_v1_pb.dev_eui
-                            ]),
-                            ok = update_euis(Action, EUIPair, Stream, State)
-                        end,
-                        EUIPairs
-                    )
+            router_ics_utils:batch_update(
+                fun(Action, EUIPair) ->
+                    lager:info("~p app_eui=~s (~w) dev_eui=~s (~w)", [
+                        Action,
+                        lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.app_eui):64/integer-unsigned-big
+                        >>),
+                        EUIPair#iot_config_eui_pair_v1_pb.app_eui,
+                        lorawan_utils:binary_to_hex(<<
+                            (EUIPair#iot_config_eui_pair_v1_pb.dev_eui):64/integer-unsigned-big
+                        >>),
+                        EUIPair#iot_config_eui_pair_v1_pb.dev_eui
+                    ]),
+
+                    ok = update_euis(Action, EUIPair, Stream, State)
                 end,
-                List
+                List,
+                BatchSleep
             ),
+
             ok = grpcbox_client:close_send(Stream),
-            wait_for_stream_close(
-                init,
-                Stream,
-                0,
-                router_utils:get_env_int(eui_max_timeout_attempt, 5)
-            )
+            lager:info("done sending eui update ltimeout_retry: ~p]", [MaxAttempt]),
+            wait_for_stream_close(init, Stream, 0, MaxAttempt)
     end.
 
 -spec wait_for_stream_close(

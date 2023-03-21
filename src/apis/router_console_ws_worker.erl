@@ -298,12 +298,13 @@ handle_info(
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:skf">>, #{
-        <<"devices">> := DeviceIDs
+        <<"devices">> := DeviceIDs,
+        <<"request_id">> := ReqID
     }},
     #state{ws = WSPid} = State
 ) ->
-    lager:debug("got skf request for ~p", [DeviceIDs]),
-    Payload = get_devices_region_and_session_keys_msg(DeviceIDs),
+    lager:debug("got skf request ~s for ~p", [ReqID, DeviceIDs]),
+    Payload = get_devices_region_and_session_keys_msg(ReqID, DeviceIDs),
     WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(_Msg, State) ->
@@ -407,9 +408,10 @@ get_router_address_msg() ->
         #{address => B58}
     ).
 
--spec get_devices_region_and_session_keys_msg(DeviceIDs :: list(binary())) -> binary().
-get_devices_region_and_session_keys_msg(DeviceIDs) ->
-    Map = lists:filtermap(
+-spec get_devices_region_and_session_keys_msg(ReqID :: binary(), DeviceIDs :: list(binary())) ->
+    binary().
+get_devices_region_and_session_keys_msg(ReqID, DeviceIDs) ->
+    List = lists:filtermap(
         fun(DeviceID) ->
             case router_device_cache:get(DeviceID) of
                 {error, _} ->
@@ -430,12 +432,12 @@ get_devices_region_and_session_keys_msg(DeviceIDs) ->
                             false;
                         %% devices store devaddrs reversed.
                         {Region, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
-                            #{
-                                id => router_device:id(Device),
-                                region => erlang:atom_to_binary(Region),
-                                devaddr => DevAddr,
-                                nwk_s_key => lorawan_utils:binary_to_hex(SessionKey)
-                            }
+                            {true,
+                                {router_device:id(Device), #{
+                                    region => erlang:atom_to_binary(Region),
+                                    devaddr => DevAddr,
+                                    nwk_s_key => lorawan_utils:binary_to_hex(SessionKey)
+                                }}}
                     end
             end
         end,
@@ -445,5 +447,5 @@ get_devices_region_and_session_keys_msg(DeviceIDs) ->
         <<"0">>,
         <<"device:all">>,
         <<"device:all:skf">>,
-        #{devices => Map}
+        #{skfs => maps:from_list(List), request_id => ReqID}
     ).

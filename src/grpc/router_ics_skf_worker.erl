@@ -330,6 +330,9 @@ maybe_update_skf(List0, State) ->
 update_skf([], _State) ->
     ok;
 update_skf(List, State) ->
+    BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
+    MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+
     case
         helium_iot_config_session_key_filter_client:update(#{
             channel => router_ics_utils:channel()
@@ -338,25 +341,18 @@ update_skf(List, State) ->
         {error, _} = Error ->
             Error;
         {ok, Stream} ->
-            lists:foreach(
-                fun({Action, SKFs}) ->
-                    lists:foreach(
-                        fun(SKF) ->
-                            lager:info("~p ~p", [Action, SKF]),
-                            ok = update_skf(Action, SKF, Stream, State)
-                        end,
-                        SKFs
-                    )
+            router_ics_utils:batch_update(
+                fun(Action, SKF) ->
+                    lager:info("~p ~p", [Action, SKF]),
+                    ok = update_skf(Action, SKF, Stream, State)
                 end,
-                List
+                List,
+                BatchSleep
             ),
+
             ok = grpcbox_client:close_send(Stream),
-            wait_for_stream_close(
-                init,
-                Stream,
-                0,
-                router_utils:get_env_int(skf_max_timeout_attempt, 5)
-            )
+            lager:info("done sending skf updates [timeout_retry: ~p]", [MaxAttempt]),
+            wait_for_stream_close(init, Stream, 0, MaxAttempt)
     end.
 
 -spec wait_for_stream_close(

@@ -8,7 +8,8 @@
 -export([
     start_link_args/1,
     channel/0,
-    connect/3
+    connect/3,
+    batch_update/3
 ]).
 
 -define(ICS_CHANNEL, ics_channel).
@@ -56,3 +57,67 @@ connect(Transport, Host, Port) ->
         {ok, {_Conn, _Interceptor}} ->
             ok
     end.
+
+-spec batch_update(
+    Fun :: fun((Action, T) -> ok),
+    List :: [{Action, [T]}],
+    BatchSleep :: non_neg_integer()
+) ->
+    ok | {error, any()}
+when
+    Action :: add | remove.
+batch_update(Fun, List, BatchSleep) ->
+    lists:foreach(
+        fun({Action, Els}) ->
+            lager:info(
+                "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms]",
+                [Action, erlang:length(Els), BatchSleep]
+            ),
+            lists:foldl(
+                fun(El, Idx) ->
+                    %% we pause between every batch of 1k to not oversaturate
+                    %% our connection to the config service.
+                    case Idx rem 1000 of
+                        0 -> timer:sleep(BatchSleep);
+                        _ -> ok
+                    end,
+                    ok = Fun(Action, El),
+                    Idx + 1
+                end,
+                1,
+                Els
+            )
+        end,
+        List
+    ).
+
+%% ------------------------------------------------------------------
+%% EUNIT Tests
+%% ------------------------------------------------------------------
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+batch_update_test() ->
+    Ok = fun(_, _) -> ok end,
+
+    %% warmup
+    {_, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 500)}], timer:seconds(0)]),
+    {_, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 500)}], timer:seconds(5)]),
+
+    {Time0, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 2500)}], 0]),
+    {Time1, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 2500)}], 50]),
+    {Time2, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 2500)}], 100]),
+    {Time3, _} = timer:tc(?MODULE, batch_update, [Ok, [{add, lists:seq(1, 2500)}], 150]),
+    %% ct:print("~p < ~p < ~p < ~p", [
+    %%     erlang:convert_time_unit(Time0, microsecond, millisecond),
+    %%     erlang:convert_time_unit(Time1, microsecond, millisecond),
+    %%     erlang:convert_time_unit(Time2, microsecond, millisecond),
+    %%     erlang:convert_time_unit(Time3, microsecond, millisecond)
+    %% ]),
+    ?assert(Time0 < Time1),
+    ?assert(Time1 < Time2),
+    ?assert(Time2 < Time3),
+
+    ok.
+
+-endif.

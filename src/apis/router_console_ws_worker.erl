@@ -421,7 +421,8 @@ get_devices_region_and_session_keys_msg(ReqID, DeviceIDs) ->
                         DeviceID => maps:filter(fun(_, V) -> V =/= undefined end, #{
                             region => get_region(Device),
                             devaddr => get_devaddr(Device),
-                            nwk_s_key => get_nwk_s_key(Device)
+                            nwk_s_key => get_nwk_s_key(Device),
+                            app_s_key => get_app_s_key(Device)
                         })
                     }
             end
@@ -449,6 +450,12 @@ get_devaddr(Device) ->
 
 get_nwk_s_key(Device) ->
     case router_device:nwk_s_key(Device) of
+        undefined -> undefined;
+        SessionKey -> lorawan_utils:binary_to_hex(SessionKey)
+    end.
+
+get_app_s_key(Device) ->
+    case router_device:app_s_key(Device) of
         undefined -> undefined;
         SessionKey -> lorawan_utils:binary_to_hex(SessionKey)
     end.

@@ -386,7 +386,7 @@ update_euis(List, State) ->
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending eui update ltimeout_retry: ~p]", [MaxAttempt]),
+            lager:info("done sending eui updates [timeout_retry: ~p]", [MaxAttempt]),
             wait_for_stream_close(init, Stream, 0, MaxAttempt)
     end.
 

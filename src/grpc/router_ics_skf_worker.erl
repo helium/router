@@ -351,7 +351,7 @@ update_skf(List, State) ->
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending skf update [timeout_retry: ~p]", [MaxAttempt]),
+            lager:info("done sending skf updates [timeout_retry: ~p]", [MaxAttempt]),
             wait_for_stream_close(init, Stream, 0, MaxAttempt)
     end.
 

@@ -288,10 +288,11 @@ when
     SKFList :: [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 local_skf_to_remote_diff(OUI, RemoteSKFs) ->
     Local = get_local_skfs(OUI),
-    {
-        RemoteSKFs -- Local,
-        Local -- RemoteSKFs
-    }.
+
+    Add = Local -- RemoteSKFs,
+    Remove = RemoteSKFs -- Local,
+
+    {Add, Remove}.
 
 -spec get_local_skfs(OUI :: non_neg_integer()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].

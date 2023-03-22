@@ -60,7 +60,13 @@ update(Req, StreamState) ->
     case verify_skf_update_req(Req) of
         true ->
             lager:info("got skf_update ~p", [Req]),
-            catch persistent_term:get(?MODULE) ! {?MODULE, update, Req},
+            Filter = Req#iot_config_session_key_filter_update_req_v1_pb.filter,
+            case erlang:is_list(Filter#iot_config_session_key_filter_v1_pb.session_key) of
+                true ->
+                    catch persistent_term:get(?MODULE) ! {?MODULE, update, Req};
+                false ->
+                    catch persistent_term:get(?MODULE) ! {?MODULE, {error, expected_list}, Req}
+            end,
             {ok, StreamState};
         false ->
             lager:error("failed to skf_update ~p", [Req]),
@@ -74,6 +80,7 @@ stream(_RouteStreamReq, _StreamState) ->
     ok.
 send_list(SKF, Last) ->
     lager:notice("list ~p  eos: ~p @ ~p", [SKF, Last, erlang:whereis(?SFK_LIST)]),
+    true = erlang:is_list(SKF#iot_config_session_key_filter_v1_pb.session_key),
     case erlang:whereis(?SFK_LIST) of
         undefined ->
             timer:sleep(100),

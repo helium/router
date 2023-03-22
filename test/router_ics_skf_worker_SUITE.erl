@@ -14,7 +14,8 @@
 
 -export([
     main_test/1,
-    reconcile_test/1
+    reconcile_test/1,
+    diff_against_local_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -30,7 +31,8 @@
 all() ->
     [
         main_test,
-        reconcile_test
+        reconcile_test,
+        diff_against_local_test
     ].
 
 %%--------------------------------------------------------------------
@@ -410,6 +412,56 @@ reconcile_test(_Config) ->
     end,
 
     meck:unload(router_device_cache),
+    ok.
+
+diff_against_local_test(_Config) ->
+    %% if all devices in the cache are uploaded, the output of this function is nothing.
+    ok = meck:new(router_device_cache, [passthrough]),
+
+    AppKey = crypto:strong_rand_bytes(16),
+    Devices = lists:map(
+        fun(LtoI) ->
+            router_device:update(
+                [{devaddrs, [<<LtoI, 0, 0, 72>>]}, {keys, [{<<LtoI>>, AppKey}]}],
+                router_device:new(<<LtoI>>)
+            )
+        end,
+        lists:seq(1, 5)
+    ),
+    meck:expect(router_device_cache, get, fun() -> Devices end),
+
+    SKFs = [
+        #iot_config_session_key_filter_v1_pb{
+            oui = 2,
+            devaddr = erlang:list_to_integer("48000001", 16),
+            session_key = "01"
+        },
+        #iot_config_session_key_filter_v1_pb{
+            oui = 2,
+            devaddr = erlang:list_to_integer("48000002", 16),
+            session_key = "02"
+        },
+        #iot_config_session_key_filter_v1_pb{
+            oui = 2,
+            devaddr = erlang:list_to_integer("48000003", 16),
+            session_key = "03"
+        },
+        #iot_config_session_key_filter_v1_pb{
+            oui = 2,
+            devaddr = erlang:list_to_integer("48000004", 16),
+            session_key = "04"
+        },
+        #iot_config_session_key_filter_v1_pb{
+            oui = 2,
+            devaddr = erlang:list_to_integer("48000005", 16),
+            session_key = "05"
+        }
+    ],
+
+    ?assertEqual({[], []}, router_ics_skf_worker:local_skf_to_remote_diff(2, SKFs)),
+
+    ok = meck:unload(router_device_cache),
+
     ok.
 
 %% ------------------------------------------------------------------

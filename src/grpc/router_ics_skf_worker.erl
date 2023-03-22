@@ -31,6 +31,12 @@
     code_change/3
 ]).
 
+-ifdef(TEST).
+
+-export([local_skf_to_remote_diff/2]).
+
+-endif.
+
 -define(SERVER, ?MODULE).
 -define(INIT, init).
 -define(RECONCILE_START, reconcile_start).
@@ -135,9 +141,7 @@ handle_cast(
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("DRY RUN, got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    LocalSKFs = get_local_skfs(OUI),
-    ToAdd = LocalSKFs -- SKFs,
-    ToRemove = SKFs -- LocalSKFs,
+    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
     ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
     lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
@@ -148,9 +152,7 @@ handle_cast(
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    LocalSKFs = get_local_skfs(OUI),
-    ToAdd = LocalSKFs -- SKFs,
-    ToRemove = SKFs -- LocalSKFs,
+    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
     ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
     lager:info("reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
@@ -171,9 +173,7 @@ handle_cast(
     #state{oui = OUI} = State
 ) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    LocalSKFs = get_local_skfs(OUI),
-    ToAdd = LocalSKFs -- SKFs,
-    ToRemove = SKFs -- LocalSKFs,
+    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
     ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
     lager:info("reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
@@ -281,6 +281,17 @@ skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
             Options
         }
     }).
+
+-spec local_skf_to_remote_diff(OUI :: non_neg_integer(), Remote :: SKFList) ->
+    {ToAdd :: SKFList, ToRemove :: SKFList}
+when
+    SKFList :: [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+local_skf_to_remote_diff(OUI, RemoteSKFs) ->
+    Local = get_local_skfs(OUI),
+    {
+        RemoteSKFs -- Local,
+        Local -- RemoteSKFs
+    }.
 
 -spec get_local_skfs(OUI :: non_neg_integer()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].

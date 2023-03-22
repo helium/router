@@ -1,6 +1,5 @@
 -module(router_ics_skf_worker_SUITE).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
 -include("console_test.hrl").
@@ -305,7 +304,7 @@ reconcile_test(_Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = 0,
             devaddr = 0,
-            session_key = <<>>
+            session_key = []
         },
         true
     ),
@@ -392,7 +391,10 @@ reconcile_test(_Config) ->
                 devaddr = binary:decode_unsigned(
                     lorawan_utils:reverse(router_device:devaddr(Device))
                 ),
-                session_key = binary:encode_hex(router_device:nwk_s_key(Device))
+                %% It is important that these are strings
+                session_key = erlang:binary_to_list(
+                    binary:encode_hex(router_device:nwk_s_key(Device))
+                )
             }
         end,
         Devices1

@@ -411,41 +411,51 @@ get_router_address_msg() ->
 -spec get_devices_region_and_session_keys_msg(ReqID :: binary(), DeviceIDs :: list(binary())) ->
     binary().
 get_devices_region_and_session_keys_msg(ReqID, DeviceIDs) ->
-    List = lists:filtermap(
-        fun(DeviceID) ->
+    Map = lists:foldl(
+        fun(DeviceID, Acc) ->
             case router_device_cache:get(DeviceID) of
                 {error, _} ->
-                    false;
+                    Acc;
                 {ok, Device} ->
-                    case
-                        {
-                            router_device:region(Device),
-                            router_device:devaddr(Device),
-                            router_device:nwk_s_key(Device)
-                        }
-                    of
-                        {undefined, _, _} ->
-                            false;
-                        {_, undefined, _} ->
-                            false;
-                        {_, _, undefined} ->
-                            false;
-                        %% devices store devaddrs reversed.
-                        {Region, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
-                            {true,
-                                {router_device:id(Device), #{
-                                    region => erlang:atom_to_binary(Region),
-                                    devaddr => DevAddr,
-                                    nwk_s_key => lorawan_utils:binary_to_hex(SessionKey)
-                                }}}
-                    end
+                    Acc#{
+                        DeviceID => maps:filter(fun(_, V) -> V =/= undefined end, #{
+                            region => get_region(Device),
+                            devaddr => get_devaddr(Device),
+                            nwk_s_key => get_nwk_s_key(Device),
+                            app_s_key => get_app_s_key(Device)
+                        })
+                    }
             end
         end,
+        #{},
         DeviceIDs
     ),
     router_console_ws_handler:encode_msg(
         <<"0">>,
         <<"device:all">>,
         <<"device:all:skf">>,
-        #{skfs => maps:from_list(List), request_id => ReqID}
+        #{skfs => Map, request_id => ReqID}
     ).
+
+get_region(Device) ->
+    erlang:atom_to_binary(router_device:region(Device)).
+
+get_devaddr(Device) ->
+    case router_device:devaddr(Device) of
+        undefined ->
+            undefined;
+        DevAddr ->
+            lorawan_utils:binary_to_hex(lorawan_utils:reverse(DevAddr))
+    end.
+
+get_nwk_s_key(Device) ->
+    case router_device:nwk_s_key(Device) of
+        undefined -> undefined;
+        SessionKey -> lorawan_utils:binary_to_hex(SessionKey)
+    end.
+
+get_app_s_key(Device) ->
+    case router_device:app_s_key(Device) of
+        undefined -> undefined;
+        SessionKey -> lorawan_utils:binary_to_hex(SessionKey)
+    end.

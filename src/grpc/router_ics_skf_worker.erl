@@ -310,7 +310,7 @@ get_local_skfs(OUI) ->
                         {true, #iot_config_session_key_filter_v1_pb{
                             oui = OUI,
                             devaddr = DevAddr,
-                            session_key = binary:encode_hex(SessionKey)
+                            session_key = erlang:binary_to_list(binary:encode_hex(SessionKey))
                         }}
                 end
             end,

@@ -103,7 +103,7 @@ main_test(Config) ->
         #iot_config_session_key_filter_v1_pb{
             oui = 0,
             devaddr = 0,
-            session_key = <<>>
+            session_key = []
         },
         true
     ),

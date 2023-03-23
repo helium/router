@@ -112,7 +112,8 @@ setup_live_test() ->
         },
         [{persistent, true}]
     ),
-    ok = application:set_env(router, config_service_batch_sleep_ms, 1000),
+    ok = application:set_env(router, config_service_batch_sleep_ms, 250),
+    ok = application:set_env(router, config_service_batch_size, 250),
     ok = application:set_env(router, oui, 2, [{persistent, true}]).
 
 live_test(_Config) ->

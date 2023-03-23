@@ -390,6 +390,7 @@ maybe_update_skf(List0, State) ->
 update_skf([], _State) ->
     ok;
 update_skf(List, State) ->
+    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
     BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
     MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
 
@@ -409,7 +410,8 @@ update_skf(List, State) ->
                     ok = update_skf(Action, SKF, Stream, State)
                 end,
                 List,
-                BatchSleep
+                BatchSleep,
+                BatchSize
             ),
 
             ok = grpcbox_client:close_send(Stream),

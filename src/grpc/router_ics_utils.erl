@@ -9,7 +9,7 @@
     start_link_args/1,
     channel/0,
     connect/3,
-    batch_update/3
+    batch_update/4
 ]).
 
 -define(ICS_CHANNEL, ics_channel).
@@ -61,26 +61,27 @@ connect(Transport, Host, Port) ->
 -spec batch_update(
     Fun :: fun((Action, T) -> ok),
     List :: [{Action, [T]}],
-    BatchSleep :: non_neg_integer()
+    BatchSleep :: non_neg_integer(),
+    BatchSize :: non_neg_integeer()
 ) ->
     ok | {error, any()}
 when
     Action :: add | remove.
-batch_update(Fun, List, BatchSleep) ->
-    Size = 250,
+batch_update(Fun, List, BatchSleep, BatchSize) ->
+
     lists:foreach(
         fun({Action, Els}) ->
             ct:print(
-                "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms]",
-                [Action, erlang:length(Els), BatchSleep]
+                "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms] [batch_size: ~p]",
+                [Action, erlang:length(Els), BatchSleep, BatchSize]
             ),
             lists:foldl(
                 fun(El, Idx) ->
                     %% we pause between every batch of 1k to not oversaturate
                     %% our connection to the config service.
-                    case Idx rem Size of
+                    case Idx rem BatchSize of
                         0 ->
-                            ct:print("batch ~p / ~p (~p)", [Idx div Size, length(Els) / Size, Idx]),
+                            ct:print("batch ~p / ~p (~p)", [Idx div BatchSize, length(Els) / BatchSize, Idx]),
                             timer:sleep(BatchSleep);
                         _ ->
                             ok

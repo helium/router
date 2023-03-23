@@ -67,9 +67,10 @@ connect(Transport, Host, Port) ->
 when
     Action :: add | remove.
 batch_update(Fun, List, BatchSleep) ->
+    Size = 250,
     lists:foreach(
         fun({Action, Els}) ->
-            lager:info(
+            ct:print(
                 "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms]",
                 [Action, erlang:length(Els), BatchSleep]
             ),
@@ -77,16 +78,20 @@ batch_update(Fun, List, BatchSleep) ->
                 fun(El, Idx) ->
                     %% we pause between every batch of 1k to not oversaturate
                     %% our connection to the config service.
-                    case Idx rem 1000 of
-                        0 -> timer:sleep(BatchSleep);
-                        _ -> ok
+                    case Idx rem Size of
+                        0 ->
+                            ct:print("batch ~p / ~p (~p)", [Idx div Size, length(Els) / Size, Idx]),
+                            timer:sleep(BatchSleep);
+                        _ ->
+                            ok
                     end,
                     ok = Fun(Action, El),
                     Idx + 1
                 end,
                 1,
                 Els
-            )
+            ),
+            ct:print("batch ~p done ~p", [Action, length(Els)])
         end,
         List
     ).

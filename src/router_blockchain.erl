@@ -30,7 +30,8 @@
     find_dc_entry/1,
     calculate_state_channel_open_fee/1,
     save_key/1,
-    get_key/0
+    get_key/0,
+    pubkeybin/0
 ]).
 
 -define(ROUTER_KEY, router_key).
@@ -207,6 +208,11 @@ save_key(Key) ->
     {libp2p_crypto:public_key(), libp2p_crypto:sig_fun(), libp2p_crypto:ecdh_fun()} | undefined.
 get_key() ->
     persistent_term:get(?ROUTER_KEY, undefined).
+
+-spec pubkeybin() -> libp2p_crypto:pubkey_bin().
+pubkeybin() ->
+    {PubKey, _, _} = router_blockchain:get_key(),
+    libp2p_crypto:pubkey_to_bin(PubKey).
 
 %% ===================================================================
 %% Unexported, no touchy

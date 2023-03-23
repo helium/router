@@ -33,7 +33,11 @@
 
 -ifdef(TEST).
 
--export([local_skf_to_remote_diff/2]).
+-export([
+    list_skf/0,
+    local_skf_to_remote_diff/2,
+    is_reconciling/0
+]).
 
 -endif.
 
@@ -58,7 +62,8 @@
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
-    reconciling = false :: boolean()
+    reconciling = false :: boolean(),
+    reconcile_on_connect = true :: boolean()
 }).
 
 -type state() :: #state{}.
@@ -91,6 +96,19 @@ reconcile_end(Options, List) ->
 update(Updates) ->
     gen_server:cast(?SERVER, {?UPDATE, Updates}).
 
+-ifdef(TEST).
+
+-spec list_skf() ->
+    {ok, list(iot_config_pb:iot_config_session_key_filter_v1_pb())} | {error, any()}.
+list_skf() ->
+    gen_server:call(?SERVER, list_skf, timer:seconds(30)).
+
+-spec is_reconciling() -> boolean().
+is_reconciling() ->
+    gen_server:call(?SERVER, is_reconciling, infinity).
+
+-endif.
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -104,9 +122,10 @@ init(
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {_, SigFun, _} = router_blockchain:get_key(),
+    %% {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! ?INIT,
+    ReconcileOnConnect = maps:get(reconcile_on_connect, Args, true),
     {ok, #state{
         oui = router_utils:get_oui(),
         pubkey_bin = PubKeyBin,
@@ -114,17 +133,32 @@ init(
         transport = Transport,
         host = Host,
         port = Port,
-        conn_backoff = Backoff
+        conn_backoff = Backoff,
+        reconcile_on_connect = ReconcileOnConnect
     }}.
 
+handle_call(is_reconciling, _From, #state{reconciling = Reconciling} = State) ->
+    {reply, Reconciling, State};
+handle_call(list_skf, From, State) ->
+    %% ct:print("listing skf"),
+    Options = #{type => listing_skf, reply_pid => From},
+    case skf_list(Options, State) of
+        {error, _} = Error ->
+            ok = gen_server:reply(From, Error);
+        {ok, _Stream} ->
+            ok
+    end,
+    {noreply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
 handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State) ->
+    ct:print("starting reconcile with: ~p", [Options]),
     lager:info("reconciling started pid: ~p", [Options]),
     case skf_list(Options, State) of
         {error, _Reason} = Error ->
+            %% ct:print("reconcile fail 1"),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
             lager:warning("fail to skf_list ~p, retrying in ~wms", [
@@ -133,9 +167,14 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             ok = forward_reconcile(Options, Error),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
+            %% ct:print("reconcile success 1"),
             {_, Backoff2} = backoff:succeed(Backoff0),
             {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
+handle_cast({?RECONCILE_END, #{type := listing_skf, reply_pid := From}, SKFs}, #state{} = State) ->
+    ct:print("got back skf list: ~p", [length(SKFs)]),
+    ok = gen_server:reply(From, {ok, SKFs}),
+    {noreply, State};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := false} = Options, SKFs},
     #state{oui = OUI} = State
@@ -151,9 +190,9 @@ handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
+    ct:print("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
     {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
     lager:info("reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
     ]),
@@ -174,7 +213,6 @@ handle_cast(
 ) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
     {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
     lager:info("reconciling done adding ~w removing ~w", [
         erlang:length(ToAdd), erlang:length(ToRemove)
     ]),
@@ -227,18 +265,27 @@ handle_info(
         transport = Transport,
         host = Host,
         port = Port,
-        conn_backoff = Backoff0
+        conn_backoff = Backoff0,
+        reconcile_on_connect = ReconcileOnConnect
     } = State
 ) ->
+    ct:print("init"),
     case router_ics_utils:connect(Transport, Host, Port) of
         {error, _Reason} ->
+            ct:print("could not connect"),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
             _ = erlang:send_after(Delay, self(), ?INIT),
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
+            ct:print("connected"),
             lager:info("connected"),
-            ok = ?MODULE:reconcile(undefined, true),
+            case ReconcileOnConnect of
+                true ->
+                    ok = ?MODULE:reconcile(undefined, true);
+                false ->
+                    ok
+            end,
             {noreply, State}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
@@ -259,6 +306,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
+    ct:print("are we terminating: ~p", [_Reason]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -351,11 +399,13 @@ update_skf(List, State) ->
         })
     of
         {error, _} = Error ->
+            ct:print("update stream ERROR: ~p", [Error]),
             Error;
         {ok, Stream} ->
+            ct:print("Got update stream"),
             router_ics_utils:batch_update(
                 fun(Action, SKF) ->
-                    lager:info("~p ~p", [Action, SKF]),
+                    %% lager:info("~p ~p", [Action, SKF]),
                     ok = update_skf(Action, SKF, Stream, State)
                 end,
                 List,

@@ -426,13 +426,17 @@ update_skf(List, State) ->
     MaxAttempts :: non_neg_integer()
 ) -> ok | {error, any()}.
 wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
-    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
+    ct:print("[~p] stream did not close within ~p attempts", [?FUNCTION_NAME, MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
 wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    ct:print("[~p] got an error: ~p", [?FUNCTION_NAME, Err]),
     Err;
-wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    ct:print("[~p] got an ok: ~p", [?FUNCTION_NAME, Data]),
+
     ok;
 wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    ct:print("[~p] got an stream_finished", [?FUNCTION_NAME]),
     ok;
 wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
     wait_for_stream_close(
@@ -442,7 +446,7 @@ wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
         MaxAttempts
     );
 wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
-    lager:warning("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
+    ct:print("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
         grpcbox_client:recv_data(Stream, timer:seconds(2)),

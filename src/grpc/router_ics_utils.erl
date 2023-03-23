@@ -62,7 +62,7 @@ connect(Transport, Host, Port) ->
     Fun :: fun((Action, T) -> ok),
     List :: [{Action, [T]}],
     BatchSleep :: non_neg_integer(),
-    BatchSize :: non_neg_integeer()
+    BatchSize :: non_neg_integer()
 ) ->
     ok | {error, any()}
 when

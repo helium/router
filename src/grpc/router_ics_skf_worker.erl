@@ -140,7 +140,6 @@ init(
 handle_call(is_reconciling, _From, #state{reconciling = Reconciling} = State) ->
     {reply, Reconciling, State};
 handle_call(list_skf, From, State) ->
-    %% ct:print("listing skf"),
     Options = #{type => listing_skf, reply_pid => From},
     case skf_list(Options, State) of
         {error, _} = Error ->
@@ -154,11 +153,9 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State) ->
-    ct:print("starting reconcile with: ~p", [Options]),
     lager:info("reconciling started pid: ~p", [Options]),
     case skf_list(Options, State) of
         {error, _Reason} = Error ->
-            %% ct:print("reconcile fail 1"),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
             lager:warning("fail to skf_list ~p, retrying in ~wms", [
@@ -167,12 +164,10 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             ok = forward_reconcile(Options, Error),
             {noreply, State#state{conn_backoff = Backoff1}};
         {ok, _Stream} ->
-            %% ct:print("reconcile success 1"),
             {_, Backoff2} = backoff:succeed(Backoff0),
             {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
 handle_cast({?RECONCILE_END, #{type := listing_skf, reply_pid := From}, SKFs}, #state{} = State) ->
-    ct:print("got back skf list: ~p", [length(SKFs)]),
     ok = gen_server:reply(From, {ok, SKFs}),
     {noreply, State};
 handle_cast(
@@ -190,7 +185,6 @@ handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
-    ct:print("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
     {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
     lager:info("reconciling done adding ~w removing ~w", [
@@ -269,16 +263,13 @@ handle_info(
         reconcile_on_connect = ReconcileOnConnect
     } = State
 ) ->
-    ct:print("init"),
     case router_ics_utils:connect(Transport, Host, Port) of
         {error, _Reason} ->
-            ct:print("could not connect"),
             {Delay, Backoff1} = backoff:fail(Backoff0),
             lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
             _ = erlang:send_after(Delay, self(), ?INIT),
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
-            ct:print("connected"),
             lager:info("connected"),
             case ReconcileOnConnect of
                 true ->
@@ -306,7 +297,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
-    ct:print("are we terminating: ~p", [_Reason]),
+    lager:error("terminating: ~p", [_Reason]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -400,10 +391,8 @@ update_skf(List, State) ->
         })
     of
         {error, _} = Error ->
-            ct:print("update stream ERROR: ~p", [Error]),
             Error;
         {ok, Stream} ->
-            ct:print("Got update stream"),
             router_ics_utils:batch_update(
                 fun(Action, SKF) ->
                     lager:info("~p ~p", [Action, SKF]),
@@ -415,7 +404,10 @@ update_skf(List, State) ->
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending skf updates [timeout_retry: ~p]", [MaxAttempt]),
+            lager:info(
+                "done sending skf updates [timeout_retry: ~p] [recv_timeout: ~pms]",
+                [MaxAttempt, AttemptSleep]
+            ),
             wait_for_stream_close(init, Stream, 0, MaxAttempt, AttemptSleep)
     end.
 
@@ -427,17 +419,16 @@ update_skf(List, State) ->
     AttemptSleep :: non_neg_integer()
 ) -> ok | {error, any()}.
 wait_for_stream_close(_, _, MaxAttempts, MaxAttempts, _) ->
-    ct:print("[~p] stream did not close within ~p attempts", [?FUNCTION_NAME, MaxAttempts]),
+    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
 wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
-    ct:print("[~p] got an error: ~p", [?FUNCTION_NAME, Err]),
+    lager:error("got an error: ~p", [Err]),
     Err;
 wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
-    ct:print("[~p] got an ok: ~p", [?FUNCTION_NAME, Data]),
-
+    lager:info("stream closed ok with: ~p", [Data]),
     ok;
 wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
-    ct:print("[~p] got an stream_finished", [?FUNCTION_NAME]),
+    lager:info("got a stream_finished"),
     ok;
 wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     wait_for_stream_close(
@@ -448,7 +439,7 @@ wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) 
         AttemptSleep
     );
 wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
-    ct:print("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
+    lager:info("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
         grpcbox_client:recv_data(Stream, AttemptSleep),

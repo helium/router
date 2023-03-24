@@ -22,7 +22,7 @@
 
 -spec init(pid(), stream_id(), Options :: map() | undefined) -> {ok, state()}.
 init(_ConnectionPid, _StreamId, Options) ->
-    %% ct:print("[~p] init ~p: ~p", [?MODULE, _StreamId, Options]),
+    lager:info("init ~p: ~p", [_StreamId, Options]),
     {ok, #state{options = Options, data = []}}.
 
 -spec handle_message(iot_config_pb:iot_config_session_key_filter_v1_pb(), state()) -> {ok, state()}.
@@ -32,16 +32,16 @@ handle_message(SKF, #state{data = Data} = State) ->
 
 -spec handle_headers(map(), state()) -> {ok, state()}.
 handle_headers(_Metadata, CBData) ->
-    %% ct:print("[~p] headers: ~p", [?MODULE, _Metadata]),
+    lager:info("headers: ~p", [_Metadata]),
     {ok, CBData}.
 
 -spec handle_trailers(binary(), term(), map(), state()) -> {ok, state()}.
 handle_trailers(_Status, _Message, _Metadata, CBData) ->
-    ct:print("[~p] trailers: [status: ~p] [message: ~p] [meta: ~p]", [?MODULE, _Status, _Message, _Metadata]),
+    lager:info("trailers: [status: ~p] [message: ~p] [meta: ~p]", [_Status, _Message, _Metadata]),
     {ok, CBData}.
 
 -spec handle_eos(state()) -> {ok, state()}.
 handle_eos(#state{options = Options, data = Data} = State) ->
-    %% ct:print("[~p] got eos, sending to router_ics_skf_worker", [?MODULE]),
+    lager:info("got eos, sending to router_ics_skf_worker"),
     ok = router_ics_skf_worker:reconcile_end(Options, Data),
     {ok, State}.

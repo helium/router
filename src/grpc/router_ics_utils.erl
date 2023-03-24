@@ -70,9 +70,10 @@ when
 batch_update(Fun, List, BatchSleep, BatchSize) ->
     lists:foreach(
         fun({Action, Els}) ->
-            ct:print(
-                "batch update [action: ~p] [count: ~p] [batch_sleep: ~pms] [batch_size: ~p]",
-                [Action, erlang:length(Els), BatchSleep, BatchSize]
+            Total = erlang:length(Els),
+            lager:info(
+                "batch start [action: ~p] [count: ~p] [batch_sleep: ~pms] [batch_size: ~p]",
+                [Action, Total, BatchSleep, BatchSize]
             ),
             lists:foldl(
                 fun(El, Idx) ->
@@ -80,7 +81,10 @@ batch_update(Fun, List, BatchSleep, BatchSize) ->
                     %% our connection to the config service.
                     case Idx rem BatchSize of
                         0 ->
-                            ct:print("batch ~p / ~p (~p)", [Idx div BatchSize, length(Els) / BatchSize, Idx]),
+                            lager:info(
+                                "batch update ~p / ~p (~p)",
+                                [Idx div BatchSize, Total / BatchSize, Idx]
+                            ),
                             timer:sleep(BatchSleep);
                         _ ->
                             ok
@@ -91,7 +95,10 @@ batch_update(Fun, List, BatchSleep, BatchSize) ->
                 1,
                 Els
             ),
-            ct:print("batch ~p done ~p", [Action, length(Els)])
+            lager:info(
+                "batch finished [action: ~p] [count: ~p] [batch_sleep: ~pms] [batch_size: ~p]",
+                [Action, Total, BatchSleep, BatchSize]
+            )
         end,
         List
     ).

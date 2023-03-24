@@ -167,57 +167,86 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             {_, Backoff2} = backoff:succeed(Backoff0),
             {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
-handle_cast({?RECONCILE_END, #{type := listing_skf, reply_pid := From}, SKFs}, #state{} = State) ->
-    ok = gen_server:reply(From, {ok, SKFs}),
+handle_cast(
+    {?RECONCILE_END, #{type := listing_skf, reply_pid := From} = Options, SKFs},
+    #state{} = State
+) ->
+    Reply =
+        case maps:get(error, Options, undefined) of
+            undefined -> {ok, SKFs};
+            Err -> Err
+        end,
+    ok = gen_server:reply(From, Reply),
     {noreply, State};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := false} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("DRY RUN, got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
-    lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
+            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+            lager:info(
+                "DRY RUN, reconciling done adding ~w removing ~w",
+                [erlang:length(ToAdd), erlang:length(ToRemove)]
+            );
+        Err ->
+            ok = forward_reconcile(Options, Err),
+            lager:warning("DRY RUN, reconciling error: ~p", [Err])
+    end,
     {noreply, State#state{reconciling = false}};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    lager:info("reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
-    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
-        {error, Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
-        ok ->
-            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State#state{reconciling = false}}
+            case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+                {error, Reason} = Error ->
+                    ok = forward_reconcile(Options, Error),
+                    {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
+                ok ->
+                    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+                    lager:info("reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ]),
+                    {noreply, State#state{reconciling = false}}
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, skf_update_failed(Err, State#state{reconciling = false})}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    lager:info("reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
-    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
-        {error, Reason} ->
-            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
-        ok ->
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State#state{reconciling = false}}
+            case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+                {error, Reason} ->
+                    {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
+                ok ->
+                    lager:info("reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ]),
+                    {noreply, State#state{reconciling = false}}
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, skf_update_failed(Err, State#state{reconciling = false})}
     end;
 handle_cast(
     {?UPDATE, _Updates}, #state{reconciling = true} = State

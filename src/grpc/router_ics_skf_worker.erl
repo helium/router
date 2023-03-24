@@ -392,6 +392,7 @@ update_skf(List, State) ->
     BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
     BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
     MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
 
     case
         helium_iot_config_session_key_filter_client:update(#{
@@ -405,7 +406,7 @@ update_skf(List, State) ->
             ct:print("Got update stream"),
             router_ics_utils:batch_update(
                 fun(Action, SKF) ->
-                    %% lager:info("~p ~p", [Action, SKF]),
+                    lager:info("~p ~p", [Action, SKF]),
                     ok = update_skf(Action, SKF, Stream, State)
                 end,
                 List,
@@ -415,43 +416,46 @@ update_skf(List, State) ->
 
             ok = grpcbox_client:close_send(Stream),
             lager:info("done sending skf updates [timeout_retry: ~p]", [MaxAttempt]),
-            wait_for_stream_close(init, Stream, 0, MaxAttempt)
+            wait_for_stream_close(init, Stream, 0, MaxAttempt, AttemptSleep)
     end.
 
 -spec wait_for_stream_close(
     Result :: init | stream_finished | timeout | {ok, any()} | {error, any()},
     Stream :: map(),
     CurrentAttempts :: non_neg_integer(),
-    MaxAttempts :: non_neg_integer()
+    MaxAttempts :: non_neg_integer(),
+    AttemptSleep :: non_neg_integer()
 ) -> ok | {error, any()}.
-wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+wait_for_stream_close(_, _, MaxAttempts, MaxAttempts, _) ->
     ct:print("[~p] stream did not close within ~p attempts", [?FUNCTION_NAME, MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
-wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
     ct:print("[~p] got an error: ~p", [?FUNCTION_NAME, Err]),
     Err;
-wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
     ct:print("[~p] got an ok: ~p", [?FUNCTION_NAME, Data]),
 
     ok;
-wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
     ct:print("[~p] got an stream_finished", [?FUNCTION_NAME]),
     ok;
-wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     );
-wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     ct:print("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts + 1,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     ).
 
 -spec update_skf(

@@ -188,75 +188,92 @@ handle_cast(
     #state{route_id = RouteID} = State
 ) when is_pid(Pid) ->
     lager:info("DRY RUN, got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            lager:warning("fail to get local pairs ~p", [_Reason]),
-            {noreply, State};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            ok = forward_reconcile(
-                Options, {ok, ToAdd, ToRemove}
-            ),
-            lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
-                erlang:length(ToAdd), erlang:length(ToRemove)
-            ]),
-            {noreply, State}
-    end;
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} = Error ->
+                    ok = forward_reconcile(Options, Error),
+                    lager:warning("DRY RUN, fail to get local pairs ~p", [_Reason]);
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    ok = forward_reconcile(
+                        Options, {ok, ToAdd, ToRemove}
+                    ),
+                    lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ])
+            end;
+        Err ->
+            ok = forward_reconcile(Options, Err),
+            lager:warning("DRY RUN, reconciling error: ~p", [Err])
+    end,
+    {noreply, State};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, EUIPairs},
     #state{route_id = RouteID} = State
 ) when is_pid(Pid) ->
     lager:info("got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            lager:warning("fail to get local pairs ~p", [_Reason]),
-            {noreply, State};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
-                {error, Reason} = Error ->
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} = Error ->
                     ok = forward_reconcile(Options, Error),
-                    {noreply, update_euis_failed(Reason, State)};
-                ok ->
-                    ok = forward_reconcile(
-                        Options, {ok, ToAdd, ToRemove}
-                    ),
-                    lager:info("reconciling done adding ~w removing ~w", [
-                        erlang:length(ToAdd), erlang:length(ToRemove)
-                    ]),
-                    {noreply, State}
-            end
+                    lager:warning("fail to get local pairs ~p", [_Reason]),
+                    {noreply, State};
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+                        {error, Reason} = Error ->
+                            ok = forward_reconcile(Options, Error),
+                            {noreply, update_euis_failed(Reason, State)};
+                        ok ->
+                            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+                            lager:info(
+                                "reconciling done adding ~w removing ~w",
+                                [erlang:length(ToAdd), erlang:length(ToRemove)]
+                            ),
+                            {noreply, State}
+                    end
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, update_euis_failed(Err, State)}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, EUIPairs},
     #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
     lager:info("got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} ->
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:spawn(fun() ->
-                timer:sleep(Delay),
-                ok = ?MODULE:reconcile(undefined, true)
-            end),
-            lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
-                {error, Reason} ->
-                    {noreply, update_euis_failed(Reason, State)};
-                ok ->
-                    lager:info("reconciling done adding ~w removing ~w", [
-                        erlang:length(ToAdd), erlang:length(ToRemove)
-                    ]),
-                    {noreply, State}
-            end
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} ->
+                    {Delay, Backoff1} = backoff:fail(Backoff0),
+                    _ = erlang:spawn(fun() ->
+                        timer:sleep(Delay),
+                        ok = ?MODULE:reconcile(undefined, true)
+                    end),
+                    lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
+                    {noreply, State#state{conn_backoff = Backoff1}};
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+                        {error, Reason} ->
+                            {noreply, update_euis_failed(Reason, State)};
+                        ok ->
+                            lager:info("reconciling done adding ~w removing ~w", [
+                                erlang:length(ToAdd), erlang:length(ToRemove)
+                            ]),
+                            {noreply, State}
+                    end
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            {noreply, update_euis_failed(Err, State)}
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -353,8 +370,10 @@ maybe_update_euis(List0, State) ->
 update_euis([], _State) ->
     ok;
 update_euis(List, State) ->
+    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
     BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
     MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
 
     case
         helium_iot_config_route_client:update_euis(#{
@@ -381,42 +400,54 @@ update_euis(List, State) ->
                     ok = update_euis(Action, EUIPair, Stream, State)
                 end,
                 List,
-                BatchSleep
+                BatchSleep,
+                BatchSize
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending eui updates [timeout_retry: ~p]", [MaxAttempt]),
-            wait_for_stream_close(init, Stream, 0, MaxAttempt)
+            lager:info(
+                "done sending eui updates [timeout_retry: ~p] [recv_timeout: ~p]",
+                [MaxAttempt, AttemptSleep]
+            ),
+            wait_for_stream_close(init, Stream, 0, MaxAttempt, AttemptSleep)
     end.
 
 -spec wait_for_stream_close(
     Result :: init | stream_finished | timeout | {ok, any()} | {error, any()},
     Stream :: map(),
     CurrentAttempts :: non_neg_integer(),
-    MaxAttempts :: non_neg_integer()
+    MaxAttempts :: non_neg_integer(),
+    AttemptSleep :: non_neg_integer()
 ) -> ok | {error, any()}.
-wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+wait_for_stream_close(_, _, MaxAttempts, MaxAttempts, _) ->
+    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
-wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:error("got an error: ~p", [Err]),
     Err;
-wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("stream closed ok with: ~p", [Data]),
     ok;
-wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("got a stream_finished"),
     ok;
-wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     );
-wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
+    lager:info("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts + 1,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     ).
 
 -spec update_euis(

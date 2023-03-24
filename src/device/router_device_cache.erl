@@ -44,7 +44,7 @@ init() ->
         {write_concurrency, true},
         {read_concurrency, true}
     ]),
-    %% ok = init_from_db(),
+    ok = init_from_db(),
     ok.
 
 -spec get() -> [router_device:device()].

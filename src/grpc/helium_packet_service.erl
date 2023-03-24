@@ -23,7 +23,7 @@ route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
     case verify(PacketUp) of
         false ->
             lager:debug("failed to verify ~p", [PacketUp]),
-            {grpc_error, {grpcbox_stream:code_to_status(2), <<"bad signature">>}};
+            {grpc_error, {grpcbox_stream:code_to_status(7), <<"bad signature">>}};
         true ->
             Self = self(),
             SCPacket = to_sc_packet(PacketUp),

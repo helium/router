@@ -244,7 +244,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                         ),
                         case offer_check(Offer) of
                             ok ->
-                                erlang:spawn(router_blockchain, track_offer, [Offer, self()]),
+                                erlang:spawn(router_blockchain, track_offer, [Offer, Pid]),
                                 {ok, Device};
                             {error, _} ->
                                 lager:debug("packet accepted even if on denylist"),

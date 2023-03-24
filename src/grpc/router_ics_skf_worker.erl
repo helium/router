@@ -67,6 +67,7 @@
 }).
 
 -type state() :: #state{}.
+-type session_key_filter() :: iot_config_pb:iot_config_session_key_filter_v1_pb().
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -86,7 +87,7 @@ reconcile(Pid, Commit) ->
 
 -spec reconcile_end(
     Options :: map(),
-    List :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
+    List :: list(session_key_filter())
 ) -> ok.
 reconcile_end(Options, List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, Options, List}).
@@ -98,8 +99,7 @@ update(Updates) ->
 
 -ifdef(TEST).
 
--spec list_skf() ->
-    {ok, list(iot_config_pb:iot_config_session_key_filter_v1_pb())} | {error, any()}.
+-spec list_skf() -> {ok, list(session_key_filter())} | {error, any()}.
 list_skf() ->
     gen_server:call(?SERVER, list_skf, infinity).
 
@@ -333,7 +333,7 @@ skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
 -spec local_skf_to_remote_diff(OUI :: non_neg_integer(), Remote :: SKFList) ->
     {ToAdd :: SKFList, ToRemove :: SKFList}
 when
-    SKFList :: [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+    SKFList :: list(session_key_filter()).
 local_skf_to_remote_diff(OUI, RemoteSKFs) ->
     Local = get_local_skfs(OUI),
 
@@ -342,8 +342,7 @@ local_skf_to_remote_diff(OUI, RemoteSKFs) ->
 
     {Add, Remove}.
 
--spec get_local_skfs(OUI :: non_neg_integer()) ->
-    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+-spec get_local_skfs(OUI :: non_neg_integer()) -> list(session_key_filter()).
 get_local_skfs(OUI) ->
     Devices = router_device_cache:get(),
     lists:usort(
@@ -368,7 +367,7 @@ get_local_skfs(OUI) ->
     ).
 
 -spec maybe_update_skf(
-    List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
+    List :: [{add | remove, list(session_key_filter())}],
     State :: state()
 ) ->
     ok | {error, any()}.
@@ -383,7 +382,7 @@ maybe_update_skf(List0, State) ->
     update_skf(List1, State).
 
 -spec update_skf(
-    List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
+    List :: [{add | remove, list(session_key_filter())}],
     State :: state()
 ) ->
     ok | {error, any()}.
@@ -457,7 +456,7 @@ wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
 
 -spec update_skf(
     Action :: add | remove,
-    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
+    SKF :: session_key_filter(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
@@ -479,7 +478,8 @@ skf_update_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     State#state{conn_backoff = Backoff1}.
 
 -spec forward_reconcile(
-    map(), Result :: {ok, list(), list()} | {error, any()}
+    map(),
+    Result :: {ok, list(), list()} | {error, any()}
 ) -> ok.
 forward_reconcile(#{forward_pid := undefined}, _Result) ->
     ok;

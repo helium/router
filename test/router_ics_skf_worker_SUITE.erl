@@ -14,7 +14,8 @@
 -export([
     main_test/1,
     reconcile_test/1,
-    diff_against_local_test/1
+    diff_against_local_test/1,
+    live_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -32,11 +33,16 @@ all() ->
         main_test,
         reconcile_test,
         diff_against_local_test
+        %% , live_test %% for local performance tests
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_testcase(live_test, Config) ->
+    ok = setup_live_test(),
+
+    test_utils:init_per_testcase(live_test, Config);
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_skf_service, self()),
     Port = 8085,
@@ -52,6 +58,10 @@ init_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+
+end_per_testcase(live_test, Config) ->
+    test_utils:end_per_testcase(live_test, Config),
+    ok;
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
     ServerPid = proplists:get_value(ics_server, Config),
@@ -71,6 +81,91 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+setup_live_test() ->
+    Transport = http,
+    Host = "localhost",
+    Port = 50051,
+    SwarmKey = "absolute-path-to-keyfile",
+
+    ok = application:set_env(
+        grpcbox,
+        client,
+        #{channels => [{default_channel, [{Transport, Host, Port, []}], #{}}]}
+    ),
+
+    {PubKey0, SigFun, _} = load_keys(SwarmKey),
+
+    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey0),
+    ct:print("going forward with pubkey: ~p", [libp2p_crypto:pubkey_to_b58(PubKey0)]),
+    ok = application:set_env(
+        router,
+        ics,
+        #{
+            skf_enabled => "true",
+            transport => Transport,
+            host => Host,
+            port => Port,
+            pubkey_bin => PubKeyBin,
+            sig_fun => SigFun,
+            reconcile_on_connect => false
+        },
+        [{persistent, true}]
+    ),
+    ok = application:set_env(router, config_service_max_timeout_attempt, 50, [{persistent, true}]),
+    ok = application:set_env(router, config_service_batch_sleep_ms, 500, [{persistent, true}]),
+    ok = application:set_env(router, config_service_batch_size, 5000, [{persistent, true}]),
+    ok = application:set_env(router, oui, 2, [{persistent, true}]).
+
+live_test(_Config) ->
+    %% 1. Gather the starting number to compare against at the end.
+    {ok, Els0} = router_ics_skf_worker:list_skf(),
+    StartingCount = erlang:length(Els0),
+    ct:print("Starting: ~p", [length(Els0)]),
+
+    %% 2. Fill the cache with devices
+    Start = 1207960576,
+    End = 1207961599,
+    Size = End - Start,
+    Create = fun(Prefix, X) ->
+        router_device:update(
+            [
+                {devaddrs, [binary:encode_unsigned(rand:uniform(Size) + Start, little)]},
+                {keys, [{crypto:strong_rand_bytes(16), <<>>}]}
+            ],
+            router_device:new(erlang:list_to_binary(io_lib:format("Device ~p ~p", [Prefix, X])))
+        )
+    end,
+
+    DeviceCount = 7500,
+    ct:print("making ~p devices", [DeviceCount]),
+    Devices = lists:map(fun(Idx) -> Create(1, Idx) end, lists:seq(1, DeviceCount)),
+    [router_device_cache:save(D) || D <- Devices],
+
+    %% 3. Trigger a reconcile
+    ok = router_ics_skf_worker:reconcile(self(), true),
+    ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 50, 1000),
+
+    %% 4. We have that many more devices than we started with...
+    {ok, Els1} = router_ics_skf_worker:list_skf(),
+    AddingCount = erlang:length(Els1),
+    ct:print("Starting: ~p~nAdding: ~p", [StartingCount, AddingCount]),
+
+    %% 5. Empty the cache
+    [router_device_cache:delete(router_device:id(D)) || D <- Devices],
+
+    %% 6. Reconcile again
+    ok = router_ics_skf_worker:reconcile(self(), true),
+    ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 50, 1000),
+
+    %% 7. We have exactly the same number as we started with...
+    {ok, Els2} = router_ics_skf_worker:list_skf(),
+    EndingCount = erlang:length(Els2),
+
+    %% 8. All the counts
+    ct:print("Starting: ~p~nAdding: ~p~nRemoving: ~p", [StartingCount, AddingCount, EndingCount]),
+
+    ok.
 
 main_test(Config) ->
     meck:new(router_device_cache, [passthrough]),
@@ -489,4 +584,17 @@ rcv_loop(Acc) ->
             lager:notice("got router_test_ics_skf_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
+    end.
+
+load_keys(SwarmKey) ->
+    case libp2p_crypto:load_keys(SwarmKey) of
+        {ok, #{secret := PrivKey, public := PubKey}} ->
+            {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)};
+        {error, enoent} ->
+            KeyMap =
+                #{secret := PrivKey, public := PubKey} = libp2p_crypto:generate_keys(
+                    ecc_compact
+                ),
+            ok = libp2p_crypto:save_keys(KeyMap, SwarmKey),
+            {PubKey, libp2p_crypto:mk_sig_fun(PrivKey), libp2p_crypto:mk_ecdh_fun(PrivKey)}
     end.

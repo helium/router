@@ -33,7 +33,11 @@
 
 -ifdef(TEST).
 
--export([local_skf_to_remote_diff/2]).
+-export([
+    list_skf/0,
+    local_skf_to_remote_diff/2,
+    is_reconciling/0
+]).
 
 -endif.
 
@@ -58,10 +62,12 @@
     host :: string(),
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
-    reconciling = false :: boolean()
+    reconciling = false :: boolean(),
+    reconcile_on_connect = true :: boolean()
 }).
 
 -type state() :: #state{}.
+-type session_key_filter() :: iot_config_pb:iot_config_session_key_filter_v1_pb().
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -81,7 +87,7 @@ reconcile(Pid, Commit) ->
 
 -spec reconcile_end(
     Options :: map(),
-    List :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
+    List :: list(session_key_filter())
 ) -> ok.
 reconcile_end(Options, List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, Options, List}).
@@ -90,6 +96,18 @@ reconcile_end(Options, List) ->
     ok.
 update(Updates) ->
     gen_server:cast(?SERVER, {?UPDATE, Updates}).
+
+-ifdef(TEST).
+
+-spec list_skf() -> {ok, list(session_key_filter())} | {error, any()}.
+list_skf() ->
+    gen_server:call(?SERVER, list_skf, infinity).
+
+-spec is_reconciling() -> boolean().
+is_reconciling() ->
+    gen_server:call(?SERVER, is_reconciling, infinity).
+
+-endif.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -104,9 +122,9 @@ init(
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     self() ! ?INIT,
+    ReconcileOnConnect = maps:get(reconcile_on_connect, Args, true),
     {ok, #state{
         oui = router_utils:get_oui(),
         pubkey_bin = PubKeyBin,
@@ -114,9 +132,21 @@ init(
         transport = Transport,
         host = Host,
         port = Port,
-        conn_backoff = Backoff
+        conn_backoff = Backoff,
+        reconcile_on_connect = ReconcileOnConnect
     }}.
 
+handle_call(is_reconciling, _From, #state{reconciling = Reconciling} = State) ->
+    {reply, Reconciling, State};
+handle_call(list_skf, From, State) ->
+    Options = #{type => listing_skf, reply_pid => From},
+    case skf_list(Options, State) of
+        {error, _} = Error ->
+            ok = gen_server:reply(From, Error);
+        {ok, _Stream} ->
+            ok
+    end,
+    {noreply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
@@ -137,55 +167,85 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
 handle_cast(
+    {?RECONCILE_END, #{type := listing_skf, reply_pid := From} = Options, SKFs},
+    #state{} = State
+) ->
+    Reply =
+        case maps:get(error, Options, undefined) of
+            undefined -> {ok, SKFs};
+            Err -> Err
+        end,
+    ok = gen_server:reply(From, Reply),
+    {noreply, State};
+handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := false} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("DRY RUN, got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
-    lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
+            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+            lager:info(
+                "DRY RUN, reconciling done adding ~w removing ~w",
+                [erlang:length(ToAdd), erlang:length(ToRemove)]
+            );
+        Err ->
+            ok = forward_reconcile(Options, Err),
+            lager:warning("DRY RUN, reconciling error: ~p", [Err])
+    end,
     {noreply, State#state{reconciling = false}};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) when is_pid(Pid) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
-    lager:info("reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
-    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
-        {error, Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
-        ok ->
-            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State#state{reconciling = false}}
+            case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+                {error, Reason} = Error ->
+                    ok = forward_reconcile(Options, Error),
+                    {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
+                ok ->
+                    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+                    lager:info("reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ]),
+                    {noreply, State#state{reconciling = false}}
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, skf_update_failed(Err, State#state{reconciling = false})}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, SKFs},
     #state{oui = OUI} = State
 ) ->
     lager:info("got RECONCILE_END ~p, with ~w", [Options, erlang:length(SKFs)]),
-    {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
-    ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
-    lager:info("reconciling done adding ~w removing ~w", [
-        erlang:length(ToAdd), erlang:length(ToRemove)
-    ]),
-    case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
-        {error, Reason} ->
-            {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
-        ok ->
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            {ToAdd, ToRemove} = local_skf_to_remote_diff(OUI, SKFs),
             lager:info("reconciling done adding ~w removing ~w", [
                 erlang:length(ToAdd), erlang:length(ToRemove)
             ]),
-            {noreply, State#state{reconciling = false}}
+            case maybe_update_skf([{remove, ToRemove}, {add, ToAdd}], State) of
+                {error, Reason} ->
+                    {noreply, skf_update_failed(Reason, State#state{reconciling = false})};
+                ok ->
+                    lager:info("reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ]),
+                    {noreply, State#state{reconciling = false}}
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, skf_update_failed(Err, State#state{reconciling = false})}
     end;
 handle_cast(
     {?UPDATE, _Updates}, #state{reconciling = true} = State
@@ -227,7 +287,8 @@ handle_info(
         transport = Transport,
         host = Host,
         port = Port,
-        conn_backoff = Backoff0
+        conn_backoff = Backoff0,
+        reconcile_on_connect = ReconcileOnConnect
     } = State
 ) ->
     case router_ics_utils:connect(Transport, Host, Port) of
@@ -238,7 +299,12 @@ handle_info(
             {noreply, State#state{conn_backoff = Backoff1}};
         ok ->
             lager:info("connected"),
-            ok = ?MODULE:reconcile(undefined, true),
+            case ReconcileOnConnect of
+                true ->
+                    ok = ?MODULE:reconcile(undefined, true);
+                false ->
+                    ok
+            end,
             {noreply, State}
     end;
 handle_info({headers, _StreamID, _Data}, State) ->
@@ -259,6 +325,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
+    lager:error("terminating: ~p", [_Reason]),
     ok.
 
 %% ------------------------------------------------------------------
@@ -285,7 +352,7 @@ skf_list(Options, #state{oui = OUI, sig_fun = SigFun}) ->
 -spec local_skf_to_remote_diff(OUI :: non_neg_integer(), Remote :: SKFList) ->
     {ToAdd :: SKFList, ToRemove :: SKFList}
 when
-    SKFList :: [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+    SKFList :: list(session_key_filter()).
 local_skf_to_remote_diff(OUI, RemoteSKFs) ->
     Local = get_local_skfs(OUI),
 
@@ -294,8 +361,7 @@ local_skf_to_remote_diff(OUI, RemoteSKFs) ->
 
     {Add, Remove}.
 
--spec get_local_skfs(OUI :: non_neg_integer()) ->
-    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+-spec get_local_skfs(OUI :: non_neg_integer()) -> list(session_key_filter()).
 get_local_skfs(OUI) ->
     Devices = router_device_cache:get(),
     lists:usort(
@@ -320,7 +386,7 @@ get_local_skfs(OUI) ->
     ).
 
 -spec maybe_update_skf(
-    List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
+    List :: [{add | remove, list(session_key_filter())}],
     State :: state()
 ) ->
     ok | {error, any()}.
@@ -335,15 +401,17 @@ maybe_update_skf(List0, State) ->
     update_skf(List1, State).
 
 -spec update_skf(
-    List :: [{add | remove, [iot_config_pb:iot_config_session_key_filter_v1_pb()]}],
+    List :: [{add | remove, list(session_key_filter())}],
     State :: state()
 ) ->
     ok | {error, any()}.
 update_skf([], _State) ->
     ok;
 update_skf(List, State) ->
+    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
     BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
     MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
 
     case
         helium_iot_config_session_key_filter_client:update(#{
@@ -359,49 +427,59 @@ update_skf(List, State) ->
                     ok = update_skf(Action, SKF, Stream, State)
                 end,
                 List,
-                BatchSleep
+                BatchSleep,
+                BatchSize
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending skf updates [timeout_retry: ~p]", [MaxAttempt]),
-            wait_for_stream_close(init, Stream, 0, MaxAttempt)
+            lager:info(
+                "done sending skf updates [timeout_retry: ~p] [recv_timeout: ~pms]",
+                [MaxAttempt, AttemptSleep]
+            ),
+            wait_for_stream_close(init, Stream, 0, MaxAttempt, AttemptSleep)
     end.
 
 -spec wait_for_stream_close(
     Result :: init | stream_finished | timeout | {ok, any()} | {error, any()},
     Stream :: map(),
     CurrentAttempts :: non_neg_integer(),
-    MaxAttempts :: non_neg_integer()
+    MaxAttempts :: non_neg_integer(),
+    AttemptSleep :: non_neg_integer()
 ) -> ok | {error, any()}.
-wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+wait_for_stream_close(_, _, MaxAttempts, MaxAttempts, _) ->
     lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
-wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:error("got an error: ~p", [Err]),
     Err;
-wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("stream closed ok with: ~p", [Data]),
     ok;
-wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("got a stream_finished"),
     ok;
-wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     );
-wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
-    lager:warning("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
+wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
+    lager:info("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts + 1,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     ).
 
 -spec update_skf(
     Action :: add | remove,
-    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
+    SKF :: session_key_filter(),
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
@@ -423,7 +501,8 @@ skf_update_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     State#state{conn_backoff = Backoff1}.
 
 -spec forward_reconcile(
-    map(), Result :: {ok, list(), list()} | {error, any()}
+    map(),
+    Result :: {ok, list(), list()} | {error, any()}
 ) -> ok.
 forward_reconcile(#{forward_pid := undefined}, _Result) ->
     ok;

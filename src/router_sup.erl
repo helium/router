@@ -68,6 +68,7 @@ init([]) ->
     ok = router_decoder:init_ets(),
     ok = router_console_dc_tracker:init_ets(),
     ok = router_console_api:init_ets(),
+    ok = router_ics_gateway_location_worker:init_ets(),
     ok = router_device_stats:init(),
     ok = ru_denylist:init(BaseDir),
     ok = libp2p_crypto:set_network(application:get_env(blockchain, network, mainnet)),
@@ -132,9 +133,7 @@ init([]) ->
     {PubKey0, SigFun, _} = Key,
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey0),
     ICSOptsDefault = application:get_env(router, ics, #{}),
-    ICSOpts = ICSOptsDefault#{pubkey_bin => PubKeyBin, sig_fun => SigFun},
-
-    router_ics_gateway_location_worker:init_ets(),
+    ICSOpts = maps:merge(#{pubkey_bin => PubKeyBin, sig_fun => SigFun}, ICSOptsDefault),
 
     {ok, HLC} =
         cream:new(

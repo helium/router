@@ -68,7 +68,6 @@ connect(Transport, Host, Port) ->
 when
     Action :: add | remove.
 batch_update(Fun, List, BatchSleep, BatchSize) ->
-
     lists:foreach(
         fun({Action, Els}) ->
             ct:print(

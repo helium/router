@@ -353,8 +353,10 @@ maybe_update_euis(List0, State) ->
 update_euis([], _State) ->
     ok;
 update_euis(List, State) ->
+    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
     BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
     MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
 
     case
         helium_iot_config_route_client:update_euis(#{
@@ -381,42 +383,54 @@ update_euis(List, State) ->
                     ok = update_euis(Action, EUIPair, Stream, State)
                 end,
                 List,
-                BatchSleep
+                BatchSleep,
+                BatchSize
             ),
 
             ok = grpcbox_client:close_send(Stream),
-            lager:info("done sending eui updates [timeout_retry: ~p]", [MaxAttempt]),
-            wait_for_stream_close(init, Stream, 0, MaxAttempt)
+            lager:info(
+                "done sending eui updates [timeout_retry: ~p] [recv_timeout: ~p]",
+                [MaxAttempt, AttemptSleep]
+            ),
+            wait_for_stream_close(init, Stream, 0, MaxAttempt, AttemptSleep)
     end.
 
 -spec wait_for_stream_close(
     Result :: init | stream_finished | timeout | {ok, any()} | {error, any()},
     Stream :: map(),
     CurrentAttempts :: non_neg_integer(),
-    MaxAttempts :: non_neg_integer()
+    MaxAttempts :: non_neg_integer(),
+    AttemptSleep :: non_neg_integer()
 ) -> ok | {error, any()}.
-wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
+wait_for_stream_close(_, _, MaxAttempts, MaxAttempts, _) ->
+    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
     {error, {max_timeouts_reached, MaxAttempts}};
-wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:error("got an error: ~p", [Err]),
     Err;
-wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close({ok, _} = Data, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("stream closed ok with: ~p", [Data]),
     ok;
-wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+wait_for_stream_close(stream_finished, _Stream, _TimeoutAttempts, _MaxAttempts, _AttemptSleep) ->
+    lager:info("got a stream_finished"),
     ok;
-wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(init, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     );
-wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
+wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts, AttemptSleep) ->
+    lager:info("waiting for stream to close, attempt ~p/~p", [TimeoutAttempts, MaxAttempts]),
     timer:sleep(250),
     wait_for_stream_close(
-        grpcbox_client:recv_data(Stream, timer:seconds(2)),
+        grpcbox_client:recv_data(Stream, AttemptSleep),
         Stream,
         TimeoutAttempts + 1,
-        MaxAttempts
+        MaxAttempts,
+        AttemptSleep
     ).
 
 -spec update_euis(

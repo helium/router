@@ -188,75 +188,92 @@ handle_cast(
     #state{route_id = RouteID} = State
 ) when is_pid(Pid) ->
     lager:info("DRY RUN, got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            lager:warning("fail to get local pairs ~p", [_Reason]),
-            {noreply, State};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            ok = forward_reconcile(
-                Options, {ok, ToAdd, ToRemove}
-            ),
-            lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
-                erlang:length(ToAdd), erlang:length(ToRemove)
-            ]),
-            {noreply, State}
-    end;
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} = Error ->
+                    ok = forward_reconcile(Options, Error),
+                    lager:warning("DRY RUN, fail to get local pairs ~p", [_Reason]);
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    ok = forward_reconcile(
+                        Options, {ok, ToAdd, ToRemove}
+                    ),
+                    lager:info("DRY RUN, reconciling done adding ~w removing ~w", [
+                        erlang:length(ToAdd), erlang:length(ToRemove)
+                    ])
+            end;
+        Err ->
+            ok = forward_reconcile(Options, Err),
+            lager:warning("DRY RUN, reconciling error: ~p", [Err])
+    end,
+    {noreply, State};
 handle_cast(
     {?RECONCILE_END, #{forward_pid := Pid, commit := true} = Options, EUIPairs},
     #state{route_id = RouteID} = State
 ) when is_pid(Pid) ->
     lager:info("got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} = Error ->
-            ok = forward_reconcile(Options, Error),
-            lager:warning("fail to get local pairs ~p", [_Reason]),
-            {noreply, State};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
-                {error, Reason} = Error ->
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} = Error ->
                     ok = forward_reconcile(Options, Error),
-                    {noreply, update_euis_failed(Reason, State)};
-                ok ->
-                    ok = forward_reconcile(
-                        Options, {ok, ToAdd, ToRemove}
-                    ),
-                    lager:info("reconciling done adding ~w removing ~w", [
-                        erlang:length(ToAdd), erlang:length(ToRemove)
-                    ]),
-                    {noreply, State}
-            end
+                    lager:warning("fail to get local pairs ~p", [_Reason]),
+                    {noreply, State};
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+                        {error, Reason} = Error ->
+                            ok = forward_reconcile(Options, Error),
+                            {noreply, update_euis_failed(Reason, State)};
+                        ok ->
+                            ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
+                            lager:info(
+                                "reconciling done adding ~w removing ~w",
+                                [erlang:length(ToAdd), erlang:length(ToRemove)]
+                            ),
+                            {noreply, State}
+                    end
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            ok = forward_reconcile(Options, Err),
+            {noreply, update_euis_failed(Err, State)}
     end;
 handle_cast(
     {?RECONCILE_END, #{forward_pid := undefined, commit := true} = Options, EUIPairs},
     #state{conn_backoff = Backoff0, route_id = RouteID} = State
 ) ->
     lager:info("got RECONCILE_END  ~p, with ~w", [Options, erlang:length(EUIPairs)]),
-    case get_local_eui_pairs(RouteID) of
-        {error, _Reason} ->
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:spawn(fun() ->
-                timer:sleep(Delay),
-                ok = ?MODULE:reconcile(undefined, true)
-            end),
-            lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        {ok, LocalEUIPairs} ->
-            ToAdd = LocalEUIPairs -- EUIPairs,
-            ToRemove = EUIPairs -- LocalEUIPairs,
-            case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
-                {error, Reason} ->
-                    {noreply, update_euis_failed(Reason, State)};
-                ok ->
-                    lager:info("reconciling done adding ~w removing ~w", [
-                        erlang:length(ToAdd), erlang:length(ToRemove)
-                    ]),
-                    {noreply, State}
-            end
+    case maps:get(error, Options, undefined) of
+        undefined ->
+            case get_local_eui_pairs(RouteID) of
+                {error, _Reason} ->
+                    {Delay, Backoff1} = backoff:fail(Backoff0),
+                    _ = erlang:spawn(fun() ->
+                        timer:sleep(Delay),
+                        ok = ?MODULE:reconcile(undefined, true)
+                    end),
+                    lager:warning("fail to get local pairs ~p, retrying in ~wms", [_Reason, Delay]),
+                    {noreply, State#state{conn_backoff = Backoff1}};
+                {ok, LocalEUIPairs} ->
+                    ToAdd = LocalEUIPairs -- EUIPairs,
+                    ToRemove = EUIPairs -- LocalEUIPairs,
+                    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+                        {error, Reason} ->
+                            {noreply, update_euis_failed(Reason, State)};
+                        ok ->
+                            lager:info("reconciling done adding ~w removing ~w", [
+                                erlang:length(ToAdd), erlang:length(ToRemove)
+                            ]),
+                            {noreply, State}
+                    end
+            end;
+        Err ->
+            lager:warning("reconciling error: ~p", [Err]),
+            {noreply, update_euis_failed(Err, State)}
     end;
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

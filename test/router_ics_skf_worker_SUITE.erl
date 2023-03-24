@@ -32,8 +32,8 @@ all() ->
     [
         main_test,
         reconcile_test,
-        diff_against_local_test,
-        live_test
+        diff_against_local_test
+        %% , live_test %% for local performance tests
     ].
 
 %%--------------------------------------------------------------------
@@ -112,9 +112,9 @@ setup_live_test() ->
         },
         [{persistent, true}]
     ),
-    ok = application:set_env(router, config_service_max_timeout_attempt, 50, [{persistent, true}]),
-    ok = application:set_env(router, config_service_batch_sleep_ms, 1500, [{persistent, true}]),
-    ok = application:set_env(router, config_service_batch_size, 250, [{persistent, true}]),
+    ok = application:set_env(router, config_service_max_timeout_attempt,50, [{persistent, true}]),
+    ok = application:set_env(router, config_service_batch_sleep_ms, 500, [{persistent, true}]),
+    ok = application:set_env(router, config_service_batch_size, 5000, [{persistent, true}]),
     ok = application:set_env(router, oui, 2, [{persistent, true}]).
 
 live_test(_Config) ->
@@ -147,8 +147,6 @@ live_test(_Config) ->
     ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 50, 1000),
 
     %% 4. We have that many more devices than we started with...
-    ct:print("waiting 5 seconds before getting the list"),
-    timer:sleep(timer:seconds(5)),
     {ok, Els1} = router_ics_skf_worker:list_skf(),
     AddingCount = erlang:length(Els1),
     ct:print("Starting: ~p~nAdding: ~p", [StartingCount, AddingCount]),
@@ -161,8 +159,6 @@ live_test(_Config) ->
     ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 50, 1000),
 
     %% 7. We have exactly the same number as we started with...
-    ct:print("waiting 5 seconds before getting the list"),
-    timer:sleep(timer:seconds(5)),
     {ok, Els2} = router_ics_skf_worker:list_skf(),
     EndingCount = erlang:length(Els2),
 

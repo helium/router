@@ -101,7 +101,7 @@ update(Updates) ->
 -spec list_skf() ->
     {ok, list(iot_config_pb:iot_config_session_key_filter_v1_pb())} | {error, any()}.
 list_skf() ->
-    gen_server:call(?SERVER, list_skf, timer:seconds(30)).
+    gen_server:call(?SERVER, list_skf, infinity).
 
 -spec is_reconciling() -> boolean().
 is_reconciling() ->

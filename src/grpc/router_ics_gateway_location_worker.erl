@@ -112,14 +112,17 @@ init(
     }}.
 
 handle_call({get, PubKeyBin}, _From, #state{conn_backoff = Backoff0} = State) ->
+    HotspotName = blockchain_utils:addr2name(PubKeyBin),
     case get_gateway_location(PubKeyBin, State) of
         {error, Reason, true} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
-            lager:warning("fail to get_gateway_location ~p, reconnecting in ~wms", [Reason, Delay]),
+            lager:warning("fail to get_gateway_location ~p for ~s, reconnecting in ~wms", [
+                Reason, HotspotName, Delay
+            ]),
             {reply, {error, Reason}, State#state{conn_backoff = Backoff1}};
         {error, Reason, false} ->
-            lager:warning("fail to get_gateway_location ~p", [Reason]),
+            lager:warning("fail to get_gateway_location ~p for ~s", [Reason, HotspotName]),
             {reply, {error, Reason}, State};
         {ok, H3IndexString} ->
             H3Index = h3:from_string(H3IndexString),

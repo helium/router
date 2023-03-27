@@ -113,11 +113,14 @@ init(
 
 handle_call({get, PubKeyBin}, _From, #state{conn_backoff = Backoff0} = State) ->
     case get_gateway_location(PubKeyBin, State) of
-        {error, Reason} = Error ->
+        {error, Reason, true} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = erlang:send_after(Delay, self(), ?INIT),
             lager:warning("fail to get_gateway_location ~p, reconnecting in ~wms", [Reason, Delay]),
-            {reply, Error, State#state{conn_backoff = Backoff1}};
+            {reply, {error, Reason}, State#state{conn_backoff = Backoff1}};
+        {error, Reason, false} ->
+            lager:warning("fail to get_gateway_location ~p", [Reason]),
+            {reply, {error, Reason}, State};
         {ok, H3IndexString} ->
             H3Index = h3:from_string(H3IndexString),
             ok = insert(PubKeyBin, H3Index),
@@ -188,7 +191,7 @@ insert(PubKeyBin, H3Index) ->
     ok.
 
 -spec get_gateway_location(PubKeyBin :: libp2p_crypto:pubkey_bin(), state()) ->
-    {ok, string()} | {error, any()}.
+    {ok, string()} | {error, any(), boolean()}.
 get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
     Req = #iot_config_gateway_location_req_v1_pb{
         gateway = PubKeyBin
@@ -200,8 +203,12 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
             channel => router_ics_utils:channel()
         })
     of
+        {error, {Status, Status} = Reason, _} when is_binary(Status) andalso is_binary(Status) ->
+            {error, {grpcbox_utils:status_to_string(Status), Reason}, false};
+        {grpc_error, Reason} ->
+            {error, Reason, true};
+        {error, Reason} ->
+            {error, Reason, true};
         {ok, #iot_config_gateway_location_res_v1_pb{location = Location}, _Meta} ->
-            {ok, Location};
-        Any ->
-            {error, Any}
+            {ok, Location}
     end.

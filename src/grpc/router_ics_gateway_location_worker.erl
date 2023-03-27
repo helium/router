@@ -204,6 +204,8 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
             {error, Reason};
         {error, _} = Error ->
             Error;
+        {error, Reason, _} ->
+            {error, Reason};
         {ok, #iot_config_gateway_location_res_v1_pb{location = Location}, _Meta} ->
             {ok, Location}
     end.

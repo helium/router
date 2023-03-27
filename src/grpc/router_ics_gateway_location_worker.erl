@@ -200,12 +200,8 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
             channel => router_ics_utils:channel()
         })
     of
-        {grpc_error, Reason} ->
-            {error, Reason};
-        {error, _} = Error ->
-            Error;
-        {error, Reason, _} ->
-            {error, Reason};
         {ok, #iot_config_gateway_location_res_v1_pb{location = Location}, _Meta} ->
-            {ok, Location}
+            {ok, Location};
+        Any ->
+            {error, Any}
     end.

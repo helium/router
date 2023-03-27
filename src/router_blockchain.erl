@@ -58,7 +58,7 @@ calculate_dc_amount(PayloadSize) ->
 -spec get_hotspot_lat_lon(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
     {float(), float()} | {unknown, unknown}.
 get_hotspot_lat_lon(PubKeyBin) ->
-    case ?MODULE:is_chain_dead() of
+    case ?MODULE:is_chain_dead() orelse application:get_env(router, enable_ics_location, false) of
         false ->
             case ?MODULE:get_hotspot_location_index(PubKeyBin) of
                 {error, _} ->
@@ -79,7 +79,7 @@ get_hotspot_lat_lon(PubKeyBin) ->
 -spec get_hotspot_location_index(PubKeybin :: libp2p_crypto:pubkey_bin()) ->
     {ok, non_neg_integer()} | {error, any()}.
 get_hotspot_location_index(PubKeyBin) ->
-    case ?MODULE:is_chain_dead() of
+    case ?MODULE:is_chain_dead() orelse application:get_env(router, enable_ics_location, false) of
         false ->
             case persistent_term:get(hotspot_location_cache, undefined) of
                 undefined ->

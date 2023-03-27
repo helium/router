@@ -203,7 +203,7 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
             channel => router_ics_utils:channel()
         })
     of
-        {error, {Status, Status} = Reason, _} when is_binary(Status) andalso is_binary(Status) ->
+        {error, {Status, Reason}, _} when is_binary(Status) andalso is_binary(Status) ->
             {error, {grpcbox_utils:status_to_string(Status), Reason}, false};
         {grpc_error, Reason} ->
             {error, Reason, true};

@@ -42,7 +42,7 @@ all() ->
 init_per_testcase(live_test, Config) ->
     ok = setup_live_test(),
 
-    test_utils:init_per_testcase(live_test, Config);
+    test_utils:init_per_testcase(live_test, [{is_chain_dead, true} | Config]);
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_skf_service, self()),
     Port = 8085,
@@ -163,7 +163,8 @@ live_test(_Config) ->
     EndingCount = erlang:length(Els2),
 
     %% 8. All the counts
-    ct:print("Starting: ~p~nAdding: ~p~nRemoving: ~p", [StartingCount, AddingCount, EndingCount]),
+    ct:pal("Starting: ~p~nAdding: ~p~nRemoving: ~p", [StartingCount, AddingCount, EndingCount]),
+    ?assertEqual(StartingCount, EndingCount),
 
     ok.
 

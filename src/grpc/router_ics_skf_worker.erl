@@ -248,7 +248,7 @@ handle_cast(
     ),
     case maybe_update_skf(Updates1, State) of
         {error, Reason} ->
-            {noreply, skf_update_failed(Reason, State)};
+            {noreply, update_skf_failed(Reason, State)};
         ok ->
             lager:info("update done"),
             {noreply, State}
@@ -423,8 +423,8 @@ update_skf(Action, SKF, Stream, #state{sig_fun = SigFun}) ->
     SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
     ok = grpcbox_client:send(Stream, SignedReq).
 
--spec skf_update_failed(Reason :: any(), State :: state()) -> state().
-skf_update_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
+-spec update_skf_failed(Reason :: any(), State :: state()) -> state().
+update_skf_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     _ = erlang:send_after(Delay, self(), ?INIT),
     lager:warning("fail to update skf ~p, reconnecting in ~wms", [Reason, Delay]),
@@ -450,7 +450,7 @@ maybe_schedule_reconnect(
     case erlang:is_pid(Pid) of
         false ->
             %% undefined PID is internal reconcile, trigger retry after backoff
-            skf_update_failed(Error, State);
+            update_skf_failed(Error, State);
         true ->
             State
     end.

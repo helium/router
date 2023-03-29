@@ -487,9 +487,7 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
         DeviceIDs
     ).
 
--spec forward_reconcile(
-    map(), Result :: {ok, list(), list()} | {error, any()}
-) -> ok.
+-spec forward_reconcile(map(), Result :: {ok, list(), list()} | {error, any()}) -> ok.
 forward_reconcile(#{forward_pid := undefined}, _Result) ->
     ok;
 forward_reconcile(#{forward_pid := Pid}, Result) when is_pid(Pid) ->

@@ -430,10 +430,7 @@ update_skf_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     lager:warning("fail to update skf ~p, reconnecting in ~wms", [Reason, Delay]),
     State#state{conn_backoff = Backoff1}.
 
--spec forward_reconcile(
-    map(),
-    Result :: {ok, list(), list()} | {error, any()}
-) -> ok.
+-spec forward_reconcile(map(), Result :: {ok, list(), list()} | {error, any()}) -> ok.
 forward_reconcile(#{forward_pid := undefined}, _Result) ->
     ok;
 forward_reconcile(#{forward_pid := Pid}, Result) when is_pid(Pid) ->

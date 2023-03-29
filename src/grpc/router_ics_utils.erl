@@ -9,10 +9,20 @@
     start_link_args/1,
     channel/0,
     connect/3,
-    batch_update/4
+    batch_update/2, batch_update/4,
+    wait_for_stream_close/2,
+    do_wait_for_stream_close/2
 ]).
 
 -define(ICS_CHANNEL, ics_channel).
+
+-record(stream_close_opts, {
+    stream :: grpcbox_client:stream(),
+    module :: module(),
+    curr_attempt :: non_neg_integer(),
+    max_attempt :: non_neg_integer(),
+    timeout_ms :: non_neg_integer()
+}).
 
 -spec start_link_args(map()) -> ignore | map().
 start_link_args(#{transport := ""}) ->
@@ -60,6 +70,18 @@ connect(Transport, Host, Port) ->
 
 -spec batch_update(
     Fun :: fun((Action, T) -> ok),
+    List :: [{Action, [T]}]
+) ->
+    ok | {error, any()}
+when
+    Action :: add | remove.
+batch_update(Fun, List) ->
+    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
+    BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
+    ?MODULE:batch_update(Fun, List, BatchSleep, BatchSize).
+
+-spec batch_update(
+    Fun :: fun((Action, T) -> ok),
     List :: [{Action, [T]}],
     BatchSleep :: non_neg_integer(),
     BatchSize :: non_neg_integer()
@@ -101,6 +123,65 @@ batch_update(Fun, List, BatchSleep, BatchSize) ->
             )
         end,
         List
+    ).
+
+-spec wait_for_stream_close(Module :: module(), Stream :: grpcbox_client:stream()) ->
+    ok | {error, any()}.
+wait_for_stream_close(Module, Stream) ->
+    MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
+    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
+    lager:info(
+        "done sending ~p updates [timeout_retry: ~p] [recv_timeout: ~pms]",
+        [Module, MaxAttempt, AttemptSleep]
+    ),
+    ?MODULE:do_wait_for_stream_close(
+        grpcbox_client:recv_data(Stream, AttemptSleep),
+        #stream_close_opts{
+            stream = Stream,
+            module = Module,
+            curr_attempt = 0,
+            max_attempt = MaxAttempt,
+            timeout_ms = AttemptSleep
+        }
+    ).
+
+-spec do_wait_for_stream_close(
+    Result :: stream_finished | timeout | {ok, any()} | {error, any()},
+    State :: #stream_close_opts{}
+) -> ok | {error, any()}.
+do_wait_for_stream_close({error, _} = Err, _State) ->
+    lager:error("got an error: ~p", [Err]),
+    Err;
+do_wait_for_stream_close({ok, _} = Data, _State) ->
+    lager:info("stream closed ok with: ~p", [Data]),
+    ok;
+do_wait_for_stream_close(stream_finished, _State) ->
+    lager:info("got a stream_finished"),
+    ok;
+do_wait_for_stream_close(
+    _Result,
+    #stream_close_opts{
+        curr_attempt = MaxAttempts,
+        max_attempt = MaxAttempts
+    }
+) ->
+    lager:warning("stream did not close within ~p attempts", [MaxAttempts]),
+    {error, {max_timeouts_reached, MaxAttempts}};
+do_wait_for_stream_close(
+    timeout,
+    #stream_close_opts{
+        module = Mod,
+        stream = Stream,
+        curr_attempt = CurrentAttempt,
+        max_attempt = MaxAttempt,
+        timeout_ms = AttemptSleep
+    } = State
+) ->
+    lager:info("~p waiting for stream to close, attempt ~p/~p", [Mod, CurrentAttempt, MaxAttempt]),
+    timer:sleep(250),
+    ?MODULE:do_wait_for_stream_close(
+        grpcbox_client:recv_data(Stream, AttemptSleep),
+        State#stream_close_opts{curr_attempt = CurrentAttempt + 1}
     ).
 
 %% ------------------------------------------------------------------

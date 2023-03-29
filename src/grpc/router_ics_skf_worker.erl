@@ -16,6 +16,7 @@
     start_link/1,
     reconcile/2,
     reconcile_end/2,
+    send_deferred_updates/0,
     update/1
 ]).
 
@@ -46,6 +47,7 @@
 -define(RECONCILE_START, reconcile_start).
 -define(RECONCILE_END, reconcile_end).
 -define(UPDATE, update).
+-define(SEND_DEFERRED_UPDATES, send_deferred_updates).
 
 -ifdef(TEST).
 -define(BACKOFF_MIN, 100).
@@ -63,11 +65,13 @@
     port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
     reconciling = false :: boolean(),
-    reconcile_on_connect = true :: boolean()
+    reconcile_on_connect = true :: boolean(),
+    deferred_updates = [] :: list(skf_update())
 }).
 
 -type state() :: #state{}.
 -type session_key_filter() :: iot_config_pb:iot_config_session_key_filter_v1_pb().
+-type skf_update() :: {add | remove, non_neg_integer(), binary()}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -92,10 +96,14 @@ reconcile(Pid, Commit) ->
 reconcile_end(Options, List) ->
     gen_server:cast(?SERVER, {?RECONCILE_END, Options, List}).
 
--spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) ->
+-spec update(Updates :: list(skf_update())) ->
     ok.
 update(Updates) ->
     gen_server:cast(?SERVER, {?UPDATE, Updates}).
+
+-spec send_deferred_updates() -> ok.
+send_deferred_updates() ->
+    gen_server:cast(?SERVER, ?SEND_DEFERRED_UPDATES).
 
 -ifdef(TEST).
 
@@ -183,7 +191,7 @@ handle_cast(
 ) ->
     ok = forward_reconcile(Options, Error),
     State1 = maybe_schedule_reconnect(Options, State0),
-    {noreply, State1#state{reconciling = false}};
+    {noreply, done_reconciling(State1)};
 handle_cast(
     {?RECONCILE_END, #{commit := false} = Options, SKFs},
     #state{oui = OUI} = State
@@ -195,7 +203,7 @@ handle_cast(
         "DRY RUN, reconciling done adding ~w removing ~w",
         [erlang:length(ToAdd), erlang:length(ToRemove)]
     ),
-    {noreply, State#state{reconciling = false}};
+    {noreply, done_reconciling(State)};
 handle_cast(
     {?RECONCILE_END, #{commit := true} = Options, SKFs},
     #state{oui = OUI} = State
@@ -209,17 +217,17 @@ handle_cast(
         {error, _Reason} = Error ->
             ok = forward_reconcile(Options, Error),
             State1 = maybe_schedule_reconnect(Options#{error => Error}, State),
-            {noreply, State1#state{reconciling = false}};
+            {noreply, done_reconciling(State1)};
         ok ->
             ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
             lager:info("reconciling done added ~w removed ~w", [AddCount, RemCount]),
-            {noreply, State#state{reconciling = false}}
+            {noreply, done_reconciling(State)}
     end;
 handle_cast(
-    {?UPDATE, _Updates}, #state{reconciling = true} = State
+    {?UPDATE, Updates}, #state{reconciling = true, deferred_updates = DeferredUpdates} = State
 ) ->
-    %% We ignore updates while we reconcile
-    {noreply, State};
+    %% Defer updates while we reconcile
+    {noreply, State#state{deferred_updates = [Updates | DeferredUpdates]}};
 handle_cast(
     {?UPDATE, Updates0}, #state{oui = OUI, reconciling = false} = State
 ) ->
@@ -245,6 +253,9 @@ handle_cast(
             lager:info("update done"),
             {noreply, State}
     end;
+handle_cast(?SEND_DEFERRED_UPDATES, #state{deferred_updates = DeferredUpdates} = State) ->
+    ok = ?MODULE:update(DeferredUpdates),
+    {noreply, State#state{deferred_updates = []}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -443,3 +454,8 @@ maybe_schedule_reconnect(
         true ->
             State
     end.
+
+-spec done_reconciling(#state{}) -> #state{}.
+done_reconciling(#state{} = State) ->
+    ok = ?MODULE:send_deferred_updates(),
+    State#state{reconciling = false}.

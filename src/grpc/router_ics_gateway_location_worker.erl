@@ -193,6 +193,10 @@ insert(PubKeyBin, H3Index) ->
     }),
     ok.
 
+%% We have to do this because the call to `helium_iot_config_gateway_client:location` can return
+%% `{error, {Status, Reason}, _}` but is not in the spec...
+-dialyzer({nowarn_function, get_gateway_location/2}).
+
 -spec get_gateway_location(PubKeyBin :: libp2p_crypto:pubkey_bin(), state()) ->
     {ok, string()} | {error, any(), boolean()}.
 get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
@@ -209,7 +213,7 @@ get_gateway_location(PubKeyBin, #state{sig_fun = SigFun}) ->
         {error, {Status, Reason}, _} when is_binary(Status) andalso is_binary(Status) ->
             {error, {grpcbox_utils:status_to_string(Status), Reason}, false};
         {grpc_error, Reason} ->
-            {error, Reason, true};
+            {error, Reason, false};
         {error, Reason} ->
             {error, Reason, true};
         {ok, #iot_config_gateway_location_res_v1_pb{location = Location}, _Meta} ->

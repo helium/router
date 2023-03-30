@@ -174,6 +174,8 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
             {_, Backoff2} = backoff:succeed(Backoff0),
             {noreply, State#state{conn_backoff = Backoff2, reconciling = true}}
     end;
+%% NOTE: This clause is for ?MODULE:list_skf/0 that is only exported for testing.
+%% It hands back the bare list from ics without doing any diffs.
 handle_cast(
     {?RECONCILE_END, #{type := listing_skf, reply_pid := From} = Options, SKFs},
     #state{} = State

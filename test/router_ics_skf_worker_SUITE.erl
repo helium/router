@@ -108,14 +108,15 @@ setup_live_test() ->
             port => Port,
             pubkey_bin => PubKeyBin,
             sig_fun => SigFun,
-            reconcile_on_connect => false
+            reconcile_on_connect => false,
+            %%
+            max_timeout_attempt => 25,
+            max_timeout_sleep_ms => 5000,
+            batch_sleep_ms => 500,
+            batch_size => 500
         },
         [{persistent, true}]
-    ),
-    ok = application:set_env(router, config_service_max_timeout_attempt, 50, [{persistent, true}]),
-    ok = application:set_env(router, config_service_batch_sleep_ms, 500, [{persistent, true}]),
-    ok = application:set_env(router, config_service_batch_size, 5000, [{persistent, true}]),
-    ok = application:set_env(router, oui, 2, [{persistent, true}]).
+    ).
 
 live_test(_Config) ->
     %% 1. Gather the starting number to compare against at the end.

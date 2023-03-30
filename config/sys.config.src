@@ -54,12 +54,12 @@
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
             skf_enabled => "${ROUTER_ICS_SKF_ENABLED}",
             devaddr_enabled => "${ROUTER_ICS_DEVADDR_ENABLED}",
-            route_id => "${ROUTER_ICS_ROUTE_ID}"
+            route_id => "${ROUTER_ICS_ROUTE_ID}",
+            max_timeout_attempt => 25,
+            max_timeout_sleep_ms => 5000,
+            batch_sleep_ms => 500,
+            batch_size => 500
         }},
-        {config_service_max_timeout_attempt, 25},
-        {config_service_max_timeout_sleep_ms, 5000},
-        {config_service_batch_sleep_ms, 500},
-        {config_service_batch_size, 500},
         {frame_timeout, "${ROUTER_FRAME_TIMEOUT}"},
         {disco_frame_timeout, "${ROUTER_DISCO_FRAME_TIMEOUT}"},
         {router_http_channel_url_check, "${ROUTER_HTTP_CHANNEL_URL_CHECK}"},

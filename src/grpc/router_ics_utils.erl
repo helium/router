@@ -76,8 +76,8 @@ connect(Transport, Host, Port) ->
 when
     Action :: add | remove.
 batch_update(Fun, List) ->
-    BatchSize = router_utils:get_env_int(config_service_batch_size, 1000),
-    BatchSleep = router_utils:get_env_int(config_service_batch_sleep_ms, 500),
+    BatchSize = get_ics_env_int(batch_size, 1000),
+    BatchSleep = get_ics_env_int(batch_sleep_ms, 500),
     ?MODULE:batch_update(Fun, List, BatchSleep, BatchSize).
 
 -spec batch_update(
@@ -128,8 +128,8 @@ batch_update(Fun, List, BatchSleep, BatchSize) ->
 -spec wait_for_stream_close(Module :: module(), Stream :: grpcbox_client:stream()) ->
     ok | {error, any()}.
 wait_for_stream_close(Module, Stream) ->
-    MaxAttempt = router_utils:get_env_int(config_service_max_timeout_attempt, 5),
-    AttemptSleep = router_utils:get_env_int(config_service_max_timeout_sleep_ms, 5000),
+    MaxAttempt = get_ics_env_int(max_timeout_attempt, 5),
+    AttemptSleep = get_ics_env_int(max_timeout_sleep_ms, 5000),
     lager:info(
         "done sending ~p updates [timeout_retry: ~p] [recv_timeout: ~pms]",
         [Module, MaxAttempt, AttemptSleep]
@@ -183,6 +183,14 @@ do_wait_for_stream_close(
         grpcbox_client:recv_data(Stream, AttemptSleep),
         State#stream_close_opts{curr_attempt = CurrentAttempt + 1}
     ).
+
+-spec get_ics_env_int(Key :: atom(), Default :: integer()) -> integer().
+get_ics_env_int(Key, Default) ->
+    ICSMap = application:get_env(router, ics, #{}),
+    case maps:get(Key, ICSMap, Default) of
+        Str when is_list(Str) -> erlang:list_to_integer(Str);
+        I -> I
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

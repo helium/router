@@ -14,8 +14,8 @@
 ]).
 
 -spec init(atom(), grpcbox_stream:t()) -> grpcbox_stream:t().
-init(_Rpc, Stream) ->
-    Stream.
+init(_Rpc, StreamState) ->
+    StreamState.
 
 -spec route(packet_router_pb:envelope_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
@@ -42,13 +42,18 @@ handle_info(
     GatewayName = blockchain_utils:addr2name(Hotspot),
     lager:debug("ignoring send_purchase to ~s ~p", [GatewayName, StreamState]),
     StreamState;
-handle_info({send_response, Reply}, StreamState) ->
-    lager:debug("send_response ~p", [Reply]),
-    case from_sc_packet(Reply) of
+handle_info({send_response, undefined, Reply}, StreamState) ->
+    lager:debug("ignore send_response ~p", [Reply]),
+    StreamState;
+handle_info({send_response, Gateway, Reply}, StreamState) ->
+    GatewayName = blockchain_utils:addr2name(Gateway),
+    lager:debug("send_response ~p to ~s", [Reply, GatewayName]),
+    case from_sc_packet(Reply, Gateway) of
         ignore ->
+            lager:debug("ignore ~s", [GatewayName]),
             StreamState;
         EnvDown ->
-            lager:debug("send EnvDown ~p", [EnvDown]),
+            lager:debug("send EnvDown ~p to ~s", [EnvDown, GatewayName]),
             grpcbox_stream:send(false, EnvDown, StreamState)
     end;
 handle_info(_Msg, StreamState) ->
@@ -109,9 +114,9 @@ routing_information(<<_FType:3, _:5, DevAddr:32/integer-unsigned-little, _/binar
 
 %% ===================================================================
 
--spec from_sc_packet(router_pb:blockchain_state_channel_response_v1_pb()) ->
+-spec from_sc_packet(router_pb:blockchain_state_channel_response_v1_pb(), Gateway :: binary()) ->
     packet_router_db:envelope_down_v1_pb() | ignore.
-from_sc_packet(StateChannelResponse) ->
+from_sc_packet(StateChannelResponse, Gateway) ->
     case blockchain_state_channel_response_v1:downlink(StateChannelResponse) of
         undefined ->
             ignore;
@@ -126,7 +131,8 @@ from_sc_packet(StateChannelResponse) ->
                     ),
                     datarate = hpr_datarate(blockchain_helium_packet_v1:datarate(Downlink))
                 },
-                rx2 = rx2_window(blockchain_helium_packet_v1:rx2_window(Downlink))
+                rx2 = rx2_window(blockchain_helium_packet_v1:rx2_window(Downlink)),
+                gateway = Gateway
             },
             #envelope_down_v1_pb{data = {packet, PacketDown}}
     end.

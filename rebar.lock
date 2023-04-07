@@ -90,7 +90,7 @@
  {<<"hackney">>,{pkg,<<"hackney">>,<<"1.18.1">>},0},
  {<<"helium_proto">>,
   {git,"https://github.com/helium/proto.git",
-       {ref,"c10a73fc89d895f439bc82efbbc8cd11ed880546"}},
+       {ref,"004904b3f8a3ba44a79292e584fff5b6719f4afd"}},
   0},
  {<<"hpack">>,{pkg,<<"hpack_erl">>,<<"0.3.0">>},2},
  {<<"httpc_aws">>,

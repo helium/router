@@ -649,10 +649,7 @@ handle_cast(
                                 DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
-                            catch blockchain_state_channel_common:send_response(
-                                Pid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
+                            ok = send_response(Pid),
                             ok = router_metrics:packet_trip_observe_end(
                                 blockchain_helium_packet_v1:packet_hash(Packet0),
                                 PubKeyBin,
@@ -676,10 +673,7 @@ handle_cast(
                                 DevNonce,
                                 {NewRSSI, OldRSSI}
                             ]),
-                            catch blockchain_state_channel_common:send_response(
-                                OldPid,
-                                blockchain_state_channel_response_v1:new(true)
-                            ),
+                            ok = send_response(OldPid),
                             NewPackets = [OldSelected | lists:keydelete(OldPacket, 1, OldPackets)],
                             Cache1 = maps:put(
                                 DevNonce,
@@ -948,10 +942,7 @@ handle_cast(
                         end,
                         case RSSI0 > OldRSSI of
                             false ->
-                                catch blockchain_state_channel_common:send_response(
-                                    Pid,
-                                    blockchain_state_channel_response_v1:new(true)
-                                ),
+                                ok = send_response(Pid),
                                 ok = router_metrics:packet_trip_observe_end(
                                     PHash,
                                     PubKeyBin,
@@ -971,10 +962,7 @@ handle_cast(
                                     )
                                 }};
                             true ->
-                                catch blockchain_state_channel_common:send_response(
-                                    OldPid,
-                                    blockchain_state_channel_response_v1:new(true)
-                                ),
+                                ok = send_response(OldPid),
                                 {OldUUID, State#state{
                                     device = Device2,
                                     frame_cache = maps:put(
@@ -1052,10 +1040,7 @@ handle_info(
     ),
 
     lager:debug("sending join response ~p", [DownlinkPacket]),
-    catch blockchain_state_channel_common:send_response(
-        Pid,
-        blockchain_state_channel_response_v1:new(true, DownlinkPacket)
-    ),
+    ok = send_response(Pid, PubKeyBin, DownlinkPacket),
     ok = router_metrics:packet_trip_observe_end(
         blockchain_helium_packet_v1:packet_hash(Packet),
         PubKeyBin,
@@ -1126,10 +1111,7 @@ handle_info(
         {ok, Device2} ->
             ok = save_and_update(DB, CF, ChannelsWorker, Device2),
             lager:debug("sending frame response with no downlink"),
-            catch blockchain_state_channel_common:send_response(
-                Pid,
-                blockchain_state_channel_response_v1:new(true)
-            ),
+            ok = send_response(Pid),
             router_device_routing:clear_replay(DeviceID),
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -1170,10 +1152,9 @@ handle_info(
             end,
             ok = save_and_update(DB, CF, ChannelsWorker, Device2),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
-            catch blockchain_state_channel_common:send_response(
-                Pid,
-                blockchain_state_channel_response_v1:new(true, DownlinkPacket)
-            ),
+
+            ok = send_response(Pid, PubKeyBin, DownlinkPacket),
+
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -1191,10 +1172,7 @@ handle_info(
                 fcnt = FCnt
             }};
         noop ->
-            catch blockchain_state_channel_common:send_response(
-                Pid,
-                blockchain_state_channel_response_v1:new(true)
-            ),
+            ok = send_response(Pid),
             router_device_routing:clear_replay(DeviceID),
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
@@ -1227,6 +1205,13 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+send_response(Pid) ->
+    send_response(Pid, undefined, undefined).
+
+send_response(Pid, Gateway, Downlink) ->
+    catch Pid ! {send_response, Gateway, blockchain_state_channel_response_v1:new(true, Downlink)},
+    ok.
 
 -spec downlink_to_map(#downlink{}) -> map().
 downlink_to_map(Downlink) ->

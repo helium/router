@@ -39,8 +39,8 @@ route(Ctx, #blockchain_state_channel_message_v1_pb{msg = {packet, SCPacket}} = _
 %% ------------------------------------------------------------------
 wait_for_response(Ctx) ->
     receive
-        {send_response, Resp} ->
-            lager:debug("received response msg ~p", [Resp]),
+        {send_response, _Gateway, Resp} ->
+            lager:debug("received response msg ~p to ~p", [Resp, _Gateway]),
             {ok, #blockchain_state_channel_message_v1_pb{msg = {response, Resp}}, Ctx};
         {packet, Packet} ->
             lager:debug("received packet ~p", [Packet]),

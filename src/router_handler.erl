@@ -86,7 +86,7 @@ handle_data(_Type, _Bin, State) ->
     lager:warning("~p got data ~p", [_Type, _Bin]),
     {noreply, State}.
 
-handle_info(server, {send_response, Resp}, State) ->
+handle_info(server, {send_response, _Gateway, Resp}, State) ->
     Data = blockchain_state_channel_message_v1:encode(Resp),
     {noreply, State, Data};
 handle_info(server, {packet, undefined}, State) ->

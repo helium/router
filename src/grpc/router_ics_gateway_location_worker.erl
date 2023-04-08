@@ -171,7 +171,8 @@ insert(PubKeyBin, H3Index) ->
 get_gateway_location(PubKeyBin) ->
     SigFun = router_blockchain:sig_fun(),
     Req = #iot_config_gateway_location_req_v1_pb{
-        gateway = PubKeyBin
+        gateway = PubKeyBin,
+        signer = router_blockchain:pubkey_bin()
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_gateway_location_req_v1_pb),
     SignedReq = Req#iot_config_gateway_location_req_v1_pb{signature = SigFun(EncodedReq)},

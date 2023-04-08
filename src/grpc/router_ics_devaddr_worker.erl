@@ -191,10 +191,11 @@ terminate(_Reason, _State) ->
 
 -spec get_devaddrs(Pid :: pid() | undefined, state()) ->
     {ok, grpcbox_client:stream()} | {error, any()}.
-get_devaddrs(Pid, #state{sig_fun = SigFun, route_id = RouteID}) ->
+get_devaddrs(Pid, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
     Req = #iot_config_route_get_devaddr_ranges_req_v1_pb{
         route_id = RouteID,
-        timestamp = erlang:system_time(millisecond)
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_get_devaddr_ranges_req_v1_pb),
     SignedReq = Req#iot_config_route_get_devaddr_ranges_req_v1_pb{signature = SigFun(EncodedReq)},

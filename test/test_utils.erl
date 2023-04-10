@@ -198,10 +198,17 @@ init_per_testcase(TestCase, Config) ->
     {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(HotspotDir, TestCase, 0),
     #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
 
-    {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
-        5000,
-        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
-    ),
+    Config0 =
+        case proplists:get_value(is_chain_dead, Config, false) of
+            true ->
+                Config;
+            false ->
+                {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
+                    5000,
+                    [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
+                ),
+                [{consensus_member, ConsensusMembers} | Config]
+        end,
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
@@ -211,9 +218,8 @@ init_per_testcase(TestCase, Config) ->
         {elli, Pid},
         {base_dir, BaseDir},
         {swarm, HotspotSwarm},
-        {keys, HotspotKeys},
-        {consensus_member, ConsensusMembers}
-        | Config
+        {keys, HotspotKeys}
+        | Config0
     ].
 
 end_per_testcase(_TestCase, Config) ->

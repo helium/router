@@ -146,23 +146,36 @@ init([]) ->
         ),
     ok = persistent_term:put(hotspot_location_cache, HLC),
 
+    ChainWorkers =
+        case router_blockchain:is_chain_dead() of
+            true ->
+                [];
+            false ->
+                [
+                    ?WORKER(router_sc_worker, [SCWorkerOpts]),
+                    ?WORKER(router_xor_filter_worker, [#{}])
+                ]
+        end,
+
     {ok,
-        {?FLAGS, [
-            ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
-            ?SUP(blockchain_sup, [BlockchainOpts]),
-            ?WORKER(router_metrics, [MetricsOpts]),
-            ?WORKER(router_db, [DBOpts]),
-            ?SUP(router_devices_sup, []),
-            ?WORKER(router_sc_worker, [SCWorkerOpts]),
-            ?SUP(router_console_sup, []),
-            ?SUP(router_decoder_sup, []),
-            ?WORKER(router_device_devaddr, [#{}]),
-            ?WORKER(router_xor_filter_worker, [#{}]),
-            ?WORKER(router_ics_devaddr_worker, [ICSOpts]),
-            ?WORKER(router_ics_eui_worker, [ICSOpts]),
-            ?WORKER(router_ics_skf_worker, [ICSOpts]),
-            ?WORKER(router_ics_gateway_location_worker, [ICSOpts])
-        ]}}.
+        {?FLAGS,
+            [
+                ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
+                ?SUP(blockchain_sup, [BlockchainOpts]),
+                ?WORKER(router_metrics, [MetricsOpts]),
+                ?WORKER(router_db, [DBOpts]),
+                ?SUP(router_devices_sup, []),
+
+                ?SUP(router_console_sup, []),
+                ?SUP(router_decoder_sup, []),
+                ?WORKER(router_device_devaddr, [#{}])
+            ] ++ ChainWorkers ++
+                [
+                    ?WORKER(router_ics_devaddr_worker, [ICSOpts]),
+                    ?WORKER(router_ics_eui_worker, [ICSOpts]),
+                    ?WORKER(router_ics_skf_worker, [ICSOpts]),
+                    ?WORKER(router_ics_gateway_location_worker, [ICSOpts])
+                ]}}.
 
 %%====================================================================
 %% Internal functions

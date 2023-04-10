@@ -44,11 +44,10 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(TestCase, Config) ->
-    %% setup test dirs
-    Config0 = test_utils:init_per_testcase(TestCase, Config),
-    Config0.
 
+init_per_testcase(TestCase, Config) ->
+    ok = application:set_env(router, is_chain_dead, true, [{persistent, true}]),
+    test_utils:init_per_testcase(TestCase, [{is_chain_dead, true} | Config]).
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------

@@ -43,26 +43,19 @@ all() ->
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_gateway_service, self()),
     Port = 8085,
-    ServerPid = start_server(Port),
     ok = application:set_env(
         router,
         ics,
         #{transport => "http", host => "localhost", port => Port},
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ServerPid = proplists:get_value(ics_server, Config),
-    case erlang:is_process_alive(ServerPid) of
-        true -> gen_server:stop(ServerPid);
-        false -> ok
-    end,
-    _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
         ics,
@@ -112,19 +105,6 @@ main_test(_Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-start_server(Port) ->
-    _ = application:ensure_all_started(grpcbox),
-    {ok, ServerPid} = grpcbox:start_server(#{
-        grpc_opts => #{
-            service_protos => [iot_config_pb],
-            services => #{
-                'helium.iot_config.gateway' => router_test_ics_gateway_service
-            }
-        },
-        listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
-    }),
-    ServerPid.
 
 rcv_loop(Acc) ->
     receive

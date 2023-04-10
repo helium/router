@@ -38,7 +38,8 @@
     wait_until/1, wait_until/3,
     wait_until_no_messages/1,
     is_jsx_encoded_map/1,
-    ws_init/0
+    ws_init/0,
+    send_packet/2
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -63,7 +64,7 @@ init_per_testcase(TestCase, Config) ->
         {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
     end),
 
-    BaseDir = erlang:atom_to_list(TestCase),
+    BaseDir = io_lib:format("~p-~p", [TestCase, erlang:system_time(millisecond)]),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, device_rate_limit, 10),
     ok = application:set_env(router, testing, true),
@@ -285,37 +286,91 @@ add_oui(Config) ->
     ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
     [{oui, OUI} | Config].
 
+send_packet(chain_dead_no_stream, SCPacket) ->
+    ?assert(
+        router_blockchain:is_chain_dead(),
+        "chain not dead, but received no stream"
+    ),
+    %% Run through an encode decode to clean the binary and string types
+    %% to the correct versions.
+    SCPacket1 =
+        case erlang:is_binary(SCPacket) of
+            false ->
+                {packet, SCP} = blockchain_state_channel_message_v1:decode(
+                    blockchain_state_channel_message_v1:encode(SCPacket)
+                ),
+                SCP;
+            true ->
+                {packet, SCP} = blockchain_state_channel_message_v1:decode(SCPacket),
+                SCP
+        end,
+    router_device_routing:handle_free_packet(
+        SCPacket1,
+        erlang:system_time(millisecond),
+        self()
+    ),
+    ok;
+send_packet(Stream, SCPacket) ->
+    ?assertNot(
+        router_blockchain:is_chain_dead(),
+        "chain is dead, but received stream for sending packet"
+    ),
+    case erlang:is_binary(SCPacket) of
+        false ->
+            Stream !
+                {send,
+                    blockchain_state_channel_v1_pb:encode_msg(
+                        #blockchain_state_channel_message_v1_pb{
+                            msg = {packet, SCPacket}
+                        }
+                    )};
+        true ->
+            Stream ! {send, SCPacket}
+    end,
+    ok.
+
 join_device(Config) ->
     join_device(Config, #{}).
 
 join_device(Config, JoinOpts) ->
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-
-    %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
+    {PubKeyBin, HotspotName, Stream} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                Swarm = proplists:get_value(swarm, Config),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self()]
+                ),
+                PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm),
+                {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(
+                    libp2p_crypto:bin_to_b58(PubKeyBin0)
+                ),
+
+                {PubKeyBin0, HotspotName0, Stream0};
+            true ->
+                #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+                PubKeyBin0 = libp2p_crypto:pubkey_to_bin(PubKey),
+                {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(
+                    libp2p_crypto:bin_to_b58(PubKeyBin0)
+                ),
+
+                {PubKeyBin0, HotspotName0, chain_dead_no_stream}
+        end,
+    %% Send join packet
     SCPacket = ?MODULE:join_packet(
         PubKeyBin,
         AppKey,
         DevNonce,
         maps:put(dont_encode, true, JoinOpts)
     ),
-    Stream !
-        {send,
-            blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
-                msg = {packet, SCPacket}
-            })},
+    ok = ?MODULE:send_packet(Stream, SCPacket),
 
     timer:sleep(router_utils:join_timeout()),
 

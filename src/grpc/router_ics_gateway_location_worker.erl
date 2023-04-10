@@ -63,7 +63,11 @@ start_link(Args) ->
 -spec init_ets() -> ok.
 init_ets() ->
     ?ETS = ets:new(?ETS, [
-        public, named_table, set, {read_concurrency, true}, {keypos, #location.gateway}
+        public,
+        named_table,
+        set,
+        {read_concurrency, true},
+        {keypos, #location.gateway}
     ]),
     ok.
 

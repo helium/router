@@ -1,15 +1,16 @@
 -module(router_ics_gateway_location_worker_SUITE).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
 -include("console_test.hrl").
--include("lorawan_vars.hrl").
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -34,12 +35,38 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        main_test
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, [main_test]},
+        {chain_dead, [main_test]}
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(chain_alive, Config) ->
+    ok = application:set_env(
+        packet_purchaser,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, false} | Config];
+init_per_group(chain_dead, Config) ->
+    ok = application:set_env(
+        packet_purchaser,
+        is_chain_dead,
+        true,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, true} | Config];
+init_per_group(_GroupName, Config) ->
+    Config.
+
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_gateway_service, self()),
     Port = 8085,
@@ -54,6 +81,15 @@ init_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(_GroupName, _Config) ->
+    ok = application:set_env(
+        packet_purchaser,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
+    ok.
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
     ok = application:set_env(

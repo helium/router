@@ -60,7 +60,6 @@ init_per_testcase(TestCase, Config) ->
         ics,
         #{
             devaddr_enabled => "true",
-
             route_id => "test_route_id"
         },
         [{persistent, true}]
@@ -75,6 +74,8 @@ end_per_group(GroupName, Config) ->
 
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
+    %% grpcbox likes to carry processes across tests
+    _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
         ics,

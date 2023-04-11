@@ -2,6 +2,10 @@
 
 -behaviour(gen_server).
 
+-include("../src/grpc/autogen/packet_router_pb.hrl").
+-include_lib("helium_proto/include/packet_pb.hrl").
+-include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+
 %% ------------------------------------------------------------------
 %% API Function Exports
 %% ------------------------------------------------------------------
@@ -10,7 +14,8 @@
     pubkey_bin/1,
     send_packet/2,
     receive_send_packet/1,
-    receive_env_down/1
+    receive_env_down/1,
+    sc_packet_to_packet_up/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -80,7 +85,7 @@ init(#{forward := Pid} = Args) ->
     #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ed25519),
     lager:info(maps:to_list(Args), "started"),
 
-    {ok, Stream} = helium_packet_route_packet_client:route(),
+    {ok, Stream} = helium_packet_router_packet_client:route(),
     {ok, #state{
         forward = Pid,
         pubkey_bin = libp2p_crypto:pubkey_to_bin(PubKey),
@@ -95,19 +100,18 @@ handle_call(_Msg, _From, State) ->
     {reply, ok, State}.
 
 handle_cast(
-    {?SEND_PACKET, Args},
+    {?SEND_PACKET, SCPacket0},
     #state{
         forward = Pid,
-        pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
         stream = Stream
-    } =
-        State
+    } = State
 ) ->
-    PacketUp = test_utils:uplink_packet_up(Args#{
-        gateway => PubKeyBin, sig_fun => SigFun
-    }),
-    EnvUp = hpr_envelope_up:new(PacketUp),
+    PacketUp = sc_packet_to_packet_up(SCPacket0),
+    Signed = PacketUp#packet_router_packet_up_v1_pb{
+        signature = SigFun(packet_router_pb:encode_msg(PacketUp))
+    },
+    EnvUp = #envelope_up_v1_pb{data = {packet, Signed}},
     ok = grpcbox_client:send(Stream, EnvUp),
     Pid ! {?MODULE, self(), {?SEND_PACKET, EnvUp}},
     lager:debug("send_packet ~p", [EnvUp]),
@@ -148,3 +152,40 @@ terminate(_Reason, #state{forward = Pid, stream = Stream}) ->
 %% ------------------------------------------------------------------
 %%% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+sc_packet_to_packet_up(SCPacketBin) when erlang:is_binary(SCPacketBin) ->
+    %% Decode if necessary
+    {packet, SCPacket} = blockchain_state_channel_message_v1:decode(SCPacketBin),
+    sc_packet_to_packet_up(SCPacket);
+sc_packet_to_packet_up(SCPacket) ->
+    #blockchain_state_channel_packet_v1_pb{
+        packet = InPacket,
+        hotspot = Gateway,
+        region = Region,
+        hold_time = HoldTime
+    } = SCPacket,
+    #packet_pb{
+        type = lorawan,
+        payload = Payload,
+        timestamp = Timestamp,
+        signal_strength = SignalStrength,
+        frequency = Frequency,
+        datarate = DataRate,
+        snr = SNR
+        %% , routing = ?MODULE:make_routing_info(RoutingInfo)
+    } = InPacket,
+
+    % signature = Signature
+    Packet = #packet_router_packet_up_v1_pb{
+        payload = Payload,
+        timestamp = Timestamp,
+        rssi = erlang:round(SignalStrength),
+        %% MHz to Hz
+        frequency = erlang:round(Frequency * 1_000_000),
+        datarate = erlang:list_to_atom(DataRate),
+        snr = SNR,
+        region = Region,
+        hold_time = HoldTime,
+        gateway = Gateway
+    },
+    Packet.

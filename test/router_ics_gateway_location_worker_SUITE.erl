@@ -48,24 +48,8 @@ groups() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_group(chain_alive, Config) ->
-    ok = application:set_env(
-        packet_purchaser,
-        is_chain_dead,
-        false,
-        [{persistent, true}]
-    ),
-    [{is_chain_dead, false} | Config];
-init_per_group(chain_dead, Config) ->
-    ok = application:set_env(
-        packet_purchaser,
-        is_chain_dead,
-        true,
-        [{persistent, true}]
-    ),
-    [{is_chain_dead, true} | Config];
-init_per_group(_GroupName, Config) ->
-    Config.
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
 
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_gateway_service, self()),
@@ -81,14 +65,8 @@ init_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
-end_per_group(_GroupName, _Config) ->
-    ok = application:set_env(
-        packet_purchaser,
-        is_chain_dead,
-        false,
-        [{persistent, true}]
-    ),
-    ok.
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
 
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),

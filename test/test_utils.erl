@@ -3,6 +3,8 @@
 -export([
     init_per_testcase/2,
     end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2,
     add_oui/1,
     start_swarm/3,
     get_device_channels_worker/1,
@@ -240,6 +242,34 @@ end_per_testcase(_TestCase, Config) ->
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
     meck:unload(router_device_devaddr),
+    ok.
+
+init_per_group(chain_alive, Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, false} | Config];
+init_per_group(chain_dead, Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        true,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, true} | Config];
+init_per_group(_GroupName, Config) ->
+    Config.
+
+end_per_group(_GroupName, _Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
     ok.
 
 start_swarm(BaseDir, Name, Port) ->

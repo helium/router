@@ -47,9 +47,6 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
-    transport :: http | https,
-    host :: string(),
-    port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
     route_id :: string(),
     devaddr_ranges :: undefined | list(iot_config_pb:iot_config_devaddr_range_v1_pb())
@@ -61,7 +58,7 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
-    case router_ics_utils:start_link_args(Args) of
+    case Args of
         #{devaddr_enabled := "true"} = Map ->
             case maps:get(route_id, Map, "") of
                 "" ->
@@ -96,23 +93,16 @@ init(
     #{
         pubkey_bin := PubKeyBin,
         sig_fun := SigFun,
-        transport := Transport,
-        host := Host,
-        port := Port,
         route_id := RouteID
     } =
         Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! ?INIT,
+    ok = ?MODULE:reconcile(undefined),
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
-        transport = Transport,
-        host = Host,
-        port = Port,
         conn_backoff = Backoff,
         route_id = RouteID
     }}.
@@ -132,7 +122,7 @@ handle_cast({?RECONCILE_START, Pid}, #state{conn_backoff = Backoff0} = State) ->
     case get_devaddrs(Pid, State) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT),
+            _ = timer:apply_after(Delay, ?MODULE, reconcile, [undefined]),
             lager:warning("fail to get_devaddrs ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
@@ -170,30 +160,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(
-    ?INIT,
-    #state{
-        transport = Transport,
-        host = Host,
-        port = Port,
-        conn_backoff = Backoff0,
-        route_id = RouteID
-    } = State
-) ->
-    {Delay, Backoff1} = backoff:fail(Backoff0),
-    case router_ics_utils:connect(Transport, Host, Port) of
-        {error, _Reason} ->
-            lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
-            _ = erlang:send_after(Delay, self(), ?INIT),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        ok ->
-            lager:info("connected"),
-            {_, Backoff2} = backoff:succeed(Backoff0),
-            ok = ?MODULE:reconcile(undefined),
-            {noreply, State#state{
-                conn_backoff = Backoff2, route_id = RouteID
-            }}
-    end;
 handle_info({headers, _StreamID, _Data}, State) ->
     lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};

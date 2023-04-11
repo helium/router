@@ -210,16 +210,15 @@ main_test(Config) ->
     ),
 
     %% Send first packet nothing should happen
-    test_utils:send_packet(
-        Stream1,
-        test_utils:frame_packet(
-            ?UNCONFIRMED_UP,
-            PubKeyBin1,
-            router_device:nwk_s_key(JoinedDevice1),
-            router_device:app_s_key(JoinedDevice1),
-            0
-        )
-    ),
+    Stream1 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin1,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                0
+            )},
 
     [] = rcv_loop([]),
 
@@ -250,16 +249,15 @@ main_test(Config) ->
     ),
 
     %% Send first packet again, we should see add and remove this time
-    test_utils:send_packet(
-        Stream2,
-        test_utils:frame_packet(
-            ?UNCONFIRMED_UP,
-            PubKeyBin2,
-            router_device:nwk_s_key(JoinedDevice1),
-            router_device:app_s_key(JoinedDevice1),
-            0
-        )
-    ),
+    Stream2 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                0
+            )},
 
     [{Type7, Req7}, {Type8, Req8}] = rcv_loop([]),
     ?assertEqual(update, Type7),
@@ -288,16 +286,15 @@ main_test(Config) ->
     ),
 
     %% Send packet 1 and nothing should happen
-    test_utils:send_packet(
-        Stream2,
-        test_utils:frame_packet(
-            ?UNCONFIRMED_UP,
-            PubKeyBin2,
-            router_device:nwk_s_key(JoinedDevice1),
-            router_device:app_s_key(JoinedDevice1),
-            1
-        )
-    ),
+    Stream2 !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(JoinedDevice1),
+                router_device:app_s_key(JoinedDevice1),
+                1
+            )},
 
     [] = rcv_loop([]),
 

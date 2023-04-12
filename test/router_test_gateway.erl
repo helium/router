@@ -84,8 +84,7 @@ receive_env_down(GatewayPid) ->
 %%% gen_server Function Definitions
 %% ------------------------------------------------------------------
 -spec init(map()) -> {ok, state()}.
-init(#{forward := Pid} = Args) ->
-    #{public := PubKey, secret := PrivKey} = libp2p_crypto:generate_keys(ed25519),
+init(#{forward := Pid, public := PubKey, secret := PrivKey} = Args) ->
     lager:info(maps:to_list(Args), "started"),
 
     {ok, Stream} = helium_packet_router_packet_client:route(),
@@ -94,7 +93,10 @@ init(#{forward := Pid} = Args) ->
         pubkey_bin = libp2p_crypto:pubkey_to_bin(PubKey),
         sig_fun = libp2p_crypto:mk_sig_fun(PrivKey),
         stream = Stream
-    }}.
+    }};
+init(Args) ->
+    Keys = libp2p_crypto:generate_keys(ed25519),
+    init(maps:merge(Args, Keys)).
 
 handle_call(pubkey_bin, _From, #state{pubkey_bin = PubKeyBin} = State) ->
     {reply, PubKeyBin, State};
@@ -194,7 +196,6 @@ packet_up_from_sc_packet(SCPacket) ->
     Packet.
 
 sc_packet_from_env_down(#envelope_down_v1_pb{data = {packet, PacketDown}}) ->
-
     #packet_router_packet_down_v1_pb{
         payload = Payload,
         rx1 = #window_v1_pb{timestamp = Timestamp, datarate = DataRate, frequency = FrequencyHz}

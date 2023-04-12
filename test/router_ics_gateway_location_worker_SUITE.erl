@@ -86,6 +86,10 @@ main_test(_Config) ->
     #{public := PubKey1} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin1 = libp2p_crypto:pubkey_to_bin(PubKey1),
     ExpectedIndex = h3:from_string("8828308281fffff"),
+    ok = router_test_ics_gateway_service:register_gateway_location(
+        PubKeyBin1,
+        "8828308281fffff"
+    ),
 
     Before = erlang:system_time(millisecond),
 

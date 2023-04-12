@@ -15,7 +15,10 @@
     send_packet/2,
     receive_send_packet/1,
     receive_env_down/1,
-    sc_packet_to_packet_up/1
+    packet_up_from_sc_packet/1,
+    sc_packet_from_env_down/1,
+    packet_from_env_down/1,
+    payload_from_packet_down/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -103,17 +106,18 @@ handle_cast(
     {?SEND_PACKET, SCPacket0},
     #state{
         forward = Pid,
+        pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
         stream = Stream
     } = State
 ) ->
-    PacketUp = sc_packet_to_packet_up(SCPacket0),
+    PacketUp = packet_up_from_sc_packet(SCPacket0),
     Signed = PacketUp#packet_router_packet_up_v1_pb{
         signature = SigFun(packet_router_pb:encode_msg(PacketUp))
     },
     EnvUp = #envelope_up_v1_pb{data = {packet, Signed}},
     ok = grpcbox_client:send(Stream, EnvUp),
-    Pid ! {?MODULE, self(), {?SEND_PACKET, EnvUp}},
+    Pid ! {?MODULE, PubKeyBin, {?SEND_PACKET, EnvUp}},
     lager:debug("send_packet ~p", [EnvUp]),
     {noreply, State};
 handle_cast(_Msg, State) ->
@@ -125,9 +129,9 @@ handle_info({send, SCPacket}, #state{} = State) ->
     ct:print("test gateway sending packet: ~p", [SCPacket]),
     ok = ?MODULE:send_packet(self(), SCPacket),
     {noreply, State};
-handle_info({data, _StreamID, Data}, #state{forward = Pid} = State) ->
     lager:debug("got data ~p", [Data]),
-    Pid ! {?MODULE, self(), {data, Data}},
+handle_info({data, _StreamID, Data}, #state{forward = Pid, pubkey_bin = PubKeyBin} = State) ->
+    Pid ! {?MODULE, PubKeyBin, {data, Data}},
     {noreply, State};
 handle_info(
     {'DOWN', Ref, process, Pid, _Reason},
@@ -153,11 +157,11 @@ terminate(_Reason, #state{forward = Pid, stream = Stream}) ->
 %%% Internal Function Definitions
 %% ------------------------------------------------------------------
 
-sc_packet_to_packet_up(SCPacketBin) when erlang:is_binary(SCPacketBin) ->
+packet_up_from_sc_packet(SCPacketBin) when erlang:is_binary(SCPacketBin) ->
     %% Decode if necessary
     {packet, SCPacket} = blockchain_state_channel_message_v1:decode(SCPacketBin),
-    sc_packet_to_packet_up(SCPacket);
-sc_packet_to_packet_up(SCPacket) ->
+    packet_up_from_sc_packet(SCPacket);
+packet_up_from_sc_packet(SCPacket) ->
     #blockchain_state_channel_packet_v1_pb{
         packet = InPacket,
         hotspot = Gateway,
@@ -189,3 +193,29 @@ sc_packet_to_packet_up(SCPacket) ->
         gateway = Gateway
     },
     Packet.
+
+sc_packet_from_env_down(#envelope_down_v1_pb{data = {packet, PacketDown}}) ->
+
+    #packet_router_packet_down_v1_pb{
+        payload = Payload,
+        rx1 = #window_v1_pb{timestamp = Timestamp, datarate = DataRate, frequency = FrequencyHz}
+    } = PacketDown,
+
+    #packet_pb{
+        type = lorawan,
+        payload = Payload,
+        timestamp = Timestamp,
+        %% signal_strength = SignalStrength,
+        frequency = FrequencyHz / 1000000,
+        datarate = DataRate
+        %% , snr = SNR
+        %% , routing = ?MODULE:make_routing_info(RoutingInfo)
+    }.
+
+-spec packet_from_env_down(#envelope_down_v1_pb{}) -> #packet_router_packet_down_v1_pb{}.
+packet_from_env_down(#envelope_down_v1_pb{data = {packet, PacketDown}}) ->
+    PacketDown.
+
+-spec payload_from_packet_down(#packet_router_packet_down_v1_pb{}) -> binary().
+payload_from_packet_down(#packet_router_packet_down_v1_pb{payload = Payload}) ->
+    Payload.

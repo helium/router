@@ -82,3 +82,13 @@ maybe_get_registered_location(PubKeyBin) ->
         undefined -> {error, not_found};
         Location -> {ok, Location}
     end.
+
+%% NOTE: if more asserted gateways are needed, use these locations.
+%% location = "8828308281fffff", %% original from location worker
+%% location = "8c29a962ed5b3ff" %% from blockchain init
+%%
+%% all locations inserted into chain
+%% ["8C29A962ED5B3FF","8C29A975818B3FF","8C29A97497733FF",
+%%  "8C29A92809AEDFF","8C29A92A98DE7FF","8C29A92E404ABFF",
+%%  "8C29A92552F31FF","8C29A924C86E7FF","8C2834535A1B5FF",
+%%  "8C2834CD22653FF","8C2834CCE41C3FF","8C28341B06945FF"]

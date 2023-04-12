@@ -934,7 +934,9 @@ join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = Region
+        region = Region,
+        %% Match blockchain ct default hold_time from router_device_routing:handle_packet/4
+        hold_time = 100
     },
     case maps:get(dont_encode, Options, false) of
         true ->

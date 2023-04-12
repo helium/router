@@ -161,7 +161,10 @@ init(Args) ->
     ok = blockchain_event:add_handler(self()),
     {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
-    _ = erlang:send_after(500, self(), post_init),
+    case router_blockchain:is_chain_dead() of
+        false -> _ = erlang:send_after(500, self(), post_init);
+        true -> ok
+    end,
     {ok, #state{
         pubkey_bin = PubkeyBin,
         routing_packet_duration = #{},
@@ -247,7 +250,6 @@ handle_info(
 handle_info(
     ?METRICS_TICK,
     #state{
-        chain = Chain,
         pubkey_bin = PubkeyBin,
         routing_packet_duration = RPD,
         packet_duration = PD
@@ -256,9 +258,14 @@ handle_info(
     lager:info("running metrics"),
     erlang:spawn_opt(
         fun() ->
-            ok = record_dc_balance(Chain, PubkeyBin),
-            ok = record_state_channels(),
-            ok = record_chain_blocks(Chain),
+            case router_blockchain:is_chain_dead() of
+                false ->
+                    ok = record_dc_balance(PubkeyBin),
+                    ok = record_state_channels(),
+                    ok = record_chain_blocks();
+                true ->
+                    ok
+            end,
             ok = record_vm_stats(),
             ok = record_ets(),
             ok = record_queues(),
@@ -353,13 +360,9 @@ record_sc_close_conflict(Chain, BlockHash, PubkeyBin) ->
             ok
     end.
 
--spec record_dc_balance(
-    Chain :: blockchain:blockchain(),
-    PubkeyBin :: libp2p_crypto:pubkey_bin()
-) -> ok.
-record_dc_balance(Chain, PubkeyBin) ->
-    Ledger = blockchain:ledger(Chain),
-    case blockchain_ledger_v1:find_dc_entry(PubkeyBin, Ledger) of
+-spec record_dc_balance(PubkeyBin :: libp2p_crypto:pubkey_bin()) -> ok.
+record_dc_balance(PubkeyBin) ->
+    case router_blockchain:find_dc_entry(PubkeyBin) of
         {error, _} ->
             ok;
         {ok, Entry} ->
@@ -398,9 +401,9 @@ record_state_channels() ->
     _ = prometheus_gauge:set(?METRICS_SC_ACTIVE_ACTORS, TotalActors),
     ok.
 
--spec record_chain_blocks(Chain :: blockchain:blockchain()) -> ok.
-record_chain_blocks(Chain) ->
-    case blockchain:head_block(Chain) of
+-spec record_chain_blocks() -> ok.
+record_chain_blocks() ->
+    case router_blockchain:head_block() of
         {error, _} ->
             ok;
         {ok, Block} ->

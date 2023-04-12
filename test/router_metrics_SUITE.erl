@@ -2,8 +2,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -28,18 +31,36 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         metrics_test
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config).
 
@@ -58,7 +79,20 @@ metrics_test(Config) ->
     router_metrics ! ?METRICS_TICK,
     ok = timer:sleep(timer:seconds(1)),
 
-    ?assertEqual(5000, prometheus_gauge:value(?METRICS_DC)),
+    case router_blockchain:is_chain_dead() of
+        false ->
+            ?assertEqual(5000, prometheus_gauge:value(?METRICS_DC)),
+            BlockAge = prometheus_gauge:value(?METRICS_CHAIN_BLOCKS),
+            ct:pal("[~p:~p:~p] MARKER ~p~n", [
+                ?MODULE,
+                ?FUNCTION_NAME,
+                ?LINE,
+                {StartTime, BlockAge, erlang:system_time(seconds)}
+            ]),
+            ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds));
+        true ->
+            ?assertEqual(0, prometheus_gauge:value(?METRICS_DC))
+    end,
 
     ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_OPENED_COUNT)),
     ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_OVERSPENT_COUNT)),
@@ -85,15 +119,6 @@ metrics_test(Config) ->
     ?assert(ConsoleAPITime < 100),
 
     ?assertEqual(true, prometheus_boolean:value(?METRICS_WS)),
-
-    BlockAge = prometheus_gauge:value(?METRICS_CHAIN_BLOCKS),
-    ct:pal("[~p:~p:~p] MARKER ~p~n", [
-        ?MODULE,
-        ?FUNCTION_NAME,
-        ?LINE,
-        {StartTime, BlockAge, erlang:system_time(seconds)}
-    ]),
-    ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds)),
 
     ?assert(prometheus_gauge:value(?METRICS_VM_CPU, [1]) > 0),
 

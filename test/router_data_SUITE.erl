@@ -134,7 +134,7 @@ data_test_1(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -278,7 +278,7 @@ data_test_2(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -422,7 +422,7 @@ data_test_3(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,

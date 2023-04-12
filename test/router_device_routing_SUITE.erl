@@ -2,8 +2,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -52,6 +55,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         handle_packet_using_post_offer,
         multi_buy_test,
         packet_hash_cache_test,
@@ -74,12 +89,18 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config).
 
@@ -165,12 +186,15 @@ test_packet_offer(Config, PreferredHotspots, ExpectedResult) ->
 
     ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
-    meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
 
     test_utils:add_oui(Config),
 
     #{pubkey_bin := StrangerPubKeyBin} = test_utils:join_device(Config),
     test_utils:wait_state_channel_message(1250),
+
+    %% Multibuy should not happen _after_ a device is joined and has preferred hotspots.
+    %% While joining, we want to get as many options as possible.
+    meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
 
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
@@ -458,21 +482,35 @@ multi_buy_test(Config) ->
     ok = remove_devaddr_allocate_meck(),
 
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
+    {Stream, PubKeyBin1} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                %% Inserting OUI into chain for routing
+                _ = test_utils:add_oui(Config),
 
-    %% Inserting OUI into chain for routing
-    _ = test_utils:add_oui(Config),
+                Swarm = proplists:get_value(swarm, Config),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self()]
+                ),
+                PubKeyBin01 = libp2p_swarm:pubkey_bin(Swarm),
+                {Stream0, PubKeyBin01};
+            true ->
+                ok = router_device_devaddr:set_devaddr_bases([{0, 16}]),
+                {ok, Pid} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin01 = router_test_gateway:pubkey_bin(Pid),
+                ok = router_test_ics_gateway_service:register_gateway_location(
+                    PubKeyBin01,
+                    "8c29a962ed5b3ff"
+                ),
+                {Pid, PubKeyBin01}
+        end,
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% device should join under OUI 1
     %% Send join packet
@@ -664,8 +702,13 @@ handle_packet_using_post_offer(Config) ->
     {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin3, Device, 0),
     {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin4, Device, 0),
 
-    %% 2 packets should have made it to state channels
-    ?assertEqual(2, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
+    case router_blockchain:is_chain_dead() of
+        false ->
+            %% 2 packets should have made it to state channels
+            ?assertEqual(2, meck:num_calls(blockchain_state_channels_server, track_offer, '_'));
+        true ->
+            ok
+    end,
 
     %% Change multi-buy to 4
     ok = router_device_multibuy:max(DeviceID, 4),
@@ -677,8 +720,13 @@ handle_packet_using_post_offer(Config) ->
     ok = HandlePacketForHotspotFun(PubKeyBin4, Device, 1),
     {error, multi_buy_max_packet} = HandlePacketForHotspotFun(PubKeyBin5, Device, 1),
 
-    %% 4 packets should have made it to state channels (2 previous + 4 new)
-    ?assertEqual(6, meck:num_calls(blockchain_state_channels_server, track_offer, '_')),
+    case router_blockchain:is_chain_dead() of
+        false ->
+            %% 4 packets should have made it to state channels (2 previous + 4 new)
+            ?assertEqual(6, meck:num_calls(blockchain_state_channels_server, track_offer, '_'));
+        true ->
+            ok
+    end,
 
     ok = meck:unload(blockchain_state_channels_server),
 

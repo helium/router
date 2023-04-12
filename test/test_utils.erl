@@ -67,7 +67,7 @@ init_per_testcase(TestCase, Config) ->
 
     BaseDir = io_lib:format("~p-~p", [TestCase, erlang:system_time(millisecond)]),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, device_rate_limit, 10),
+    ok = application:set_env(router, device_rate_limit, 50),
     ok = application:set_env(router, testing, true),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},

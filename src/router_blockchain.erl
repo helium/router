@@ -50,7 +50,7 @@ calculate_dc_amount(PayloadSize) ->
     case ?MODULE:is_chain_dead() of
         false -> blockchain_utils:calculate_dc_amount(ledger(), PayloadSize);
         %% 1 DC per 24 bytes of data
-        true -> erlang:ceil(PayloadSize / 24)
+        true -> lists:max([1, erlang:ceil(PayloadSize / 24)])
     end.
 
 %% Router Console Events

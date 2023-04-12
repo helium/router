@@ -60,7 +60,9 @@ start_link(Args) ->
 allocate(Device, PubKeyBin) ->
     gen_server:call(?SERVER, {allocate, Device, PubKeyBin}).
 
--spec set_devaddr_bases(list(Range)) -> ok when Range :: non_neg_integer() | binary().
+-spec set_devaddr_bases(list({Min, Max})) -> ok when
+    Min :: non_neg_integer(),
+    Max :: non_neg_integer().
 set_devaddr_bases(Ranges) ->
     ExpandedRanges = expand_ranges(Ranges),
     gen_server:call(?MODULE, {set_devaddr_bases, ExpandedRanges}).

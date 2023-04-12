@@ -129,7 +129,6 @@ handle_info({send, SCPacket}, #state{} = State) ->
     ct:print("test gateway sending packet: ~p", [SCPacket]),
     ok = ?MODULE:send_packet(self(), SCPacket),
     {noreply, State};
-    lager:debug("got data ~p", [Data]),
 handle_info({data, _StreamID, Data}, #state{forward = Pid, pubkey_bin = PubKeyBin} = State) ->
     Pid ! {?MODULE, PubKeyBin, {data, Data}},
     {noreply, State};

@@ -662,7 +662,14 @@ wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->
             catch
                 _:_ ->
                     ct:fail("invalid join response")
-            end
+            end;
+        {router_test_gateway, _Pid, {data, EnvDown}} ->
+            PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+            Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+            ct:pal("packet ~p", [PacketDown]),
+            Frame = deframe_join_packet(Payload, DevNonce, AppKey),
+            ct:pal("Join response ~p", [Frame]),
+            Frame
     after 1250 -> ct:fail("missing_join for")
     end.
 
@@ -685,6 +692,9 @@ wait_channel_data(Expected) ->
             ct:fail("wait_channel_data failed caught ~p", [_Reason])
     end.
 
+%% NOTE: Waiting for state channel messages is akin to waiting for downlink messages.
+%% In a grpc world, there is no state channel involved. But these helpers have
+%% been updated to listen for both libp2p and grpc downlink messages.
 wait_state_channel_message(Timeout) ->
     wait_state_channel_message(Timeout, undefined).
 
@@ -710,7 +720,7 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
                             {_E, _R}
                         ])
                 end;
-            {router_test_gateway, _Pid, {data, _EnvDown}} ->
+            {router_test_gateway, _PubKeyBin, {data, _EnvDown}} ->
                 ok
         after Timeout -> ct:fail("wait_state_channel_message timeout")
         end
@@ -751,7 +761,20 @@ wait_state_channel_message(Timeout, PubKeyBin, AppSKey) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, PubKeyBin, {data, EnvDown}} ->
+                PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+                Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+                Frame = deframe_packet(Payload, AppSKey),
+                {ok, Frame};
+            {router_test_gateway, _PubKeyBin, {data, _EnvDown}} ->
+                ct:print(
+                    "got env_down, but with unexpected pubkey ~n"
+                    "Expected: ~p~n"
+                    "Got:      ~p",
+                    [PubKeyBin, _PubKeyBin]
+                ),
+                ct:fail("unexpected env down")
         after Timeout -> ct:fail("wait_state_channel_message with frame timeout")
         end
     catch
@@ -793,13 +816,8 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                                 ct:pal("wait_state_channel_message packet ~p", [Packet]),
                                 Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
                                 ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
-                                ?assertEqual(FrameData, Frame#frame.data),
-                                %% we queued an unconfirmed packet
-                                ?assertEqual(Type, Frame#frame.mtype),
-                                ?assertEqual(FPending, Frame#frame.fpending),
-                                ?assertEqual(Ack, Frame#frame.ack),
-                                ?assertEqual(Fport, Frame#frame.fport),
-                                ?assertEqual(FCnt, Frame#frame.fcnt),
+                                assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt),
+
                                 {ok, Frame}
                         end;
                     _Else ->
@@ -811,14 +829,30 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                             {_E, _R},
                             Msg
                         ])
-                end
-        after 1250 -> ct:fail("wait_state_channel_message timeout for ~p", [Msg])
+                end;
+            {router_test_gateway, _Pid, {data, EnvDown}} ->
+                PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+                Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+                Frame = deframe_packet(Payload, router_device:app_s_key(Device)),
+                assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt),
+                {ok, Frame}
+        after 1250 ->
+            ct:print("wait_state_channel_message timeout for ~p", [Msg]),
+            ct:fail("wait_state_channel_message timeout for ~p", [Msg])
         end
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
+
+assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt) ->
+    ?assertEqual(FrameData, Frame#frame.data),
+    ?assertEqual(Type, Frame#frame.mtype),
+    ?assertEqual(FPending, Frame#frame.fpending),
+    ?assertEqual(Ack, Frame#frame.ack),
+    ?assertEqual(Fport, Frame#frame.fport),
+    ?assertEqual(FCnt, Frame#frame.fcnt).
 
 wait_state_channel_packet(Timeout) ->
     try
@@ -848,7 +882,10 @@ wait_state_channel_packet(Timeout) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, _, {data, EnvDown}} ->
+                Packet = router_test_gateway:sc_packet_from_env_down(EnvDown),
+                {ok, Packet}
         after Timeout -> ct:fail("wait_state_channel_packet with frame timeout")
         end
     catch
@@ -881,7 +918,7 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
 
 join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
     RoutingInfo =
-        {eui, binary:decode_unsigned(?APPEUI), binary:decode_unsigned(?DEVEUI)},
+        {eui, binary:decode_unsigned(?DEVEUI), binary:decode_unsigned(?APPEUI)},
     RSSI = maps:get(rssi, Options, 0),
     HeliumPacket = blockchain_helium_packet_v1:new(
         lorawan,
@@ -1098,10 +1135,12 @@ nonl([$\n | T]) -> nonl(T);
 nonl([H | T]) -> [H | nonl(T)];
 nonl([]) -> [].
 
-deframe_packet(Packet, SessionKey) ->
+-spec deframe_packet(#packet_pb{} | binary(), binary()) -> #frame{}.
+deframe_packet(#packet_pb{payload = Payload}, SessionKey) ->
+    deframe_packet(Payload, SessionKey);
+deframe_packet(Payload, SessionKey) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, RFU:1, ACK:1, FPending:1, FOptsLen:4,
-        FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
-        PayloadAndMIC/binary>> = Packet#packet_pb.payload,
+        FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Payload,
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     Data = lorawan_utils:reverse(
         lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)
@@ -1120,8 +1159,10 @@ deframe_packet(Packet, SessionKey) ->
         data = Data
     }.
 
+deframe_join_packet(#packet_pb{payload = Payload}, DevNonce, AppKey) ->
+    deframe_join_packet(Payload, DevNonce, AppKey);
 deframe_join_packet(
-    #packet_pb{payload = <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>},
+    <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>> = _Payload,
     DevNonce,
     AppKey
 ) when MType == ?JOIN_ACCEPT ->

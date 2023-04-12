@@ -343,6 +343,10 @@ join_device(Config, JoinOpts) ->
             true ->
                 {ok, Stream0} = router_test_gateway:start(#{forward => self()}),
                 PubKeyBin0 = router_test_gateway:pubkey_bin(Stream0),
+                ok = router_test_ics_gateway_service:register_gateway_location(
+                    PubKeyBin0,
+                    "8c29a962ed5b3ff"
+                ),
                 {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(
                     libp2p_crypto:bin_to_b58(PubKeyBin0)
                 ),

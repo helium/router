@@ -686,13 +686,7 @@ wait_channel_data(Expected) ->
     end.
 
 wait_state_channel_message(Timeout) ->
-    case router_blockchain:is_chain_dead() of
-        true ->
-            ct:pal("ignoring ~p, chain is dead", [?FUNCTION_NAME]),
-            ok;
-        false ->
-            wait_state_channel_message(Timeout, undefined)
-    end.
+    wait_state_channel_message(Timeout, undefined).
 
 wait_state_channel_message(Timeout, PubKeyBin) ->
     try
@@ -715,7 +709,9 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, _Pid, {data, _EnvDown}} ->
+                ok
         after Timeout -> ct:fail("wait_state_channel_message timeout")
         end
     catch

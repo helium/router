@@ -129,7 +129,10 @@ find_gateway_owner(PubKeyBin) ->
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer(), HandlerPid :: pid()) ->
     ok | reject.
 track_offer(Offer, HandlerPid) ->
-    blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid).
+    case ?MODULE:is_chain_dead() of
+        true -> ok;
+        false -> blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid)
+    end.
 
 %% ===================================================================
 %% Metrics only

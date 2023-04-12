@@ -682,7 +682,13 @@ wait_channel_data(Expected) ->
     end.
 
 wait_state_channel_message(Timeout) ->
-    wait_state_channel_message(Timeout, undefined).
+    case router_blockchain:is_chain_dead() of
+        true ->
+            ct:pal("ignoring ~p, chain is dead", [?FUNCTION_NAME]),
+            ok;
+        false ->
+            wait_state_channel_message(Timeout, undefined)
+    end.
 
 wait_state_channel_message(Timeout, PubKeyBin) ->
     try
@@ -931,7 +937,9 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = maps:get(region, Options, 'US915')
+        region = maps:get(region, Options, 'US915'),
+        %% Match blockchain ct default hold_time from router_device_routing:handle_packet/4
+        hold_time = 100
     },
     case maps:get(dont_encode, Options, false) of
         true ->
@@ -1055,6 +1063,19 @@ match_map(Expected, Got) when is_map(Got) ->
                         case match_map(maps:from_list(V1), maps:from_list(G1)) of
                             true -> true;
                             Err -> {false, {key, K, Err}}
+                        end;
+                    (K, V1, true) when is_float(V1) ->
+                        case maps:get(K, Got, undefined) of
+                            V2 when is_float(V2) ->
+                                Diff = abs(V1 - V2) < 0.0001,
+                                case Diff of
+                                    true ->
+                                        true;
+                                    false ->
+                                        {false,
+                                            {float_outside_tolerance, K, {got, V2}, {expected, V1},
+                                                {tolerance, 0.0001}, {difference, Diff}}}
+                                end
                         end;
                     (K, V, true) ->
                         case maps:get(K, Got, undefined) of

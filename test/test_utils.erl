@@ -329,10 +329,15 @@ join_device(Config) ->
 join_device(Config, JoinOpts) ->
     AppKey = proplists:get_value(app_key, Config),
     DevNonce = crypto:strong_rand_bytes(2),
-    {PubKeyBin, HotspotName, Stream} =
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(
+        libp2p_crypto:bin_to_b58(PubKeyBin)
+    ),
+    Stream =
         case router_blockchain:is_chain_dead() of
             false ->
-                Swarm = proplists:get_value(swarm, Config),
                 RouterSwarm = blockchain_swarm:swarm(),
                 [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
                 {ok, Stream0} = libp2p_swarm:dial_framed_stream(
@@ -342,24 +347,18 @@ join_device(Config, JoinOpts) ->
                     router_handler_test,
                     [self()]
                 ),
-                PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm),
-                {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(
-                    libp2p_crypto:bin_to_b58(PubKeyBin0)
-                ),
 
-                {PubKeyBin0, HotspotName0, Stream0};
+                Stream0;
             true ->
-                {ok, Stream0} = router_test_gateway:start(#{forward => self()}),
+                HotspotKeys = proplists:get_value(keys, Config),
+                {ok, Stream0} = router_test_gateway:start(HotspotKeys#{forward => self()}),
                 PubKeyBin0 = router_test_gateway:pubkey_bin(Stream0),
                 ok = router_test_ics_gateway_service:register_gateway_location(
                     PubKeyBin0,
                     "8c29a962ed5b3ff"
                 ),
-                {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(
-                    libp2p_crypto:bin_to_b58(PubKeyBin0)
-                ),
 
-                {PubKeyBin0, HotspotName0, Stream0}
+                Stream0
         end,
     %% Send join packet
     SCPacket = ?MODULE:join_packet(

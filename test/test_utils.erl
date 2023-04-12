@@ -291,31 +291,37 @@ start_swarm(BaseDir, Name, Port) ->
     {Swarm, Keys}.
 
 add_oui(Config) ->
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
-    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+    case router_blockchain:is_chain_dead() of
+        true ->
+            router_device_devaddr:set_devaddr_bases([{0, 8}]),
+            [{oui, 1}, Config];
+        false ->
+            {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+            PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
-    Chain = blockchain_worker:blockchain(),
-    Ledger = blockchain:ledger(Chain),
-    ConsensusMembers = proplists:get_value(consensus_member, Config),
+            Chain = blockchain_worker:blockchain(),
+            Ledger = blockchain:ledger(Chain),
+            ConsensusMembers = proplists:get_value(consensus_member, Config),
 
-    %% Create and submit OUI txn with an empty filter
-    OUI = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+            %% Create and submit OUI txn with an empty filter
+            OUI = 1,
+            {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
+            OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
+            OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+            OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+            OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+            OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
 
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
+            SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
 
-    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
+            ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
 
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
+            {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+            _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
 
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
-    [{oui, OUI} | Config].
+            ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+            [{oui, OUI} | Config]
+    end.
 
 join_device(Config) ->
     join_device(Config, #{}).

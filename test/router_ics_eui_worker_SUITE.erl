@@ -189,6 +189,14 @@ main_test(_Config) ->
 
     ok = router_ics_eui_worker:update([ID1, ID2]),
 
+    ok =
+        receive
+            {console_filter_update, _Added, _Removed} ->
+                ct:print("adding: ~p removing: ~p", [length(_Added), length(_Removed)]),
+                ok
+        after 2150 -> ct:fail("No console message about adding devices")
+        end,
+
     [{Type7, Req7}, {Type6, Req6}] = rcv_loop([]),
     ?assertEqual(update_euis, Type6),
     ?assertEqual(remove, Req6#iot_config_route_update_euis_req_v1_pb.action),

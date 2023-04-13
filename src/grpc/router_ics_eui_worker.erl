@@ -119,11 +119,12 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("add ~p", [DeviceIDs]),
-    EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    {AddedDeviceIDs, EUIPairs} = lists:unzip(fetch_device_euis(apis, DeviceIDs, RouteID)),
     case maybe_update_euis([{add, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates(AddedDeviceIDs, []),
             {reply, ok, State}
     end;
 handle_call(
@@ -132,11 +133,12 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("remove ~p", [DeviceIDs]),
-    EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    {RemovedDeviceIDs, EUIPairs} = lists:unzip(fetch_device_euis(cache, DeviceIDs, RouteID)),
     case maybe_update_euis([{remove, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates([], RemovedDeviceIDs),
             {reply, ok, State}
     end;
 handle_call(
@@ -145,14 +147,16 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("update ~p", [DeviceIDs]),
-    CachedEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
-    APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
-    ToRemove = CachedEUIPairs -- APIEUIPairs,
-    ToAdd = APIEUIPairs -- CachedEUIPairs,
-    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+    CachedDevicesEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    APIDevicesEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    {ToRemoveIDs, ToRemoveEUIPairs} = lists:unzip(CachedDevicesEUIPairs -- APIDevicesEUIPairs),
+    {ToAddIDs, ToAddEUIPairs} = lists:unzip(APIDevicesEUIPairs -- CachedDevicesEUIPairs),
+
+    case maybe_update_euis([{remove, ToRemoveEUIPairs}, {add, ToAddEUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates(ToAddIDs, ToRemoveIDs),
             {reply, ok, State}
     end;
 handle_call(_Msg, _From, State) ->
@@ -441,7 +445,7 @@ update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     }.
 
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
-    [iot_config_pb:iot_config_eui_pair_v1_pb()].
+    [{DeviceID :: binary(), iot_config_pb:iot_config_eui_pair_v1_pb()}].
 fetch_device_euis(apis, DeviceIDs, RouteID) ->
     lists:filtermap(
         fun(DeviceID) ->
@@ -451,9 +455,10 @@ fetch_device_euis(apis, DeviceIDs, RouteID) ->
                 {ok, Device} ->
                     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
                     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #iot_config_eui_pair_v1_pb{
-                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                    }}
+                    {true,
+                        {DeviceID, #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }}}
             end
         end,
         DeviceIDs
@@ -467,9 +472,10 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
                 {ok, Device} ->
                     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
                     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #iot_config_eui_pair_v1_pb{
-                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                    }}
+                    {true,
+                        {DeviceID, #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }}}
             end
         end,
         DeviceIDs

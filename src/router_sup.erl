@@ -145,6 +145,8 @@ init([]) ->
             ]
         ),
     ok = persistent_term:put(hotspot_location_cache, HLC),
+    {ok, DevaddrCache} = cream:new(1, [{seconds_to_live, 10}]),
+    ok = persistent_term:put(devaddr_subnets_cache, DevaddrCache),
 
     ChainWorkers =
         case router_blockchain:is_chain_dead() of

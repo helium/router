@@ -771,15 +771,20 @@ validate_devaddr(DevAddr) ->
 
 -spec get_subnets_bases() -> list({non_neg_integer(), non_neg_integer()}).
 get_subnets_bases() ->
-    _ = e2qc:cache(
-        devaddr_subnets_cache,
-        devaddr_subnets_cache,
-        10,
-        fun() ->
+    case persistent_term:get(devaddr_subnets_cache, undefined) of
+        undefined ->
             {ok, Ranges} = router_device_devaddr:get_devaddr_bases(),
-            Ranges
-        end
-    ).
+            Ranges;
+        Cache ->
+            cream:cache(
+                Cache,
+                devaddr_subnets_cache,
+                fun() ->
+                    {ok, Ranges} = router_device_devaddr:get_devaddr_bases(),
+                    Ranges
+                end
+            )
+    end.
 
 -spec lookup_replay(binary()) -> {ok, binary(), non_neg_integer()} | {error, not_found}.
 lookup_replay(PHash) ->

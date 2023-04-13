@@ -769,7 +769,7 @@ validate_devaddr(DevAddr) ->
             {error, ?DEVADDR_MALFORMED}
     end.
 
--spec get_subnets_bases() -> list({non_neg_integer(), non_neg_integer()}).
+-spec get_subnets_bases() -> list(non_neg_integer()).
 get_subnets_bases() ->
     case persistent_term:get(devaddr_subnets_cache, undefined) of
         undefined ->

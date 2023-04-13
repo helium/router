@@ -90,12 +90,8 @@ verify(Packet) ->
 
 %% ===================================================================
 
--spec to_sc_packet(
-    packet_router_pb:envelope_up_v1_pb() | packet_router_pb:packet_router_packet_up_v1_pb()
-) ->
+-spec to_sc_packet(packet_router_pb:packet_router_packet_up_v1_pb()) ->
     router_pb:blockchain_state_channel_packet_v1_pb().
-to_sc_packet(#envelope_up_v1_pb{data = {packet, PacketUp}}) ->
-    to_sc_packet(PacketUp);
 to_sc_packet(HprPacketUp) ->
     % Decompose uplink message
     #packet_router_packet_up_v1_pb{

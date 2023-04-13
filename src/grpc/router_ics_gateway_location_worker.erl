@@ -75,7 +75,11 @@ init_ets() ->
 get(PubKeyBin) ->
     case lookup(PubKeyBin) of
         {error, _Reason} ->
-            gen_server:call(?SERVER, {get, PubKeyBin});
+            try
+                gen_server:call(?SERVER, {get, PubKeyBin}, 1000)
+            catch
+                Class:Reason -> {error, {Class, Reason}}
+            end;
         {ok, _} = OK ->
             OK
     end.

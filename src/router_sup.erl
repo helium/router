@@ -154,6 +154,7 @@ init([]) ->
                 [];
             false ->
                 [
+                    ?SUP(blockchain_sup, [BlockchainOpts]),
                     ?WORKER(router_sc_worker, [SCWorkerOpts]),
                     ?WORKER(router_xor_filter_worker, [#{}])
                 ]
@@ -163,16 +164,14 @@ init([]) ->
         {?FLAGS,
             [
                 ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
-                ?SUP(blockchain_sup, [BlockchainOpts]),
                 ?WORKER(router_metrics, [MetricsOpts]),
                 ?WORKER(router_db, [DBOpts]),
-                ?SUP(router_devices_sup, []),
-
-                ?SUP(router_console_sup, []),
-                ?SUP(router_decoder_sup, []),
-                ?WORKER(router_device_devaddr, [#{}])
+                ?SUP(router_devices_sup, [])
             ] ++ ChainWorkers ++
                 [
+                    ?SUP(router_console_sup, []),
+                    ?SUP(router_decoder_sup, []),
+                    ?WORKER(router_device_devaddr, [#{}]),
                     ?WORKER(router_ics_devaddr_worker, [ICSOpts]),
                     ?WORKER(router_ics_eui_worker, [ICSOpts]),
                     ?WORKER(router_ics_skf_worker, [ICSOpts]),

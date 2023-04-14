@@ -63,7 +63,7 @@ verify_location_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_gateway_location_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
     ).
 
 -spec register_gateway_location(

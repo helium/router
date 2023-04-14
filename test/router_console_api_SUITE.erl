@@ -107,7 +107,7 @@ ws_get_address_test(_Config) ->
         end,
     receive
         {websocket_msg, Map} ->
-            PubKeyBin = blockchain_swarm:pubkey_bin(),
+            PubKeyBin = router_blockchain:pubkey_bin(),
             B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
             ?assertEqual(
                 #{
@@ -131,7 +131,7 @@ ws_request_address_test(_Config) ->
         end,
     receive
         {websocket_msg, Map} ->
-            PubKeyBin = blockchain_swarm:pubkey_bin(),
+            PubKeyBin = router_blockchain:pubkey_bin(),
             B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
             ?assertEqual(
                 #{

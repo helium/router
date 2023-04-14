@@ -399,7 +399,7 @@ check_devices(DB, CF) ->
 
 -spec get_router_address_msg() -> binary().
 get_router_address_msg() ->
-    PubKeyBin = blockchain_swarm:pubkey_bin(),
+    PubKeyBin = router_blockchain:pubkey_bin(),
     B58 = libp2p_crypto:bin_to_b58(PubKeyBin),
     router_console_ws_handler:encode_msg(
         <<"0">>,

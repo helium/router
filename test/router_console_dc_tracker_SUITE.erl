@@ -279,7 +279,7 @@ burned_test(Config) ->
     #{secret := PrivKey} = proplists:get_value(keys, Config),
     PayerSigFun = libp2p_crypto:mk_sig_fun(PrivKey),
 
-    PayeePubKeyBin = blockchain_swarm:pubkey_bin(),
+    PayeePubKeyBin = router_blockchain:pubkey_bin(),
     Memo = 123,
 
     BurnTxn0 = blockchain_txn_token_burn_v1:new(PayerPubKeyBin, PayeePubKeyBin, 1, 1),

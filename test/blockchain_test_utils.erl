@@ -155,7 +155,7 @@ add_block(Block, Sender, SwarmTID) ->
     add_block(Block, blockchain_worker:blockchain(), Sender, SwarmTID).
 
 add_block(Block, Chain, Sender, SwarmTID) ->
-    lager:debug("Sender: ~p, MyAddress: ~p", [Sender, blockchain_swarm:pubkey_bin()]),
+    lager:debug("Sender: ~p, MyAddress: ~p", [Sender, router_blockchain:pubkey_bin()]),
     %% try to acquire the lock with a timeout
     case blockchain_lock:acquire(5000) of
         error ->

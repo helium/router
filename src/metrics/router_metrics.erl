@@ -158,12 +158,14 @@ init(Args) ->
         {port, router_utils:get_env_int(metrics_port, 3000)}
     ],
     {ok, _Pid} = elli:start_link(ElliOpts),
-    ok = blockchain_event:add_handler(self()),
     {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     case router_blockchain:is_chain_dead() of
-        false -> _ = erlang:send_after(500, self(), post_init);
-        true -> ok
+        false ->
+            _ = erlang:send_after(500, self(), post_init),
+            ok = blockchain_event:add_handler(self());
+        true ->
+            ok
     end,
     {ok, #state{
         pubkey_bin = PubkeyBin,

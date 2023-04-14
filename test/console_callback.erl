@@ -51,7 +51,7 @@ device_to_json(Device) ->
             <<"fake org id">>
         ),
         <<"active">> => true,
-        <<"multi_buy">> => 1
+        <<"multi_buy">> => 9
     }.
 
 %% Get All Devices
@@ -73,7 +73,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>], Req, Args) ->
                             <<"labels">> => ?CONSOLE_LABELS,
                             <<"organization_id">> => ?CONSOLE_ORG_ID,
                             <<"active">> => true,
-                            <<"multi_buy">> => 1
+                            <<"multi_buy">> => 9
                         }
                     ],
                     undefined
@@ -229,7 +229,7 @@ handle('GET', [<<"api">>, <<"router">>, <<"devices">>, DID], _Req, Args) ->
         <<"labels">> => ?CONSOLE_LABELS,
         <<"organization_id">> => ?CONSOLE_ORG_ID,
         <<"active">> => IsActive,
-        <<"multi_buy">> => 1,
+        <<"multi_buy">> => 9,
         <<"adr_allowed">> => ADRAllowed,
         <<"cf_list_enabled">> => US915JoinAcceptCFListEnabled,
         <<"rx_delay">> => RxDelay,

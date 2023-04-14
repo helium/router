@@ -42,11 +42,7 @@
 
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    sig_fun :: function(),
-    transport :: http | https,
-    host :: string(),
-    port :: non_neg_integer(),
-    conn_backoff :: backoff:backoff()
+    sig_fun :: function()
 }).
 
 -record(location, {
@@ -62,18 +58,16 @@
 %% ------------------------------------------------------------------
 
 start_link(Args) ->
-    case router_ics_utils:start_link_args(Args) of
-        ignore ->
-            lager:warning("~s ignored ~p", [?MODULE, Args]),
-            ignore;
-        Map ->
-            gen_server:start_link({local, ?SERVER}, ?SERVER, Map, [])
-    end.
+    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 -spec init_ets() -> ok.
 init_ets() ->
     ?ETS = ets:new(?ETS, [
-        public, named_table, set, {read_concurrency, true}, {keypos, #location.gateway}
+        public,
+        named_table,
+        set,
+        {read_concurrency, true},
+        {keypos, #location.gateway}
     ]),
     ok.
 
@@ -81,7 +75,11 @@ init_ets() ->
 get(PubKeyBin) ->
     case lookup(PubKeyBin) of
         {error, _Reason} ->
-            gen_server:call(?SERVER, {get, PubKeyBin});
+            try
+                gen_server:call(?SERVER, {get, PubKeyBin}, 1000)
+            catch
+                Class:Reason -> {error, {Class, Reason}}
+            end;
         {ok, _} = OK ->
             OK
     end.
@@ -92,36 +90,19 @@ get(PubKeyBin) ->
 init(
     #{
         pubkey_bin := PubKeyBin,
-        sig_fun := SigFun,
-        transport := Transport,
-        host := Host,
-        port := Port
+        sig_fun := SigFun
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {_, SigFun, _} = router_blockchain:get_key(),
-    Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! ?INIT,
     {ok, #state{
         pubkey_bin = PubKeyBin,
-        sig_fun = SigFun,
-        transport = Transport,
-        host = Host,
-        port = Port,
-        conn_backoff = Backoff
+        sig_fun = SigFun
     }}.
 
-handle_call({get, PubKeyBin}, _From, #state{conn_backoff = Backoff0} = State) ->
+handle_call({get, PubKeyBin}, _From, #state{} = State) ->
     HotspotName = blockchain_utils:addr2name(PubKeyBin),
     case get_gateway_location(PubKeyBin, State) of
-        {error, Reason, true} ->
-            {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT),
-            lager:warning("fail to get_gateway_location ~p for ~s, reconnecting in ~wms", [
-                Reason, HotspotName, Delay
-            ]),
-            {reply, {error, Reason}, State#state{conn_backoff = Backoff1}};
-        {error, Reason, false} ->
+        {error, Reason, _} ->
             lager:warning("fail to get_gateway_location ~p for ~s", [Reason, HotspotName]),
             {reply, {error, Reason}, State};
         {ok, H3IndexString} ->
@@ -137,26 +118,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(
-    ?INIT,
-    #state{
-        transport = Transport,
-        host = Host,
-        port = Port,
-        conn_backoff = Backoff0
-    } = State
-) ->
-    {Delay, Backoff1} = backoff:fail(Backoff0),
-    case router_ics_utils:connect(Transport, Host, Port) of
-        {error, _Reason} ->
-            lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
-            _ = erlang:send_after(Delay, self(), ?INIT),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        ok ->
-            lager:info("connected"),
-            {_, Backoff2} = backoff:succeed(Backoff0),
-            {noreply, State#state{conn_backoff = Backoff2}}
-    end;
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

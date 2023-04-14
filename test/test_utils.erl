@@ -3,6 +3,8 @@
 -export([
     init_per_testcase/2,
     end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2,
     add_oui/1,
     start_swarm/3,
     get_device_channels_worker/1,
@@ -63,9 +65,9 @@ init_per_testcase(TestCase, Config) ->
         {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
     end),
 
-    BaseDir = erlang:atom_to_list(TestCase),
+    BaseDir = io_lib:format("~p-~p", [TestCase, erlang:system_time(millisecond)]),
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
-    ok = application:set_env(router, device_rate_limit, 10),
+    ok = application:set_env(router, device_rate_limit, 50),
     ok = application:set_env(router, testing, true),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
@@ -198,10 +200,17 @@ init_per_testcase(TestCase, Config) ->
     {HotspotSwarm, HotspotKeys} = ?MODULE:start_swarm(HotspotDir, TestCase, 0),
     #{public := HotspotPubKey, secret := HotspotPrivKey} = HotspotKeys,
 
-    {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
-        5000,
-        [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
-    ),
+    Config0 =
+        case proplists:get_value(is_chain_dead, Config, false) of
+            true ->
+                Config;
+            false ->
+                {ok, _GenesisMembers, ConsensusMembers, _Keys} = blockchain_test_utils:init_chain(
+                    5000,
+                    [{RouterPrivKey, RouterPubKey}, {HotspotPrivKey, HotspotPubKey}]
+                ),
+                [{consensus_member, ConsensusMembers} | Config]
+        end,
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
@@ -211,9 +220,8 @@ init_per_testcase(TestCase, Config) ->
         {elli, Pid},
         {base_dir, BaseDir},
         {swarm, HotspotSwarm},
-        {keys, HotspotKeys},
-        {consensus_member, ConsensusMembers}
-        | Config
+        {keys, HotspotKeys}
+        | Config0
     ].
 
 end_per_testcase(_TestCase, Config) ->
@@ -229,11 +237,41 @@ end_per_testcase(_TestCase, Config) ->
     ok = application:stop(lager),
     e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
     e2qc:teardown(router_console_api_get_org),
-    application:stop(e2qc),
+    e2qc:teardown(devaddr_subnets_cache),
+    e2qc:teardown(phash_to_device_cache),
+    ok = application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),
     ets:delete(Tab),
     meck:unload(router_device_devaddr),
+    ok.
+
+init_per_group(chain_alive, Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, false} | Config];
+init_per_group(chain_dead, Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        true,
+        [{persistent, true}]
+    ),
+    [{is_chain_dead, true} | Config];
+init_per_group(_GroupName, Config) ->
+    Config.
+
+end_per_group(_GroupName, _Config) ->
+    ok = application:set_env(
+        router,
+        is_chain_dead,
+        false,
+        [{persistent, true}]
+    ),
     ok.
 
 start_swarm(BaseDir, Name, Port) ->
@@ -253,52 +291,76 @@ start_swarm(BaseDir, Name, Port) ->
     {Swarm, Keys}.
 
 add_oui(Config) ->
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
-    PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+    case router_blockchain:is_chain_dead() of
+        true ->
+            router_device_devaddr:set_devaddr_bases([{0, 8}]),
+            [{oui, 1}, Config];
+        false ->
+            {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+            PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
-    Chain = blockchain_worker:blockchain(),
-    Ledger = blockchain:ledger(Chain),
-    ConsensusMembers = proplists:get_value(consensus_member, Config),
+            Chain = blockchain_worker:blockchain(),
+            Ledger = blockchain:ledger(Chain),
+            ConsensusMembers = proplists:get_value(consensus_member, Config),
 
-    %% Create and submit OUI txn with an empty filter
-    OUI = 1,
-    {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
-    OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
-    OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
-    OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
-    OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
-    OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
+            %% Create and submit OUI txn with an empty filter
+            OUI = 1,
+            {Filter, _} = xor16:to_bin(xor16:new([0], fun xxhash:hash64/1)),
+            OUITxn = blockchain_txn_oui_v1:new(OUI, PubKeyBin, [PubKeyBin], Filter, 8),
+            OUITxnFee = blockchain_txn_oui_v1:calculate_fee(OUITxn, Chain),
+            OUITxnStakingFee = blockchain_txn_oui_v1:calculate_staking_fee(OUITxn, Chain),
+            OUITxn0 = blockchain_txn_oui_v1:fee(OUITxn, OUITxnFee),
+            OUITxn1 = blockchain_txn_oui_v1:staking_fee(OUITxn0, OUITxnStakingFee),
 
-    SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
+            SignedOUITxn = blockchain_txn_oui_v1:sign(OUITxn1, SigFun),
 
-    ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
+            ?assertEqual({error, not_found}, blockchain_ledger_v1:find_routing(OUI, Ledger)),
 
-    {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
-    _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
+            {ok, Block0} = blockchain_test_utils:create_block(ConsensusMembers, [SignedOUITxn]),
+            _ = blockchain_test_utils:add_block(Block0, Chain, self(), blockchain_swarm:tid()),
 
-    ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
-    [{oui, OUI} | Config].
+            ok = test_utils:wait_until(fun() -> {ok, 2} == blockchain:height(Chain) end),
+            [{oui, OUI} | Config]
+    end.
 
 join_device(Config) ->
     join_device(Config, #{}).
 
 join_device(Config, JoinOpts) ->
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self()]
-    ),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
-
-    %% Send join packet
     DevNonce = crypto:strong_rand_bytes(2),
+
+    Swarm = proplists:get_value(swarm, Config),
+    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+    {ok, HotspotName} = erl_angry_purple_tiger:animal_name(
+        libp2p_crypto:bin_to_b58(PubKeyBin)
+    ),
+    Stream =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self()]
+                ),
+
+                Stream0;
+            true ->
+                HotspotKeys = proplists:get_value(keys, Config),
+                {ok, Stream0} = router_test_gateway:start(HotspotKeys#{forward => self()}),
+                PubKeyBin0 = router_test_gateway:pubkey_bin(Stream0),
+                ok = router_test_ics_gateway_service:register_gateway_location(
+                    PubKeyBin0,
+                    "8c29a962ed5b3ff"
+                ),
+
+                Stream0
+        end,
+    %% Send join packet
     SCPacket = ?MODULE:join_packet(
         PubKeyBin,
         AppKey,
@@ -607,7 +669,14 @@ wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->
             catch
                 _:_ ->
                     ct:fail("invalid join response")
-            end
+            end;
+        {router_test_gateway, _Pid, {data, EnvDown}} ->
+            PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+            Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+            ct:pal("packet ~p", [PacketDown]),
+            Frame = deframe_join_packet(Payload, DevNonce, AppKey),
+            ct:pal("Join response ~p", [Frame]),
+            Frame
     after 1250 -> ct:fail("missing_join for")
     end.
 
@@ -630,6 +699,9 @@ wait_channel_data(Expected) ->
             ct:fail("wait_channel_data failed caught ~p", [_Reason])
     end.
 
+%% NOTE: Waiting for state channel messages is akin to waiting for downlink messages.
+%% In a grpc world, there is no state channel involved. But these helpers have
+%% been updated to listen for both libp2p and grpc downlink messages.
 wait_state_channel_message(Timeout) ->
     wait_state_channel_message(Timeout, undefined).
 
@@ -654,7 +726,9 @@ wait_state_channel_message(Timeout, PubKeyBin) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, _PubKeyBin, {data, _EnvDown}} ->
+                ok
         after Timeout -> ct:fail("wait_state_channel_message timeout")
         end
     catch
@@ -694,7 +768,20 @@ wait_state_channel_message(Timeout, PubKeyBin, AppSKey) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, PubKeyBin, {data, EnvDown}} ->
+                PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+                Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+                Frame = deframe_packet(Payload, AppSKey),
+                {ok, Frame};
+            {router_test_gateway, _PubKeyBin, {data, _EnvDown}} ->
+                ct:print(
+                    "got env_down, but with unexpected pubkey ~n"
+                    "Expected: ~p~n"
+                    "Got:      ~p",
+                    [PubKeyBin, _PubKeyBin]
+                ),
+                ct:fail("unexpected env down")
         after Timeout -> ct:fail("wait_state_channel_message with frame timeout")
         end
     catch
@@ -736,13 +823,8 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                                 ct:pal("wait_state_channel_message packet ~p", [Packet]),
                                 Frame = deframe_packet(Packet, router_device:app_s_key(Device)),
                                 ct:pal("~p", [lager:pr(Frame, ?MODULE)]),
-                                ?assertEqual(FrameData, Frame#frame.data),
-                                %% we queued an unconfirmed packet
-                                ?assertEqual(Type, Frame#frame.mtype),
-                                ?assertEqual(FPending, Frame#frame.fpending),
-                                ?assertEqual(Ack, Frame#frame.ack),
-                                ?assertEqual(Fport, Frame#frame.fport),
-                                ?assertEqual(FCnt, Frame#frame.fcnt),
+                                assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt),
+
                                 {ok, Frame}
                         end;
                     _Else ->
@@ -754,14 +836,30 @@ wait_state_channel_message(Msg, Device, FrameData, Type, FPending, Ack, Fport, F
                             {_E, _R},
                             Msg
                         ])
-                end
-        after 1250 -> ct:fail("wait_state_channel_message timeout for ~p", [Msg])
+                end;
+            {router_test_gateway, _Pid, {data, EnvDown}} ->
+                PacketDown = router_test_gateway:packet_from_env_down(EnvDown),
+                Payload = router_test_gateway:payload_from_packet_down(PacketDown),
+                Frame = deframe_packet(Payload, router_device:app_s_key(Device)),
+                assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt),
+                {ok, Frame}
+        after 1250 ->
+            ct:print("wait_state_channel_message timeout for ~p", [Msg]),
+            ct:fail("wait_state_channel_message timeout for ~p", [Msg])
         end
     catch
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_state_channel_message stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_state_channel_message failed")
     end.
+
+assert_frame(Frame, FrameData, Type, FPending, Ack, Fport, FCnt) ->
+    ?assertEqual(FrameData, Frame#frame.data),
+    ?assertEqual(Type, Frame#frame.mtype),
+    ?assertEqual(FPending, Frame#frame.fpending),
+    ?assertEqual(Ack, Frame#frame.ack),
+    ?assertEqual(Fport, Frame#frame.fport),
+    ?assertEqual(FCnt, Frame#frame.fcnt).
 
 wait_state_channel_packet(Timeout) ->
     try
@@ -791,7 +889,10 @@ wait_state_channel_packet(Timeout) ->
                             Data,
                             {_E, _R}
                         ])
-                end
+                end;
+            {router_test_gateway, _, {data, EnvDown}} ->
+                Packet = router_test_gateway:sc_packet_from_env_down(EnvDown),
+                {ok, Packet}
         after Timeout -> ct:fail("wait_state_channel_packet with frame timeout")
         end
     catch
@@ -824,7 +925,7 @@ join_packet(PubKeyBin, AppKey, DevNonce) ->
 
 join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
     RoutingInfo =
-        {eui, binary:decode_unsigned(?APPEUI), binary:decode_unsigned(?DEVEUI)},
+        {eui, binary:decode_unsigned(?DEVEUI), binary:decode_unsigned(?APPEUI)},
     RSSI = maps:get(rssi, Options, 0),
     HeliumPacket = blockchain_helium_packet_v1:new(
         lorawan,
@@ -840,7 +941,9 @@ join_packet(PubKeyBin, AppKey, DevNonce, Options) ->
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = Region
+        region = Region,
+        %% Match blockchain ct default hold_time from router_device_routing:handle_packet/4
+        hold_time = 100
     },
     case maps:get(dont_encode, Options, false) of
         true ->
@@ -880,7 +983,9 @@ frame_packet(MType, PubKeyBin, NwkSessionKey, AppSessionKey, FCnt, Options) ->
     Packet = #blockchain_state_channel_packet_v1_pb{
         packet = HeliumPacket,
         hotspot = PubKeyBin,
-        region = maps:get(region, Options, 'US915')
+        region = maps:get(region, Options, 'US915'),
+        %% Match blockchain ct default hold_time from router_device_routing:handle_packet/4
+        hold_time = 100
     },
     case maps:get(dont_encode, Options, false) of
         true ->
@@ -1005,6 +1110,19 @@ match_map(Expected, Got) when is_map(Got) ->
                             true -> true;
                             Err -> {false, {key, K, Err}}
                         end;
+                    (K, V1, true) when is_float(V1) ->
+                        case maps:get(K, Got, undefined) of
+                            V2 when is_float(V2) ->
+                                Diff = abs(V1 - V2) < 0.0001,
+                                case Diff of
+                                    true ->
+                                        true;
+                                    false ->
+                                        {false,
+                                            {float_outside_tolerance, K, {got, V2}, {expected, V1},
+                                                {tolerance, 0.0001}, {difference, Diff}}}
+                                end
+                        end;
                     (K, V, true) ->
                         case maps:get(K, Got, undefined) of
                             V -> true;
@@ -1026,10 +1144,12 @@ nonl([$\n | T]) -> nonl(T);
 nonl([H | T]) -> [H | nonl(T)];
 nonl([]) -> [].
 
-deframe_packet(Packet, SessionKey) ->
+-spec deframe_packet(#packet_pb{} | binary(), binary()) -> #frame{}.
+deframe_packet(#packet_pb{payload = Payload}, SessionKey) ->
+    deframe_packet(Payload, SessionKey);
+deframe_packet(Payload, SessionKey) ->
     <<MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, ADR:1, RFU:1, ACK:1, FPending:1, FOptsLen:4,
-        FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary,
-        PayloadAndMIC/binary>> = Packet#packet_pb.payload,
+        FCnt:16/little-unsigned-integer, FOpts:FOptsLen/binary, PayloadAndMIC/binary>> = Payload,
     {FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
     Data = lorawan_utils:reverse(
         lorawan_utils:cipher(FRMPayload, SessionKey, MType band 1, DevAddr, FCnt)
@@ -1048,8 +1168,10 @@ deframe_packet(Packet, SessionKey) ->
         data = Data
     }.
 
+deframe_join_packet(#packet_pb{payload = Payload}, DevNonce, AppKey) ->
+    deframe_join_packet(Payload, DevNonce, AppKey);
 deframe_join_packet(
-    #packet_pb{payload = <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>>},
+    <<MType:3, _MHDRRFU:3, _Major:2, EncPayload/binary>> = _Payload,
     DevNonce,
     AppKey
 ) when MType == ?JOIN_ACCEPT ->

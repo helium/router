@@ -83,7 +83,7 @@ info_height([_, _, _], [], []) ->
 
 info_name(["info", "name"], [], []) ->
     {ok, Name} = erl_angry_purple_tiger:animal_name(
-        libp2p_crypto:bin_to_b58(blockchain_swarm:pubkey_bin())
+        libp2p_crypto:bin_to_b58(router_blockchain:pubkey_bin())
     ),
     [clique_status:text(Name)];
 info_name([_, _, _], [], []) ->

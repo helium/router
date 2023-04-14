@@ -2,8 +2,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -42,6 +45,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         http_downlink_test,
         console_tool_downlink_test,
         console_tool_downlink_order_test,
@@ -55,12 +70,18 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config).
 
@@ -370,7 +391,7 @@ test_downlink_message_for_channel(Config, DownlinkPayload, DownlinkMessage, Expe
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => 9,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,

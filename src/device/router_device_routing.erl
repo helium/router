@@ -756,34 +756,34 @@ validate_devaddr(DevNum) when erlang:is_integer(DevNum) ->
 validate_devaddr(DevAddr) ->
     case DevAddr of
         <<AddrBase:25/integer-unsigned-little, _DevAddrPrefix:7/integer>> ->
-            OUI = router_utils:get_oui(),
-            try router_blockchain:routing_for_oui(OUI) of
-                {ok, RoutingEntry} ->
-                    Subnets = blockchain_ledger_routing_v1:subnets(RoutingEntry),
-                    case
-                        lists:any(
-                            fun(Subnet) ->
-                                <<Base:25/integer-unsigned-big, Mask:23/integer-unsigned-big>> =
-                                    Subnet,
-                                Size = (((Mask bxor ?BITS_23) bsl 2) + 2#11) + 1,
-                                AddrBase >= Base andalso AddrBase < Base + Size
-                            end,
-                            Subnets
-                        )
-                    of
-                        true ->
-                            ok;
-                        false ->
-                            {error, ?DEVADDR_NOT_IN_SUBNET}
-                    end;
-                _ ->
-                    {error, ?OUI_UNKNOWN}
-            catch
-                _:_ ->
-                    {error, ?OUI_UNKNOWN}
+            case get_subnets_bases() of
+                [] ->
+                    {error, ?OUI_UNKNOWN};
+                Ranges ->
+                    case lists:member(AddrBase, Ranges) of
+                        true -> ok;
+                        false -> {error, ?DEVADDR_NOT_IN_SUBNET}
+                    end
             end;
         _ ->
             {error, ?DEVADDR_MALFORMED}
+    end.
+
+-spec get_subnets_bases() -> list(non_neg_integer()).
+get_subnets_bases() ->
+    case persistent_term:get(devaddr_subnets_cache, undefined) of
+        undefined ->
+            {ok, Ranges} = router_device_devaddr:get_devaddr_bases(),
+            Ranges;
+        Cache ->
+            cream:cache(
+                Cache,
+                devaddr_subnets_cache,
+                fun() ->
+                    {ok, Ranges} = router_device_devaddr:get_devaddr_bases(),
+                    Ranges
+                end
+            )
     end.
 
 -spec lookup_replay(binary()) -> {ok, binary(), non_neg_integer()} | {error, not_found}.

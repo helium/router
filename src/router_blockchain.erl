@@ -30,7 +30,8 @@
     find_dc_entry/1,
     calculate_state_channel_open_fee/1,
     save_key/1,
-    get_key/0
+    get_key/0,
+    pubkey_bin/0
 ]).
 
 -define(ROUTER_KEY, router_key).
@@ -50,7 +51,7 @@ calculate_dc_amount(PayloadSize) ->
     case ?MODULE:is_chain_dead() of
         false -> blockchain_utils:calculate_dc_amount(ledger(), PayloadSize);
         %% 1 DC per 24 bytes of data
-        true -> erlang:ceil(PayloadSize / 24)
+        true -> lists:max([1, erlang:ceil(PayloadSize / 24)])
     end.
 
 %% Router Console Events
@@ -129,7 +130,10 @@ find_gateway_owner(PubKeyBin) ->
 -spec track_offer(Offer :: blockchain_state_channel_offer_v1:offer(), HandlerPid :: pid()) ->
     ok | reject.
 track_offer(Offer, HandlerPid) ->
-    blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid).
+    case ?MODULE:is_chain_dead() of
+        true -> ok;
+        false -> blockchain_state_channels_server:track_offer(Offer, ledger(), HandlerPid)
+    end.
 
 %% ===================================================================
 %% Metrics only
@@ -207,6 +211,11 @@ save_key(Key) ->
     {libp2p_crypto:public_key(), libp2p_crypto:sig_fun(), libp2p_crypto:ecdh_fun()} | undefined.
 get_key() ->
     persistent_term:get(?ROUTER_KEY, undefined).
+
+-spec pubkey_bin() -> binary().
+pubkey_bin() ->
+    {PubKey, _SigFun, _} = ?MODULE:get_key(),
+    libp2p_crypto:pubkey_to_bin(PubKey).
 
 %% ===================================================================
 %% Unexported, no touchy

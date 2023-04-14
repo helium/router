@@ -2,8 +2,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -51,6 +54,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         mac_commands_test,
         mac_command_link_check_req_test,
         mac_command_link_check_req_with_confirmed_up_test,
@@ -72,12 +87,18 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config).
 
@@ -418,6 +439,19 @@ dupes_test(Config) ->
     Msg0 = #downlink{confirmed = false, port = 1, payload = <<"somepayload">>, channel = Channel},
     router_device_worker:queue_downlink(WorkerPid, Msg0),
 
+    {Stream2, PubKeyBin2} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
+                PubKeyBin02 = libp2p_crypto:pubkey_to_bin(PubKey),
+                {Stream, PubKeyBin02};
+            true ->
+                {ok, Pid} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin02 = router_test_gateway:pubkey_bin(Pid),
+                {Pid, PubKeyBin02}
+        end,
+    {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
+
     %% Send 4 similar packets to make it look like it's coming from 2 diff hotspots
     Stream !
         {send,
@@ -439,10 +473,8 @@ dupes_test(Config) ->
                 0,
                 #{rssi => -25.0}
             )},
-    #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
-    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey),
-    {ok, HotspotName2} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin2)),
-    Stream !
+
+    Stream2 !
         {send,
             test_utils:frame_packet(
                 ?UNCONFIRMED_UP,
@@ -452,7 +484,7 @@ dupes_test(Config) ->
                 0,
                 #{rssi => -30.0}
             )},
-    Stream !
+    Stream2 !
         {send,
             test_utils:frame_packet(
                 ?UNCONFIRMED_UP,
@@ -476,7 +508,7 @@ dupes_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -788,7 +820,7 @@ dupes2_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -864,27 +896,48 @@ dupes2_test(Config) ->
 
 join_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    BaseDir = proplists:get_value(base_dir, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
-    {Swarm1, _} = test_utils:start_swarm(BaseDir, join_test_swarm_1, 0),
-    PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm0),
-    PubKeyBin1 = libp2p_swarm:pubkey_bin(Swarm1),
-    {ok, Stream0} = libp2p_swarm:dial_framed_stream(
-        Swarm0,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self(), PubKeyBin0]
-    ),
-    {ok, Stream1} = libp2p_swarm:dial_framed_stream(
-        Swarm1,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self(), PubKeyBin1]
-    ),
+
+    [{Stream0, PubKeyBin0}, {Stream1, PubKeyBin1}, SwarmCleanupFun] =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                BaseDir = proplists:get_value(base_dir, Config),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                {Swarm0, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+                {Swarm1, _} = test_utils:start_swarm(BaseDir, join_test_swarm_1, 0),
+                PubKeyBin00 = libp2p_swarm:pubkey_bin(Swarm0),
+                PubKeyBin01 = libp2p_swarm:pubkey_bin(Swarm1),
+                {ok, Stream00} = libp2p_swarm:dial_framed_stream(
+                    Swarm0,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self(), PubKeyBin00]
+                ),
+                {ok, Stream01} = libp2p_swarm:dial_framed_stream(
+                    Swarm1,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self(), PubKeyBin01]
+                ),
+                [
+                    {Stream00, PubKeyBin00},
+                    {Stream01, PubKeyBin01},
+                    fun() ->
+                        libp2p_swarm:stop(Swarm0),
+                        libp2p_swarm:stop(Swarm1),
+                        ok
+                    end
+                ];
+            true ->
+                {ok, Pid0} = router_test_gateway:start(#{forward => self()}),
+                {ok, Pid1} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin00 = router_test_gateway:pubkey_bin(Pid0),
+                PubKeyBin01 = router_test_gateway:pubkey_bin(Pid1),
+                [{Pid0, PubKeyBin00}, {Pid1, PubKeyBin01}, fun() -> ok end]
+        end,
+
     {ok, HotspotName0} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin0)),
     {ok, HotspotName1} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
@@ -1055,30 +1108,39 @@ join_test(Config) ->
     ?assertEqual(AppSKey, router_device:app_s_key(Device1)),
     %% ?assertEqual([DevNonce], router_device:dev_nonces(Device1)),
 
-    libp2p_swarm:stop(Swarm0),
-    libp2p_swarm:stop(Swarm1),
+    ok = SwarmCleanupFun(),
     ok.
 
 us915_join_enabled_cf_list_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_enabled_cf_list_test",
-    filelib:ensure_dir(HotspotDir),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+
+    {Stream, PubKeyBin} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                Swarm = proplists:get_value(swarm, Config),
+                HotspotDir =
+                    proplists:get_value(base_dir, Config) ++ "/us915_join_enabled_cf_list_test",
+                filelib:ensure_dir(HotspotDir),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self(), PubKeyBin0]
+                ),
+                {Stream0, PubKeyBin0};
+            true ->
+                {ok, Pid0} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin0 = router_test_gateway:pubkey_bin(Pid0),
+                {Pid0, PubKeyBin0}
+        end,
 
     %% Tell the device to enable join-accept cflist when it starts up
     Tab = proplists:get_value(ets, Config),
     _ = ets:insert(Tab, {cf_list_enabled, true}),
-
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self(), PubKeyBin]
-    ),
 
     %% Send join packet
     DevNonce1 = crypto:strong_rand_bytes(2),
@@ -1155,25 +1217,35 @@ us915_join_disabled_cf_list_test(Config) ->
     %% NOTE: Disabled is default for cflist per device
 
     AppKey = proplists:get_value(app_key, Config),
-    Swarm = proplists:get_value(swarm, Config),
-    HotspotDir = proplists:get_value(base_dir, Config) ++ "/us915_join_disabled_cf_list_test",
-    filelib:ensure_dir(HotspotDir),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+    {Stream, PubKeyBin} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                Swarm = proplists:get_value(swarm, Config),
+                PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm),
+                HotspotDir =
+                    proplists:get_value(base_dir, Config) ++ "/us915_join_disabled_cf_list_test",
+                filelib:ensure_dir(HotspotDir),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
 
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self(), PubKeyBin0]
+                ),
+
+                {Stream0, PubKeyBin0};
+            true ->
+                {ok, Pid0} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin00 = router_test_gateway:pubkey_bin(Pid0),
+                {Pid0, PubKeyBin00}
+        end,
 
     %% Tell the device to disable join-accept cflist when it starts up
     Tab = proplists:get_value(ets, Config),
     _ = ets:insert(Tab, {cf_list_enabled, false}),
-
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self(), PubKeyBin]
-    ),
 
     SendJoinWaitForCFListFun = fun() ->
         %% Send join packet
@@ -1823,7 +1895,7 @@ adr_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -2019,7 +2091,7 @@ adr_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => <<"rx_delay_established">>,
@@ -2214,7 +2286,7 @@ adr_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -2416,7 +2488,7 @@ adr_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -2572,7 +2644,7 @@ adr_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -2743,18 +2815,30 @@ rx_delay_join_test(Config) ->
     _ = ets:insert(Tab, {rx_delay, ExpectedRxDelay}),
 
     AppKey = proplists:get_value(app_key, Config),
-    BaseDir = proplists:get_value(base_dir, Config),
-    RouterSwarm = blockchain_swarm:swarm(),
-    [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
-    {Swarm, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
-    PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
-    {ok, Stream} = libp2p_swarm:dial_framed_stream(
-        Swarm,
-        Address,
-        router_handler_test:version(),
-        router_handler_test,
-        [self(), PubKeyBin]
-    ),
+    {Stream, PubKeyBin, SwarmCleanupFun} =
+        case router_blockchain:is_chain_dead() of
+            false ->
+                BaseDir = proplists:get_value(base_dir, Config),
+                RouterSwarm = blockchain_swarm:swarm(),
+                [Address | _] = libp2p_swarm:listen_addrs(RouterSwarm),
+                {Swarm, _} = test_utils:start_swarm(BaseDir, join_test_swarm_0, 0),
+                PubKeyBin0 = libp2p_swarm:pubkey_bin(Swarm),
+                {ok, Stream0} = libp2p_swarm:dial_framed_stream(
+                    Swarm,
+                    Address,
+                    router_handler_test:version(),
+                    router_handler_test,
+                    [self(), PubKeyBin0]
+                ),
+                {Stream0, PubKeyBin0, fun() ->
+                    libp2p_swarm:stop(Swarm),
+                    ok
+                end};
+            true ->
+                {ok, Pid} = router_test_gateway:start(#{forward => self()}),
+                PubKeyBin0 = router_test_gateway:pubkey_bin(Pid),
+                {Pid, PubKeyBin0, fun() -> ok end}
+        end,
     {ok, _HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin)),
 
     %% Send join packets
@@ -2827,7 +2911,7 @@ rx_delay_join_test(Config) ->
     ),
     ?assertEqual(ExpectedRxDelay, RxDelay),
 
-    libp2p_swarm:stop(Swarm),
+    ok = SwarmCleanupFun(),
     ok.
 
 rx_delay_downlink_default_test(Config) ->
@@ -3164,7 +3248,7 @@ rx_delay_continue_session_test(Config) ->
     %% 3. our delay should remain 15 seconds (ExpectedRxDelay)
 
     #{
-        pubkey_bin := _PubKeyBin1,
+        pubkey_bin := PubKeyBin1,
         stream := Stream1,
         hotspot_name := _HotspotName1
     } = test_utils:join_device(Config),
@@ -3178,7 +3262,7 @@ rx_delay_continue_session_test(Config) ->
             {send,
                 test_utils:frame_packet(
                     ?CONFIRMED_UP,
-                    PubKeyBin,
+                    PubKeyBin1,
                     router_device:nwk_s_key(Device1),
                     router_device:app_s_key(Device1),
                     Fcnt,

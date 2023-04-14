@@ -157,7 +157,7 @@ discovery_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -232,7 +232,7 @@ discovery_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -327,7 +327,7 @@ discovery_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,
@@ -416,7 +416,7 @@ fail_to_connect_test(Config) ->
         <<"metadata">> => #{
             <<"labels">> => ?CONSOLE_LABELS,
             <<"organization_id">> => ?CONSOLE_ORG_ID,
-            <<"multi_buy">> => 1,
+            <<"multi_buy">> => fun erlang:is_integer/1,
             <<"adr_allowed">> => false,
             <<"cf_list_enabled">> => false,
             <<"rx_delay_state">> => fun erlang:is_binary/1,

@@ -44,11 +44,10 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(TestCase, Config) ->
-    %% setup test dirs
-    Config0 = test_utils:init_per_testcase(TestCase, Config),
-    Config0.
 
+init_per_testcase(TestCase, Config) ->
+    ok = application:set_env(router, is_chain_dead, true, [{persistent, true}]),
+    test_utils:init_per_testcase(TestCase, [{is_chain_dead, true} | Config]).
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
@@ -63,7 +62,7 @@ end_per_testcase(TestCase, Config) ->
 %% verify we get a response
 join_grpc_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
@@ -84,7 +83,7 @@ join_grpc_test(Config) ->
 
 join_grpc_gateway_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a client stream
@@ -121,7 +120,7 @@ join_grpc_gateway_test(Config) ->
 %% send a packet from an unknown device
 %% we will fail to get a response
 join_from_unknown_device_grpc_test(_Config) ->
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
@@ -150,7 +149,7 @@ join_from_unknown_device_grpc_gateway_test(_Config) ->
     {ok, Stream} = helium_packet_router_packet_client:route(ctx:new()),
     ct:print("stream: ~p", [Stream]),
 
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
@@ -190,7 +189,7 @@ join_from_unknown_device_grpc_gateway_test(_Config) ->
 
 packet_from_known_device_no_downlink(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create a join packet
@@ -251,7 +250,7 @@ packet_from_known_device_no_downlink(Config) ->
 
 packet_from_known_device_no_downlink_gateway_test(Config) ->
     AppKey = proplists:get_value(app_key, Config),
-    {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
+    {PubKey, SigFun, _} = router_blockchain:get_key(),
     PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
 
     %% create client stream

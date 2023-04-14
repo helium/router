@@ -24,8 +24,7 @@
     device_add_multiple_send_updates_to_console_test/1,
     device_add_unique_and_matching_send_updates_to_console_test/1,
     device_removed_send_updates_to_console_test/1,
-    estimate_cost_test/1,
-    ignore_start_when_config_service_eui_enabled/1
+    estimate_cost_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -69,28 +68,13 @@ all() ->
         device_add_multiple_send_updates_to_console_test,
         device_add_unique_and_matching_send_updates_to_console_test,
         device_removed_send_updates_to_console_test,
-        estimate_cost_test,
-        ignore_start_when_config_service_eui_enabled
+        estimate_cost_test
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 
-init_per_testcase(ignore_start_when_config_service_eui_enabled, Config) ->
-    ok = application:set_env(
-        router,
-        ics,
-        #{
-            eui_enabled => "true",
-            transport => "http",
-            host => "localhost",
-            port => 8085,
-            route_id => "test_route_id"
-        },
-        [{persistent, true}]
-    ),
-    test_utils:init_per_testcase(ignore_start_when_config_service_eui_enabled, Config);
 init_per_testcase(TestCase, Config0) ->
     application:set_env(router, router_xor_filter_worker, false),
     Config = test_utils:init_per_testcase(TestCase, Config0),
@@ -1400,10 +1384,6 @@ estimate_cost_test(Config) ->
 
     ?assert(meck:validate(blockchain_worker)),
     meck:unload(blockchain_worker),
-    ok.
-
-ignore_start_when_config_service_eui_enabled(_Config) ->
-    ?assertEqual(undefined, whereis(router_xor_filter_worker)),
     ok.
 
 %%--------------------------------------------------------------------

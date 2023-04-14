@@ -5,8 +5,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -30,6 +33,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         main_test,
         reconcile_test,
         server_crash_test,
@@ -39,15 +54,13 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_route_service, self()),
-    Port = 8085,
-    ServerPid = start_server(Port),
     ICSOpts0 = #{
         eui_enabled => "true",
-        transport => "http",
-        host => "localhost",
-        port => Port,
         route_id => ?ROUTE_ID
     },
     ICSOpts1 =
@@ -61,19 +74,16 @@ init_per_testcase(TestCase, Config) ->
         ICSOpts1,
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ServerPid = proplists:get_value(ics_server, Config),
-    case erlang:is_process_alive(ServerPid) of
-        true -> gen_server:stop(ServerPid);
-        false -> ok
-    end,
-    _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
         ics,
@@ -178,6 +188,14 @@ main_test(_Config) ->
     end),
 
     ok = router_ics_eui_worker:update([ID1, ID2]),
+
+    ok =
+        receive
+            {console_filter_update, _Added, _Removed} ->
+                ct:print("adding: ~p removing: ~p", [length(_Added), length(_Removed)]),
+                ok
+        after 2150 -> ct:fail("No console message about adding devices")
+        end,
 
     [{Type7, Req7}, {Type6, Req6}] = rcv_loop([]),
     ?assertEqual(update_euis, Type6),
@@ -301,7 +319,7 @@ reconcile_test(_Config) ->
     meck:unload(router_device_cache),
     ok.
 
-server_crash_test(Config) ->
+server_crash_test(_Config) ->
     meck:new(router_console_api, [passthrough]),
     meck:new(router_device_cache, [passthrough]),
 
@@ -356,14 +374,18 @@ server_crash_test(Config) ->
         Req3#iot_config_route_update_euis_req_v1_pb.eui_pair
     ),
 
-    ok = gen_server:stop(proplists:get_value(ics_server, Config)),
+    %% ok = gen_server:stop(proplists:get_value(ics_server, Config)),
+    ok = application:stop(grpcbox),
 
     lager:notice("server stoppped"),
     timer:sleep(250),
 
-    ?assertEqual({error, {shutdown, econnrefused}}, router_ics_eui_worker:add([ID1])),
+    %% TODO: Kill single grpcbox server rather than entire app.
+    %% ?assertEqual({error, {shutdown, econnrefused}}, router_ics_eui_worker:add([ID1])),
+    ?assertEqual({error, undefined_channel}, router_ics_eui_worker:add([ID1])),
 
-    ServerPid = start_server(8085),
+    %% ServerPid = start_server(8085),
+    {ok, _} = application:ensure_all_started(grpcbox),
 
     timer:sleep(1000),
     lager:notice("server started"),
@@ -387,7 +409,7 @@ server_crash_test(Config) ->
         Req7#iot_config_route_update_euis_req_v1_pb.eui_pair
     ),
 
-    ok = gen_server:stop(ServerPid),
+    %% ok = gen_server:stop(ServerPid),
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
     ok.
@@ -407,16 +429,3 @@ rcv_loop(Acc) ->
             rcv_loop([{Type, Req} | Acc])
     after timer:seconds(2) -> Acc
     end.
-
-start_server(Port) ->
-    _ = application:ensure_all_started(grpcbox),
-    {ok, ServerPid} = grpcbox:start_server(#{
-        grpc_opts => #{
-            service_protos => [iot_config_pb],
-            services => #{
-                'helium.iot_config.route' => router_test_ics_route_service
-            }
-        },
-        listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
-    }),
-    ServerPid.

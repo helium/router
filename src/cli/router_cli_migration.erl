@@ -303,7 +303,7 @@ create_migration_oui_map(Options) ->
                             true -> [];
                             false -> euis()
                         end,
-                    Payer = blockchain_swarm:pubkey_bin(),
+                    Payer = router_blockchain:pubkey_bin(),
                     Map = #{
                         oui => OUI,
                         payer => erlang:list_to_binary(libp2p_crypto:bin_to_b58(Owner)),

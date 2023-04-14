@@ -1,15 +1,16 @@
 -module(router_ics_gateway_location_worker_SUITE).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
 -include("console_test.hrl").
--include("lorawan_vars.hrl").
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -34,35 +35,41 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        main_test
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, [main_test]},
+        {chain_dead, [main_test]}
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_gateway_service, self()),
     Port = 8085,
-    ServerPid = start_server(Port),
     ok = application:set_env(
         router,
         ics,
         #{transport => "http", host => "localhost", port => Port},
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ServerPid = proplists:get_value(ics_server, Config),
-    case erlang:is_process_alive(ServerPid) of
-        true -> gen_server:stop(ServerPid);
-        false -> ok
-    end,
-    _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
         ics,
@@ -79,6 +86,10 @@ main_test(_Config) ->
     #{public := PubKey1} = libp2p_crypto:generate_keys(ecc_compact),
     PubKeyBin1 = libp2p_crypto:pubkey_to_bin(PubKey1),
     ExpectedIndex = h3:from_string("8828308281fffff"),
+    ok = router_test_ics_gateway_service:register_gateway_location(
+        PubKeyBin1,
+        "8828308281fffff"
+    ),
 
     Before = erlang:system_time(millisecond),
 
@@ -112,19 +123,6 @@ main_test(_Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-start_server(Port) ->
-    _ = application:ensure_all_started(grpcbox),
-    {ok, ServerPid} = grpcbox:start_server(#{
-        grpc_opts => #{
-            service_protos => [iot_config_pb],
-            services => #{
-                'helium.iot_config.gateway' => router_test_ics_gateway_service
-            }
-        },
-        listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
-    }),
-    ServerPid.
 
 rcv_loop(Acc) ->
     receive

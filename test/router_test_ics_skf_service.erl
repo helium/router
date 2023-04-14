@@ -93,7 +93,7 @@ verify_list_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_session_key_filter_list_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
     ).
 
 -spec verify_skf_update_req(Req :: #iot_config_session_key_filter_update_req_v1_pb{}) -> boolean().
@@ -107,5 +107,5 @@ verify_skf_update_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_session_key_filter_update_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(blockchain_swarm:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
     ).

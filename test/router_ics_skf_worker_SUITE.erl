@@ -8,8 +8,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -29,6 +32,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         main_test,
         reconcile_test
     ].
@@ -36,29 +51,27 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_skf_service, self()),
-    Port = 8085,
-    ServerPid = start_server(Port),
     ok = application:set_env(
         router,
         ics,
-        #{skf_enabled => "true", transport => "http", host => "localhost", port => Port},
+        #{skf_enabled => "true"},
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ServerPid = proplists:get_value(ics_server, Config),
-    case erlang:is_process_alive(ServerPid) of
-        true -> gen_server:stop(ServerPid);
-        false -> ok
-    end,
-    _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
         ics,
@@ -72,6 +85,8 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 main_test(Config) ->
+    %% Eat any location requests that may have been sent during test startup.
+    %% _ = rcv_loop([]),
     meck:new(router_device_cache, [passthrough]),
 
     %% creating couple devices for testing
@@ -258,6 +273,7 @@ main_test(Config) ->
                 router_device:app_s_key(JoinedDevice1),
                 1
             )},
+
     [] = rcv_loop([]),
 
     meck:unload(router_device_cache),
@@ -415,19 +431,6 @@ reconcile_test(_Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-start_server(Port) ->
-    _ = application:ensure_all_started(grpcbox),
-    {ok, ServerPid} = grpcbox:start_server(#{
-        grpc_opts => #{
-            service_protos => [iot_config_pb],
-            services => #{
-                'helium.iot_config.session_key_filter' => router_test_ics_skf_service
-            }
-        },
-        listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
-    }),
-    ServerPid.
 
 rcv_loop(Acc) ->
     receive

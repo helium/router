@@ -5,8 +5,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -27,6 +30,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         main_test,
         ignore_ranges_outside_net_id_test,
         server_crash_test
@@ -35,35 +50,31 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
 
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_route_service, self()),
-    Port = 8085,
-    ServerPid = start_server(Port),
     ok = application:set_env(
         router,
         ics,
         #{
             devaddr_enabled => "true",
-            transport => http,
-            host => "localhost",
-            port => Port,
             route_id => "test_route_id"
         },
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, [{ics_server, ServerPid} | Config]).
+    test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ServerPid = proplists:get_value(ics_server, Config),
-    case erlang:is_process_alive(ServerPid) of
-        true -> gen_server:stop(ServerPid);
-        false -> ok
-    end,
+    %% grpcbox likes to carry processes across tests
     _ = application:stop(grpcbox),
     ok = application:set_env(
         router,
@@ -184,19 +195,6 @@ server_crash_test(_Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
-
-start_server(Port) ->
-    _ = application:ensure_all_started(grpcbox),
-    {ok, ServerPid} = grpcbox:start_server(#{
-        grpc_opts => #{
-            service_protos => [iot_config_pb],
-            services => #{
-                'helium.iot_config.route' => router_test_ics_route_service
-            }
-        },
-        listen_opts => #{port => Port, ip => {0, 0, 0, 0}}
-    }),
-    ServerPid.
 
 rcv_loop() ->
     lists:reverse(rcv_loop([])).

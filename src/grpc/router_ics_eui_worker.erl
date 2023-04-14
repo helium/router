@@ -48,9 +48,6 @@
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
-    transport :: http | https,
-    host :: string(),
-    port :: non_neg_integer(),
     conn_backoff :: backoff:backoff(),
     route_id :: undefined | string()
 }).
@@ -61,7 +58,7 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
-    case router_ics_utils:start_link_args(Args) of
+    case Args of
         #{eui_enabled := "true"} = Map ->
             case maps:get(route_id, Map, "") of
                 "" ->
@@ -103,22 +100,15 @@ init(
     #{
         pubkey_bin := PubKeyBin,
         sig_fun := SigFun,
-        transport := Transport,
-        host := Host,
-        port := Port,
         route_id := RouteID
     } = Args
 ) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    {_, SigFun, _} = router_blockchain:get_key(),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    self() ! ?INIT,
+    ok = ?MODULE:reconcile(undefined, true),
     {ok, #state{
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
-        transport = Transport,
-        host = Host,
-        port = Port,
         conn_backoff = Backoff,
         route_id = RouteID
     }}.
@@ -129,11 +119,12 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("add ~p", [DeviceIDs]),
-    EUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    {AddedDeviceIDs, EUIPairs} = lists:unzip(fetch_device_euis(apis, DeviceIDs, RouteID)),
     case maybe_update_euis([{add, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates(AddedDeviceIDs, []),
             {reply, ok, State}
     end;
 handle_call(
@@ -142,11 +133,12 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("remove ~p", [DeviceIDs]),
-    EUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    {RemovedDeviceIDs, EUIPairs} = lists:unzip(fetch_device_euis(cache, DeviceIDs, RouteID)),
     case maybe_update_euis([{remove, EUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates([], RemovedDeviceIDs),
             {reply, ok, State}
     end;
 handle_call(
@@ -155,14 +147,16 @@ handle_call(
     #state{route_id = RouteID} = State
 ) ->
     lager:info("update ~p", [DeviceIDs]),
-    CachedEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
-    APIEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
-    ToRemove = CachedEUIPairs -- APIEUIPairs,
-    ToAdd = APIEUIPairs -- CachedEUIPairs,
-    case maybe_update_euis([{remove, ToRemove}, {add, ToAdd}], State) of
+    CachedDevicesEUIPairs = fetch_device_euis(cache, DeviceIDs, RouteID),
+    APIDevicesEUIPairs = fetch_device_euis(apis, DeviceIDs, RouteID),
+    {ToRemoveIDs, ToRemoveEUIPairs} = lists:unzip(CachedDevicesEUIPairs -- APIDevicesEUIPairs),
+    {ToAddIDs, ToAddEUIPairs} = lists:unzip(APIDevicesEUIPairs -- CachedDevicesEUIPairs),
+
+    case maybe_update_euis([{remove, ToRemoveEUIPairs}, {add, ToAddEUIPairs}], State) of
         {error, Reason} ->
             {reply, {error, Reason}, update_euis_failed(Reason, State)};
         ok ->
+            ok = router_console_api:xor_filter_updates(ToAddIDs, ToRemoveIDs),
             {reply, ok, State}
     end;
 handle_call(_Msg, _From, State) ->
@@ -174,7 +168,7 @@ handle_cast({?RECONCILE_START, Options}, #state{conn_backoff = Backoff0} = State
     case get_euis(Options, State) of
         {error, _Reason} = Error ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
-            _ = erlang:send_after(Delay, self(), ?INIT),
+            _ = timer:apply_after(Delay, ?MODULE, reconcile, [undefined, true]),
             lager:warning("fail to get_euis ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
@@ -263,29 +257,6 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
-handle_info(
-    ?INIT,
-    #state{
-        transport = Transport,
-        host = Host,
-        port = Port,
-        conn_backoff = Backoff0
-    } = State
-) ->
-    {Delay, Backoff1} = backoff:fail(Backoff0),
-    case router_ics_utils:connect(Transport, Host, Port) of
-        {error, _Reason} ->
-            lager:warning("fail to connect ~p, reconnecting in ~wms", [_Reason, Delay]),
-            _ = erlang:send_after(Delay, self(), ?INIT),
-            {noreply, State#state{conn_backoff = Backoff1}};
-        ok ->
-            lager:info("connected"),
-            {_, Backoff2} = backoff:succeed(Backoff0),
-            ok = ?MODULE:reconcile(undefined, true),
-            {noreply, State#state{
-                conn_backoff = Backoff2
-            }}
-    end;
 handle_info({headers, _StreamID, _Data}, State) ->
     lager:debug("got headers for stream: ~p, ~p", [_StreamID, _Data]),
     {noreply, State};
@@ -398,6 +369,8 @@ update_euis(List, State) ->
 ) -> ok | {error, any()}.
 wait_for_stream_close(_, _, MaxAttempts, MaxAttempts) ->
     {error, {max_timeouts_reached, MaxAttempts}};
+wait_for_stream_close({error, Reason, Extra}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
+    {error, {Reason, Extra}};
 wait_for_stream_close({error, _} = Err, _Stream, _TimeoutAttempts, _MaxAttempts) ->
     Err;
 wait_for_stream_close({ok, _}, _Stream, _TimeoutAttempts, _MaxAttempts) ->
@@ -465,14 +438,14 @@ get_local_eui_pairs(RouteID) ->
 -spec update_euis_failed(Reason :: any(), State :: state()) -> state().
 update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
-    _ = erlang:send_after(Delay, self(), ?INIT),
+    timer:apply_after(Delay, ?MODULE, reconcile, [undefined, true]),
     lager:warning("fail to update euis ~p, reconnecting in ~wms", [Reason, Delay]),
     State#state{
         conn_backoff = Backoff1
     }.
 
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
-    [iot_config_pb:iot_config_eui_pair_v1_pb()].
+    [{DeviceID :: binary(), iot_config_pb:iot_config_eui_pair_v1_pb()}].
 fetch_device_euis(apis, DeviceIDs, RouteID) ->
     lists:filtermap(
         fun(DeviceID) ->
@@ -482,9 +455,10 @@ fetch_device_euis(apis, DeviceIDs, RouteID) ->
                 {ok, Device} ->
                     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
                     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #iot_config_eui_pair_v1_pb{
-                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                    }}
+                    {true,
+                        {DeviceID, #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }}}
             end
         end,
         DeviceIDs
@@ -498,9 +472,10 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
                 {ok, Device} ->
                     <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
                     <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true, #iot_config_eui_pair_v1_pb{
-                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                    }}
+                    {true,
+                        {DeviceID, #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }}}
             end
         end,
         DeviceIDs

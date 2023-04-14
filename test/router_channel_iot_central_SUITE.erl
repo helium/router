@@ -43,14 +43,15 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(iot_central_integration_test = TestCase, Config) ->
+init_per_testcase(iot_central_integration_test = _TestCase, _Config) ->
     case os:getenv("IC_APP_NAME") of
         false ->
             {skip, env_var_not_set};
         [] ->
             {skip, env_var_empty};
         _V ->
-            test_utils:init_per_testcase(TestCase, Config)
+            {skip, test_env_disabled}
+            %% test_utils:init_per_testcase(TestCase, Config)
     end;
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).

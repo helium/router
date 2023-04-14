@@ -162,8 +162,7 @@ init(Args) ->
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     case router_blockchain:is_chain_dead() of
         false ->
-            _ = erlang:send_after(500, self(), post_init),
-            ok = blockchain_event:add_handler(self());
+            _ = erlang:send_after(500, self(), post_init);
         true ->
             ok
     end,
@@ -232,6 +231,7 @@ handle_info(post_init, #state{chain = undefined} = State) ->
             {noreply, State};
         Chain ->
             _ = schedule_next_tick(),
+            ok = blockchain_event:add_handler(self()),
             {noreply, State#state{chain = Chain}}
     end;
 handle_info({blockchain_event, {new_chain, Chain}}, State) ->

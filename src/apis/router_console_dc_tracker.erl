@@ -151,8 +151,7 @@ current_balance(OrgID) ->
 %% ------------------------------------------------------------------
 init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ok = blockchain_event:add_handler(self()),
-    {ok, PubKey, _, _} = blockchain_swarm:keys(),
+    {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = erlang:send_after(500, self(), post_init),
     {ok, #state{pubkey_bin = PubkeyBin}}.
@@ -165,6 +164,15 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(post_init, #state{} = State) ->
+    case router_blockchain:privileged_maybe_get_blockchain() of
+        undefined ->
+            erlang:send_after(500, self(), post_init),
+            {noreply, State};
+        _Chain ->
+            ok = blockchain_event:add_handler(self()),
+            {noreply, State#state{}}
+    end;
 handle_info(
     {blockchain_event, {add_block, BlockHash, _Syncing, Ledger}},
     #state{pubkey_bin = PubkeyBin} = State

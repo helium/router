@@ -214,7 +214,7 @@ get_key() ->
 
 -spec pubkey_bin() -> binary().
 pubkey_bin() ->
-    {PubKey, _, _} = ?MODULE:get_key(),
+    {PubKey, _SigFun, _} = ?MODULE:get_key(),
     libp2p_crypto:pubkey_to_bin(PubKey).
 
 %% ===================================================================

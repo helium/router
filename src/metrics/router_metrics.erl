@@ -164,7 +164,7 @@ init(Args) ->
         false ->
             _ = erlang:send_after(500, self(), post_init);
         true ->
-            ok
+            schedule_next_tick()
     end,
     {ok, #state{
         pubkey_bin = PubkeyBin,

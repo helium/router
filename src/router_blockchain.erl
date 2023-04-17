@@ -31,7 +31,8 @@
     calculate_state_channel_open_fee/1,
     save_key/1,
     get_key/0,
-    pubkey_bin/0
+    pubkey_bin/0,
+    sig_fun/0
 ]).
 
 -define(ROUTER_KEY, router_key).
@@ -212,10 +213,15 @@ save_key(Key) ->
 get_key() ->
     persistent_term:get(?ROUTER_KEY, undefined).
 
--spec pubkey_bin() -> binary().
+-spec pubkey_bin() -> libp2p_crypto:pubkey_bin().
 pubkey_bin() ->
     {PubKey, _SigFun, _} = ?MODULE:get_key(),
     libp2p_crypto:pubkey_to_bin(PubKey).
+
+-spec sig_fun() -> libp2p_crypto:sig_fun().
+sig_fun() ->
+    {_PubKey, SigFun, _} = ?MODULE:get_key(),
+    SigFun.
 
 %% ===================================================================
 %% Unexported, no touchy

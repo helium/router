@@ -39,7 +39,7 @@
 -define(BACKOFF_MIN, timer:seconds(10)).
 -endif.
 -define(BACKOFF_MAX, timer:minutes(5)).
--define(NOT_FOUND, not_found).
+-define(CACHED_NOT_FOUND, cached_not_found).
 
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
@@ -75,6 +75,8 @@ init_ets() ->
 -spec get(libp2p_crypto:pubkey_bin()) -> {ok, h3:index()} | {error, any()}.
 get(PubKeyBin) ->
     case lookup(PubKeyBin) of
+        {error, ?CACHED_NOT_FOUND} = E ->
+            E;
         {error, _Reason} ->
             HotspotName = blockchain_utils:addr2name(PubKeyBin),
             case get_gateway_location(PubKeyBin) of
@@ -83,7 +85,7 @@ get(PubKeyBin) ->
                         "fail to get_gateway_location ~p for ~s",
                         [ErrReason, HotspotName]
                     ),
-                    ok = insert(PubKeyBin, ?NOT_FOUND),
+                    ok = insert(PubKeyBin, ?CACHED_NOT_FOUND),
                     {error, ErrReason};
                 {ok, H3IndexString} ->
                     H3Index = h3:from_string(H3IndexString),
@@ -134,19 +136,19 @@ terminate(_Reason, _State) ->
 %% Store valid locations for up to 24 hours.
 %% Invalid locations for 1 hour.
 -spec lookup(PubKeyBin :: libp2p_crypto:pubkey_bin()) ->
-    {ok, h3:index()} | {error, ?NOT_FOUND | outdated}.
+    {ok, h3:index()} | {error, ?CACHED_NOT_FOUND | not_found | outdated}.
 lookup(PubKeyBin) ->
     Yesterday = erlang:system_time(millisecond) - timer:hours(24),
     OneHour = erlang:system_time(millisecond) - timer:hours(1),
     case ets:lookup(?ETS, PubKeyBin) of
         [] ->
-            {error, ?NOT_FOUND};
+            {error, not_found};
         [#location{timestamp = T}] when T < Yesterday ->
             {error, outdated};
-        [#location{timestamp = T, h3_index = ?NOT_FOUND}] when T < OneHour ->
+        [#location{timestamp = T, h3_index = ?CACHED_NOT_FOUND}] when T < OneHour ->
             {error, outdated};
-        [#location{h3_index = ?NOT_FOUND}] ->
-            {error, ?NOT_FOUND};
+        [#location{h3_index = ?CACHED_NOT_FOUND}] ->
+            {error, ?CACHED_NOT_FOUND};
         [#location{h3_index = H3Index}] ->
             {ok, H3Index}
     end.

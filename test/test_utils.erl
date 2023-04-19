@@ -69,10 +69,6 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(blockchain, base_dir, BaseDir ++ "/router_swarm_data"),
     ok = application:set_env(router, device_rate_limit, 50),
     ok = application:set_env(router, testing, true),
-    ok = application:set_env(router, ics, #{
-        devaddr_enabled => "true",
-        route_id => "test-route-id"
-    }),
     ok = application:set_env(router, router_console_api, [
         {endpoint, ?CONSOLE_URL},
         {downlink_endpoint, ?CONSOLE_URL},
@@ -243,6 +239,7 @@ end_per_testcase(_TestCase, Config) ->
     e2qc:teardown(router_console_api_get_org),
     e2qc:teardown(devaddr_subnets_cache),
     e2qc:teardown(phash_to_device_cache),
+    ok = application:stop(grpcbox),
     ok = application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),

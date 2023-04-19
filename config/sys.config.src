@@ -69,19 +69,7 @@
         {denylist_url, "https://api.github.com/repos/helium/denylist/releases/latest"}
     ]},
     {grpcbox, [
-        {client, #{channels => [
-                                {ics_channel, [{https, "alb.iot.mainnet.helium.io", 6080, []}], #{}},
-                                {
-                                 ics_location_channel,
-                                 [
-                                  {https, "alb.iot.mainnet.helium.io", 6080, [1]},
-                                  {https, "alb.iot.mainnet.helium.io", 6080, [2]},
-                                  {https, "alb.iot.mainnet.helium.io", 6080, [3]},
-                                  {https, "alb.iot.mainnet.helium.io", 6080, [4]}
-                                 ],
-                                 #{}
-                                }
-                               ]}},
+        {client, #{channels => [{ics_channel, [{https, "alb.iot.mainnet.helium.io", 6080, []}], #{}}]}},
         {servers, [
             #{
                 grpc_opts => #{

@@ -34,9 +34,15 @@ handle_message(DevaddrRange, #state{data = Data} = State) ->
 handle_headers(_Metadata, CBData) ->
     {ok, CBData}.
 
--spec handle_trailers(binary(), term(), map(), state()) -> {ok, state()}.
-handle_trailers(_Status, _Message, _Metadata, CBData) ->
-    {ok, CBData}.
+handle_trailers(Status, Message, Metadata, #state{} = State) ->
+    lager:info("trailers: [status: ~p] [message: ~p] [meta: ~p]", [Status, Message, Metadata]),
+    case Status of
+        <<"0">> ->
+            {ok, State};
+        _ ->
+            lager:error("trailers", [{error, {Status, Message, Metadata}}]),
+            {ok, State}
+    end.
 
 -spec handle_eos(state()) -> {ok, state()}.
 handle_eos(#state{pid = Pid, data = Data} = State) ->

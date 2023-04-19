@@ -153,7 +153,14 @@ handle_cast({?RECONCILE_END, Pid, DevaddrRanges}, #state{} = State) ->
         end,
         DevaddrRanges
     ),
-    ok = router_device_devaddr:set_devaddr_bases(Ranges),
+
+    try router_device_devaddr:set_devaddr_bases(Ranges) of
+        ok -> ok
+    catch
+        E ->
+            lager:warning("could not set devaddr bases: ~p", [E]),
+            ok
+    end,
 
     {noreply, State#state{devaddr_ranges = DevaddrRanges}};
 handle_cast(_Msg, State) ->

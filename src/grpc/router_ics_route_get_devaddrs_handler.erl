@@ -13,17 +13,17 @@
 ]).
 
 -record(state, {
-    pid :: pid() | undefined,
-    data :: list(iot_config_pb:iot_config_devaddr_range_v1_pb())
+    data :: list(iot_config_pb:iot_config_devaddr_range_v1_pb()),
+    error :: undefined | {error, any()}
 }).
 
 -type stream_id() :: non_neg_integer().
 -type state() :: #state{}.
 
--spec init(pid(), stream_id(), Pid :: pid() | undefined) -> {ok, state()}.
-init(_ConnectionPid, _StreamId, Pid) ->
-    lager:info("init ~p: ~p", [_StreamId, Pid]),
-    {ok, #state{pid = Pid, data = []}}.
+-spec init(pid(), stream_id(), any()) -> {ok, state()}.
+init(_ConnectionPid, _StreamId, _Any) ->
+    lager:info("init ~p: ~p", [_StreamId, _Any]),
+    {ok, #state{data = [], error = undefined}}.
 
 -spec handle_message(iot_config_pb:iot_config_devaddr_range_v1_pb(), state()) -> {ok, state()}.
 handle_message(DevaddrRange, #state{data = Data} = State) ->
@@ -40,12 +40,16 @@ handle_trailers(Status, Message, Metadata, #state{} = State) ->
         <<"0">> ->
             {ok, State};
         _ ->
-            lager:error("trailers", [{error, {Status, Message, Metadata}}]),
-            {ok, State}
+            lager:error("trailers ~p", [{error, {Status, Message, Metadata}}]),
+            {ok, State#state{error = {error, Message}}}
     end.
 
 -spec handle_eos(state()) -> {ok, state()}.
-handle_eos(#state{pid = Pid, data = Data} = State) ->
-    lager:info("got eos, sending to router_ics_devaddr_worker"),
-    ok = router_ics_devaddr_worker:reconcile_end(Pid, Data),
+handle_eos(#state{data = Data, error = undefined} = State) ->
+    lager:info("got eos, sending to router_device_devaddr"),
+    ok = router_device_devaddr:reconcile_end({ok, Data}),
+    {ok, State};
+handle_eos(#state{error = Error} = State) ->
+    lager:warning("got eos with error ~p", [Error]),
+    ok = router_device_devaddr:reconcile_end(Error),
     {ok, State}.

@@ -44,6 +44,7 @@
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
+-include("../src/grpc/autogen/iot_config_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
@@ -294,8 +295,14 @@ start_swarm(BaseDir, Name, Port) ->
 add_oui(Config) ->
     case router_blockchain:is_chain_dead() of
         true ->
-            router_device_devaddr:set_devaddr_bases([{0, 8}]),
-            [{oui, 1}, Config];
+            Range1 = #iot_config_devaddr_range_v1_pb{
+                route_id = "test_route_id",
+                start_addr = binary:decode_unsigned(binary:decode_hex(<<"48000000">>)),
+                end_addr = binary:decode_unsigned(binary:decode_hex(<<"48000007">>))
+            },
+            _ = erlang:spawn(router_test_ics_route_service, devaddr_ranges, [[Range1]]),
+            % router_device_devaddr:set_devaddr_bases([{0, 8}]),
+            [{oui, 1} | Config];
         false ->
             {ok, PubKey, SigFun, _} = blockchain_swarm:keys(),
             PubKeyBin = libp2p_crypto:pubkey_to_bin(PubKey),

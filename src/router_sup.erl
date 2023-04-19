@@ -164,19 +164,18 @@ init([]) ->
     {ok,
         {?FLAGS,
             [
-                ?WORKER(router_ics_devaddr_worker, [ICSOpts]),
                 ?WORKER(router_ics_eui_worker, [ICSOpts]),
                 ?WORKER(router_ics_skf_worker, [ICSOpts]),
                 ?WORKER(router_ics_gateway_location_worker, [ICSOpts]),
                 ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
                 ?WORKER(router_metrics, [MetricsOpts]),
-                ?WORKER(router_db, [DBOpts]),
-                ?SUP(router_devices_sup, [])
+                ?WORKER(router_db, [DBOpts])
             ] ++ ChainWorkers ++
                 [
+                    ?WORKER(router_device_devaddr, [ICSOpts]),
+                    ?SUP(router_devices_sup, []),
                     ?SUP(router_console_sup, []),
-                    ?SUP(router_decoder_sup, []),
-                    ?WORKER(router_device_devaddr, [#{}])
+                    ?SUP(router_decoder_sup, [])
                 ]}}.
 
 %%====================================================================

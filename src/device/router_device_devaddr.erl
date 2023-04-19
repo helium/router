@@ -12,6 +12,8 @@
 
 -behavior(gen_server).
 
+-include("../grpc/autogen/iot_config_pb.hrl").
+
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 -endif.
@@ -21,6 +23,8 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
+    reconcile/0,
+    reconcile_end/1,
     allocate/2,
     set_devaddr_bases/1,
     get_devaddr_bases/0,
@@ -42,18 +46,45 @@
 ]).
 
 -define(SERVER, ?MODULE).
+-define(INIT, init).
+-define(RECONCILE_START, reconcile_start).
+-define(RECONCILE_END, reconcile_end).
+
+-ifdef(TEST).
+-define(BACKOFF_MIN, 100).
+-else.
+-define(BACKOFF_MIN, timer:seconds(10)).
+-endif.
+-define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
+    pubkey_bin :: libp2p_crypto:pubkey_bin(),
+    sig_fun :: function(),
+    conn_backoff :: backoff:backoff(),
+    route_id :: string(),
     oui :: non_neg_integer(),
     devaddr_bases = [] :: list(non_neg_integer()),
     keys = #{} :: #{any() := non_neg_integer()}
 }).
+
+-type state() :: #state{}.
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
 %% ------------------------------------------------------------------
 start_link(Args) ->
     gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
+
+-spec reconcile() -> ok.
+reconcile() ->
+    gen_server:cast(?SERVER, ?RECONCILE_START).
+
+-spec reconcile_end(
+    Resp :: {ok, list(iot_config_pb:iot_config_devaddr_range_v1_pb())} | {error, any()}
+) ->
+    ok.
+reconcile_end(Resp) ->
+    gen_server:cast(?SERVER, {?RECONCILE_END, Resp}).
 
 -spec allocate(router_device:device(), libp2p_crypto:pubkey_bin()) ->
     {ok, binary()} | {error, any()}.
@@ -103,7 +134,14 @@ h3_parent_for_pubkeybin(PubKeyBin) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(Args) ->
+init(
+    #{
+        pubkey_bin := PubKeyBin,
+        sig_fun := SigFun,
+        route_id := RouteID
+    } =
+        Args
+) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     case router_blockchain:is_chain_dead() of
         true ->
@@ -112,21 +150,20 @@ init(Args) ->
             ok = blockchain_event:add_handler(self()),
             erlang:send_after(500, self(), post_init_chain)
     end,
-
     OUI =
         case router_utils:get_oui() of
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    Ranges =
-        case router_ics_devaddr_worker:get_devaddr_ranges() of
-            {error, _R} ->
-                lager:warning("failed to get ranges ~p", [_R]),
-                [];
-            {ok, R} ->
-                R
-        end,
-    {ok, #state{oui = OUI, devaddr_bases = lists:usort(Ranges)}}.
+    Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
+    ok = ?MODULE:reconcile(),
+    {ok, #state{
+        pubkey_bin = PubKeyBin,
+        sig_fun = SigFun,
+        conn_backoff = Backoff,
+        route_id = RouteID,
+        oui = OUI
+    }}.
 
 handle_call({set_devaddr_bases, []}, _From, State) ->
     lager:info("trying to set empty devaddr bases, ignoring"),
@@ -157,6 +194,50 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0} = State) ->
+    case get_devaddrs(State) of
+        {error, _Reason} ->
+            {Delay, Backoff1} = backoff:fail(Backoff0),
+            _ = timer:apply_after(Delay, ?MODULE, reconcile, []),
+            lager:warning("fail to get_devaddrs ~p, retrying in ~wms", [
+                _Reason, Delay
+            ]),
+            {noreply, State#state{conn_backoff = Backoff1}};
+        {ok, _Stream} ->
+            lager:debug("got stream ~p", [_Stream]),
+            {_, Backoff2} = backoff:succeed(Backoff0),
+            {noreply, State#state{conn_backoff = Backoff2}}
+    end;
+handle_cast({?RECONCILE_END, {error, Reason}}, #state{conn_backoff = Backoff0} = State) ->
+    {Delay, Backoff1} = backoff:fail(Backoff0),
+    _ = timer:apply_after(Delay, ?MODULE, reconcile, []),
+    lager:warning("fail to get_devaddrs ~p, retrying in ~wms", [
+        Reason, Delay
+    ]),
+    {noreply, State#state{conn_backoff = Backoff1}};
+handle_cast({?RECONCILE_END, {ok, DevaddrRanges}}, State) ->
+    lager:debug("reconcile end with ~p", [DevaddrRanges]),
+    %% Drop ranges that may fall outside the configured devaddr_prefix
+    Ranges = lists:filtermap(
+        fun(DevaddrRange) ->
+            #iot_config_devaddr_range_v1_pb{
+                start_addr = StartAddr,
+                end_addr = EndAddr
+            } = DevaddrRange,
+            try
+                MinBase = devaddr_num_to_base_num(StartAddr),
+                MaxBase = devaddr_num_to_base_num(EndAddr),
+                {true, {MinBase, MaxBase}}
+            catch
+                _Error:Reason ->
+                    lager:warning("ignoring devaddr range [reason: ~p]", [Reason]),
+                    false
+            end
+        end,
+        DevaddrRanges
+    ),
+    lager:debug("got bases ~p", [Ranges]),
+    {noreply, State#state{devaddr_bases = expand_ranges(Ranges)}};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
@@ -189,6 +270,12 @@ handle_info(
             Ranges = expand_ranges(subnets_to_ranges(Subnets)),
             {noreply, State#state{devaddr_bases = Ranges}}
     end;
+handle_info({'END_STREAM', _StreamID}, State) ->
+    lager:debug("got END_STREAM for stream: ~p", [_StreamID]),
+    {noreply, State};
+handle_info({'DOWN', _Ref, Type, Pid, Reason}, State) ->
+    lager:debug("got DOWN for ~p: ~p ~p", [Type, Pid, Reason]),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.
@@ -250,6 +337,32 @@ indexes_to_lowest_res(Indexes) ->
 -spec to_res(h3:index(), non_neg_integer()) -> h3:index().
 to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
+
+-spec get_devaddrs(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
+get_devaddrs(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
+    Req = #iot_config_route_get_devaddr_ranges_req_v1_pb{
+        route_id = RouteID,
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
+    },
+    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_get_devaddr_ranges_req_v1_pb),
+    SignedReq = Req#iot_config_route_get_devaddr_ranges_req_v1_pb{signature = SigFun(EncodedReq)},
+
+    helium_iot_config_route_client:get_devaddr_ranges(SignedReq, #{
+        channel => router_ics_utils:channel(),
+        callback_module => {
+            router_ics_route_get_devaddrs_handler,
+            undefined
+        }
+    }).
+
+-spec devaddr_num_to_base_num(non_neg_integer()) -> non_neg_integer().
+devaddr_num_to_base_num(DevaddrNum) ->
+    Prefix = application:get_env(blockchain, devaddr_prefix, $H),
+    <<Base:25/integer-unsigned-little, Prefix:7/integer>> = lorawan_utils:reverse(
+        binary:encode_unsigned(DevaddrNum)
+    ),
+    Base.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

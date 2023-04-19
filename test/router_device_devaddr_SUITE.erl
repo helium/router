@@ -2,8 +2,11 @@
 
 -export([
     all/0,
+    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2
+    end_per_testcase/2,
+    init_per_group/2,
+    end_per_group/2
 ]).
 
 -export([
@@ -35,6 +38,18 @@
 %%--------------------------------------------------------------------
 all() ->
     [
+        {group, chain_alive},
+        {group, chain_dead}
+    ].
+
+groups() ->
+    [
+        {chain_alive, all_tests()},
+        {chain_dead, all_tests()}
+    ].
+
+all_tests() ->
+    [
         allocate,
         allocate_config_service_single_address,
         allocate_config_service_multiple_address,
@@ -46,6 +61,9 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
+init_per_group(GroupName, Config) ->
+    test_utils:init_per_group(GroupName, Config).
+
 init_per_testcase(TestCase, Config0) ->
     Config1 = test_utils:init_per_testcase(TestCase, Config0),
     Config2 = test_utils:add_oui(Config1),
@@ -54,6 +72,9 @@ init_per_testcase(TestCase, Config0) ->
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
+end_per_group(GroupName, Config) ->
+    test_utils:end_per_group(GroupName, Config).
+
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config).
 
@@ -69,7 +90,7 @@ allocate(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(3, State) =/= []
+        erlang:element(7, State) =/= []
     end),
 
     DevAddrs = lists:foldl(
@@ -98,7 +119,7 @@ allocate_config_service_single_address(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(3, State) =/= []
+        erlang:element(7, State) =/= []
     end),
 
     %% Override after picking up from chain
@@ -124,7 +145,7 @@ allocate_config_service_multiple_address(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(3, State) =/= []
+        erlang:element(7, State) =/= []
     end),
 
     %% Override after picking up from chain
@@ -149,7 +170,7 @@ allocate_config_service_noncontigious_address(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(3, State) =/= []
+        erlang:element(7, State) =/= []
     end),
 
     %% Override after picking up from chain
@@ -198,7 +219,7 @@ allocate_config_service_noncontigious_addresss_wrap(_Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(3, State) =/= []
+        erlang:element(7, State) =/= []
     end),
 
     %% Override after picking up from chain
@@ -236,7 +257,7 @@ route_packet(Config) ->
 
     ok = test_utils:wait_until(fun() ->
         State = sys:get_state(router_device_devaddr),
-        erlang:element(2, State) =/= undefined
+        erlang:element(6, State) =/= undefined
     end),
 
     #{

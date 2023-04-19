@@ -142,8 +142,8 @@ handle_cast({?RECONCILE_END, Pid, DevaddrRanges}, #state{} = State) ->
                 end_addr = EndAddr
             } = DevaddrRange,
             try
-                MinBase = router_ics_devaddr_worker:devaddr_num_to_base_num(StartAddr),
-                MaxBase = router_ics_devaddr_worker:devaddr_num_to_base_num(EndAddr),
+                MinBase = ?MODULE:devaddr_num_to_base_num(StartAddr),
+                MaxBase = ?MODULE:devaddr_num_to_base_num(EndAddr),
                 {true, {MinBase, MaxBase}}
             catch
                 _Error:Reason ->

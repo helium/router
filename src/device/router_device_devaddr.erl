@@ -118,7 +118,15 @@ init(Args) ->
             undefined -> error(no_oui_configured);
             OUI0 -> OUI0
         end,
-    {ok, #state{oui = OUI}}.
+    Ranges =
+        case router_ics_devaddr_worker:get_devaddr_ranges() of
+            {error, _R} ->
+                lager:warning("failed to get ranges ~p", [_R]),
+                [];
+            {ok, R} ->
+                R
+        end,
+    {ok, #state{oui = OUI, devaddr_bases = lists:usort(Ranges)}}.
 
 handle_call({set_devaddr_bases, []}, _From, State) ->
     lager:info("trying to set empty devaddr bases, ignoring"),

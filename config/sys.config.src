@@ -150,30 +150,7 @@
             {{lager_file_backend, "router.log"}, [{module, router_ics_route_get_euis_handler}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_skf_list_handler}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_skf_worker}], info},
-            {{lager_file_backend, "router.log"}, [{module, router_ics_gateway_location_worker}], info},
-
-            {{lager_file_backend, "state_channel.log"}, [{module, router_sc_worker}], info},
-            {
-                {lager_file_backend, "state_channel.log"},
-                [{module, blockchain_state_channels_db_owner}],
-                info
-            },
-            {
-                {lager_file_backend, "state_channel.log"},
-                [{module, blockchain_state_channels_cache}],
-                info
-            },
-            {
-                {lager_file_backend, "state_channel.log"},
-                [{module, blockchain_state_channels_server}],
-                info
-            },
-            {
-                {lager_file_backend, "state_channel.log"},
-                [{module, blockchain_state_channels_worker}],
-                info
-            },
-            {{lager_file_backend, "blockchain.log"}, [{module, blockchain_txn}], debug}
+            {{lager_file_backend, "router.log"}, [{module, router_ics_gateway_location_worker}], info}
         ]}
     ]}
 ].

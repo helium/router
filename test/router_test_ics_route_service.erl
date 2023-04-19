@@ -109,7 +109,7 @@ get_devaddr_ranges(Req, StreamState) ->
     case verify_get_devaddrs_req(Req) of
         true ->
             Self = self(),
-            true = erlang:register(?GET_DEVADDRS_STREAM, Self),
+            catch (true = erlang:register(?GET_DEVADDRS_STREAM, Self)),
             lager:info("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
             catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
             {ok, StreamState};

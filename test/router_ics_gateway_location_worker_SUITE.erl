@@ -53,13 +53,6 @@ init_per_group(GroupName, Config) ->
 
 init_per_testcase(TestCase, Config) ->
     persistent_term:put(router_test_ics_gateway_service, self()),
-    Port = 8085,
-    ok = application:set_env(
-        router,
-        ics,
-        #{transport => "http", host => "localhost", port => Port},
-        [{persistent, true}]
-    ),
     test_utils:init_per_testcase(TestCase, Config).
 
 %%--------------------------------------------------------------------
@@ -70,12 +63,6 @@ end_per_group(GroupName, Config) ->
 
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
-    ok = application:set_env(
-        router,
-        ics,
-        #{},
-        [{persistent, true}]
-    ),
     ok.
 
 %%--------------------------------------------------------------------

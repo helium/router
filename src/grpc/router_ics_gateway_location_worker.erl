@@ -183,7 +183,7 @@ get_gateway_location(PubKeyBin) ->
     SignedReq = Req#iot_config_gateway_location_req_v1_pb{signature = SigFun(EncodedReq)},
     case
         helium_iot_config_gateway_client:location(SignedReq, #{
-            channel => router_ics_utils:channel()
+            channel => router_ics_utils:location_channel()
         })
     of
         {error, {Status, Reason}, _} when is_binary(Status) ->

@@ -8,11 +8,13 @@
 -export([
     start_link_args/1,
     channel/0,
+    location_channel/0,
     connect/3,
     batch_update/3
 ]).
 
 -define(ICS_CHANNEL, ics_channel).
+-define(ICS_LOCATION_CHANNEL, ics_location_channel).
 
 -spec start_link_args(map()) -> ignore | map().
 start_link_args(#{transport := ""}) ->
@@ -36,6 +38,9 @@ start_link_args(_) ->
 
 channel() ->
     ?ICS_CHANNEL.
+
+location_channel() ->
+    ?ICS_LOCATION_CHANNEL.
 
 -spec connect(Transport :: http | https, Host :: string(), Port :: non_neg_integer()) ->
     ok | {error, any()}.

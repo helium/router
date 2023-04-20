@@ -185,11 +185,11 @@ init([]) ->
 start_location_worker_connection() ->
     case application:get_env(router, ics, #{}) of
         #{transport := Transport, host := Host, port := Port} ->
-            Endpoints = [{Transport, Host, Port, [X]} || X <- lists:seq(1, 5)],
+            Endpoints = [{Transport, Host, Port, []}],
             {ok, _Channel} = grpcbox_client:connect(
-                router_ics_utils:location_channel(), Endpoints, #{
-                    sync_start => true
-                }
+                another_ics_location_channel,
+                Endpoints,
+                #{sync_start => true}
             );
         _Map ->
             lager:warning("could not start location_channel ~p", [_Map])

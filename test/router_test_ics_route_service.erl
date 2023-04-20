@@ -20,6 +20,9 @@
     get_devaddr_ranges/2,
     update_devaddr_ranges/2,
     delete_devaddr_ranges/2,
+    list_skfs/2,
+    get_skfs/2,
+    update_skfs/2,
     stream/2
 ]).
 
@@ -31,6 +34,13 @@
 
 -define(GET_EUIS_STREAM, get_euis_stream).
 -define(GET_DEVADDRS_STREAM, get_devaddrs_stream).
+
+-define(PERMISSION_DENIED, {grpcbox_stream:code_to_status(7), <<"PERMISSION_DENIED">>}).
+-define(UNIMPLEMENTED, {grpcbox_stream:code_to_status(12), <<"UNIMPLEMENTED">>}).
+
+%% ------------------------------------------------------------------
+%% Stream Callbacks
+%% ------------------------------------------------------------------
 
 -spec init(atom(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
 init(_RPC, StreamState) ->
@@ -56,6 +66,10 @@ handle_info({devaddr_ranges, Ranges}, StreamState) ->
 handle_info(_Msg, StreamState) ->
     StreamState.
 
+%% ------------------------------------------------------------------
+%% Route Callbacks
+%% ------------------------------------------------------------------
+
 list(_Ctx, _Req) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
@@ -71,6 +85,13 @@ update(_Ctx, _Msg) ->
 delete(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
+stream(_RouteStreamReq, _StreamState) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+%% ------------------------------------------------------------------
+%% EUI Callbacks
+%% ------------------------------------------------------------------
+
 get_euis(Req, StreamState) ->
     case verify_get_euis_req(Req) of
         true ->
@@ -82,7 +103,7 @@ get_euis(Req, StreamState) ->
             {ok, StreamState};
         false ->
             lager:error("failed to get_euis_req ~p", [Req]),
-            {grpc_error, {7, <<"PERMISSION_DENIED">>}}
+            {grpc_error, ?PERMISSION_DENIED}
     end.
 
 update_euis(eos, StreamState) ->
@@ -103,7 +124,11 @@ update_euis(Req, _StreamState) ->
     end.
 
 delete_euis(_Ctx, _Msg) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+    {grpc_error, ?UNIMPLEMENTED}.
+
+%% ------------------------------------------------------------------
+%% Devaddr Callbacks
+%% ------------------------------------------------------------------
 
 get_devaddr_ranges(Req, StreamState) ->
     case verify_get_devaddrs_req(Req) of
@@ -119,13 +144,27 @@ get_devaddr_ranges(Req, StreamState) ->
     end.
 
 update_devaddr_ranges(_Msg, _StreamState) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+    {grpc_error, ?UNIMPLEMENTED}.
 
 delete_devaddr_ranges(_Ctx, _Msg) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+    {grpc_error, ?UNIMPLEMENTED}.
 
-stream(_RouteStreamReq, _StreamState) ->
-    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+%% ------------------------------------------------------------------
+%% Session Key Filter Callbacks
+%% ------------------------------------------------------------------
+
+list_skfs(_Req, _StreamState) ->
+    {grpc_error, ?UNIMPLEMENTED}.
+
+get_skfs(_Req, _StreamState) ->
+    {grpc_error, ?UNIMPLEMENTED}.
+
+update_skfs(_Req, _StreamState) ->
+    {grpc_error, ?UNIMPLEMENTED}.
+
+%% ------------------------------------------------------------------
+%% Internal Functions
+%% ------------------------------------------------------------------
 
 -spec eui_pair(EUIPair :: iot_config_pb:iot_config_eui_pair_v1_pb(), Last :: boolean()) -> ok.
 eui_pair(EUIPair, Last) ->

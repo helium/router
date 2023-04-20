@@ -54,7 +54,7 @@ update(eos, StreamState) ->
     lager:info("got EOS, waiting ~wms to return with close", [Timeout]),
     timer:sleep(Timeout),
     lager:info("closing server side of skf update stream"),
-    {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
+    {ok, #iot_config_session_key_filter_update_res_v1_pb{}, StreamState};
 update(Req, StreamState) ->
     case verify_skf_update_req(Req) of
         true ->

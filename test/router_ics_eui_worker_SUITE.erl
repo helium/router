@@ -424,6 +424,8 @@ ignore_start_when_no_route_id(_Config) ->
 
 rcv_loop(Acc) ->
     receive
+        {router_test_ics_route_service, get_devaddr_ranges, _Req} ->
+            rcv_loop(Acc);
         {router_test_ics_route_service, Type, Req} ->
             lager:notice("got router_test_ics_route_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])

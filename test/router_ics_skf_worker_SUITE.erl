@@ -59,7 +59,13 @@ init_per_testcase(TestCase, Config) ->
     ok = application:set_env(
         router,
         ics,
-        #{skf_enabled => "true"},
+        #{
+            skf_enabled => "true",
+            route_id => "route_id",
+            transport => http,
+            host => "localhost",
+            port => 8085
+        },
         [{persistent, true}]
     ),
     test_utils:init_per_testcase(TestCase, Config).
@@ -434,6 +440,8 @@ reconcile_test(_Config) ->
 
 rcv_loop(Acc) ->
     receive
+        {router_test_ics_route_service, get_devaddr_ranges, _Req} ->
+            rcv_loop(Acc);
         {router_test_ics_skf_service, Type, Req} ->
             lager:notice("got router_test_ics_skf_service ~p req ~p", [Type, Req]),
             rcv_loop([{Type, Req} | Acc])

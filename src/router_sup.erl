@@ -76,8 +76,6 @@ init([]) ->
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
 
-    ok = start_location_worker_connection(),
-
     SeedNodes =
         case application:get_env(blockchain, seed_nodes) of
             {ok, ""} -> [];
@@ -181,17 +179,3 @@ init([]) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-
-start_location_worker_connection() ->
-    case application:get_env(router, ics, #{}) of
-        #{transport := Transport, host := Host, port := Port} ->
-            Endpoints = [{Transport, Host, Port, []}],
-            {ok, _Channel} = grpcbox_client:connect(
-                another_ics_location_channel,
-                Endpoints,
-                #{sync_start => true}
-            );
-        _Map ->
-            lager:warning("could not start location_channel ~p", [_Map])
-    end,
-    ok.

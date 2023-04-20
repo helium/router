@@ -11,7 +11,9 @@
 -export([
     region_params/2,
     load_region/2,
-    location/2
+    location/2,
+    info/2,
+    info_stream/2
 ]).
 
 -export([register_gateway_location/2]).
@@ -28,6 +30,12 @@ region_params(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 load_region(_Ctx, _Msg) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+info(_Ctx, _Msg) ->
+    {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
+
+info_stream(_Ctx, _Msg) ->
     {grpc_error, {12, <<"UNIMPLEMENTED">>}}.
 
 location(Ctx, Req) ->

@@ -64,7 +64,7 @@ handle_info(_Msg, StreamState) ->
         {Pid, Atom} when erlang:is_pid(Pid) andalso erlang:is_atom(Atom) -> Pid ! {Atom, _Msg};
         _ -> ok
     end,
-    lager:info("got an unhandled message ~p to ~p", [_Msg, erlang:get(gateway)]),
+    lager:debug("got an unhandled message ~p to ~p", [_Msg, erlang:get(gateway)]),
     StreamState.
 
 %% ------------------------------------------------------------------

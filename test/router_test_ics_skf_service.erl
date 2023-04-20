@@ -54,7 +54,7 @@ update(eos, StreamState) ->
     lager:info("got EOS, waiting ~wms to return with close", [Timeout]),
     timer:sleep(Timeout),
     lager:info("closing server side of skf update stream"),
-    {ok, #iot_config_route_euis_res_v1_pb{}, StreamState};
+    {ok, #iot_config_session_key_filter_update_res_v1_pb{}, StreamState};
 update(Req, StreamState) ->
     case verify_skf_update_req(Req) of
         true ->
@@ -93,7 +93,7 @@ verify_list_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_session_key_filter_list_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_session_key_filter_list_req_v1_pb.signer)
     ).
 
 -spec verify_skf_update_req(Req :: #iot_config_session_key_filter_update_req_v1_pb{}) -> boolean().
@@ -107,5 +107,5 @@ verify_skf_update_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_session_key_filter_update_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_session_key_filter_update_req_v1_pb.signer)
     ).

@@ -191,6 +191,7 @@ end_per_testcase(_TestCase, Config) ->
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
+    ok = application:stop(grpcbox),
     e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
     e2qc:teardown(router_console_api_get_org),
     application:stop(e2qc),

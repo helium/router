@@ -51,7 +51,7 @@ init_per_testcase(iot_central_integration_test = _TestCase, _Config) ->
             {skip, env_var_empty};
         _V ->
             {skip, test_env_disabled}
-            %% test_utils:init_per_testcase(TestCase, Config)
+        %% test_utils:init_per_testcase(TestCase, Config)
     end;
 init_per_testcase(TestCase, Config) ->
     test_utils:init_per_testcase(TestCase, Config).

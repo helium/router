@@ -109,7 +109,7 @@ get_devaddr_ranges(Req, StreamState) ->
     case verify_get_devaddrs_req(Req) of
         true ->
             Self = self(),
-            true = erlang:register(?GET_DEVADDRS_STREAM, Self),
+            catch (true = erlang:register(?GET_DEVADDRS_STREAM, Self)),
             lager:info("register ~p @ ~p", [?GET_DEVADDRS_STREAM, Self]),
             catch persistent_term:get(?MODULE) ! {?MODULE, get_devaddr_ranges, Req},
             {ok, StreamState};
@@ -180,7 +180,7 @@ verify_update_euis_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_update_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_update_euis_req_v1_pb.signer)
     ).
 
 -spec verify_get_euis_req(Req :: #iot_config_route_get_euis_req_v1_pb{}) -> boolean().
@@ -194,7 +194,7 @@ verify_get_euis_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_get_euis_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_get_euis_req_v1_pb.signer)
     ).
 
 -spec verify_get_devaddrs_req(Req :: #iot_config_route_get_devaddr_ranges_req_v1_pb{}) -> boolean().
@@ -206,5 +206,5 @@ verify_get_devaddrs_req(Req) ->
     libp2p_crypto:verify(
         EncodedReq,
         Req#iot_config_route_get_devaddr_ranges_req_v1_pb.signature,
-        libp2p_crypto:bin_to_pubkey(router_blockchain:pubkey_bin())
+        libp2p_crypto:bin_to_pubkey(Req#iot_config_route_get_devaddr_ranges_req_v1_pb.signer)
     ).

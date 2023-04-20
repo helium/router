@@ -287,10 +287,11 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 
 -spec get_euis(Options :: map(), state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-get_euis(Options, #state{sig_fun = SigFun, route_id = RouteID}) ->
+get_euis(Options, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
     Req = #iot_config_route_get_euis_req_v1_pb{
         route_id = RouteID,
-        timestamp = erlang:system_time(millisecond)
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_get_euis_req_v1_pb),
     SignedReq = Req#iot_config_route_get_euis_req_v1_pb{signature = SigFun(EncodedReq)},
@@ -399,11 +400,12 @@ wait_for_stream_close(timeout, Stream, TimeoutAttempts, MaxAttempts) ->
     Stream :: grpcbox_client:stream(),
     state()
 ) -> ok | {error, any()}.
-update_euis(Action, EUIPair, Stream, #state{sig_fun = SigFun}) ->
+update_euis(Action, EUIPair, Stream, #state{pubkey_bin = PubKeyBin, sig_fun = SigFun}) ->
     Req = #iot_config_route_update_euis_req_v1_pb{
         action = Action,
         eui_pair = EUIPair,
-        timestamp = erlang:system_time(millisecond)
+        timestamp = erlang:system_time(millisecond),
+        signer = PubKeyBin
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_update_euis_req_v1_pb),
     SignedReq = Req#iot_config_route_update_euis_req_v1_pb{signature = SigFun(EncodedReq)},

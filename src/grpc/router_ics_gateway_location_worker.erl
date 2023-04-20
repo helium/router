@@ -74,26 +74,31 @@ init_ets() ->
 
 -spec get(libp2p_crypto:pubkey_bin()) -> {ok, h3:index()} | {error, any()}.
 get(PubKeyBin) ->
-    case lookup(PubKeyBin) of
-        {error, ?CACHED_NOT_FOUND} = E ->
-            E;
-        {error, _Reason} ->
-            HotspotName = blockchain_utils:addr2name(PubKeyBin),
-            case get_gateway_location(PubKeyBin) of
-                {error, ErrReason, _} ->
-                    lager:warning(
-                        "fail to get_gateway_location ~p for ~s",
-                        [ErrReason, HotspotName]
-                    ),
-                    ok = insert(PubKeyBin, ?CACHED_NOT_FOUND),
-                    {error, ErrReason};
-                {ok, H3IndexString} ->
-                    H3Index = h3:from_string(H3IndexString),
-                    ok = insert(PubKeyBin, H3Index),
-                    {ok, H3Index}
-            end;
-        {ok, _} = OK ->
-            OK
+    case router_utils:get_env_bool(bypass_location_lookup, false) of
+        true ->
+            {error, not_found};
+        false ->
+            case lookup(PubKeyBin) of
+                {error, ?CACHED_NOT_FOUND} = E ->
+                    E;
+                {error, _Reason} ->
+                    HotspotName = blockchain_utils:addr2name(PubKeyBin),
+                    case get_gateway_location(PubKeyBin) of
+                        {error, ErrReason, _} ->
+                            lager:warning(
+                                "fail to get_gateway_location ~p for ~s",
+                                [ErrReason, HotspotName]
+                            ),
+                            ok = insert(PubKeyBin, ?CACHED_NOT_FOUND),
+                            {error, ErrReason};
+                        {ok, H3IndexString} ->
+                            H3Index = h3:from_string(H3IndexString),
+                            ok = insert(PubKeyBin, H3Index),
+                            {ok, H3Index}
+                    end;
+                {ok, _} = OK ->
+                    OK
+            end
     end.
 
 %% ------------------------------------------------------------------
@@ -171,13 +176,14 @@ insert(PubKeyBin, H3Index) ->
 get_gateway_location(PubKeyBin) ->
     SigFun = router_blockchain:sig_fun(),
     Req = #iot_config_gateway_location_req_v1_pb{
-        gateway = PubKeyBin
+        gateway = PubKeyBin,
+        signer = router_blockchain:pubkey_bin()
     },
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_gateway_location_req_v1_pb),
     SignedReq = Req#iot_config_gateway_location_req_v1_pb{signature = SigFun(EncodedReq)},
     case
         helium_iot_config_gateway_client:location(SignedReq, #{
-            channel => router_ics_utils:channel()
+            channel => router_ics_utils:location_channel()
         })
     of
         {error, {Status, Reason}, _} when is_binary(Status) ->

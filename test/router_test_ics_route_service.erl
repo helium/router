@@ -32,11 +32,45 @@
     devaddr_ranges/1
 ]).
 
+-export([
+    test_init/0,
+    add_skf/1,
+    clear_skf/0
+]).
+
 -define(GET_EUIS_STREAM, get_euis_stream).
 -define(GET_DEVADDRS_STREAM, get_devaddrs_stream).
 
 -define(PERMISSION_DENIED, {grpcbox_stream:code_to_status(7), <<"PERMISSION_DENIED">>}).
 -define(UNIMPLEMENTED, {grpcbox_stream:code_to_status(12), <<"UNIMPLEMENTED">>}).
+
+-define(ETS_SKF, ets_test_skf_list).
+
+%% ------------------------------------------------------------------
+%% Test Callbacks
+%% ------------------------------------------------------------------
+
+-spec test_init() -> ok.
+test_init() ->
+    ct:print("intializing ets for route service"),
+    ?ETS_SKF = ets:new(?ETS_SKF, [public, named_table, bag]),
+    true = erlang:register(skf_callback, self()),
+    ok.
+
+-spec add_skf(#iot_config_skf_v1_pb{} | list(#iot_config_skf_v1_pb{})) -> ok.
+add_skf(SKFs) ->
+    true = ets:insert(?ETS_SKF, SKFs),
+    ok.
+
+-spec remove_skf(#iot_config_skf_v1_pb{}) -> ok.
+remove_skf(SKF) ->
+    true = ets:delete_object(?ETS_SKF, SKF),
+    ok.
+
+-spec clear_skf() -> ok.
+clear_skf() ->
+    true = ets:delete_all_objects(?ETS_SKF),
+    ok.
 
 %% ------------------------------------------------------------------
 %% Stream Callbacks
@@ -153,14 +187,50 @@ delete_devaddr_ranges(_Ctx, _Msg) ->
 %% Session Key Filter Callbacks
 %% ------------------------------------------------------------------
 
-list_skfs(_Req, _StreamState) ->
-    {grpc_error, ?UNIMPLEMENTED}.
+list_skfs(_Req, StreamState) ->
+    case ets:tab2list(?ETS_SKF) of
+        [] ->
+            {stop, StreamState};
+        SKFs ->
+            lists:foreach(
+                fun({Last, SKF}) ->
+                    grpcbox_stream:send(Last, SKF, StreamState)
+                end,
+                router_utils:enumerate_last(SKFs)
+            ),
+            {ok, StreamState}
+    end.
 
 get_skfs(_Req, _StreamState) ->
     {grpc_error, ?UNIMPLEMENTED}.
 
-update_skfs(_Req, _StreamState) ->
-    {grpc_error, ?UNIMPLEMENTED}.
+update_skfs(Ctx, Req) ->
+    ct:print("update skfs: ~p", [Req]),
+
+    RouteID = Req#iot_config_route_skf_update_req_v1_pb.route_id,
+    lists:foreach(
+        fun(
+            #iot_config_route_skf_update_v1_pb{
+                action = Action,
+                devaddr = Devaddr,
+                session_key = SessionKey
+            }
+        ) ->
+            SKF = #iot_config_skf_v1_pb{
+                devaddr = Devaddr,
+                session_key = SessionKey,
+                route_id = RouteID
+            },
+            case Action of
+                add -> add_skf(SKF);
+                remove -> remove_skf(SKF)
+            end
+        end,
+        Req#iot_config_route_skf_update_req_v1_pb.updates
+    ),
+
+    {ok, #iot_config_route_skf_update_res_v1_pb{}, Ctx}.
+%% {grpc_error, ?UNIMPLEMENTED}.
 
 %% ------------------------------------------------------------------
 %% Internal Functions

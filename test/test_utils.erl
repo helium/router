@@ -169,6 +169,7 @@ init_per_testcase(TestCase, Config) ->
         _ ->
             ok
     end,
+    ok = router_test_ics_route_service:test_init(),
     Tab = ets:new(TestCase, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),
     ElliOpts = [

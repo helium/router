@@ -159,8 +159,10 @@ send_euis_to_config_service(A, B, C) ->
 
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
+
     Commit = maps:is_key(commit, Options),
-    ok = router_ics_skf_worker:reconcile(self(), Commit),
+    ok = router_ics_skf_worker:reconcile(Commit),
+
     DryRun =
         case Commit of
             true -> "";
@@ -170,16 +172,9 @@ send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
         {router_ics_skf_worker, {ok, Added, Removed}} ->
             ToMap = fun(SKFs) ->
                 lists:map(
-                    fun(
-                        #iot_config_session_key_filter_v1_pb{
-                            oui = OUI,
-                            devaddr = DevNum,
-                            session_key = SessionKey
-                        }
-                    ) ->
+                    fun(#iot_config_skf_v1_pb{devaddr = DevNum, session_key = SessionKey}) ->
                         DevAddr = <<DevNum:32/integer-unsigned-big>>,
                         #{
-                            oui => OUI,
                             devaddr => lorawan_utils:binary_to_hex(DevAddr),
                             session_key => erlang:list_to_binary(SessionKey)
                         }
@@ -199,7 +194,7 @@ send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
             end;
         {router_ics_skf_worker, {error, _Reason}} ->
             c_text("~s Updating SKFs failed ~p", [DryRun, _Reason])
-    after 5000 ->
+    after timer:seconds(30) ->
         c_text("Error timeout")
     end;
 send_skfs_to_config_service(A, B, C) ->
@@ -214,28 +209,32 @@ delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
             true -> "";
             false -> "DRY RUN"
         end,
-    {_, SigFun, _} = router_blockchain:get_key(),
-    case list_skfs(SigFun) of
+
+    {ok, Pid} = router_skf_remove:start_link(),
+    case router_skf_remove:fetch(Pid) of
         {error, _Reason} ->
             c_text("~s Failed to get session key filters from CS: ~p", [DryRun, _Reason]);
-        {ok, _Stream} ->
-            receive
-                {router_cli_migration_skf_list_handler, SKFs} ->
-                    case Commit of
-                        false ->
-                            c_text("DRY RUN removing ~w session key filters", [erlang:length(SKFs)]);
-                        true ->
-                            case remove_skfs(SKFs, SigFun) of
-                                ok ->
-                                    c_text("Removed ~w session key filters", [erlang:length(SKFs)]);
-                                {error, _Reason} ->
-                                    c_text("Failed to send session key filters remove: ~p", [
-                                        _Reason
-                                    ])
-                            end
+        ok ->
+            RemoteCount = router_skf_remove:remote_count(Pid),
+            case Commit of
+                false ->
+                    RemoteCount = router_skf_remove:remote_count(Pid),
+                    c_text("DRY RUN removing ~w session key filters", [RemoteCount]);
+                true ->
+                    ProgressCallback = fun
+                        ({progress, Removed, Resp}) ->
+                            io:format("removed ~p~n [resp: ~p]", [length(Removed), Resp]),
+                            ok;
+                        (done) ->
+                            io:format("Done~n"),
+                            ok
+                    end,
+                    case router_skf_remove:remove_all(ProgressCallback) of
+                        ok ->
+                            c_text("Removed ~w session key filters", [RemoteCount]);
+                        {error, Reason} ->
+                            c_text("Failed to remove all session key filters: ~p", [Reason])
                     end
-            after 10000 ->
-                c_text("~s Failed to get session key filter from CS: timeout", [DryRun])
             end
     end;
 delete_skfs(A, B, C) ->
@@ -389,66 +388,66 @@ get_grpc_address(Options) ->
             {ok, RPCAddr}
     end.
 
--spec list_skfs(SigFun :: libp2p_crypto:sig_fun()) ->
-    {ok, grpcbox_client:stream()} | {error, any()}.
-list_skfs(SigFun) ->
-    OUI = router_utils:get_oui(),
+%% -spec list_skfs(SigFun :: libp2p_crypto:sig_fun()) ->
+%%     {ok, grpcbox_client:stream()} | {error, any()}.
+%% list_skfs(SigFun) ->
+%%     OUI = router_utils:get_oui(),
 
-    Req = #iot_config_session_key_filter_list_req_v1_pb{
-        oui = OUI,
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
-    SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
-    helium_iot_config_session_key_filter_client:list(SignedReq, #{
-        channel => router_ics_utils:channel(),
-        callback_module => {
-            router_cli_migration_skf_list_handler,
-            #{pid => self()}
-        }
-    }).
+%%     Req = #iot_config_session_key_filter_list_req_v1_pb{
+%%         oui = OUI,
+%%         timestamp = erlang:system_time(millisecond)
+%%     },
+%%     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
+%%     SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
+%%     helium_iot_config_session_key_filter_client:list(SignedReq, #{
+%%         channel => router_ics_utils:channel(),
+%%         callback_module => {
+%%             router_cli_migration_skf_list_handler,
+%%             #{pid => self()}
+%%         }
+%%     }).
 
--spec remove_skfs(
-    SKFs :: [iot_config_pb:iot_config_session_key_filter_v1_pb()],
-    SigFun :: libp2p_crypto:sig_fun()
-) -> ok | {error, any()}.
-remove_skfs(SKFs, SigFun) ->
-    case
-        helium_iot_config_session_key_filter_client:update(#{
-            channel => router_ics_utils:channel()
-        })
-    of
-        {error, _} = Error ->
-            Error;
-        {ok, Stream} ->
-            lists:foreach(
-                fun(SKF) ->
-                    ok = remove_skf(SKF, SigFun, Stream)
-                end,
-                SKFs
-            ),
-            ok = grpcbox_client:close_send(Stream),
-            case grpcbox_client:recv_data(Stream, 10000) of
-                {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
-                stream_finished -> ok;
-                Reason -> {error, Reason}
-            end
-    end.
+%% -spec remove_skfs(
+%%     SKFs :: [iot_config_pb:iot_config_session_key_filter_v1_pb()],
+%%     SigFun :: libp2p_crypto:sig_fun()
+%% ) -> ok | {error, any()}.
+%% remove_skfs(SKFs, SigFun) ->
+%%     case
+%%         helium_iot_config_session_key_filter_client:update(#{
+%%             channel => router_ics_utils:channel()
+%%         })
+%%     of
+%%         {error, _} = Error ->
+%%             Error;
+%%         {ok, Stream} ->
+%%             lists:foreach(
+%%                 fun(SKF) ->
+%%                     ok = remove_skf(SKF, SigFun, Stream)
+%%                 end,
+%%                 SKFs
+%%             ),
+%%             ok = grpcbox_client:close_send(Stream),
+%%             case grpcbox_client:recv_data(Stream, 10000) of
+%%                 {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
+%%                 stream_finished -> ok;
+%%                 Reason -> {error, Reason}
+%%             end
+%%     end.
 
--spec remove_skf(
-    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
-    SigFun :: libp2p_crypto:sig_fun(),
-    Stream :: grpcbox_client:stream()
-) -> ok | {error, any()}.
-remove_skf(SKF, SigFun, Stream) ->
-    Req = #iot_config_session_key_filter_update_req_v1_pb{
-        action = remove,
-        filter = SKF,
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_update_req_v1_pb),
-    SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
-    ok = grpcbox_client:send(Stream, SignedReq).
+%% -spec remove_skf(
+%%     SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
+%%     SigFun :: libp2p_crypto:sig_fun(),
+%%     Stream :: grpcbox_client:stream()
+%% ) -> ok | {error, any()}.
+%% remove_skf(SKF, SigFun, Stream) ->
+%%     Req = #iot_config_session_key_filter_update_req_v1_pb{
+%%         action = remove,
+%%         filter = SKF,
+%%         timestamp = erlang:system_time(millisecond)
+%%     },
+%%     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_update_req_v1_pb),
+%%     SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
+%%     ok = grpcbox_client:send(Stream, SignedReq).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

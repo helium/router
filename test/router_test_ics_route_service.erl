@@ -205,8 +205,6 @@ get_skfs(_Req, _StreamState) ->
     {grpc_error, ?UNIMPLEMENTED}.
 
 update_skfs(Ctx, Req) ->
-    ct:print("update skfs: ~p", [Req]),
-
     RouteID = Req#iot_config_route_skf_update_req_v1_pb.route_id,
     lists:foreach(
         fun(
@@ -228,6 +226,8 @@ update_skfs(Ctx, Req) ->
         end,
         Req#iot_config_route_skf_update_req_v1_pb.updates
     ),
+
+    ok = timer:sleep(application:get_env(router, test_update_skf_delay_ms, 0)),
 
     {ok, #iot_config_route_skf_update_res_v1_pb{}, Ctx}.
 %% {grpc_error, ?UNIMPLEMENTED}.

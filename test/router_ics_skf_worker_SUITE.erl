@@ -14,8 +14,10 @@
 -export([
     main_test/1,
     reconcile_dry_run_test/1,
+    reconcile_multiple_updates_test/1,
     list_skf_test/1,
-    diff_updates_test/1
+    diff_updates_test/1,
+    remove_all_skf_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -33,7 +35,9 @@ all() ->
         list_skf_test,
         main_test,
         reconcile_dry_run_test,
-        diff_updates_test
+        reconcile_multiple_updates_test,
+        diff_updates_test,
+        remove_all_skf_test
     ].
 
 %%--------------------------------------------------------------------
@@ -163,7 +167,6 @@ main_test(Config) ->
     ct:print("sending packet for devaddr lock in"),
     send_unconfirmed_uplink(Stream1, PubKeyBin1, JoinedDevice1),
 
-
     %% Join device again
     ct:print("joining 2"),
     #{stream := Stream2, pubkey_bin := PubKeyBin2} = test_utils:join_device(Config),
@@ -176,6 +179,66 @@ main_test(Config) ->
     %% List to make sure old devaddr was removed, and new one was added
     {ok, Remote2} = router_ics_skf_worker:list_skf(),
     ?assertEqual(lists:sort([JoinedSKF2 | SKFs]), lists:sort(Remote2)),
+
+    ok.
+
+reconcile_multiple_updates_test(_Config) ->
+    %% When more than 1 request needs to be made to the config service, we don't
+    %% know want to know until all have requests have succeeded or failed.
+
+    ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
+    ok = application:set_env(router, update_skf_batch_size, 10),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    %% Fill cache with devices to be added.
+    meck:new(router_device_cache, [passthrough]),
+    %% meck:expect(router_device_cache, get, fun() -> create_n_devices(100) end),
+
+    ok = router_ics_skf_worker:reconcile(commit),
+
+    ok =
+        receive
+            {router_ics_skf_worker, done} -> ok
+        after 2500 -> timeout
+        end,
+
+    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
+
+    meck:unload(router_device_cache),
+
+    ok.
+
+remove_all_skf_test(_Config) ->
+    %% ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
+    ok = application:set_env(router, update_skf_batch_size, 10),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    {ok, Pid} = router_skf_remove:start_link(),
+    ok = router_skf_remove:fetch(Pid, fun
+        ({progress, Removed, Resp}) ->
+            ct:print("removed ~p and got back ~p", [length(Removed), Resp]),
+            ok;
+        (done) ->
+            ct:print("done processing"),
+            ok
+    end),
+
+    ?assertEqual(100, router_skf_remove:remote_count(Pid)),
+
+    ok = router_skf_remove:remove_all(Pid),
+
+    ?assertEqual(0, router_skf_remove:remote_count(Pid)),
+    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
 
     ok.
 
@@ -230,7 +293,7 @@ create_n_devices(N) ->
         lists:seq(1, N)
     ).
 
-send_unconfirmed_uplink(Stream, PubKeyBin, Device)->
+send_unconfirmed_uplink(Stream, PubKeyBin, Device) ->
     Stream !
         {send,
             test_utils:frame_packet(

@@ -152,33 +152,30 @@ main_test(Config) ->
     %% Join a device to test device_worker code, we should see 1 add
     ct:print("joining 1"),
     #{stream := Stream1, pubkey_bin := PubKeyBin1} = test_utils:join_device(Config),
-    {ok, JoinedDevice0} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    JoinedSKF0 = device_to_skf("route_id", JoinedDevice0),
-
-    %% List to make sure we have the new device
-    {ok, Remote1} = router_ics_skf_worker:list_skf(),
-    ?assertEqual(lists:sort([JoinedSKF0 | SKFs]), lists:sort(Remote1)),
-
-    %% Send first so we can rejoin and get a new devaddr
-    Stream1 !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin1,
-                router_device:nwk_s_key(JoinedDevice0),
-                router_device:app_s_key(JoinedDevice0),
-                0
-            )},
-
-    %% Join device again
-    ct:print("joining 2"),
-    #{} = test_utils:join_device(Config),
     {ok, JoinedDevice1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     JoinedSKF1 = device_to_skf("route_id", JoinedDevice1),
 
+    %% List to make sure we have the new device
+    {ok, Remote1} = router_ics_skf_worker:list_skf(),
+    ?assertEqual(lists:sort([JoinedSKF1 | SKFs]), lists:sort(Remote1)),
+
+    %% Send first so we can rejoin and get a new devaddr
+    ct:print("sending packet for devaddr lock in"),
+    send_unconfirmed_uplink(Stream1, PubKeyBin1, JoinedDevice1),
+
+
+    %% Join device again
+    ct:print("joining 2"),
+    #{stream := Stream2, pubkey_bin := PubKeyBin2} = test_utils:join_device(Config),
+    {ok, JoinedDevice2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    JoinedSKF2 = device_to_skf("route_id", JoinedDevice2),
+
+    ct:print("sending packet for devaddr lock in"),
+    send_unconfirmed_uplink(Stream2, PubKeyBin2, JoinedDevice2),
+
     %% List to make sure old devaddr was removed, and new one was added
     {ok, Remote2} = router_ics_skf_worker:list_skf(),
-    ?assertEqual(lists:sort([JoinedSKF1 | SKFs]), lists:sort(Remote2)),
+    ?assertEqual(lists:sort([JoinedSKF2 | SKFs]), lists:sort(Remote2)),
 
     ok.
 
@@ -232,3 +229,15 @@ create_n_devices(N) ->
         end,
         lists:seq(1, N)
     ).
+
+send_unconfirmed_uplink(Stream, PubKeyBin, Device)->
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
+            )},
+    ok = timer:sleep(router_utils:frame_timeout()).

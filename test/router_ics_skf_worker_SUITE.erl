@@ -13,11 +13,10 @@
 
 -export([
     main_test/1,
-    reconcile_dry_run_test/1,
     reconcile_multiple_updates_test/1,
     list_skf_test/1,
-    diff_updates_test/1,
-    remove_all_skf_test/1
+    remove_all_skf_test/1,
+    reconcile_skf_test/1
 ]).
 
 %%--------------------------------------------------------------------
@@ -34,10 +33,9 @@ all() ->
     [
         list_skf_test,
         main_test,
-        reconcile_dry_run_test,
         reconcile_multiple_updates_test,
-        diff_updates_test,
-        remove_all_skf_test
+        remove_all_skf_test,
+        reconcile_skf_test
     ].
 
 %%--------------------------------------------------------------------
@@ -78,52 +76,13 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 list_skf_test(_Config) ->
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
 
     One = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 0, session_key = "hex_key"},
     Two = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 1, session_key = "hex_key"},
     router_test_ics_route_service:add_skf([One, Two]),
 
-    ?assertEqual({ok, [One, Two]}, router_ics_skf_worker:list_skf()),
-    ok.
-
-diff_updates_test(_Config) ->
-    meck:new(router_device_cache, [passthrough]),
-
-    %% Make sure there's nothing already in the config service
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
-
-    %% creating couple devices for testing
-    Devices = create_n_devices(2),
-
-    %% Add a device without any devaddr or session, it should be filtered out
-    meck:expect(router_device_cache, get, fun() ->
-        lager:notice("router_device_cache:get()"),
-        BadDevice = router_device:new(<<"bad_device">>),
-        [BadDevice | Devices]
-    end),
-
-    %% Fill the config service with devices we don't have to be removed during diff.
-    Fake1 = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 0, session_key = "hex_key"},
-    Fake2 = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 1, session_key = "hex_key"},
-    router_test_ics_route_service:add_skf([Fake1, Fake2]),
-
-    %% Start a diff
-    {ok, Remote} = router_ics_skf_worker:list_skf(),
-    ?assertEqual([Fake1, Fake2], Remote),
-    {ToAdd, ToRemove} = router_ics_skf_worker:diff_skfs(Remote),
-
-    %% Check list again, we should have the devices from above.
-    %% Expecting 2 devices from above.
-    %% Bad device from cache, and initially inserted devices should have been removed.
-    [D1, D2] = Devices,
-    D1_SKF = device_to_skf("route_id", D1),
-    D2_SKF = device_to_skf("route_id", D2),
-
-    ?assertEqual([D1_SKF, D2_SKF], lists:sort(ToAdd)),
-    ?assertEqual([Fake1, Fake2], lists:sort(ToRemove)),
-
-    meck:unload(router_device_cache),
+    ?assertEqual({ok, [One, Two]}, router_ics_skf_worker:remote_skf()),
     ok.
 
 main_test(Config) ->
@@ -145,12 +104,15 @@ main_test(Config) ->
     }),
 
     %% Trigger a reconcile
-    ok = router_ics_skf_worker:reconcile(commit),
-    ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 10, 1000),
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(
+        Reconcile,
+        fun(Msg) -> ct:print("reconcile progress: ~p", [Msg]) end
+    ),
 
     [D1, D2] = Devices,
     SKFs = [device_to_skf("route_id", D1), device_to_skf("route_id", D2)],
-    {ok, Remote0} = router_ics_skf_worker:list_skf(),
+    {ok, Remote0} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(lists:sort(SKFs), lists:sort(Remote0)),
 
     %% Join a device to test device_worker code, we should see 1 add
@@ -160,7 +122,7 @@ main_test(Config) ->
     JoinedSKF1 = device_to_skf("route_id", JoinedDevice1),
 
     %% List to make sure we have the new device
-    {ok, Remote1} = router_ics_skf_worker:list_skf(),
+    {ok, Remote1} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(lists:sort([JoinedSKF1 | SKFs]), lists:sort(Remote1)),
 
     %% Send first so we can rejoin and get a new devaddr
@@ -177,7 +139,7 @@ main_test(Config) ->
     send_unconfirmed_uplink(Stream2, PubKeyBin2, JoinedDevice2),
 
     %% List to make sure old devaddr was removed, and new one was added
-    {ok, Remote2} = router_ics_skf_worker:list_skf(),
+    {ok, Remote2} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(lists:sort([JoinedSKF2 | SKFs]), lists:sort(Remote2)),
 
     ok.
@@ -187,7 +149,7 @@ reconcile_multiple_updates_test(_Config) ->
     %% know want to know until all have requests have succeeded or failed.
 
     ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
-    ok = application:set_env(router, update_skf_batch_size, 10),
+    ok = router_ics_skf_worker:set_update_batch_size(10),
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
@@ -195,21 +157,15 @@ reconcile_multiple_updates_test(_Config) ->
      || X <- lists:seq(1, 100)
     ]),
 
-    %% Fill cache with devices to be added.
-    meck:new(router_device_cache, [passthrough]),
-    %% meck:expect(router_device_cache, get, fun() -> create_n_devices(100) end),
+    meck:new(router_ics_skf_worker, [passthrough]),
 
-    ok = router_ics_skf_worker:reconcile(commit),
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile, fun(_) -> ok end),
 
-    ok =
-        receive
-            {router_ics_skf_worker, done} -> ok
-        after 2500 -> timeout
-        end,
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
 
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
-
-    meck:unload(router_device_cache),
+    ?assert(meck:num_calls(router_ics_skf_worker, send_request, '_') > 1),
+    meck:unload(router_ics_skf_worker),
 
     ok.
 
@@ -223,46 +179,54 @@ remove_all_skf_test(_Config) ->
      || X <- lists:seq(1, 100)
     ]),
 
-    {ok, Pid} = router_skf_remove:start_link(),
-    ok = router_skf_remove:fetch(Pid, fun
-        ({progress, Removed, Resp}) ->
-            ct:print("removed ~p and got back ~p", [length(Removed), Resp]),
-            ok;
-        (done) ->
-            ct:print("done processing"),
-            ok
-    end),
+    RemoveAll = router_ics_skf_worker:pre_remove_all(),
+    ok = router_ics_skf_worker:remove_all(
+        RemoveAll,
+        fun(Msg) -> ct:print("remove all progress: ~p", [Msg]) end
+    ),
 
-    ?assertEqual(100, router_skf_remove:remote_count(Pid)),
-
-    ok = router_skf_remove:remove_all(Pid),
-
-    ?assertEqual(0, router_skf_remove:remote_count(Pid)),
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
 
     ok.
 
-reconcile_dry_run_test(_Config) ->
+reconcile_skf_test(_Config) ->
+    %% ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
+    ok = router_ics_skf_worker:set_update_batch_size(10),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    %% Fill the cache with devices that are not in the config service yet
     meck:new(router_device_cache, [passthrough]),
-    Devices = create_n_devices(2),
+    meck:expect(router_device_cache, get, fun() -> create_n_devices(25) end),
 
-    meck:expect(router_device_cache, get, fun() -> Devices end),
+    %% Get Remote and Local
+    {ok, Remote} = router_ics_skf_worker:remote_skf(),
+    {ok, Local} = router_ics_skf_worker:local_skf(),
+    %% Diff
+    Diff = router_ics_skf_worker:diff(#{remote => Remote, local => Local}),
+    %% Chunk into requests
+    Requests = router_ics_skf_worker:chunk(Diff),
+    Total = erlang:length(Requests),
 
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
+    ct:print(
+        "~p remote~n~p local~n~p updates~n~p requests",
+        [erlang:length(Remote), erlang:length(Local), erlang:length(Diff), Total]
+    ),
 
-    ok = router_ics_skf_worker:reconcile(dry_run),
-    ok = test_utils:wait_until(fun() -> not router_ics_skf_worker:is_reconciling() end, 10, 1000),
-
-    ?assertEqual({ok, []}, router_ics_skf_worker:list_skf()),
-
-    ok =
-        receive
-            {router_ics_skf_worker, {ok, Added, Removed}} ->
-                ?assertEqual(2, erlang:length(Added)),
-                ?assertEqual(0, erlang:length(Removed)),
-                ok
-        after 1250 -> nothing_received
+    lists:foreach(
+        fun({Idx, Chunk}) ->
+            Resp = router_ics_skf_worker:send_request(Chunk),
+            ct:print("~p/~p :: ~p", [Idx, Total, Resp])
         end,
+        router_utils:enumerate_1(Requests)
+    ),
+
+    {ok, RemoteAfter} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(lists:sort(Local), lists:sort(RemoteAfter)),
 
     ok.
 

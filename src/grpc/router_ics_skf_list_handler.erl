@@ -14,7 +14,7 @@
 
 -record(state, {
     options :: map(),
-    data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
+    data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb()) | {error, any()}
 }).
 
 -type stream_id() :: non_neg_integer().

@@ -14,18 +14,23 @@
 %% ------------------------------------------------------------------
 -export([
     start_link/1,
-    reconcile/1,
+    %%
+    pre_reconcile/0,
+    reconcile/2,
+    pre_remove_all/0,
+    remove_all/2,
+    %%
     update/1,
-    list_skf/0,
-    diff_skfs/1,
-    is_reconciling/0,
     skf_to_add_update/1,
     skf_to_remove_update/1,
-
     %%
-    remove_all_skf/1,
-    %%
-    new_progress_tracker/0
+    remote_skf/0,
+    local_skf/0,
+    diff/1,
+    chunk/1,
+    send_request/1,
+    set_update_batch_size/1,
+    partition_updates_by_action/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -53,32 +58,43 @@
 -endif.
 -define(BACKOFF_MAX, timer:minutes(5)).
 
--record(tracker, {
-    caller :: pid(),
-    batch_cnt :: non_neg_integer(),
-    success :: [any()],
-    error :: [any()]
-}).
-
 -record(state, {
     oui :: non_neg_integer(),
     pubkey_bin :: libp2p_crypto:pubkey_bin(),
     sig_fun :: function(),
     conn_backoff :: backoff:backoff(),
-    reconciling = false :: boolean(),
-    route_id :: string()
+    route_id :: string(),
+    request_chunk_size = 100 :: non_neg_integer()
 }).
 
-%% -type state() :: #state{}.
+-record(reconcile, {
+    remote :: skfs(),
+    remote_count :: non_neg_integer(),
+    %%
+    local :: skfs(),
+    local_count :: non_neg_integer(),
+    %%
+    updates :: skf_updates(),
+    updates_count :: non_neg_integer(),
+    update_chunks :: list(skf_updates()),
+    update_chunks_count :: non_neg_integer(),
+    %%
+    add_count :: non_neg_integer(),
+    remove_count :: non_neg_integer()
+}).
 
 -type skf() :: #iot_config_skf_v1_pb{}.
+-type skfs() :: list(skf()).
 -type skf_update() :: #iot_config_route_skf_update_v1_pb{}.
+-type skf_updates() :: list(#iot_config_route_skf_update_v1_pb{}).
 
--type tracker() :: #tracker{}.
-
--spec new_progress_tracker() -> tracker().
-new_progress_tracker() ->
-    #tracker{caller = self(), batch_cnt = 0, success = [], error = []}.
+-type reconcile_progress_fun() :: fun(
+    (
+        done
+        | {progress, {CurrentRequest :: non_neg_integer(), TotalRequests :: non_neg_integer()},
+            Response :: #iot_config_route_skf_update_res_v1_pb{}}
+    ) -> any()
+).
 
 %% ------------------------------------------------------------------
 %% API Function Definitions
@@ -98,13 +114,62 @@ start_link(Args) ->
             ignore
     end.
 
--spec reconcile(Commit :: boolean() | commit | dry_run) -> ok.
-reconcile(commit) ->
-    ?MODULE:reconcile(true);
-reconcile(dry_run) ->
-    ?MODULE:reconcile(false);
-reconcile(Commit) ->
-    gen_server:cast(?SERVER, {?RECONCILE_START, #{forward_pid => self(), commit => Commit}}).
+-spec pre_reconcile() -> #reconcile{}.
+pre_reconcile() ->
+    {ok, Remote} = router_ics_skf_worker:remote_skf(),
+    {ok, Local} = router_ics_skf_worker:local_skf(),
+    Diff = router_ics_skf_worker:diff(#{remote => Remote, local => Local}),
+    Chunks = ?MODULE:chunk(Diff),
+
+    #{to_add := ToAdd, to_remove := ToRemove} = ?MODULE:partition_updates_by_action(Diff),
+
+    #reconcile{
+        remote = Remote,
+        remote_count = erlang:length(Remote),
+
+        local = Local,
+        local_count = erlang:length(Local),
+
+        updates = Diff,
+        updates_count = erlang:length(Diff),
+        update_chunks = Chunks,
+        update_chunks_count = erlang:length(Chunks),
+
+        add_count = erlang:length(ToAdd),
+        remove_count = erlang:length(ToRemove)
+    }.
+
+-spec reconcile(#reconcile{}, reconcile_progress_fun()) -> ok.
+reconcile(
+    #reconcile{update_chunks = Requests, update_chunks_count = UpdateChunksCount},
+    ProgressFun
+) ->
+    lists:foreach(
+        fun({Idx, Request}) ->
+            Resp = router_ics_skf_worker:send_request(Request),
+            ProgressFun({progress, {Idx, UpdateChunksCount}, Resp})
+        end,
+        router_utils:enumerate_1(Requests)
+    ),
+    ProgressFun(done).
+
+-spec pre_remove_all() -> #reconcile{}.
+pre_remove_all() ->
+    Reconcile = ?MODULE:pre_reconcile(),
+    Reconcile#reconcile{local = [], local_count = 0}.
+
+%% Alias for reconcile to keep with naming convention.
+-spec remove_all(#reconcile{}, reconcile_progress_fun()) -> ok.
+remove_all(Reconcile, ProgressFun) ->
+    ?MODULE:reconcile(Reconcile, ProgressFun).
+
+-spec partition_updates_by_action(skf_updates()) ->
+    #{to_add := skf_updates(), to_remove := skf_updates()}.
+partition_updates_by_action(Updates) ->
+    {ToAdd, ToRemove} = lists:partition(
+        fun(#iot_config_route_skf_update_v1_pb{action = Action}) -> Action == add end, Updates
+    ),
+    #{to_add => ToAdd, to_remove => ToRemove}.
 
 -spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) ->
     ok.
@@ -121,25 +186,29 @@ update(Updates) ->
             gen_server:cast(?SERVER, {?UPDATE, Updates})
     end.
 
--spec list_skf() -> {ok, list(#iot_config_skf_v1_pb{})} | {error, any()}.
-list_skf() ->
-    gen_server:call(?SERVER, list_skf).
+-spec remote_skf() -> {ok, list(skf())} | {error, any()}.
+remote_skf() ->
+    gen_server:call(?MODULE, remote_skf).
 
--spec remove_all_skf(Options :: map()) -> ok.
-remove_all_skf(#{progress_callback := _, done_callback := _} = Options) ->
-    gen_server:cast(?SERVER, {remove_all_skf, Options}).
+-spec local_skf() -> {ok, list(skf())} | {error, any()}.
+local_skf() ->
+    gen_server:call(?MODULE, local_skf).
 
--spec diff_skfs(list(skf())) -> {list(skf()), list(skf())}.
-diff_skfs(SKFs) ->
-    gen_server:call(?SERVER, {diff_skfs, SKFs}).
+-spec diff(#{remote := list(skf()), local := list(skf())}) -> list(skf_update()).
+diff(#{remote := _, local := _} = Diff) ->
+    gen_server:call(?MODULE, {diff, Diff}).
 
--spec is_reconciling() -> boolean().
-is_reconciling() ->
-    gen_server:call(?SERVER, is_reconciling).
+-spec chunk(list(skf_update())) -> list(list(skf_update())).
+chunk(Updates) ->
+    gen_server:call(?MODULE, {chunk, Updates}).
 
--spec done_reconciling(Options :: map()) -> ok.
-done_reconciling(Options) ->
-    gen_server:cast(?SERVER, {done_reconciling, Options}).
+-spec send_request(list(skf_update())) -> ok | error.
+send_request(Updates) ->
+    gen_server:call(?MODULE, {send_request, Updates}).
+
+-spec set_update_batch_size(non_neg_integer()) -> ok.
+set_update_batch_size(BatchSize) ->
+    gen_server:call(?MODULE, {set_update_batch_size, BatchSize}).
 
 -spec skf_to_add_update
     (skf()) -> skf_update();
@@ -183,9 +252,12 @@ init(
         pubkey_bin = PubKeyBin,
         sig_fun = SigFun,
         conn_backoff = Backoff,
-        route_id = RouteID
+        route_id = RouteID,
+        request_chunk_size = application:get_env(router, update_skf_batch_size, 100)
     }}.
 
+handle_call({set_update_batch_size, BatchSize}, _From, State) ->
+    {reply, ok, State#state{request_chunk_size = BatchSize}};
 handle_call(
     list_skf,
     From,
@@ -197,6 +269,27 @@ handle_call(
 
     {noreply, State};
 handle_call(
+    remote_skf,
+    From,
+    #state{route_id = RouteID, pubkey_bin = PubKeyBin, sig_fun = SigFun} = State
+) ->
+    Callback = fun(Response) -> gen_server:reply(From, Response) end,
+    ok = list_skf(RouteID, PubKeyBin, SigFun, Callback),
+
+    {noreply, State};
+handle_call(local_skf, _From, #state{route_id = RouteID} = State) ->
+    Local = get_local_skfs(RouteID),
+    {reply, {ok, Local}, State};
+handle_call({diff, #{remote := Remote, local := Local}}, _From, State) ->
+    ToAdd = Local -- Remote,
+    ToRemove = Remote -- Local,
+
+    AddUpdates = ?MODULE:skf_to_add_update(ToAdd),
+    RemUpdates = ?MODULE:skf_to_remove_update(ToRemove),
+
+    Reply = AddUpdates ++ RemUpdates,
+    {reply, Reply, State};
+handle_call(
     {diff_skfs, RemoteSKFs},
     _From,
     #state{route_id = RouteID} = State
@@ -207,69 +300,20 @@ handle_call(
     ToRemove = RemoteSKFs -- LocalSKFs,
 
     {reply, {ToAdd, ToRemove}, State};
-handle_call(is_reconciling, _From, #state{reconciling = Reconciling} = State) ->
-    ct:print("checking reconciling: ~p~n~p", [Reconciling, erlang:process_info(self(), messages)]),
-    {reply, Reconciling, State};
+handle_call({chunk, Updates}, _From, #state{request_chunk_size = RequestChunkSize} = State) ->
+    Chunks = chunk(RequestChunkSize, Updates),
+    {reply, Chunks, State};
+handle_call({send_request, Updates}, _From, State) ->
+    Reply =
+        case send_update_request(Updates, State) of
+            {ok, _Resp} -> ok;
+            {error, _Err} -> error
+        end,
+    {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
-handle_cast({done_reconciling, Options}, #state{} = State) ->
-    case maps:get(forward_pid, Options, undefined) of
-        undefined -> ok;
-        Pid -> Pid ! {?MODULE, done}
-    end,
-    {noreply, State#state{reconciling = false}};
-handle_cast(
-    {?RECONCILE_START, #{commit := Commit} = Options},
-    #state{route_id = RouteID, pubkey_bin = PubKeyBin, sig_fun = SigFun} = State
-) ->
-    ok = list_skf(
-        RouteID,
-        PubKeyBin,
-        SigFun,
-        fun(ListResults) ->
-            case ListResults of
-                {ok, Remote} ->
-                    {ToAdd, ToRemove} = ?MODULE:diff_skfs(Remote),
-                    case Commit of
-                        true ->
-                            ?MODULE:update(?MODULE:skf_to_add_update(ToAdd)),
-                            ?MODULE:update(?MODULE:skf_to_remove_update(ToRemove));
-                        false ->
-                            ok
-                    end,
-                    %% ok = forward_reconcile(Options, {ok, ToAdd, ToRemove}),
-                    done_reconciling(Options);
-                Err ->
-                    ok = forward_reconcile(Options, Err),
-                    ct:print("something went wrong: ~p", [Err])
-            end
-        end
-    ),
-    {noreply, State#state{reconciling = true}};
-handle_cast(
-    {remove_all_skf, Options},
-    #state{route_id = RouteID, pubkey_bin = PubKeyBin, sig_fun = SigFun} = State
-) ->
-    ok = list_skf(
-        RouteID,
-        PubKeyBin,
-        SigFun,
-        fun(ListResults) ->
-            case ListResults of
-                {ok, Remote} ->
-                    ToRemove = ?MODULE:skf_to_remove_update(Remote),
-                    ?MODULE:update(ToRemove, Options),
-
-                    ok;
-                _Err ->
-                    bad
-            end
-        end
-    ),
-
-    {noreply, State#state{}};
 handle_cast(
     {?UPDATE, Updates0},
     State
@@ -323,6 +367,10 @@ terminate(_Reason, _State) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+%% We have to do this because the call to `helium_iot_config_gateway_client:location` can return
+%% `{error, {Status, Reason}, _}` but is not in the spec...
+-dialyzer({nowarn_function, send_update_request/2}).
 
 send_update_request(Updates, #state{pubkey_bin = PubKeyBin, route_id = RouteID, sig_fun = SigFun}) ->
     Request = #iot_config_route_skf_update_req_v1_pb{
@@ -397,11 +445,25 @@ get_local_skfs(RouteID) ->
         )
     ).
 
--spec forward_reconcile(
-    map(), Result :: {ok, list(), list()} | {error, any()}
-) -> ok.
-forward_reconcile(#{forward_pid := undefined}, _Result) ->
-    ok;
-forward_reconcile(#{forward_pid := Pid}, Result) when is_pid(Pid) ->
-    catch Pid ! {?MODULE, Result},
-    ok.
+chunk(Limit, Els) ->
+    chunk(Limit, Els, []).
+
+chunk(_, [], Acc) ->
+    lists:reverse(Acc);
+chunk(Limit, Els, Acc) ->
+    case erlang:length(Els) > Limit of
+        true ->
+            {Chunk, Rest} = lists:split(Limit, Els),
+            chunk(Limit, Rest, [Chunk | Acc]);
+        false ->
+            chunk(Limit, [], [Els | Acc])
+    end.
+
+%% -spec forward_reconcile(
+%%     map(), Result :: {ok, list(), list()} | {error, any()}
+%% ) -> ok.
+%% forward_reconcile(#{forward_pid := undefined}, _Result) ->
+%%     ok;
+%% forward_reconcile(#{forward_pid := Pid}, Result) when is_pid(Pid) ->
+%%     catch Pid ! {?MODULE, Result},
+%%     ok.

@@ -157,45 +157,67 @@ send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
+-record(reconcile, {
+    remote :: router_ics_skf_worker:skfs(),
+    remote_count :: non_neg_integer(),
+    %%
+    local :: router_ics_skf_worker:skfs(),
+    local_count :: non_neg_integer(),
+    %%
+    updates :: router_ics_skf_worker:skf_updates(),
+    updates_count :: non_neg_integer(),
+    update_chunks :: list(router_ics_skf_worker:skf_updates()),
+    update_chunks_count :: non_neg_integer(),
+    %%
+    add_count :: non_neg_integer(),
+    remove_count :: non_neg_integer()
+}).
+
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
 
     Commit = maps:is_key(commit, Options),
-    ok = router_ics_skf_worker:reconcile(Commit),
 
-    DryRun =
-        case Commit of
-            true -> "";
-            false -> "DRY RUN"
-        end,
-    receive
-        {router_ics_skf_worker, {ok, Added, Removed}} ->
-            ToMap = fun(SKFs) ->
-                lists:map(
-                    fun(#iot_config_skf_v1_pb{devaddr = DevNum, session_key = SessionKey}) ->
-                        DevAddr = <<DevNum:32/integer-unsigned-big>>,
-                        #{
-                            devaddr => lorawan_utils:binary_to_hex(DevAddr),
-                            session_key => erlang:list_to_binary(SessionKey)
-                        }
-                    end,
-                    SKFs
-                )
-            end,
-            case {ToMap(Added), ToMap(Removed)} of
-                {[], []} ->
-                    c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
-                {PrintAdded, PrintRemoved} ->
-                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [
-                        DryRun,
-                        jsx:prettify(jsx:encode(PrintAdded)),
-                        jsx:prettify(jsx:encode(PrintRemoved))
-                    ])
-            end;
-        {router_ics_skf_worker, {error, _Reason}} ->
-            c_text("~s Updating SKFs failed ~p", [DryRun, _Reason])
-    after timer:seconds(30) ->
-        c_text("Error timeout")
+    Rec =
+        #reconcile{
+            remote_count = RemoteCount,
+            local_count = LocalCount,
+            updates_count = UpdatesCount,
+            add_count = AddCount,
+            remove_count = RemoveCount,
+            update_chunks_count = UpdateChunksCount
+        } = router_ics_skf_worker:pre_reconcile(),
+
+    io:format(
+        "~p remote~n"
+        "~p local~n"
+        "~p updates (~p add, ~p remove)~n"
+        "~p requests~n",
+        [
+            RemoteCount,
+            LocalCount,
+            UpdatesCount,
+            AddCount,
+            RemoveCount,
+            UpdateChunksCount
+        ]
+    ),
+
+    case Commit of
+        true ->
+            router_ics_skf_worker:reconcile(
+                Rec,
+                fun
+                    ({progress, {Curr, Total}, Response}) ->
+                        io:format("~p/~p :: ~p~n", [Curr, Total, Response]);
+                    (done) ->
+                        io:format("done~n")
+                end
+            ),
+
+            c_text("Reconcile complete");
+        false ->
+            c_text("DRY RUN, pass --commit to send requests")
     end;
 send_skfs_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
@@ -204,38 +226,39 @@ send_skfs_to_config_service(A, B, C) ->
 delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
-    DryRun =
-        case Commit of
-            true -> "";
-            false -> "DRY RUN"
-        end,
 
-    {ok, Pid} = router_skf_remove:start_link(),
-    case router_skf_remove:fetch(Pid) of
-        {error, _Reason} ->
-            c_text("~s Failed to get session key filters from CS: ~p", [DryRun, _Reason]);
-        ok ->
-            RemoteCount = router_skf_remove:remote_count(Pid),
-            case Commit of
-                false ->
-                    RemoteCount = router_skf_remove:remote_count(Pid),
-                    c_text("DRY RUN removing ~w session key filters", [RemoteCount]);
-                true ->
-                    ProgressCallback = fun
-                        ({progress, Removed, Resp}) ->
-                            io:format("removed ~p~n [resp: ~p]", [length(Removed), Resp]),
-                            ok;
-                        (done) ->
-                            io:format("Done~n"),
-                            ok
-                    end,
-                    case router_skf_remove:remove_all(ProgressCallback) of
-                        ok ->
-                            c_text("Removed ~w session key filters", [RemoteCount]);
-                        {error, Reason} ->
-                            c_text("Failed to remove all session key filters: ~p", [Reason])
-                    end
-            end
+    RemoveAll =
+        #reconcile{
+            remote_count = RemoteCount,
+            remove_count = RemoveCount,
+            update_chunks_count = UpdateChunksCount
+        } = router_ics_skf_worker:pre_remove_all(),
+
+    io:format(
+        "~p remote~n"
+        "~p removals~n"
+        "~p requests~n",
+        [
+            RemoteCount,
+            RemoveCount,
+            UpdateChunksCount
+        ]
+    ),
+
+    case Commit of
+        true ->
+            router_ics_skf_worker:remove_all(
+                RemoveAll,
+                fun
+                    ({progress, {Curr, Total}, Response}) ->
+                        io:format("~p/~p :: ~p", [Curr, Total, Response]);
+                    (done) ->
+                        io:format("done~n")
+                end
+            ),
+            c_text("Remove all complete");
+        false ->
+            c_text("DRY RUN, pass --commit to send requests")
     end;
 delete_skfs(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),

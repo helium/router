@@ -77,7 +77,7 @@
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.8.0">>},1},
  {<<"grpcbox">>,
   {git,"https://github.com/novalabsxyz/grpcbox.git",
-       {ref,"2fc53c1f1e57f8a68a459448a5b94cc11fd8f2bb"}},
+       {ref,"f0a14c99a66f862cb5b71c856c3cb57e40a42813"}},
   0},
  {<<"gun">>,
   {git,"https://github.com/emqx/gun",

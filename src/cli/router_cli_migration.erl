@@ -157,36 +157,11 @@ send_euis_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
     usage.
 
--record(reconcile, {
-    remote :: router_ics_skf_worker:skfs(),
-    remote_count :: non_neg_integer(),
-    %%
-    local :: router_ics_skf_worker:skfs(),
-    local_count :: non_neg_integer(),
-    %%
-    updates :: router_ics_skf_worker:skf_updates(),
-    updates_count :: non_neg_integer(),
-    update_chunks :: list(router_ics_skf_worker:skf_updates()),
-    update_chunks_count :: non_neg_integer(),
-    %%
-    add_count :: non_neg_integer(),
-    remove_count :: non_neg_integer()
-}).
-
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
-
     Commit = maps:is_key(commit, Options),
 
-    Rec =
-        #reconcile{
-            remote_count = RemoteCount,
-            local_count = LocalCount,
-            updates_count = UpdatesCount,
-            add_count = AddCount,
-            remove_count = RemoveCount,
-            update_chunks_count = UpdateChunksCount
-        } = router_ics_skf_worker:pre_reconcile(),
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
 
     io:format(
         "~p remote~n"
@@ -194,19 +169,19 @@ send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
         "~p updates (~p add, ~p remove)~n"
         "~p requests~n",
         [
-            RemoteCount,
-            LocalCount,
-            UpdatesCount,
-            AddCount,
-            RemoveCount,
-            UpdateChunksCount
+            router_skf_reconcile:remote_count(Reconcile),
+            router_skf_reconcile:local_count(Reconcile),
+            router_skf_reconcile:updates_count(Reconcile),
+            router_skf_reconcile:add_count(Reconcile),
+            router_skf_reconcile:remove_count(Reconcile),
+            router_skf_reconcile:update_chunks_count(Reconcile)
         ]
     ),
 
     case Commit of
         true ->
             router_ics_skf_worker:reconcile(
-                Rec,
+                Reconcile,
                 fun
                     ({progress, {Curr, Total}, Response}) ->
                         io:format("~p/~p :: ~p~n", [Curr, Total, Response]);
@@ -227,21 +202,16 @@ delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
 
-    RemoveAll =
-        #reconcile{
-            remote_count = RemoteCount,
-            remove_count = RemoveCount,
-            update_chunks_count = UpdateChunksCount
-        } = router_ics_skf_worker:pre_remove_all(),
+    RemoveAll = router_ics_skf_worker:pre_remove_all(),
 
     io:format(
         "~p remote~n"
         "~p removals~n"
         "~p requests~n",
         [
-            RemoteCount,
-            RemoveCount,
-            UpdateChunksCount
+            router_skf_worekr:remote_count(RemoveAll),
+            router_skf_worker:remove_count(RemoveAll),
+            router_skf_worker:update_chunks_count(RemoveAll)
         ]
     ),
 
@@ -410,67 +380,6 @@ get_grpc_address(Options) ->
             ]),
             {ok, RPCAddr}
     end.
-
-%% -spec list_skfs(SigFun :: libp2p_crypto:sig_fun()) ->
-%%     {ok, grpcbox_client:stream()} | {error, any()}.
-%% list_skfs(SigFun) ->
-%%     OUI = router_utils:get_oui(),
-
-%%     Req = #iot_config_session_key_filter_list_req_v1_pb{
-%%         oui = OUI,
-%%         timestamp = erlang:system_time(millisecond)
-%%     },
-%%     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
-%%     SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
-%%     helium_iot_config_session_key_filter_client:list(SignedReq, #{
-%%         channel => router_ics_utils:channel(),
-%%         callback_module => {
-%%             router_cli_migration_skf_list_handler,
-%%             #{pid => self()}
-%%         }
-%%     }).
-
-%% -spec remove_skfs(
-%%     SKFs :: [iot_config_pb:iot_config_session_key_filter_v1_pb()],
-%%     SigFun :: libp2p_crypto:sig_fun()
-%% ) -> ok | {error, any()}.
-%% remove_skfs(SKFs, SigFun) ->
-%%     case
-%%         helium_iot_config_session_key_filter_client:update(#{
-%%             channel => router_ics_utils:channel()
-%%         })
-%%     of
-%%         {error, _} = Error ->
-%%             Error;
-%%         {ok, Stream} ->
-%%             lists:foreach(
-%%                 fun(SKF) ->
-%%                     ok = remove_skf(SKF, SigFun, Stream)
-%%                 end,
-%%                 SKFs
-%%             ),
-%%             ok = grpcbox_client:close_send(Stream),
-%%             case grpcbox_client:recv_data(Stream, 10000) of
-%%                 {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
-%%                 stream_finished -> ok;
-%%                 Reason -> {error, Reason}
-%%             end
-%%     end.
-
-%% -spec remove_skf(
-%%     SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
-%%     SigFun :: libp2p_crypto:sig_fun(),
-%%     Stream :: grpcbox_client:stream()
-%% ) -> ok | {error, any()}.
-%% remove_skf(SKF, SigFun, Stream) ->
-%%     Req = #iot_config_session_key_filter_update_req_v1_pb{
-%%         action = remove,
-%%         filter = SKF,
-%%         timestamp = erlang:system_time(millisecond)
-%%     },
-%%     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_update_req_v1_pb),
-%%     SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
-%%     ok = grpcbox_client:send(Stream, SignedReq).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

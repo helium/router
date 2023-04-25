@@ -149,7 +149,7 @@ reconcile_multiple_updates_test(_Config) ->
     %% know want to know until all have requests have succeeded or failed.
 
     ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
-    ok = router_ics_skf_worker:set_update_batch_size(10),
+    ok = application:set_env(router, update_skf_batch_size, 10),
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
@@ -191,7 +191,7 @@ remove_all_skf_test(_Config) ->
 
 reconcile_skf_test(_Config) ->
     %% ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
-    ok = router_ics_skf_worker:set_update_batch_size(10),
+    ok = application:set_env(router, update_skf_batch_size, 10),
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
@@ -203,28 +203,13 @@ reconcile_skf_test(_Config) ->
     meck:new(router_device_cache, [passthrough]),
     meck:expect(router_device_cache, get, fun() -> create_n_devices(25) end),
 
-    %% Get Remote and Local
-    {ok, Remote} = router_ics_skf_worker:remote_skf(),
-    {ok, Local} = router_ics_skf_worker:local_skf(),
-    %% Diff
-    Diff = router_ics_skf_worker:diff(#{remote => Remote, local => Local}),
-    %% Chunk into requests
-    Requests = router_ics_skf_worker:chunk(Diff),
-    Total = erlang:length(Requests),
-
-    ct:print(
-        "~p remote~n~p local~n~p updates~n~p requests",
-        [erlang:length(Remote), erlang:length(Local), erlang:length(Diff), Total]
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(
+        Reconcile,
+        fun(Msg) -> ct:print("reconcile progress: ~p", [Msg]) end
     ),
 
-    lists:foreach(
-        fun({Idx, Chunk}) ->
-            Resp = router_ics_skf_worker:send_request(Chunk),
-            ct:print("~p/~p :: ~p", [Idx, Total, Resp])
-        end,
-        router_utils:enumerate_1(Requests)
-    ),
-
+    Local = router_skf_reconcile:local(Reconcile),
     {ok, RemoteAfter} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(lists:sort(Local), lists:sort(RemoteAfter)),
 

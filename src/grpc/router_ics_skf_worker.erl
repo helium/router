@@ -56,9 +56,6 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
-    oui :: non_neg_integer(),
-    pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    sig_fun :: function(),
     conn_backoff :: backoff:backoff(),
     route_id :: string()
 }).
@@ -209,20 +206,11 @@ skf_to_remove_update(#iot_config_skf_v1_pb{devaddr = Devaddr, session_key = Sess
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init(
-    #{
-        pubkey_bin := PubKeyBin,
-        sig_fun := SigFun,
-        route_id := RouteID
-    } = Args
-) ->
+init(#{route_id := RouteID} = Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     %% ok = ?MODULE:reconcile(undefined, true),
     {ok, #state{
-        oui = router_utils:get_oui(),
-        pubkey_bin = PubKeyBin,
-        sig_fun = SigFun,
         conn_backoff = Backoff,
         route_id = RouteID
     }}.
@@ -230,17 +218,17 @@ init(
 handle_call(
     remote_skf,
     From,
-    #state{route_id = RouteID, pubkey_bin = PubKeyBin, sig_fun = SigFun} = State
+    #state{route_id = RouteID} = State
 ) ->
     Callback = fun(Response) -> gen_server:reply(From, Response) end,
-    ok = list_skf(RouteID, PubKeyBin, SigFun, Callback),
+    ok = list_skf(RouteID, Callback),
 
     {noreply, State};
 handle_call(local_skf, _From, #state{route_id = RouteID} = State) ->
     Local = get_local_skfs(RouteID),
     {reply, {ok, Local}, State};
-handle_call({send_request, Updates}, _From, State) ->
-    Reply = send_update_request(Updates, State),
+handle_call({send_request, Updates}, _From, #state{route_id = RouteID}=State) ->
+    Reply = send_update_request(RouteID, Updates),
     {reply, Reply, State};
 handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
@@ -248,7 +236,7 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast(
     {?UPDATE, Updates0},
-    State
+    #state{route_id = RouteID} = State
 ) ->
     Updates1 = lists:map(
         fun
@@ -264,7 +252,7 @@ handle_cast(
         Updates0
     ),
 
-    case send_update_request(Updates1, State) of
+    case send_update_request(RouteID, Updates1) of
         {ok, Resp} ->
             lager:info("updating skf good success: ~p", [Resp]);
         {error, Err} ->
@@ -314,13 +302,14 @@ do_skf_diff(#{local := Local, remote := Remote}) ->
 %% `{error, {Status, Reason}, _}` but is not in the spec...
 -dialyzer({nowarn_function, send_update_request/2}).
 
-send_update_request(Updates, #state{pubkey_bin = PubKeyBin, route_id = RouteID, sig_fun = SigFun}) ->
+send_update_request(RouteID, Updates) ->
     Request = #iot_config_route_skf_update_req_v1_pb{
         route_id = RouteID,
         updates = Updates,
         timestamp = erlang:system_time(millisecond),
-        signer = PubKeyBin
+        signer = router_blockchain:pubkey_bin()
     },
+    SigFun = router_blockchain:sig_fun(),
     EncodedRequest = iot_config_pb:encode_msg(Request),
     SignedRequest = Request#iot_config_route_skf_update_req_v1_pb{
         signature = SigFun(EncodedRequest)
@@ -344,12 +333,13 @@ send_update_request(Updates, #state{pubkey_bin = PubKeyBin, route_id = RouteID, 
         end,
     Res.
 
-list_skf(RouteID, PubKeyBin, SigFun, Callback) ->
+list_skf(RouteID, Callback) ->
     Req = #iot_config_route_skf_list_req_v1_pb{
         route_id = RouteID,
         timestamp = erlang:system_time(millisecond),
-        signer = PubKeyBin
+        signer = router_blockchain:pubkey_bin()
     },
+    SigFun = router_blockchain:sig_fun(),
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_skf_list_req_v1_pb),
     SignedReq = Req#iot_config_route_skf_list_req_v1_pb{signature = SigFun(EncodedReq)},
 

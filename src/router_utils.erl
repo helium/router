@@ -38,7 +38,8 @@
     enumerate_0_to_size/3,
     enumerate_last/1,
     metadata_fun/0,
-    random_non_miner_predicate/1
+    random_non_miner_predicate/1,
+    get_swarm_key_location/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -890,6 +891,18 @@ enumerate_0_to_size(IndexedList, Max, Default) ->
 random_non_miner_predicate(Peer) ->
     not libp2p_peer:is_stale(Peer, timer:minutes(360)) andalso
         maps:get(<<"node_type">>, libp2p_peer:signed_metadata(Peer), undefined) /= <<"gateway">>.
+
+get_swarm_key_location() ->
+    case application:get_env(router, swarm_key, undefined) of
+        undefined ->
+            filename:join([
+                application:get_env(blockchain, base_dir, "data"),
+                "blockchain",
+                "swarm_key"
+            ]);
+        Val ->
+            Val
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

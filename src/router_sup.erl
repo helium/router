@@ -83,7 +83,7 @@ init([]) ->
             _ -> []
         end,
 
-    SwarmKey = filename:join([BaseDir, "blockchain", "swarm_key"]),
+    SwarmKey = router_utils:get_swarm_key_location(),
     ok = filelib:ensure_dir(SwarmKey),
     Key =
         case libp2p_crypto:load_keys(SwarmKey) of

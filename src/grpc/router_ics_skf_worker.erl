@@ -47,6 +47,7 @@
 -define(SERVER, ?MODULE).
 -define(INIT, init).
 -define(UPDATE, update).
+-define(SKF_UPDATE_BATCH_SIZE, 100).
 
 -ifdef(TEST).
 -define(BACKOFF_MIN, 100).
@@ -99,7 +100,7 @@ start_link(Args) ->
 pre_reconcile() ->
     {ok, Remote} = router_ics_skf_worker:remote_skf(),
     {ok, Local} = router_ics_skf_worker:local_skf(),
-    ChunkSize = application:get_env(router, update_skf_batch_size, 100),
+    ChunkSize = skf_update_batch_size(),
     router_skf_reconcile:new(#{remote => Remote, local => Local, chunk_size => ChunkSize}).
 
 -spec reconcile(router_skf_reconcile:reconcile(), reconcile_progress_fun()) -> ok.
@@ -118,7 +119,7 @@ reconcile(Reconcile, ProgressFun) ->
 -spec pre_remove_all() -> router_skf_reconcile:reconcile().
 pre_remove_all() ->
     {ok, Remote} = router_ics_skf_worker:remote_skf(),
-    ChunkSize = application:get_env(router, update_skf_batch_size, 100),
+    ChunkSize = skf_update_batch_size(),
     router_skf_reconcile:new(#{remote => Remote, local => [], chunk_size => ChunkSize}).
 
 %% Alias for reconcile to keep with naming convention.
@@ -135,7 +136,7 @@ remove_all(Reconcile, ProgressFun) ->
 update([]) ->
     ok;
 update(Updates) ->
-    Limit = application:get_env(router, update_skf_batch_size, 100),
+    Limit = skf_update_batch_size(),
     case erlang:length(Updates) > Limit of
         true ->
             {Update, Rest} = lists:split(Limit, Updates),
@@ -147,11 +148,11 @@ update(Updates) ->
 
 -spec remote_skf() -> {ok, skfs()} | {error, any()}.
 remote_skf() ->
-    gen_server:call(?MODULE, remote_skf).
+    gen_server:call(?MODULE, remote_skf, timer:seconds(60)).
 
 -spec local_skf() -> {ok, skfs()} | {error, any()}.
 local_skf() ->
-    gen_server:call(?MODULE, local_skf).
+    gen_server:call(?MODULE, local_skf, timer:seconds(60)).
 
 -spec send_request(skf_updates()) -> ok | error.
 send_request(Updates) ->
@@ -376,3 +377,7 @@ get_local_skfs(RouteID) ->
             Devices
         )
     ).
+
+-spec skf_update_batch_size() -> non_neg_integer().
+skf_update_batch_size() ->
+    router_utils:get_env_int(update_skf_batch_size, ?SKF_UPDATE_BATCH_SIZE).

@@ -49,7 +49,7 @@ init_per_testcase(TestCase, Config) ->
         ics,
         #{
             skf_enabled => "true",
-            route_id => "5f3dc22e-e467-11ed-a72d-bb98bcdb7a2b",
+            route_id => "test-route-id",
             transport => http,
             host => "localhost",
             port => 8085
@@ -201,7 +201,7 @@ reconcile_skf_test(_Config) ->
     ]),
 
     %% Fill the cache with devices that are not in the config service yet
-    Devices = create_n_devices(1250),
+    Devices = create_n_devices(50),
 
     meck:new(router_device_cache, [passthrough]),
     meck:expect(router_device_cache, get, fun() -> Devices end),

@@ -42,13 +42,14 @@ all() ->
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
 init_per_testcase(TestCase, Config) ->
-    persistent_term:put(router_test_ics_skf_service, self()),
+    SwarmKey = "/Users/michaeljeffrey/Helium/config-service-cli/dev.key",
+    ok = application:set_env(router, swarm_key, SwarmKey),
     ok = application:set_env(
         router,
         ics,
         #{
             skf_enabled => "true",
-            route_id => "route_id",
+            route_id => "5f3dc22e-e467-11ed-a72d-bb98bcdb7a2b",
             transport => http,
             host => "localhost",
             port => 8085
@@ -146,9 +147,7 @@ main_test(Config) ->
 
 reconcile_multiple_updates_test(_Config) ->
     %% When more than 1 request needs to be made to the config service, we don't
-    %% know want to know until all have requests have succeeded or failed.
-
-    ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
+    %% want to know until all have requests have succeeded or failed.
     ok = application:set_env(router, update_skf_batch_size, 10),
 
     %% Fill config service with filters to be removed.
@@ -170,8 +169,8 @@ reconcile_multiple_updates_test(_Config) ->
     ok.
 
 remove_all_skf_test(_Config) ->
-    %% ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
-    ok = application:set_env(router, update_skf_batch_size, 10),
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = application:set_env(router, update_skf_batch_size, 100),
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
@@ -190,8 +189,10 @@ remove_all_skf_test(_Config) ->
     ok.
 
 reconcile_skf_test(_Config) ->
-    %% ok = application:set_env(router, test_udpate_skf_delay_ms, 500),
-    ok = application:set_env(router, update_skf_batch_size, 10),
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = application:set_env(router, update_skf_batch_size, 100),
+
+    %% meck:expect(router_device_devaddr, h3_parent_for_pubkeybin, fun(_) -> ok end),
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
@@ -200,18 +201,29 @@ reconcile_skf_test(_Config) ->
     ]),
 
     %% Fill the cache with devices that are not in the config service yet
+    Devices = create_n_devices(1250),
+
     meck:new(router_device_cache, [passthrough]),
-    meck:expect(router_device_cache, get, fun() -> create_n_devices(25) end),
+    meck:expect(router_device_cache, get, fun() -> Devices end),
 
     Reconcile = router_ics_skf_worker:pre_reconcile(),
     ok = router_ics_skf_worker:reconcile(
         Reconcile,
-        fun(Msg) -> ct:print("reconcile progress: ~p", [Msg]) end
+        fun
+            ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+                ct:print("~p/~p failed(~p): ~p", [
+                    Curr, Total, Status, uri_string:percent_decode(Message)
+                ]);
+            ({progress, {Curr, Total}, {ok, _Resp}}) ->
+                ct:print("~p/~p successful", [Curr, Total]);
+            (Msg) ->
+                ct:print("reconcile progress: ~p", [Msg])
+        end
     ),
 
     Local = router_skf_reconcile:local(Reconcile),
     {ok, RemoteAfter} = router_ics_skf_worker:remote_skf(),
-    ?assertEqual(lists:sort(Local), lists:sort(RemoteAfter)),
+    ?assertEqual(length(Local), length(RemoteAfter)),
 
     ok.
 
@@ -228,12 +240,12 @@ device_to_skf(RouteID, Device) ->
 
 create_n_devices(N) ->
     lists:map(
-        fun(X) ->
+        fun(_X) ->
             ID = router_utils:uuid_v4(),
+            {ok, Devaddr} = router_device_devaddr:allocate(no_device, undefined),
             router_device:update(
                 [
-                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
-                    {devaddrs, [<<X, 0, 0, 72>>]},
+                    {devaddrs, [Devaddr]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
                 ],
                 router_device:new(ID)

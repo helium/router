@@ -209,9 +209,9 @@ delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
         "~p removals~n"
         "~p requests~n",
         [
-            router_skf_worekr:remote_count(RemoveAll),
-            router_skf_worker:remove_count(RemoveAll),
-            router_skf_worker:update_chunks_count(RemoveAll)
+            router_skf_reconcile:remote_count(RemoveAll),
+            router_skf_reconcile:remove_count(RemoveAll),
+            router_skf_reconcile:update_chunks_count(RemoveAll)
         ]
     ),
 

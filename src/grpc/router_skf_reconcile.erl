@@ -42,8 +42,8 @@
     chunk_size := non_neg_integer()
 }) ->
     reconcile().
-new(#{remote := Remote, local := Local, chunk_size := ChunkSize} = SKFs) ->
-    Diff = router_ics_skf_worker:diff_skf_to_updates(SKFs),
+new(#{remote := Remote, local := Local, chunk_size := ChunkSize}) ->
+    Diff = router_ics_skf_worker:diff_skf_to_updates(#{remote => Remote, local => Local}),
     DiffChunks = chunk(ChunkSize, Diff),
 
     #{

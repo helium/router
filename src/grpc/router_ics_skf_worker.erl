@@ -127,6 +127,24 @@ pre_remove_all() ->
 remove_all(Reconcile, ProgressFun) ->
     ?MODULE:reconcile(Reconcile, ProgressFun).
 
+-spec startup_reconcile() -> ok.
+startup_reconcile() ->
+    Reconcile = ?MODULE:pre_reconcile(),
+    ?MODULE:reconcile(
+        Reconcile,
+        fun
+            ({progress, {Curr, Total}, {error, {{GRPCStatus, Message}, _Meta}}}) ->
+                lager:error(
+                    "~w/~w failed with code ~w: ~w",
+                    [Curr, Total, GRPCStatus, uri_string:percent_decode(Message)]
+                );
+            ({progress, {Curr, Total}, {ok, _}}) ->
+                lager:info("~w/~w succeeded", [Curr, Total]);
+            (done) ->
+                lager:info("startup reconcile complete")
+        end
+    ).
+
 %% ------------------------------------------------------------------
 %% Worker API
 %% ------------------------------------------------------------------
@@ -210,7 +228,17 @@ skf_to_remove_update(#iot_config_skf_v1_pb{devaddr = Devaddr, session_key = Sess
 init(#{route_id := RouteID} = Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
-    %% ok = ?MODULE:reconcile(undefined, true),
+
+    case maps:get(reconcile_on_startup, Args, false) of
+        true ->
+            erlang:spawn(fun() ->
+                lager:info("startup reconcile"),
+                startup_reconcile()
+            end);
+        false ->
+            ok
+    end,
+
     {ok, #state{
         conn_backoff = Backoff,
         route_id = RouteID
@@ -228,7 +256,7 @@ handle_call(
 handle_call(local_skf, _From, #state{route_id = RouteID} = State) ->
     Local = get_local_skfs(RouteID),
     {reply, {ok, Local}, State};
-handle_call({send_request, Updates}, _From, #state{route_id = RouteID}=State) ->
+handle_call({send_request, Updates}, _From, #state{route_id = RouteID} = State) ->
     Reply = send_update_request(RouteID, Updates),
     {reply, Reply, State};
 handle_call(_Msg, _From, State) ->

@@ -54,7 +54,8 @@
             eui_enabled => "${ROUTER_ICS_EUI_ENABLED}",
             skf_enabled => "${ROUTER_ICS_SKF_ENABLED}",
             devaddr_enabled => "${ROUTER_ICS_DEVADDR_ENABLED}",
-            route_id => "${ROUTER_ICS_ROUTE_ID}"
+            route_id => "${ROUTER_ICS_ROUTE_ID}",
+            reconcile_on_startup => true
         }},
         {config_service_max_timeout_attempt, 5},
         {config_service_batch_sleep_ms, 500},

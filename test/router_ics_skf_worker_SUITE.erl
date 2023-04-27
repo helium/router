@@ -19,6 +19,13 @@
     reconcile_skf_test/1
 ]).
 
+%% To test against a real config service...
+%% SWARM_KEY :: absolute path to a key file.
+%% ROUTE_ID  :: uuid of an existing route in the config service.
+%% And update the grpcbox ics_channel entry in test.config.
+-define(SWARM_KEY, undefined).
+-define(ROUTE_ID, "test-route-id").
+
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
 %%--------------------------------------------------------------------
@@ -41,15 +48,14 @@ all() ->
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_testcase(TestCase, Config) ->
-    SwarmKey = "/Users/michaeljeffrey/Helium/config-service-cli/dev.key",
-    ok = application:set_env(router, swarm_key, SwarmKey),
+init_per_testcase(TestCase, Config0) ->
+    ok = application:set_env(router, swarm_key, ?SWARM_KEY),
     ok = application:set_env(
         router,
         ics,
         #{
             skf_enabled => "true",
-            route_id => "test-route-id",
+            route_id => ?ROUTE_ID,
             transport => http,
             host => "localhost",
             port => 8085
@@ -57,7 +63,11 @@ init_per_testcase(TestCase, Config) ->
         [{persistent, true}]
     ),
     ok = application:set_env(router, is_chain_dead, true),
-    test_utils:init_per_testcase(TestCase, [{is_chain_dead, true} | Config]).
+
+    Config1 = test_utils:init_per_testcase(TestCase, [{is_chain_dead, true} | Config0]),
+    Config2 = test_utils:add_oui(Config1),
+    catch ok = meck:delete(router_device_devadddr, allocate, 2, false),
+    Config2.
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
@@ -79,8 +89,8 @@ end_per_testcase(TestCase, Config) ->
 list_skf_test(_Config) ->
     ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
 
-    One = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 0, session_key = "hex_key"},
-    Two = #iot_config_skf_v1_pb{route_id = "route_id", devaddr = 1, session_key = "hex_key"},
+    One = #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = 0, session_key = "hex_key"},
+    Two = #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = 1, session_key = "hex_key"},
     router_test_ics_route_service:add_skf([One, Two]),
 
     ?assertEqual({ok, [One, Two]}, router_ics_skf_worker:remote_skf()),
@@ -99,7 +109,7 @@ main_test(Config) ->
 
     %% Add a fake device to config service, as it is not in Router's cache, it should get removed
     ok = router_test_ics_route_service:add_skf(#iot_config_skf_v1_pb{
-        route_id = "route_id",
+        route_id = ?ROUTE_ID,
         devaddr = 0,
         session_key = []
     }),
@@ -112,7 +122,7 @@ main_test(Config) ->
     ),
 
     [D1, D2] = Devices,
-    SKFs = [device_to_skf("route_id", D1), device_to_skf("route_id", D2)],
+    SKFs = [device_to_skf(?ROUTE_ID, D1), device_to_skf(?ROUTE_ID, D2)],
     {ok, Remote0} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(lists:sort(SKFs), lists:sort(Remote0)),
 
@@ -120,7 +130,7 @@ main_test(Config) ->
     ct:print("joining 1"),
     #{stream := Stream1, pubkey_bin := PubKeyBin1} = test_utils:join_device(Config),
     {ok, JoinedDevice1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    JoinedSKF1 = device_to_skf("route_id", JoinedDevice1),
+    JoinedSKF1 = device_to_skf(?ROUTE_ID, JoinedDevice1),
 
     %% List to make sure we have the new device
     {ok, Remote1} = router_ics_skf_worker:remote_skf(),
@@ -134,7 +144,7 @@ main_test(Config) ->
     ct:print("joining 2"),
     #{stream := Stream2, pubkey_bin := PubKeyBin2} = test_utils:join_device(Config),
     {ok, JoinedDevice2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    JoinedSKF2 = device_to_skf("route_id", JoinedDevice2),
+    JoinedSKF2 = device_to_skf(?ROUTE_ID, JoinedDevice2),
 
     ct:print("sending packet for devaddr lock in"),
     send_unconfirmed_uplink(Stream2, PubKeyBin2, JoinedDevice2),
@@ -152,7 +162,7 @@ reconcile_multiple_updates_test(_Config) ->
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
-        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
      || X <- lists:seq(1, 100)
     ]),
 
@@ -174,7 +184,7 @@ remove_all_skf_test(_Config) ->
 
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
-        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
      || X <- lists:seq(1, 100)
     ]),
 
@@ -192,11 +202,9 @@ reconcile_skf_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
     ok = application:set_env(router, update_skf_batch_size, 100),
 
-    %% meck:expect(router_device_devaddr, h3_parent_for_pubkeybin, fun(_) -> ok end),
-
     %% Fill config service with filters to be removed.
     ok = router_test_ics_route_service:add_skf([
-        #iot_config_skf_v1_pb{route_id = "route_id", devaddr = X, session_key = "key"}
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
      || X <- lists:seq(1, 100)
     ]),
 

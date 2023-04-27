@@ -88,10 +88,7 @@ allocate(Config) ->
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     DevAddrs = lists:foldl(
         fun(_I, Acc) ->
@@ -117,10 +114,7 @@ allocate_config_service_single_address(Config) ->
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 1}]),
@@ -143,10 +137,7 @@ allocate_config_service_multiple_address(Config) ->
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 5}]),
@@ -168,10 +159,7 @@ allocate_config_service_noncontigious_address(Config) ->
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 3}, {5, 8}]),
@@ -217,10 +205,7 @@ allocate_config_service_noncontigious_addresss_wrap(_Config) ->
         {ok, maps:get(Key, #{Key1 => 1, Key2 => 2, Key3 => 3})}
     end),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 3}]),
@@ -255,10 +240,7 @@ route_packet(Config) ->
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(6, State) =/= undefined
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     #{
         pubkey_bin := PubKeyBin,
@@ -344,3 +326,8 @@ route_packet(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+wait_until_worker_has_devaddrs() ->
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end).

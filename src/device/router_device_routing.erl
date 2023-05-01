@@ -347,6 +347,8 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
                     {error, ?LATE_PACKET};
                 false ->
                     case check_device_all(Device, PayloadSize, PubKeyBin) of
+                        {error, _} = E ->
+                            E;
                         {ok, _} ->
                             case check_device_preferred_hotspots(Device, PubKeyBin) of
                                 none_preferred ->

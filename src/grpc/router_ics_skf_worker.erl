@@ -388,13 +388,22 @@ get_local_skfs(RouteID) ->
     lists:usort(
         lists:filtermap(
             fun(Device) ->
-                case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
-                    {undefined, _} ->
+                case
+                    {
+                        router_device:is_active(Device),
+                        router_device:devaddr(Device),
+                        router_device:nwk_s_key(Device)
+                    }
+                of
+                    %% We don not consider any device that is paused
+                    {false, _, _} ->
                         false;
-                    {_, undefined} ->
+                    {true, undefined, _} ->
+                        false;
+                    {true, _, undefined} ->
                         false;
                     %% devices store devaddrs reversed. Config service expects them BE.
-                    {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                    {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                         {true, #iot_config_skf_v1_pb{
                             route_id = RouteID,
                             devaddr = DevAddr,

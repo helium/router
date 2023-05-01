@@ -310,7 +310,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, _State) ->
-    ct:print("~p died: ~p", [?MODULE, _Reason]),
+    lager:warning("~p died: ~p", [?MODULE, _Reason]),
     ok.
 
 %% ------------------------------------------------------------------

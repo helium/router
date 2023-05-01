@@ -26,15 +26,14 @@ route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
             {grpc_error, {grpcbox_stream:code_to_status(7), <<"bad signature">>}};
         true ->
             Self = self(),
-            SCPacket = to_sc_packet(PacketUp),
-            {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
-                SCPacket, erlang:system_time(millisecond), Self
-            ]),
-            router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
-            Gateway = PacketUp#packet_router_packet_up_v1_pb.gateway,
-            GatewayName = blockchain_utils:addr2name(Gateway),
-            erlang:put(gateway, GatewayName),
-            lager:debug("got ~p from ~s stream=~p", [SCPacket, GatewayName, Self]),
+            erlang:spawn(fun() ->
+                SCPacket = to_sc_packet(PacketUp),
+                {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
+                    SCPacket, erlang:system_time(millisecond), Self
+                ]),
+                router_metrics:function_observe('router_device_routing:handle_free_packet', Time)
+            end),
+
             {ok, StreamState}
     end;
 route(_EnvUp, StreamState) ->
@@ -49,13 +48,12 @@ handle_info(
     lager:debug("ignoring send_purchase to ~s ~p", [GatewayName, StreamState]),
     StreamState;
 handle_info({send_response, Reply}, StreamState) ->
-    lager:debug("send_response ~p to ~s", [Reply, erlang:get(gateway)]),
+    lager:debug("send_response ~p", [Reply]),
     case from_sc_packet(Reply) of
         ignore ->
-            lager:debug("ignore ~s", [erlang:get(gateway)]),
             StreamState;
         EnvDown ->
-            lager:debug("send EnvDown ~p to ~s", [EnvDown, erlang:get(gateway)]),
+            lager:debug("send EnvDown ~p", [EnvDown]),
             grpcbox_stream:send(false, EnvDown, StreamState)
     end;
 handle_info(_Msg, StreamState) ->
@@ -64,7 +62,7 @@ handle_info(_Msg, StreamState) ->
         {Pid, Atom} when erlang:is_pid(Pid) andalso erlang:is_atom(Atom) -> Pid ! {Atom, _Msg};
         _ -> ok
     end,
-    lager:debug("got an unhandled message ~p to ~p", [_Msg, erlang:get(gateway)]),
+    lager:debug("got an unhandled message ~p", [_Msg]),
     StreamState.
 
 %% ------------------------------------------------------------------

@@ -19,6 +19,9 @@ init(_Rpc, Stream) ->
 
 -spec route(packet_router_pb:envelope_up_v1_pb(), grpcbox_stream:t()) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
+route(eos, StreamState) ->
+    lager:debug("got eos"),
+    {ok, StreamState};
 route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
     case verify(PacketUp) of
         false ->

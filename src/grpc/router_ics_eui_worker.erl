@@ -455,12 +455,17 @@ fetch_device_euis(apis, DeviceIDs, RouteID) ->
                 {error, _} ->
                     false;
                 {ok, Device} ->
-                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true,
-                        {DeviceID, #iot_config_eui_pair_v1_pb{
-                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                        }}}
+                    case router_device:is_active(Device) of
+                        false ->
+                            false;
+                        true ->
+                            <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+                            <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+                            {true,
+                                {DeviceID, #iot_config_eui_pair_v1_pb{
+                                    route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                                }}}
+                    end
             end
         end,
         DeviceIDs
@@ -472,12 +477,17 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
                 {error, _} ->
                     false;
                 {ok, Device} ->
-                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                    {true,
-                        {DeviceID, #iot_config_eui_pair_v1_pb{
-                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                        }}}
+                    case router_device:is_active(Device) of
+                        false ->
+                            false;
+                        true ->
+                            <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+                            <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+                            {true,
+                                {DeviceID, #iot_config_eui_pair_v1_pb{
+                                    route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                                }}}
+                    end
             end
         end,
         DeviceIDs

@@ -423,14 +423,12 @@ handle_cast(
                     case IsActive of
                         true ->
                             ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
-                            lager:debug("device un-paused, sending add skf ~p ~p", [
-                                DevAddrInt, NwkSKey
-                            ]);
+                            catch router_ics_eui_worker:add([DeviceID]),
+                            lager:debug("device un-paused, sent SKF and EUI add", []);
                         false ->
                             ok = router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey}]),
-                            lager:debug("device paused, sending remove skf ~p ~p", [
-                                DevAddrInt, NwkSKey
-                            ])
+                            catch router_ics_eui_worker:remove([DeviceID]),
+                            lager:debug("device paused, sent SKF and EUI remove", [])
                     end
             end,
             {noreply, State#state{device = Device1, is_active = IsActive}}

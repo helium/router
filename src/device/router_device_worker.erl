@@ -358,8 +358,7 @@ handle_cast(
         db = DB,
         cf = CF,
         device = Device0,
-        channels_worker = ChannelsWorker,
-        is_active = OldIsActive
+        channels_worker = ChannelsWorker
     } = State
 ) ->
     DeviceID = router_device:id(Device0),
@@ -406,31 +405,6 @@ handle_cast(
             MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
             ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
-
-            case
-                OldIsActive =/= IsActive andalso router_device:devaddr(Device1) =/= undefined andalso
-                    router_device:nwk_s_key(Device1) =/= undefined
-            of
-                %% No status, no devaddr / nwk_s_key  changes we do nothing
-                false ->
-                    ok;
-                true ->
-                    DevAddr = router_device:devaddr(Device1),
-                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                        DevAddr
-                    ),
-                    NwkSKey = router_device:nwk_s_key(Device1),
-                    case IsActive of
-                        true ->
-                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
-                            catch router_ics_eui_worker:add([DeviceID]),
-                            lager:debug("device un-paused, sent SKF and EUI add", []);
-                        false ->
-                            ok = router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey}]),
-                            catch router_ics_eui_worker:remove([DeviceID]),
-                            lager:debug("device paused, sent SKF and EUI remove", [])
-                    end
-            end,
             {noreply, State#state{device = Device1, is_active = IsActive}}
     end;
 handle_cast(

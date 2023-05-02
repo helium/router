@@ -20,6 +20,8 @@
     pre_remove_all/0,
     remove_all/2,
     %% Worker
+    add/1,
+    remove/1,
     update/1,
     remote_skf/0,
     local_skf/0,
@@ -149,6 +151,10 @@ startup_reconcile() ->
 %% Worker API
 %% ------------------------------------------------------------------
 
+-spec add(list(binary())) -> ok | {error, any()}.
+add(DeviceIDs) ->
+    gen_server:cast(?SERVER, {add, DeviceIDs}).
+
 -spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) ->
     ok.
 update([]) ->
@@ -163,6 +169,10 @@ update(Updates) ->
         false ->
             gen_server:cast(?SERVER, {?UPDATE, Updates})
     end.
+
+-spec remove(list(binary())) -> ok | {error, any()}.
+remove(DeviceIDs) ->
+    gen_server:cast(?SERVER, {remove, DeviceIDs}).
 
 -spec remote_skf() -> {ok, skfs()} | {error, any()}.
 remote_skf() ->
@@ -263,6 +273,18 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({add, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    SKFs = get_local_skfs_from_device_ids(RouteID, DeviceIDs),
+    lager:info("adding ~p skfs", [erlang:length(DeviceIDs)]),
+    ToAdd = ?MODULE:skf_to_add_update(SKFs),
+    ok = ?MODULE:update(ToAdd),
+    {noreply, State};
+handle_cast({remove, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    SKFs = get_local_skfs_from_device_ids(RouteID, DeviceIDs),
+    lager:info("removing ~p skfs", [erlang:length(DeviceIDs)]),
+    ToRemove = ?MODULE:skf_to_remove_update(SKFs),
+    ok = ?MODULE:update(ToRemove),
+    {noreply, State};
 handle_cast(
     {?UPDATE, Updates0},
     #state{route_id = RouteID} = State
@@ -387,33 +409,52 @@ get_local_skfs(RouteID) ->
     Devices = router_device_cache:get(),
     lists:usort(
         lists:filtermap(
-            fun(Device) ->
-                case
-                    {
-                        router_device:is_active(Device),
-                        router_device:devaddr(Device),
-                        router_device:nwk_s_key(Device)
-                    }
-                of
-                    %% We don not consider any device that is paused
-                    {false, _, _} ->
-                        false;
-                    {true, undefined, _} ->
-                        false;
-                    {true, _, undefined} ->
-                        false;
-                    %% devices store devaddrs reversed. Config service expects them BE.
-                    {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
-                        {true, #iot_config_skf_v1_pb{
-                            route_id = RouteID,
-                            devaddr = DevAddr,
-                            session_key = erlang:binary_to_list(binary:encode_hex(SessionKey))
-                        }}
-                end
-            end,
+            device_to_skf_filter_map(RouteID),
             Devices
         )
     ).
+-spec get_local_skfs_from_device_ids(string(), list(binary())) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+get_local_skfs_from_device_ids(RouteID, DeviceIDs) ->
+    DeviceFilterMap = device_to_skf_filter_map(RouteID),
+    lists:usort(
+        lists:filtermap(
+            fun(DeviceID) ->
+                case router_device_cache:get(DeviceID) of
+                    {error, _} -> false;
+                    {ok, Device} -> DeviceFilterMap(Device)
+                end
+            end,
+            DeviceIDs
+        )
+    ).
+
+-spec device_to_skf_filter_map(string()) -> fun((router_device:device()) -> skf_update()).
+device_to_skf_filter_map(RouteID) ->
+    fun(Device) ->
+        case
+            {
+                router_device:is_active(Device),
+                router_device:devaddr(Device),
+                router_device:nwk_s_key(Device)
+            }
+        of
+            %% We don not consider any device that is paused
+            {false, _, _} ->
+                false;
+            {true, undefined, _} ->
+                false;
+            {true, _, undefined} ->
+                false;
+            %% devices store devaddrs reversed. Config service expects them BE.
+            {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                {true, #iot_config_skf_v1_pb{
+                    route_id = RouteID,
+                    devaddr = DevAddr,
+                    session_key = erlang:binary_to_list(binary:encode_hex(SessionKey))
+                }}
+        end
+    end.
 
 -spec skf_update_batch_size() -> non_neg_integer().
 skf_update_batch_size() ->

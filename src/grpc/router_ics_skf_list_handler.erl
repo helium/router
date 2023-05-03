@@ -14,7 +14,7 @@
 
 -record(state, {
     options :: map(),
-    data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb())
+    data :: list(iot_config_pb:iot_config_session_key_filter_v1_pb()) | {error, any()}
 }).
 
 -type stream_id() :: non_neg_integer().
@@ -35,11 +35,20 @@ handle_headers(_Metadata, CBData) ->
     {ok, CBData}.
 
 -spec handle_trailers(binary(), term(), map(), state()) -> {ok, state()}.
-handle_trailers(_Status, _Message, _Metadata, CBData) ->
-    {ok, CBData}.
+handle_trailers(Status, Message, Metadata, CBData0) ->
+    CBData1 =
+        case Status of
+            <<"0">> -> CBData0;
+            _ -> CBData0#state{data = {error, {Status, Message, Metadata}}}
+        end,
+    {ok, CBData1}.
 
 -spec handle_eos(state()) -> {ok, state()}.
 handle_eos(#state{options = Options, data = Data} = State) ->
     lager:info("got eos, sending to router_ics_skf_worker"),
-    ok = router_ics_skf_worker:reconcile_end(Options, Data),
+    Callback = maps:get(callback, Options),
+    case Data of
+        {error, _} -> Callback(Data);
+        _ -> Callback({ok, Data})
+    end,
     {ok, State}.

@@ -1,6 +1,5 @@
 -module(router_ics_skf_worker_SUITE).
 
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include("../src/grpc/autogen/iot_config_pb.hrl").
 -include("console_test.hrl").
@@ -8,17 +7,24 @@
 
 -export([
     all/0,
-    groups/0,
     init_per_testcase/2,
-    end_per_testcase/2,
-    init_per_group/2,
-    end_per_group/2
+    end_per_testcase/2
 ]).
 
 -export([
     main_test/1,
-    reconcile_test/1
+    reconcile_multiple_updates_test/1,
+    list_skf_test/1,
+    remove_all_skf_test/1,
+    reconcile_skf_test/1
 ]).
+
+%% To test against a real config service...
+%% SWARM_KEY :: absolute path to a key file.
+%% ROUTE_ID  :: uuid of an existing route in the config service.
+%% And update the grpcbox ics_channel entry in test.config.
+-define(SWARM_KEY, undefined).
+-define(ROUTE_ID, "test-route-id").
 
 %%--------------------------------------------------------------------
 %% COMMON TEST CALLBACK FUNCTIONS
@@ -32,50 +38,40 @@
 %%--------------------------------------------------------------------
 all() ->
     [
-        {group, chain_alive},
-        {group, chain_dead}
-    ].
-
-groups() ->
-    [
-        {chain_alive, all_tests()},
-        {chain_dead, all_tests()}
-    ].
-
-all_tests() ->
-    [
+        list_skf_test,
         main_test,
-        reconcile_test
+        reconcile_multiple_updates_test,
+        remove_all_skf_test,
+        reconcile_skf_test
     ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
 %%--------------------------------------------------------------------
-init_per_group(GroupName, Config) ->
-    test_utils:init_per_group(GroupName, Config).
-
-init_per_testcase(TestCase, Config) ->
-    persistent_term:put(router_test_ics_skf_service, self()),
+init_per_testcase(TestCase, Config0) ->
+    ok = application:set_env(router, swarm_key, ?SWARM_KEY),
     ok = application:set_env(
         router,
         ics,
         #{
             skf_enabled => "true",
-            route_id => "route_id",
+            route_id => ?ROUTE_ID,
             transport => http,
             host => "localhost",
             port => 8085
         },
         [{persistent, true}]
     ),
-    test_utils:init_per_testcase(TestCase, Config).
+    ok = application:set_env(router, is_chain_dead, true),
+
+    Config1 = test_utils:init_per_testcase(TestCase, [{is_chain_dead, true} | Config0]),
+    Config2 = test_utils:add_oui(Config1),
+    catch ok = meck:delete(router_device_devadddr, allocate, 2, false),
+    Config2.
 
 %%--------------------------------------------------------------------
 %% TEST CASE TEARDOWN
 %%--------------------------------------------------------------------
-end_per_group(GroupName, Config) ->
-    test_utils:end_per_group(GroupName, Config).
-
 end_per_testcase(TestCase, Config) ->
     test_utils:end_per_testcase(TestCase, Config),
     ok = application:set_env(
@@ -90,360 +86,190 @@ end_per_testcase(TestCase, Config) ->
 %% TEST CASES
 %%--------------------------------------------------------------------
 
+list_skf_test(_Config) ->
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
+
+    One = #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = 0, session_key = "hex_key"},
+    Two = #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = 1, session_key = "hex_key"},
+    router_test_ics_route_service:add_skf([One, Two]),
+
+    ?assertEqual({ok, [One, Two]}, router_ics_skf_worker:remote_skf()),
+    ok.
+
 main_test(Config) ->
-    %% Eat any location requests that may have been sent during test startup.
-    %% _ = rcv_loop([]),
     meck:new(router_device_cache, [passthrough]),
+    Devices = create_n_devices(2),
 
-    %% creating couple devices for testing
-    Devices = lists:map(
-        fun(X) ->
-            ID = router_utils:uuid_v4(),
-            router_device:update(
-                [
-                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
-                    {devaddrs, [<<X, 0, 0, 72>>]},
-                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
-                ],
-                router_device:new(ID)
-            )
-        end,
-        lists:seq(1, 2)
-    ),
-
-    %% Add a device without any devaddr or session, it should be filtered out
+    %% Add a device withotu any devaddr or session, it should be filtered out
     meck:expect(router_device_cache, get, fun() ->
         lager:notice("router_device_cache:get()"),
         BadDevice = router_device:new(<<"bad_device">>),
         [BadDevice | Devices]
     end),
 
-    %% Add a fake device to config service, as it is not in Router's cache it should get removed
-    router_test_ics_skf_service:send_list(
-        #iot_config_session_key_filter_v1_pb{
-            oui = 0,
-            devaddr = 0,
-            session_key = <<>>
-        },
-        true
+    %% Add a fake device to config service, as it is not in Router's cache, it should get removed
+    ok = router_test_ics_route_service:add_skf(#iot_config_skf_v1_pb{
+        route_id = ?ROUTE_ID,
+        devaddr = 0,
+        session_key = []
+    }),
+
+    %% Trigger a reconcile
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(
+        Reconcile,
+        fun(Msg) -> ct:print("reconcile progress: ~p", [Msg]) end
     ),
 
-    %% Check after reconcile, we should get the list and then 3 updates, (1 remove and 2 adds)
-    [{Type3, Req3}, {Type2, Req2}, {Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
-    [Device1, Device2] = Devices,
-
-    ?assertEqual(list, Type0),
-    ?assertEqual(update, Type1),
-    ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = 0,
-            devaddr = 0,
-            %% Can be a binary, but empty string fields are lists
-            session_key = []
-        },
-        Req1#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-    ?assertEqual(update, Type2),
-    ?assertEqual(add, Req2#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            %% Config service talks of devaddrs of BE
-            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
-            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device1)))
-        },
-        Req2#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-    ?assertEqual(update, Type3),
-    ?assertEqual(add, Req3#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            %% Config service talks of devaddrs of BE
-            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
-            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device2)))
-        },
-        Req3#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
+    [D1, D2] = Devices,
+    SKFs = [device_to_skf(?ROUTE_ID, D1), device_to_skf(?ROUTE_ID, D2)],
+    {ok, Remote0} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(lists:sort(SKFs), lists:sort(Remote0)),
 
     %% Join a device to test device_worker code, we should see 1 add
-    #{
-        stream := Stream1,
-        pubkey_bin := PubKeyBin1
-    } = test_utils:join_device(Config),
-
-    [{Type4, Req4}] = rcv_loop([]),
-    ?assertEqual(update, Type4),
-    ?assertEqual(add, Req4#iot_config_session_key_filter_update_req_v1_pb.action),
-
+    ct:print("joining 1"),
+    #{stream := Stream1, pubkey_bin := PubKeyBin1} = test_utils:join_device(Config),
     {ok, JoinedDevice1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    <<JoinedDevAddr1:32/integer-unsigned-big>> = lorawan_utils:reverse(
-        router_device:devaddr(JoinedDevice1)
-    ),
+    JoinedSKF1 = device_to_skf(?ROUTE_ID, JoinedDevice1),
 
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr1,
-            session_key = erlang:binary_to_list(
-                binary:encode_hex(router_device:nwk_s_key(JoinedDevice1))
-            )
-        },
-        Req4#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
+    %% List to make sure we have the new device
+    {ok, Remote1} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(lists:sort([JoinedSKF1 | SKFs]), lists:sort(Remote1)),
 
-    %% Send first packet nothing should happen
-    Stream1 !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin1,
-                router_device:nwk_s_key(JoinedDevice1),
-                router_device:app_s_key(JoinedDevice1),
-                0
-            )},
-
-    [] = rcv_loop([]),
+    %% Send first so we can rejoin and get a new devaddr
+    ct:print("sending packet for devaddr lock in"),
+    send_unconfirmed_uplink(Stream1, PubKeyBin1, JoinedDevice1),
 
     %% Join device again
-    #{
-        stream := Stream2,
-        pubkey_bin := PubKeyBin2
-    } = test_utils:join_device(Config),
-
-    [{Type6, Req6}] = rcv_loop([]),
-    ?assertEqual(update, Type6),
-    ?assertEqual(add, Req6#iot_config_session_key_filter_update_req_v1_pb.action),
-
+    ct:print("joining 2"),
+    #{stream := Stream2, pubkey_bin := PubKeyBin2} = test_utils:join_device(Config),
     {ok, JoinedDevice2} = router_device_cache:get(?CONSOLE_DEVICE_ID),
-    <<JoinedDevAddr2:32/integer-unsigned-big>> = lorawan_utils:reverse(
-        router_device:devaddr(JoinedDevice2)
-    ),
+    JoinedSKF2 = device_to_skf(?ROUTE_ID, JoinedDevice2),
 
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr2,
-            session_key = erlang:binary_to_list(
-                binary:encode_hex(router_device:nwk_s_key(JoinedDevice2))
-            )
-        },
-        Req6#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
+    ct:print("sending packet for devaddr lock in"),
+    send_unconfirmed_uplink(Stream2, PubKeyBin2, JoinedDevice2),
 
-    %% Send first packet again, we should see add and remove this time
-    Stream2 !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin2,
-                router_device:nwk_s_key(JoinedDevice1),
-                router_device:app_s_key(JoinedDevice1),
-                0
-            )},
+    %% List to make sure old devaddr was removed, and new one was added
+    {ok, Remote2} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(lists:sort([JoinedSKF2 | SKFs]), lists:sort(Remote2)),
 
-    [{Type7, Req7}, {Type8, Req8}] = rcv_loop([]),
-    ?assertEqual(update, Type7),
-    ?assertEqual(remove, Req7#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr2,
-            session_key = erlang:binary_to_list(
-                binary:encode_hex(router_device:nwk_s_key(JoinedDevice2))
-            )
-        },
-        Req7#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-    ?assertEqual(update, Type8),
-    ?assertEqual(add, Req8#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            devaddr = JoinedDevAddr1,
-            session_key = erlang:binary_to_list(
-                binary:encode_hex(router_device:nwk_s_key(JoinedDevice1))
-            )
-        },
-        Req8#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-
-    %% Send packet 1 and nothing should happen
-    Stream2 !
-        {send,
-            test_utils:frame_packet(
-                ?UNCONFIRMED_UP,
-                PubKeyBin2,
-                router_device:nwk_s_key(JoinedDevice1),
-                router_device:app_s_key(JoinedDevice1),
-                1
-            )},
-
-    [] = rcv_loop([]),
-
-    meck:unload(router_device_cache),
     ok.
 
-reconcile_test(_Config) ->
+reconcile_multiple_updates_test(_Config) ->
+    %% When more than 1 request needs to be made to the config service, we don't
+    %% want to know until all have requests have succeeded or failed.
+    ok = application:set_env(router, update_skf_batch_size, 10),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    meck:new(router_ics_skf_worker, [passthrough]),
+
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile, fun(_) -> ok end),
+
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
+
+    ?assert(meck:num_calls(router_ics_skf_worker, send_request, '_') > 1),
+    meck:unload(router_ics_skf_worker),
+
+    ok.
+
+remove_all_skf_test(_Config) ->
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = application:set_env(router, update_skf_batch_size, 100),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    RemoveAll = router_ics_skf_worker:pre_remove_all(),
+    ok = router_ics_skf_worker:remove_all(
+        RemoveAll,
+        fun(Msg) -> ct:print("remove all progress: ~p", [Msg]) end
+    ),
+
+    ?assertEqual({ok, []}, router_ics_skf_worker:remote_skf()),
+
+    ok.
+
+reconcile_skf_test(_Config) ->
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = application:set_env(router, update_skf_batch_size, 100),
+
+    %% Fill config service with filters to be removed.
+    ok = router_test_ics_route_service:add_skf([
+        #iot_config_skf_v1_pb{route_id = ?ROUTE_ID, devaddr = X, session_key = "key"}
+     || X <- lists:seq(1, 100)
+    ]),
+
+    %% Fill the cache with devices that are not in the config service yet
+    Devices = create_n_devices(50),
+
     meck:new(router_device_cache, [passthrough]),
+    meck:expect(router_device_cache, get, fun() -> Devices end),
 
-    %% Simulate server side processsing by telling the test service to wait
-    %% before closing it's side of the stream after the client has signaled it
-    %% is done sending updates.
-
-    %% NOTE: Settting this value over the number of TimeoutAttempt will wait for
-    %% a tream close will cause this test to fail, it will look like the worker
-    %% has tried to reconcile again.
-    ok = application:set_env(router, test_skf_update_eos_timeout, timer:seconds(2)),
-
-    %% creating couple devices for testing
-    Devices0 = lists:map(
-        fun(X) ->
-            ID = router_utils:uuid_v4(),
-            router_device:update(
-                [
-                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
-                    {devaddrs, [<<X, 0, 0, 72>>]},
-                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
-                ],
-                router_device:new(ID)
-            )
-        end,
-        lists:seq(1, 2)
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(
+        Reconcile,
+        fun
+            ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+                ct:print("~p/~p failed(~p): ~p", [
+                    Curr, Total, Status, uri_string:percent_decode(Message)
+                ]);
+            ({progress, {Curr, Total}, {ok, _Resp}}) ->
+                ct:print("~p/~p successful", [Curr, Total]);
+            (Msg) ->
+                ct:print("reconcile progress: ~p", [Msg])
+        end
     ),
 
-    %% Add a device without any devaddr or session, it should be filtered out
-    meck:expect(router_device_cache, get, fun() ->
-        lager:notice("router_device_cache:get()"),
-        BadDevice = router_device:new(<<"bad_device">>),
-        [BadDevice | Devices0]
-    end),
+    Local = router_skf_reconcile:local(Reconcile),
+    {ok, RemoteAfter} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local), length(RemoteAfter)),
 
-    %% Add a fake device to config service, as it is not in Router's cache it should get removed
-    router_test_ics_skf_service:send_list(
-        #iot_config_session_key_filter_v1_pb{
-            oui = 0,
-            devaddr = 0,
-            session_key = <<>>
-        },
-        true
-    ),
-
-    %% Check after reconcile, we should get the list and then 3 updates, (1 remove and 2 adds)
-    [{Type3, Req3}, {Type2, Req2}, {Type1, Req1}, {Type0, _Req0}] = rcv_loop([]),
-    [Device1, Device2] = Devices0,
-
-    ?assertEqual(list, Type0),
-    ?assertEqual(update, Type1),
-    ?assertEqual(remove, Req1#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = 0,
-            devaddr = 0,
-            %% Can be a binary, but empty string fields are lists
-            session_key = []
-        },
-        Req1#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-    ?assertEqual(update, Type2),
-    ?assertEqual(add, Req2#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            %% Config service talks of devaddrs of BE
-            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000001">>)),
-            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device1)))
-        },
-        Req2#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-    ?assertEqual(update, Type3),
-    ?assertEqual(add, Req3#iot_config_session_key_filter_update_req_v1_pb.action),
-    ?assertEqual(
-        #iot_config_session_key_filter_v1_pb{
-            oui = router_utils:get_oui(),
-            %% Config service talks of devaddrs of BE
-            devaddr = binary:decode_unsigned(binary:decode_hex(<<"48000002">>)),
-            session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device2)))
-        },
-        Req3#iot_config_session_key_filter_update_req_v1_pb.filter
-    ),
-
-    %% Add 20 more devices
-    Devices1 = lists:map(
-        fun(X) ->
-            ID = router_utils:uuid_v4(),
-            router_device:update(
-                [
-                    %% Construct devaddrs with a prefix to text LE-BE conversion with config service.
-                    {devaddrs, [<<X, 0, 0, 72>>]},
-                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
-                ],
-                router_device:new(ID)
-            )
-        end,
-        lists:seq(1, 20)
-    ),
-
-    %% Add a device without any devaddr or session, it should be filtered out
-    meck:expect(router_device_cache, get, fun() ->
-        lager:notice("router_device_cache:get()"),
-        BadDevice = router_device:new(<<"bad_device">>),
-        [BadDevice | Devices1]
-    end),
-
-    ok = router_ics_skf_worker:reconcile(self(), true),
-
-    router_test_ics_skf_service:send_list(
-        #iot_config_session_key_filter_v1_pb{
-            oui = 0,
-            devaddr = 0,
-            %% Can be a binary, but empty string fields are lists
-            session_key = []
-        },
-        true
-    ),
-
-    ExpectedToAdd = lists:map(
-        fun(Device) ->
-            #iot_config_session_key_filter_v1_pb{
-                oui = 1,
-                %% Config service talks of devaddrs of BE
-                devaddr = binary:decode_unsigned(
-                    lorawan_utils:reverse(router_device:devaddr(Device))
-                ),
-                session_key = binary:encode_hex(router_device:nwk_s_key(Device))
-            }
-        end,
-        Devices1
-    ),
-
-    ExpectedToRemove = [
-        #iot_config_session_key_filter_v1_pb{oui = 0, devaddr = 0, session_key = []}
-    ],
-
-    receive
-        {router_ics_skf_worker, Result} ->
-            %% We added 20 and removed 1
-
-            ?assertEqual({ok, ExpectedToAdd, ExpectedToRemove}, Result)
-    after 5000 ->
-        ct:fail(timeout)
-    end,
-
-    meck:unload(router_device_cache),
     ok.
 
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
 
-rcv_loop(Acc) ->
-    receive
-        {router_test_ics_route_service, get_devaddr_ranges, _Req} ->
-            rcv_loop(Acc);
-        {router_test_ics_skf_service, Type, Req} ->
-            lager:notice("got router_test_ics_skf_service ~p req ~p", [Type, Req]),
-            rcv_loop([{Type, Req} | Acc])
-    after timer:seconds(2) -> Acc
-    end.
+device_to_skf(RouteID, Device) ->
+    #iot_config_skf_v1_pb{
+        route_id = RouteID,
+        devaddr = binary:decode_unsigned(router_device:devaddr(Device), little),
+        session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device)))
+    }.
+
+create_n_devices(N) ->
+    lists:map(
+        fun(_X) ->
+            ID = router_utils:uuid_v4(),
+            {ok, Devaddr} = router_device_devaddr:allocate(no_device, undefined),
+            router_device:update(
+                [
+                    {devaddrs, [Devaddr]},
+                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
+                ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, N)
+    ).
+
+send_unconfirmed_uplink(Stream, PubKeyBin, Device) ->
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device),
+                router_device:app_s_key(Device),
+                0
+            )},
+    ok = timer:sleep(router_utils:frame_timeout()).

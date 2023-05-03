@@ -169,6 +169,7 @@ init_per_testcase(TestCase, Config) ->
         _ ->
             ok
     end,
+    ok = router_test_ics_route_service:test_init(),
     Tab = ets:new(TestCase, [public, set]),
     AppKey = crypto:strong_rand_bytes(16),
     ElliOpts = [
@@ -187,11 +188,7 @@ init_per_testcase(TestCase, Config) ->
 
     {ok, _} = application:ensure_all_started(router),
 
-    SwarmKey = filename:join([
-        application:get_env(blockchain, base_dir, "data"),
-        "blockchain",
-        "swarm_key"
-    ]),
+    SwarmKey = router_utils:get_swarm_key_location(),
     ok = filelib:ensure_dir(SwarmKey),
     {ok, RouterKeys} = libp2p_crypto:load_keys(SwarmKey),
     #{public := RouterPubKey, secret := RouterPrivKey} = RouterKeys,

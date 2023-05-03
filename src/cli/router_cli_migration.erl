@@ -160,47 +160,39 @@ send_euis_to_config_service(A, B, C) ->
 send_skfs_to_config_service(["migration", "skfs"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
-    ok = router_ics_skf_worker:reconcile(self(), Commit),
-    DryRun =
-        case Commit of
-            true -> "";
-            false -> "DRY RUN"
-        end,
-    receive
-        {router_ics_skf_worker, {ok, Added, Removed}} ->
-            ToMap = fun(SKFs) ->
-                lists:map(
-                    fun(
-                        #iot_config_session_key_filter_v1_pb{
-                            oui = OUI,
-                            devaddr = DevNum,
-                            session_key = SessionKey
-                        }
-                    ) ->
-                        DevAddr = <<DevNum:32/integer-unsigned-big>>,
-                        #{
-                            oui => OUI,
-                            devaddr => lorawan_utils:binary_to_hex(DevAddr),
-                            session_key => erlang:list_to_binary(SessionKey)
-                        }
-                    end,
-                    SKFs
-                )
-            end,
-            case {ToMap(Added), ToMap(Removed)} of
-                {[], []} ->
-                    c_text("~s~n Nothing to do, everything is up to date", [DryRun]);
-                {PrintAdded, PrintRemoved} ->
-                    c_text("~s~nAdding~n~s~nRemoving~n~s~n", [
-                        DryRun,
-                        jsx:prettify(jsx:encode(PrintAdded)),
-                        jsx:prettify(jsx:encode(PrintRemoved))
-                    ])
-            end;
-        {router_ics_skf_worker, {error, _Reason}} ->
-            c_text("~s Updating SKFs failed ~p", [DryRun, _Reason])
-    after 5000 ->
-        c_text("Error timeout")
+
+    Reconcile = router_ics_skf_worker:pre_reconcile(),
+
+    io:format(
+        "~p remote~n"
+        "~p local~n"
+        "~p updates (~p add, ~p remove)~n"
+        "~p requests~n",
+        [
+            router_skf_reconcile:remote_count(Reconcile),
+            router_skf_reconcile:local_count(Reconcile),
+            router_skf_reconcile:updates_count(Reconcile),
+            router_skf_reconcile:add_count(Reconcile),
+            router_skf_reconcile:remove_count(Reconcile),
+            router_skf_reconcile:update_chunks_count(Reconcile)
+        ]
+    ),
+
+    case Commit of
+        true ->
+            router_ics_skf_worker:reconcile(
+                Reconcile,
+                fun
+                    ({progress, {Curr, Total}, Response}) ->
+                        io:format("~p/~p :: ~p~n", [Curr, Total, Response]);
+                    (done) ->
+                        io:format("done~n")
+                end
+            ),
+
+            c_text("Reconcile complete");
+        false ->
+            c_text("DRY RUN, pass --commit to send requests")
     end;
 send_skfs_to_config_service(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
@@ -209,34 +201,34 @@ send_skfs_to_config_service(A, B, C) ->
 delete_skfs(["migration", "skfs", "remove"], [], Flags) ->
     Options = maps:from_list(Flags),
     Commit = maps:is_key(commit, Options),
-    DryRun =
-        case Commit of
-            true -> "";
-            false -> "DRY RUN"
-        end,
-    {_, SigFun, _} = router_blockchain:get_key(),
-    case list_skfs(SigFun) of
-        {error, _Reason} ->
-            c_text("~s Failed to get session key filters from CS: ~p", [DryRun, _Reason]);
-        {ok, _Stream} ->
-            receive
-                {router_cli_migration_skf_list_handler, SKFs} ->
-                    case Commit of
-                        false ->
-                            c_text("DRY RUN removing ~w session key filters", [erlang:length(SKFs)]);
-                        true ->
-                            case remove_skfs(SKFs, SigFun) of
-                                ok ->
-                                    c_text("Removed ~w session key filters", [erlang:length(SKFs)]);
-                                {error, _Reason} ->
-                                    c_text("Failed to send session key filters remove: ~p", [
-                                        _Reason
-                                    ])
-                            end
-                    end
-            after 10000 ->
-                c_text("~s Failed to get session key filter from CS: timeout", [DryRun])
-            end
+
+    RemoveAll = router_ics_skf_worker:pre_remove_all(),
+
+    io:format(
+        "~p remote~n"
+        "~p removals~n"
+        "~p requests~n",
+        [
+            router_skf_reconcile:remote_count(RemoveAll),
+            router_skf_reconcile:remove_count(RemoveAll),
+            router_skf_reconcile:update_chunks_count(RemoveAll)
+        ]
+    ),
+
+    case Commit of
+        true ->
+            router_ics_skf_worker:remove_all(
+                RemoveAll,
+                fun
+                    ({progress, {Curr, Total}, Response}) ->
+                        io:format("~p/~p :: ~p", [Curr, Total, Response]);
+                    (done) ->
+                        io:format("done~n")
+                end
+            ),
+            c_text("Remove all complete");
+        false ->
+            c_text("DRY RUN, pass --commit to send requests")
     end;
 delete_skfs(A, B, C) ->
     io:format("~p Arguments:~n  ~p~n  ~p~n  ~p~n", [?FUNCTION_NAME, A, B, C]),
@@ -388,67 +380,6 @@ get_grpc_address(Options) ->
             ]),
             {ok, RPCAddr}
     end.
-
--spec list_skfs(SigFun :: libp2p_crypto:sig_fun()) ->
-    {ok, grpcbox_client:stream()} | {error, any()}.
-list_skfs(SigFun) ->
-    OUI = router_utils:get_oui(),
-
-    Req = #iot_config_session_key_filter_list_req_v1_pb{
-        oui = OUI,
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_list_req_v1_pb),
-    SignedReq = Req#iot_config_session_key_filter_list_req_v1_pb{signature = SigFun(EncodedReq)},
-    helium_iot_config_session_key_filter_client:list(SignedReq, #{
-        channel => router_ics_utils:channel(),
-        callback_module => {
-            router_cli_migration_skf_list_handler,
-            #{pid => self()}
-        }
-    }).
-
--spec remove_skfs(
-    SKFs :: [iot_config_pb:iot_config_session_key_filter_v1_pb()],
-    SigFun :: libp2p_crypto:sig_fun()
-) -> ok | {error, any()}.
-remove_skfs(SKFs, SigFun) ->
-    case
-        helium_iot_config_session_key_filter_client:update(#{
-            channel => router_ics_utils:channel()
-        })
-    of
-        {error, _} = Error ->
-            Error;
-        {ok, Stream} ->
-            lists:foreach(
-                fun(SKF) ->
-                    ok = remove_skf(SKF, SigFun, Stream)
-                end,
-                SKFs
-            ),
-            ok = grpcbox_client:close_send(Stream),
-            case grpcbox_client:recv_data(Stream, 10000) of
-                {ok, #iot_config_session_key_filter_update_res_v1_pb{}} -> ok;
-                stream_finished -> ok;
-                Reason -> {error, Reason}
-            end
-    end.
-
--spec remove_skf(
-    SKF :: iot_config_pb:iot_config_session_key_filter_v1_pb(),
-    SigFun :: libp2p_crypto:sig_fun(),
-    Stream :: grpcbox_client:stream()
-) -> ok | {error, any()}.
-remove_skf(SKF, SigFun, Stream) ->
-    Req = #iot_config_session_key_filter_update_req_v1_pb{
-        action = remove,
-        filter = SKF,
-        timestamp = erlang:system_time(millisecond)
-    },
-    EncodedReq = iot_config_pb:encode_msg(Req, iot_config_session_key_filter_update_req_v1_pb),
-    SignedReq = Req#iot_config_session_key_filter_update_req_v1_pb{signature = SigFun(EncodedReq)},
-    ok = grpcbox_client:send(Stream, SignedReq).
 
 -spec c_text(string()) -> clique_status:status().
 c_text(T) -> [clique_status:text([T])].

@@ -34,10 +34,12 @@
     get_env_int/2,
     get_env_bool/2,
     enumerate_0/1,
+    enumerate_1/1,
     enumerate_0_to_size/3,
     enumerate_last/1,
     metadata_fun/0,
-    random_non_miner_predicate/1
+    random_non_miner_predicate/1,
+    get_swarm_key_location/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -870,6 +872,10 @@ trace_file(<<BinFileName:5/binary, _/binary>>) ->
 enumerate_0(L) ->
     lists:zip(lists:seq(0, erlang:length(L) - 1), L).
 
+-spec enumerate_1(list(T)) -> list({non_neg_integer(), T}).
+enumerate_1(L) ->
+    lists:zip(lists:seq(1, erlang:length(L)), L).
+
 -spec enumerate_last(list(T)) -> list({Last :: boolean(), T}).
 enumerate_last(L) ->
     Last = erlang:length(L),
@@ -885,6 +891,18 @@ enumerate_0_to_size(IndexedList, Max, Default) ->
 random_non_miner_predicate(Peer) ->
     not libp2p_peer:is_stale(Peer, timer:minutes(360)) andalso
         maps:get(<<"node_type">>, libp2p_peer:signed_metadata(Peer), undefined) /= <<"gateway">>.
+
+get_swarm_key_location() ->
+    case application:get_env(router, swarm_key, undefined) of
+        undefined ->
+            filename:join([
+                application:get_env(blockchain, base_dir, "data"),
+                "blockchain",
+                "swarm_key"
+            ]);
+        Val ->
+            Val
+    end.
 
 %% ------------------------------------------------------------------
 %% EUNIT Tests

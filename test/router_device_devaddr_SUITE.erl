@@ -67,6 +67,7 @@ init_per_group(GroupName, Config) ->
 init_per_testcase(TestCase, Config0) ->
     Config1 = test_utils:init_per_testcase(TestCase, Config0),
     Config2 = test_utils:add_oui(Config1),
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
     Config2.
 
 %%--------------------------------------------------------------------
@@ -83,15 +84,10 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 allocate(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     DevAddrs = lists:foldl(
         fun(_I, Acc) ->
@@ -112,15 +108,10 @@ allocate(Config) ->
     ok.
 
 allocate_config_service_single_address(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 1}]),
@@ -138,15 +129,10 @@ allocate_config_service_single_address(Config) ->
     ok.
 
 allocate_config_service_multiple_address(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 5}]),
@@ -163,15 +149,10 @@ allocate_config_service_multiple_address(Config) ->
     ok.
 
 allocate_config_service_noncontigious_address(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 3}, {5, 8}]),
@@ -203,8 +184,6 @@ allocate_config_service_noncontigious_addresss_wrap(_Config) ->
     %% Using a single pubkeybin and a standin for multiple pubkeybins that
     %% resolve the same h3 parent index. Make sure the devaddrs wrap independent
     %% of each other.
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     [Key1, Key2, Key3] = lists:map(
         fun(_Idx) ->
             #{public := PubKey} = libp2p_crypto:generate_keys(ecc_compact),
@@ -217,10 +196,7 @@ allocate_config_service_noncontigious_addresss_wrap(_Config) ->
         {ok, maps:get(Key, #{Key1 => 1, Key2 => 2, Key3 => 3})}
     end),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(7, State) =/= []
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     %% Override after picking up from chain
     ok = router_device_devaddr:set_devaddr_bases([{1, 3}]),
@@ -250,15 +226,10 @@ allocate_config_service_noncontigious_addresss_wrap(_Config) ->
     ok.
 
 route_packet(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
-
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
-    ok = test_utils:wait_until(fun() ->
-        State = sys:get_state(router_device_devaddr),
-        erlang:element(6, State) =/= undefined
-    end),
+    ok = wait_until_worker_has_devaddrs(),
 
     #{
         pubkey_bin := PubKeyBin,
@@ -344,3 +315,8 @@ route_packet(Config) ->
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
+
+wait_until_worker_has_devaddrs() ->
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end).

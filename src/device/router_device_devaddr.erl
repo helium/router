@@ -58,8 +58,6 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 
 -record(state, {
-    pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    sig_fun :: function(),
     conn_backoff :: backoff:backoff(),
     route_id :: string(),
     oui :: non_neg_integer(),
@@ -134,14 +132,7 @@ h3_parent_for_pubkeybin(PubKeyBin) ->
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
-init(
-    #{
-        pubkey_bin := PubKeyBin,
-        sig_fun := SigFun,
-        route_id := RouteID
-    } =
-        Args
-) ->
+init(#{route_id := RouteID} = Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     case router_blockchain:is_chain_dead() of
         true ->
@@ -158,8 +149,6 @@ init(
     Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
     ok = ?MODULE:reconcile(),
     {ok, #state{
-        pubkey_bin = PubKeyBin,
-        sig_fun = SigFun,
         conn_backoff = Backoff,
         route_id = RouteID,
         oui = OUI
@@ -339,12 +328,13 @@ to_res(Index, Res) ->
     h3:from_geo(h3:to_geo(Index), Res).
 
 -spec get_devaddrs(state()) -> {ok, grpcbox_client:stream()} | {error, any()}.
-get_devaddrs(#state{pubkey_bin = PubKeyBin, sig_fun = SigFun, route_id = RouteID}) ->
+get_devaddrs(#state{route_id = RouteID}) ->
     Req = #iot_config_route_get_devaddr_ranges_req_v1_pb{
         route_id = RouteID,
         timestamp = erlang:system_time(millisecond),
-        signer = PubKeyBin
+        signer = router_blockchain:pubkey_bin()
     },
+    SigFun = router_blockchain:sig_fun(),
     EncodedReq = iot_config_pb:encode_msg(Req, iot_config_route_get_devaddr_ranges_req_v1_pb),
     SignedReq = Req#iot_config_route_get_devaddr_ranges_req_v1_pb{signature = SigFun(EncodedReq)},
 

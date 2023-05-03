@@ -388,6 +388,33 @@ update_device_record(DB, CF, DeviceID) ->
             Device = router_device:update(DeviceUpdates, Device0),
             {ok, _} = router_device_cache:save(Device),
             {ok, _} = router_device:save(DB, CF, Device),
+
+            OldIsActive = router_device:is_active(Device0),
+            IsActive = router_device:is_active(APIDevice),
+            case
+                OldIsActive =/= IsActive andalso router_device:devaddr(Device) =/= undefined andalso
+                    router_device:nwk_s_key(Device) =/= undefined
+            of
+                %% No status, no devaddr / nwk_s_key  changes we do nothing
+                false ->
+                    ok;
+                true ->
+                    DevAddr = router_device:devaddr(Device),
+                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
+                        DevAddr
+                    ),
+                    NwkSKey = router_device:nwk_s_key(Device),
+                    case IsActive of
+                        true ->
+                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
+                            catch router_ics_eui_worker:add([DeviceID]),
+                            lager:debug("device un-paused, sent SKF and EUI add", []);
+                        false ->
+                            ok = router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey}]),
+                            catch router_ics_eui_worker:remove([DeviceID]),
+                            lager:debug("device paused, sent SKF and EUI remove", [])
+                    end
+            end,
             ok
     end.
 

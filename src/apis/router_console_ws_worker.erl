@@ -172,7 +172,6 @@ handle_info(
     #state{db = DB, cf = CF} = State
 ) ->
     catch router_ics_eui_worker:remove(DeviceIDs),
-    catch router_ics_skf_worker:remove(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
@@ -199,8 +198,6 @@ handle_info(
     #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got activate message for devices: ~p", [DeviceIDs]),
-    catch router_ics_eui_worker:add(DeviceIDs),
-    catch router_ics_skf_worker:add(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
@@ -210,8 +207,6 @@ handle_info(
     #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got deactivate message for devices: ~p", [DeviceIDs]),
-    catch router_ics_eui_worker:remove(DeviceIDs),
-    catch router_ics_skf_worker:remove(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(

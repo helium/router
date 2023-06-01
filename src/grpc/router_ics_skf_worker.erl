@@ -282,7 +282,7 @@ handle_cast(
     ),
 
     %% logging is already done in send_update_request/2
-    _ =  send_update_request(RouteID, Updates1),
+    _ = send_update_request(RouteID, Updates1),
     {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

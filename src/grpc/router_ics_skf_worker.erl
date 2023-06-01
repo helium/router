@@ -281,12 +281,8 @@ handle_cast(
         Updates0
     ),
 
-    case send_update_request(RouteID, Updates1) of
-        {ok, Resp} ->
-            lager:info("updating skf good success: ~p", [Resp]);
-        {error, Err} ->
-            lager:error("updating skf bad failure: ~p", [Err])
-    end,
+    %% logging is already done in send_update_request/2
+    _ =  send_update_request(RouteID, Updates1),
     {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),

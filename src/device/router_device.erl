@@ -46,7 +46,9 @@
     deserialize/1
 ]).
 -export([
-    can_queue_payload/3
+    can_queue_payload/3,
+    credentials_to_evict/1,
+    limit_credentials/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -61,6 +63,7 @@
 
 -define(QUEUE_SIZE_LIMIT, 20).
 -define(MAX_32_BITS, 16#100000000).
+-define(MAX_CREDENTIAL_COUNT, 25).
 
 -type device() :: #device_v7{}.
 
@@ -111,7 +114,7 @@ keys(#device_v7{keys = Keys}) ->
 
 -spec keys(list({binary(), binary()}), device()) -> device().
 keys(Keys, Device) ->
-    Device#device_v7{keys = lists:sublist(Keys, 25)}.
+    Device#device_v7{keys = limit_credentials(Keys)}.
 
 -spec nwk_s_key(device()) -> binary() | undefined.
 nwk_s_key(#device_v7{keys = []}) ->
@@ -138,7 +141,7 @@ devaddrs(Device) ->
 
 -spec devaddrs([binary()], device()) -> device().
 devaddrs(Devaddrs, Device) ->
-    Device#device_v7{devaddrs = lists:sublist(Devaddrs, 25)}.
+    Device#device_v7{devaddrs = limit_credentials(Devaddrs)}.
 
 -spec dev_nonces(device()) -> [binary()].
 dev_nonces(Device) ->
@@ -146,7 +149,7 @@ dev_nonces(Device) ->
 
 -spec dev_nonces([binary()], device()) -> device().
 dev_nonces(Nonces, Device) ->
-    Device#device_v7{dev_nonces = lists:sublist(Nonces, 25)}.
+    Device#device_v7{dev_nonces = limit_credentials(Nonces)}.
 
 -spec fcnt(device()) -> undefined | non_neg_integer().
 fcnt(Device) ->
@@ -507,6 +510,19 @@ can_queue_payload(Payload, DownlinkRegion, Device) ->
             Size = erlang:byte_size(Payload),
             {Size =< MaxSize, Size, MaxSize, DownDRIndex}
     end.
+
+-spec credentials_to_evict(Creds :: list(any())) -> list(any()).
+credentials_to_evict(Creds) ->
+    case erlang:length(Creds) of
+        N when N > ?MAX_CREDENTIAL_COUNT ->
+            lists:nthtail(?MAX_CREDENTIAL_COUNT, Creds);
+        _ ->
+            []
+    end.
+
+-spec limit_credentials(Creds :: list(any())) -> list(any()).
+limit_credentials(Creds) ->
+    lists:sublist(Creds, ?MAX_CREDENTIAL_COUNT).
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

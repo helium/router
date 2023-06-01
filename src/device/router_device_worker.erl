@@ -1332,21 +1332,21 @@ handle_join(
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
 
-    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
-    ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
-    lager:debug("sending add skf ~p ~p", [DevAddrInt, NwkSKey]),
-
     DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     Region = dualplan_region(Packet, HotspotRegion),
     DRIdx = packet_datarate_index(Region, Packet),
+
+    NewKeys = [{NwkSKey, AppSKey} | router_device:keys(Device0)],
+    NewDevaddrs = [DevAddr | router_device:devaddrs(Device0)],
+
     DeviceUpdates = [
         {name, DeviceName},
         {dev_eui, DevEUI},
         {app_eui, AppEUI},
-        {keys, [{NwkSKey, AppSKey} | router_device:keys(Device0)]},
-        {devaddrs, [DevAddr | router_device:devaddrs(Device0)]},
+        {keys, NewKeys},
+        {devaddrs, NewDevaddrs},
         {fcnt, undefined},
         {fcntdown, 0},
         %% only do channel correction for 915 right now
@@ -1363,6 +1363,9 @@ handle_join(
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
+
+    ok = handle_join_skf(NewKeys, NewDevaddrs),
+
     lager:debug(
         "Join DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [
@@ -1379,6 +1382,35 @@ handle_join(
         dev_addr = DevAddr,
         app_key = AppKey
     }}.
+
+%% When adding new credentials during a join, we want to remove the evicted
+%% credentials from the config service. If a joining takes more than 25
+%% attempts, we won't have the information to remove all the unused keys.
+-spec handle_join_skf(
+    NewKeys :: list({NwkSKey :: binary(), AppSKey :: binary()}),
+    NewDevAddrs :: list(DevAddr :: binary())
+) -> ok.
+handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs) ->
+    DevAddrToInt = fun(D) ->
+        <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
+        Int
+    end,
+
+    %% remove evicted keys from the config service for every devaddr.
+    EvictedKeys = router_device:credentials_to_evict(NewKeys),
+    ToRemoveKeys = [{remove, DevAddrToInt(D), NSK} || {NSK, _} <- EvictedKeys, D <- NewDevAddrs],
+
+    %% remove evicted devaddrs from the config service for every nwkskey.
+    EvictedAddrs = router_device:credentials_to_evict(NewDevAddrs),
+    ToRemoveAddrs = [{remove, DevAddrToInt(D), NSK} || {NSK, _} <- NewKeys, D <- EvictedAddrs],
+
+    %% add the new devaddr, nskwkey.
+    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(NewDevAddr),
+    Updates = lists:usort([{add, DevAddrInt, NwkSKey}] ++ ToRemoveKeys ++ ToRemoveAddrs),
+    ok = router_ics_skf_worker:update(Updates),
+
+    lager:debug("sending update skf for join ~p ~p", [Updates]),
+    ok.
 
 %% Dual-Plan Code
 %% Logic to support the dual frequency plan which allows an AS923_1 Hotspot

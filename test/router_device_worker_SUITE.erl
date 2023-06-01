@@ -22,7 +22,8 @@
     offer_cache_test/1,
     load_offer_cache_test/1,
     hotspot_bad_region_test/1,
-    uplink_bad_mtype/1
+    uplink_bad_mtype/1,
+    evict_keys_join_test/1
 ]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
@@ -73,7 +74,8 @@ all_tests() ->
         offer_cache_test,
         load_offer_cache_test,
         hotspot_bad_region_test,
-        uplink_bad_mtype
+        uplink_bad_mtype,
+        evict_keys_join_test
     ].
 
 %%--------------------------------------------------------------------
@@ -502,6 +504,58 @@ drop_downlink_test(Config) ->
         }
     }),
 
+    ok.
+
+evict_keys_join_test(Config) ->
+    %% If a device get's stuck in a join loop, we will only keep the last 25
+    %% devaddrs and key sets. When there is a successful uplink after joining,
+    %% all the keys not used will be removed. But if there were more than 25
+    %% attempts, we cannot remove keys that have been cycled out.
+    #{} = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    %% Check that device is in cache now
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device_cache:get(DeviceID),
+
+    Device1 = router_device:update(
+        [
+            {keys, [
+                {crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}
+             || _ <- lists:seq(1, 25)
+            ]},
+            {devaddrs, [crypto:strong_rand_bytes(4) || _ <- lists:seq(1, 25)]}
+        ],
+        Device0
+    ),
+    {ok, DB, CF} = router_db:get_devices(),
+    {ok, Device1} = router_device_cache:save(Device1),
+    {ok, Device1} = router_device:save(DB, CF, Device1),
+
+    {ok, DeviceWorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),
+    %% Stop the device worker so it will pick up the newly saved device from the cache.
+    ok = gen_server:stop(DeviceWorkerPid),
+
+    %% Joining the device should evict 1 of the keys and devaddrs.
+
+    ok = meck:new(router_ics_skf_worker, [passthrough]),
+
+    #{} = test_utils:join_device(Config),
+
+    [{_Pid, {router_ics_skf_worker, update, [Updates] = _Args}, ok}] = meck:history(
+        router_ics_skf_worker
+    ),
+
+    %% Expected updates
+    %% 1 Add
+    %% 1 Remove {EvictedKey, EvictedDevaddr}
+    %% 25 Remove {EvictedKey, RemainingDevaddr}
+    %% 25 Remove {RemainingKey, EvictedDevaddr}
+    ?assertEqual(1 + 1 + 25 + 25, length(Updates)),
+
+    ok = meck:unload(router_ics_skf_worker),
     ok.
 
 replay_joins_test(Config) ->

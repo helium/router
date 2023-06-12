@@ -149,7 +149,14 @@ startup_reconcile() ->
 %% Worker API
 %% ------------------------------------------------------------------
 
--spec update(Updates :: list({add | remove, non_neg_integer(), binary()})) ->
+-spec update(
+    Updates :: list({
+        add | remove,
+        DevaddrInt :: non_neg_integer(),
+        NwkSKey :: binary(),
+        MultiBuy :: non_neg_integer()
+    })
+) ->
     ok.
 update([]) ->
     ok;
@@ -202,11 +209,16 @@ diff_skf_to_updates(#{remote := _, local := _} = Diff) ->
     (skfs()) -> skf_updates().
 skf_to_add_update(SKFs) when erlang:is_list(SKFs) ->
     lists:map(fun skf_to_add_update/1, SKFs);
-skf_to_add_update(#iot_config_skf_v1_pb{devaddr = Devaddr, session_key = SessionKey}) ->
+skf_to_add_update(#iot_config_skf_v1_pb{
+    devaddr = Devaddr,
+    session_key = SessionKey,
+    max_copies = MaxCopies
+}) ->
     #iot_config_route_skf_update_v1_pb{
         action = add,
         devaddr = Devaddr,
-        session_key = SessionKey
+        session_key = SessionKey,
+        max_copies = MaxCopies
     }.
 
 -spec skf_to_remove_update
@@ -214,11 +226,16 @@ skf_to_add_update(#iot_config_skf_v1_pb{devaddr = Devaddr, session_key = Session
     (skfs()) -> skf_updates().
 skf_to_remove_update(SKFs) when erlang:is_list(SKFs) ->
     lists:map(fun skf_to_remove_update/1, SKFs);
-skf_to_remove_update(#iot_config_skf_v1_pb{devaddr = Devaddr, session_key = SessionKey}) ->
+skf_to_remove_update(#iot_config_skf_v1_pb{
+    devaddr = Devaddr,
+    session_key = SessionKey,
+    max_copies = MaxCopies
+}) ->
     #iot_config_route_skf_update_v1_pb{
         action = remove,
         devaddr = Devaddr,
-        session_key = SessionKey
+        session_key = SessionKey,
+        max_copies = MaxCopies
     }.
 
 %% ------------------------------------------------------------------
@@ -271,11 +288,12 @@ handle_cast(
         fun
             (#iot_config_route_skf_update_v1_pb{} = Update) ->
                 Update;
-            ({Action, Devaddr, Key}) ->
+            ({Action, Devaddr, Key, MaxCopies}) ->
                 #iot_config_route_skf_update_v1_pb{
                     action = Action,
                     devaddr = Devaddr,
-                    session_key = binary:encode_hex(Key)
+                    session_key = binary:encode_hex(Key),
+                    max_copies = MaxCopies
                 }
         end,
         Updates0
@@ -384,6 +402,7 @@ get_local_skfs(RouteID) ->
     lists:usort(
         lists:filtermap(
             fun(Device) ->
+                MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
                 case
                     {
                         router_device:is_active(Device),
@@ -403,7 +422,8 @@ get_local_skfs(RouteID) ->
                         {true, #iot_config_skf_v1_pb{
                             route_id = RouteID,
                             devaddr = DevAddr,
-                            session_key = erlang:binary_to_list(binary:encode_hex(SessionKey))
+                            session_key = erlang:binary_to_list(binary:encode_hex(SessionKey)),
+                            max_copies = MultiBuy
                         }}
                 end
             end,

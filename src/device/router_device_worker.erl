@@ -422,11 +422,15 @@ handle_cast(
                     NwkSKey = router_device:nwk_s_key(Device1),
                     case IsActive of
                         true ->
-                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
+                            ok = router_ics_skf_worker:update([
+                                {add, DevAddrInt, NwkSKey, MultiBuyValue}
+                            ]),
                             catch router_ics_eui_worker:add([DeviceID]),
                             lager:debug("device un-paused, sent SKF and EUI add", []);
                         false ->
-                            ok = router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey}]),
+                            ok = router_ics_skf_worker:update([
+                                {remove, DevAddrInt, NwkSKey, MultiBuyValue}
+                            ]),
                             catch router_ics_eui_worker:remove([DeviceID]),
                             lager:debug("device paused, sent SKF and EUI remove", [])
                     end
@@ -760,7 +764,8 @@ handle_cast(
                     false ->
                         ok;
                     true ->
-                        ToAdd = [{add, DevAddr0, UsedNwkSKey}],
+                        MultiBuy = maps:get(multi_buy, router_device:metadata(D1), 0),
+                        ToAdd = [{add, DevAddr0, UsedNwkSKey, MultiBuy}],
 
                         DevAddrToInt = fun(D) ->
                             <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
@@ -769,12 +774,12 @@ handle_cast(
 
                         %% We have to usort just in case DevAddr assigned is the same
                         ToRemove0 = lists:usort([
-                            {remove, DevAddrToInt(DevAddr), NwkSKey}
+                            {remove, DevAddrToInt(DevAddr), NwkSKey, MultiBuy}
                          || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
                         ]),
 
                         %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
-                        ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey}],
+                        ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey, MultiBuy}],
                         ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),
                         lager:debug("sending update skf ~p", [ToAdd ++ ToRemove1])
                 end,
@@ -1363,8 +1368,9 @@ handle_join(
         {region, Region}
     ],
     Device1 = router_device:update(DeviceUpdates, Device0),
+    MultiBuy = maps:get(multi_buy, router_device:metadata(Device1), 0),
 
-    ok = handle_join_skf(NewKeys, NewDevaddrs),
+    ok = handle_join_skf(NewKeys, NewDevaddrs, MultiBuy),
 
     lager:debug(
         "Join DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
@@ -1388,9 +1394,10 @@ handle_join(
 %% attempts, we won't have the information to remove all the unused keys.
 -spec handle_join_skf(
     NewKeys :: list({NwkSKey :: binary(), AppSKey :: binary()}),
-    NewDevAddrs :: list(DevAddr :: binary())
+    NewDevAddrs :: list(DevAddr :: binary()),
+    MaxCopies :: non_neg_integer()
 ) -> ok.
-handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs) ->
+handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs, MaxCopies) ->
     DevAddrToInt = fun(D) ->
         <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
         Int
@@ -1398,15 +1405,21 @@ handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs) ->
 
     %% remove evicted keys from the config service for every devaddr.
     EvictedKeys = router_device:credentials_to_evict(NewKeys),
-    ToRemoveKeys = [{remove, DevAddrToInt(D), NSK} || {NSK, _} <- EvictedKeys, D <- NewDevAddrs],
+    ToRemoveKeys = [
+        {remove, DevAddrToInt(D), NSK, MaxCopies}
+     || {NSK, _} <- EvictedKeys, D <- NewDevAddrs
+    ],
 
     %% remove evicted devaddrs from the config service for every nwkskey.
     EvictedAddrs = router_device:credentials_to_evict(NewDevAddrs),
-    ToRemoveAddrs = [{remove, DevAddrToInt(D), NSK} || {NSK, _} <- NewKeys, D <- EvictedAddrs],
+    ToRemoveAddrs = [
+        {remove, DevAddrToInt(D), NSK, MaxCopies}
+     || {NSK, _} <- NewKeys, D <- EvictedAddrs
+    ],
 
     %% add the new devaddr, nskwkey.
     <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(NewDevAddr),
-    Updates = lists:usort([{add, DevAddrInt, NwkSKey}] ++ ToRemoveKeys ++ ToRemoveAddrs),
+    Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ ToRemoveKeys ++ ToRemoveAddrs),
     ok = router_ics_skf_worker:update(Updates),
 
     lager:debug("sending update skf for join ~p ~p", [Updates]),
@@ -1760,34 +1773,8 @@ validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCach
     PHash :: binary(),
     OfferCache :: map()
 ) -> {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
-maybe_charge(Device, PayloadSize, PubKeyBin, PHash, OfferCache) ->
-    case maps:get({PubKeyBin, PHash}, OfferCache, undefined) of
-        undefined ->
-            case charge_when_no_offer() of
-                false ->
-                    Metadata = router_device:metadata(Device),
-                    {Balance, Nonce} =
-                        case maps:get(organization_id, Metadata, undefined) of
-                            undefined ->
-                                {0, 0};
-                            OrgID ->
-                                router_console_dc_tracker:current_balance(OrgID)
-                        end,
-                    {ok, Balance, Nonce};
-                true ->
-                    router_console_dc_tracker:charge(Device, PayloadSize)
-            end;
-        _ ->
-            router_console_dc_tracker:charge(Device, PayloadSize)
-    end.
-
--spec charge_when_no_offer() -> boolean().
-charge_when_no_offer() ->
-    case application:get_env(router, charge_when_no_offer, true) of
-        "true" -> true;
-        true -> true;
-        _ -> false
-    end.
+maybe_charge(Device, PayloadSize, _PubKeyBin, _PHash, _OfferCache) ->
+    router_console_dc_tracker:charge(Device, PayloadSize).
 
 %%%-------------------------------------------------------------------
 %% @doc

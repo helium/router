@@ -111,7 +111,8 @@ main_test(Config) ->
     ok = router_test_ics_route_service:add_skf(#iot_config_skf_v1_pb{
         route_id = ?ROUTE_ID,
         devaddr = 0,
-        session_key = []
+        session_key = [],
+        max_copies = 42
     }),
 
     %% Trigger a reconcile
@@ -243,18 +244,20 @@ device_to_skf(RouteID, Device) ->
     #iot_config_skf_v1_pb{
         route_id = RouteID,
         devaddr = binary:decode_unsigned(router_device:devaddr(Device), little),
-        session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device)))
+        session_key = erlang:binary_to_list(binary:encode_hex(router_device:nwk_s_key(Device))),
+        max_copies = maps:get(multi_buy, router_device:metadata(Device), 999)
     }.
 
 create_n_devices(N) ->
     lists:map(
-        fun(_X) ->
+        fun(Idx) ->
             ID = router_utils:uuid_v4(),
             {ok, Devaddr} = router_device_devaddr:allocate(no_device, undefined),
             router_device:update(
                 [
                     {devaddrs, [Devaddr]},
-                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]}
+                    {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]},
+                    {metadata, #{multi_buy => Idx}}
                 ],
                 router_device:new(ID)
             )

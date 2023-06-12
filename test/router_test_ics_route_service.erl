@@ -211,13 +211,15 @@ update_skfs(Ctx, Req) ->
             #iot_config_route_skf_update_v1_pb{
                 action = Action,
                 devaddr = Devaddr,
-                session_key = SessionKey
+                session_key = SessionKey,
+                max_copies = MaxCopies
             }
         ) ->
             SKF = #iot_config_skf_v1_pb{
                 devaddr = Devaddr,
                 session_key = SessionKey,
-                route_id = RouteID
+                route_id = RouteID,
+                max_copies = MaxCopies
             },
             case Action of
                 add -> add_skf(SKF);

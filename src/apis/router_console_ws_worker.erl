@@ -404,13 +404,16 @@ update_device_record(DB, CF, DeviceID) ->
                         DevAddr
                     ),
                     NwkSKey = router_device:nwk_s_key(Device),
+                    MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
                     case IsActive of
                         true ->
-                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey}]),
+                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey, MultiBuy}]),
                             catch router_ics_eui_worker:add([DeviceID]),
                             lager:debug("device un-paused, sent SKF and EUI add", []);
                         false ->
-                            ok = router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey}]),
+                            ok = router_ics_skf_worker:update([
+                                {remove, DevAddrInt, NwkSKey, MultiBuy}
+                            ]),
                             catch router_ics_eui_worker:remove([DeviceID]),
                             lager:debug("device paused, sent SKF and EUI remove", [])
                     end

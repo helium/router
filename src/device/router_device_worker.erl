@@ -427,8 +427,7 @@ handle_cast(
                     case IsActive of
                         true ->
                             ok = router_ics_skf_worker:update([
-                                {add, DevAddrInt, NwkSKey, NewMultiBuyValue},
-                                {remove, DevAddrInt, NwkSKey, OldMultiBuyValue}
+                                {add, DevAddrInt, NwkSKey, NewMultiBuyValue}
                             ]),
                             catch router_ics_eui_worker:add([DeviceID]),
                             lager:debug("device un-paused, sent SKF and EUI add", []);

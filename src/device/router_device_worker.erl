@@ -365,6 +365,10 @@ handle_cast(
     DeviceID = router_device:id(Device0),
     case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
+            catch router_ics_eui_worker:remove([DeviceID]),
+            {DevAddrInt, NwkSKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(Device0),
+            catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]),
+            %% Important to remove details about the device _before_ the device.
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             lager:info("device was removed, removing from DB and shutting down"),
@@ -419,11 +423,9 @@ handle_cast(
                 false ->
                     ok;
                 true ->
-                    DevAddr = router_device:devaddr(Device1),
-                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                        DevAddr
+                    {DevAddrInt, NwkSKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(
+                        Device1
                     ),
-                    NwkSKey = router_device:nwk_s_key(Device1),
                     case IsActive of
                         true ->
                             ok = router_ics_skf_worker:update([

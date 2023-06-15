@@ -29,7 +29,8 @@
     diff_skf_to_updates/1,
     partition_updates_by_action/1,
     skf_to_add_update/1,
-    skf_to_remove_update/1
+    skf_to_remove_update/1,
+    device_to_devaddr_nwk_key/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -237,6 +238,16 @@ skf_to_remove_update(#iot_config_skf_v1_pb{
         session_key = SessionKey,
         max_copies = MaxCopies
     }.
+
+-spec device_to_devaddr_nwk_key(router_device:device()) ->
+    {DevaddrInt :: non_neg_integer(), NwkSKey :: binary()}.
+device_to_devaddr_nwk_key(Device) ->
+    DevAddr = router_device:devaddr(Device),
+    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
+        DevAddr
+    ),
+    NwkSKey = router_device:nwk_s_key(Device),
+    {DevAddrInt, NwkSKey}.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

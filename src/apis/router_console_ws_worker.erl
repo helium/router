@@ -163,7 +163,7 @@ handle_info(
     {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_eui_worker:update(DeviceIDs),
+    %% catch router_ics_eui_worker:update(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device remove
@@ -367,6 +367,14 @@ update_devices(DB, CF, DeviceIDs) ->
 update_device_record(DB, CF, DeviceID) ->
     case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
+            case router_device_cache:get(DeviceID) of
+                {ok, Device} ->
+                    catch router_ics_eui_worker:remove([DeviceID]),
+                    {DevAddrInt, NwkSKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(Device),
+                    catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
+                _ ->
+                    ok
+            end,
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             lager:info("device was removed, removing from DB and shutting down");
@@ -391,28 +399,34 @@ update_device_record(DB, CF, DeviceID) ->
 
             OldIsActive = router_device:is_active(Device0),
             IsActive = router_device:is_active(APIDevice),
+
+            OldMultiBuy = maps:get(multi_buy, router_device:metadata(Device0), 0),
+            NewMultiBuy = maps:get(multi_buy, router_device:metadata(APIDevice), 0),
+
+            %% Device has devaddr and nwk_s_key
+            %% AND active OR multi has changed
             case
-                OldIsActive =/= IsActive andalso router_device:devaddr(Device) =/= undefined andalso
-                    router_device:nwk_s_key(Device) =/= undefined
+                router_device:devaddr(Device) =/= undefined andalso
+                    router_device:nwk_s_key(Device) =/= undefined andalso
+                    (OldIsActive =/= IsActive orelse OldMultiBuy =/= NewMultiBuy)
             of
-                %% No status, no devaddr / nwk_s_key  changes we do nothing
                 false ->
                     ok;
                 true ->
-                    DevAddr = router_device:devaddr(Device),
-                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                        DevAddr
+                    {DevAddrInt, NwkSKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(
+                        Device
                     ),
-                    NwkSKey = router_device:nwk_s_key(Device),
-                    MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
+
                     case IsActive of
                         true ->
-                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey, MultiBuy}]),
+                            ok = router_ics_skf_worker:update([
+                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
+                            ]),
                             catch router_ics_eui_worker:add([DeviceID]),
                             lager:debug("device un-paused, sent SKF and EUI add", []);
                         false ->
                             ok = router_ics_skf_worker:update([
-                                {remove, DevAddrInt, NwkSKey, MultiBuy}
+                                {remove, DevAddrInt, NwkSKey, OldMultiBuy}
                             ]),
                             catch router_ics_eui_worker:remove([DeviceID]),
                             lager:debug("device paused, sent SKF and EUI remove", [])

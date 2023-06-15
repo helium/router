@@ -228,6 +228,7 @@ update_skfs(Ctx, Req) ->
         end,
         Req#iot_config_route_skf_update_req_v1_pb.updates
     ),
+    catch persistent_term:get(?MODULE) ! {?MODULE, update_skfs, Req},
 
     ok = timer:sleep(application:get_env(router, test_update_skf_delay_ms, 0)),
 

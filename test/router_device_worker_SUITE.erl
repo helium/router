@@ -26,13 +26,12 @@
     evict_keys_join_test/1
 ]).
 
--include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
+-include("../src/grpc/autogen/iot_config_pb.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
@@ -381,10 +380,13 @@ device_update_test(Config) ->
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
 
+    %% We're going to make sure removes were sent.
+    ok = persistent_term:put(router_test_ics_route_service, self()),
+
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     DeviceID = ?CONSOLE_DEVICE_ID,
-    ?assertMatch({ok, _}, router_device:get_by_id(DB, CF, DeviceID)),
+    {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {device_not_found, true}),
@@ -401,6 +403,34 @@ device_update_test(Config) ->
 
     test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
+
+    %% Make sure the device has removed itself from the config service after being deleted in Console.
+    receive
+        {router_test_ics_route_service, update_euis, Req} ->
+            AppEui = binary:decode_unsigned(router_device:app_eui(Device0), big),
+            DevEui = binary:decode_unsigned(router_device:dev_eui(Device0), big),
+
+            ?assertEqual(remove, Req#iot_config_route_update_euis_req_v1_pb.action),
+
+            EuiPair = Req#iot_config_route_update_euis_req_v1_pb.eui_pair,
+            ?assertEqual(AppEui, EuiPair#iot_config_eui_pair_v1_pb.app_eui),
+            ?assertEqual(DevEui, EuiPair#iot_config_eui_pair_v1_pb.dev_eui),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_update_euis)
+    end,
+
+    receive
+        {router_test_ics_route_service, update_skfs, Req1} ->
+            {DevAddrInt, NwkKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(Device0),
+            SessionKey = erlang:binary_to_list(binary:encode_hex(NwkKey)),
+            [Update] = Req1#iot_config_route_skf_update_req_v1_pb.updates,
+
+            ?assertEqual(remove, Update#iot_config_route_skf_update_v1_pb.action),
+            ?assertEqual(DevAddrInt, Update#iot_config_route_skf_update_v1_pb.devaddr),
+            ?assertEqual(SessionKey, Update#iot_config_route_skf_update_v1_pb.session_key),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_skf_update)
+    end,
 
     ok.
 

@@ -278,7 +278,7 @@ org_unfunded_cmd() ->
     Removed = Before -- After,
     Added = After -- Before,
 
-    c_table([{added, length(Added)}, {removed, length(Removed)}]).
+    c_table([[{added, length(Added)}, {removed, length(Removed)}]]).
 
 %%--------------------------------------------------------------------
 %% Private Utilities

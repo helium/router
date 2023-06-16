@@ -17,7 +17,8 @@
     list_skf_test/1,
     remove_all_skf_test/1,
     reconcile_skf_test/1,
-    reconcile_ignore_unfunded_orgs_test/1
+    reconcile_ignore_unfunded_orgs_test/1,
+    add_remove_unfunded_orgs_on_ws_message/1
 ]).
 
 %% To test against a real config service...
@@ -44,7 +45,8 @@ all() ->
         reconcile_multiple_updates_test,
         remove_all_skf_test,
         reconcile_skf_test,
-        reconcile_ignore_unfunded_orgs_test
+        reconcile_ignore_unfunded_orgs_test,
+        add_remove_unfunded_orgs_on_ws_message
     ].
 
 %%--------------------------------------------------------------------
@@ -294,6 +296,74 @@ reconcile_ignore_unfunded_orgs_test(_Config) ->
     ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
 
     Local2 = router_skf_reconcile:local(Reconcile2),
+    {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local2), length(RemoteAfter2)),
+
+    ?assertEqual(50, length(Local2)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    ok.
+
+add_remove_unfunded_orgs_on_ws_message(_Config) ->
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+
+    Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
+    Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
+
+    meck:new(router_device_cache, [passthrough]),
+    meck:expect(router_device_cache, get, fun() -> Funded ++ Unfunded end),
+
+    ReconcileFun = fun
+        ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+            ct:print("~p/~p failed(~p): ~p", [
+                Curr, Total, Status, uri_string:percent_decode(Message)
+            ]);
+        ({progress, {Curr, Total}, {ok, _Resp}}) ->
+            ct:print("~p/~p successful", [Curr, Total]);
+        (Msg) ->
+            ct:print("reconcile progress: ~p", [Msg])
+    end,
+
+    %% Websocket
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% First reconcile
+    Reconcile0 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile0, ReconcileFun),
+
+    Local0 = router_skf_reconcile:local(Reconcile0),
+    {ok, RemoteAfter0} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local0), length(RemoteAfter0)),
+
+    ?assertEqual(50, length(Local0)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% Reconcile after org has been marked unfunded
+    WSPid ! {org_zero_dc, <<"no balance org">>},
+    timer:sleep(50),
+
+    %% Remove happens automatically
+    %% Reconcile1 = router_ics_skf_worker:pre_reconcile(),
+    %% ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
+
+    ct:print("checking local and remote after zero balance"),
+    {ok, Local1} = router_ics_skf_worker:local_skf(),
+    {ok, RemoteAfter1} = router_ics_skf_worker:remote_skf(),
+    ?assertNotEqual(length(Local1), length(RemoteAfter1)),
+
+    %% Unfunded are being filtered out of local, but they still exist in the cache.
+    ?assertEqual(25, length(Local1)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% And after being refunded
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+    timer:sleep(50),
+
+    %% Add happens automatically
+    %% Reconcile2 = router_ics_skf_worker:pre_reconcile(),
+    %% ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
+
+    {ok, Local2} = router_ics_skf_worker:local_skf(),
     {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(length(Local2), length(RemoteAfter2)),
 

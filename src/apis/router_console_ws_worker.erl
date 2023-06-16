@@ -191,6 +191,7 @@ handle_info(
 
     DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
     catch router_ics_eui_worker:remove(DeviceIDs),
+    catch router_ics_skf_worker:remove_device_ids(DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{
@@ -205,6 +206,7 @@ handle_info(
 
     DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
     catch router_ics_eui_worker:add(DeviceIDs),
+    catch router_ics_skf_worker:add_device_ids(DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> := DeviceIDs}},

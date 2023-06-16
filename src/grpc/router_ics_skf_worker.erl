@@ -20,6 +20,8 @@
     pre_remove_all/0,
     remove_all/2,
     %% Worker
+    add_device_ids/1,
+    remove_device_ids/1,
     update/1,
     remote_skf/0,
     local_skf/0,
@@ -171,6 +173,14 @@ update(Updates) ->
             gen_server:cast(?SERVER, {?UPDATE, Updates})
     end.
 
+-spec add_device_ids(DeviceIDs :: [binary()]) -> ok.
+add_device_ids(DeviceIDs) ->
+    gen_server:cast(?SERVER, {add_device_ids, DeviceIDs}).
+
+-spec remove_device_ids(DeviceIDs :: [binary()]) -> ok.
+remove_device_ids(DeviceIDs) ->
+    gen_server:cast(?SERVER, {remove_device_ids, DeviceIDs}).
+
 -spec remote_skf() -> {ok, skfs()} | {error, any()}.
 remote_skf() ->
     gen_server:call(?MODULE, remote_skf, timer:seconds(60)).
@@ -290,6 +300,18 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    lager:info("adding devices: ~p", [DeviceIDs]),
+    SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
+    Updates = ?MODULE:skf_to_remove_update(SKFs),
+    ok = ?MODULE:update(Updates),
+    {noreply, State};
+handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    lager:info("removing devices: ~p", [DeviceIDs]),
+    SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
+    Updates = ?MODULE:skf_to_add_update(SKFs),
+    ok = ?MODULE:update(Updates),
+    {noreply, State};
 handle_cast(
     {?UPDATE, Updates0},
     #state{route_id = RouteID} = State
@@ -405,10 +427,29 @@ list_skf(RouteID, Callback) ->
     ),
     ok.
 
+-spec get_local_devices_skfs(DeviceIDs :: [binary()], RouteID :: string()) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+get_local_devices_skfs(DeviceIDs, RouteID) ->
+    Devices = lists:filtermap(
+        fun(DeviceID) ->
+            case rotuer_device_cache:get(DeviceID) of
+                {error, _} -> false;
+                {ok, Device} -> {true, Device}
+            end
+        end,
+        DeviceIDs
+    ),
+    devices_to_skfs(Devices, RouteID).
+
 -spec get_local_skfs(RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(RouteID) ->
     Devices = router_device_cache:get(),
+    devices_to_skfs(Devices, RouteID).
+
+-spec devices_to_skfs(Devices :: [router_device:device()], RouteID :: string()) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+devices_to_skfs(Devices, RouteID) ->
     UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
     lists:usort(
         lists:filtermap(

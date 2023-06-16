@@ -16,7 +16,8 @@
     reconcile_multiple_updates_test/1,
     list_skf_test/1,
     remove_all_skf_test/1,
-    reconcile_skf_test/1
+    reconcile_skf_test/1,
+    reconcile_ignore_unfunded_orgs/1
 ]).
 
 %% To test against a real config service...
@@ -42,7 +43,8 @@ all() ->
         main_test,
         reconcile_multiple_updates_test,
         remove_all_skf_test,
-        reconcile_skf_test
+        reconcile_skf_test,
+        reconcile_ignore_unfunded_orgs
     ].
 
 %%--------------------------------------------------------------------
@@ -236,6 +238,63 @@ reconcile_skf_test(_Config) ->
 
     ok.
 
+reconcile_ignore_unfunded_orgs(_Config) ->
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+
+    Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
+    Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
+
+    meck:new(router_device_cache, [passthrough]),
+    meck:expect(router_device_cache, get, fun() -> Funded ++ Unfunded end),
+
+    ReconcileFun = fun
+        ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+            ct:print("~p/~p failed(~p): ~p", [
+                Curr, Total, Status, uri_string:percent_decode(Message)
+            ]);
+        ({progress, {Curr, Total}, {ok, _Resp}}) ->
+            ct:print("~p/~p successful", [Curr, Total]);
+        (Msg) ->
+            ct:print("reconcile progress: ~p", [Msg])
+    end,
+
+    %% First reconcile
+    Reconcile0 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile0, ReconcileFun),
+
+    Local0 = router_skf_reconcile:local(Reconcile0),
+    {ok, RemoteAfter0} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local0), length(RemoteAfter0)),
+
+    ?assertEqual(50, length(Local0)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% Reconcile after org has been marked unfunded
+    ok = router_console_dc_tracker:add_unfunded(<<"no balance org">>),
+    Reconcile1 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
+
+    Local1 = router_skf_reconcile:local(Reconcile1),
+    {ok, RemoteAfter1} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local1), length(RemoteAfter1)),
+
+    ?assertEqual(25, length(Local1)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% And after being refunded
+    ok = router_console_dc_tracker:remove_unfunded(<<"no balance org">>),
+    Reconcile2 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
+
+    Local2 = router_skf_reconcile:local(Reconcile2),
+    {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local2), length(RemoteAfter2)),
+
+    ?assertEqual(50, length(Local2)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    ok.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
@@ -249,6 +308,9 @@ device_to_skf(RouteID, Device) ->
     }.
 
 create_n_devices(N) ->
+    create_n_devices(N, #{}).
+
+create_n_devices(N, Metadata) ->
     lists:map(
         fun(Idx) ->
             ID = router_utils:uuid_v4(),
@@ -257,7 +319,7 @@ create_n_devices(N) ->
                 [
                     {devaddrs, [Devaddr]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]},
-                    {metadata, #{multi_buy => Idx}}
+                    {metadata, Metadata#{multi_buy => Idx}}
                 ],
                 router_device:new(ID)
             )

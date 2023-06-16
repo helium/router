@@ -15,7 +15,11 @@
     refill/3,
     has_enough_dc/2,
     charge/2,
-    current_balance/1
+    current_balance/1,
+    %%
+    add_unfunded/1,
+    remove_unfunded/1,
+    list_unfunded/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -51,6 +55,7 @@
 
 -define(SERVER, ?MODULE).
 -define(ETS, router_console_dc_tracker_ets).
+-define(UNFUNDED_ETS, router_console_dc_tracker_unfunded_ets).
 
 -record(state, {
     pubkey_bin :: libp2p_crypto:pubkey_bin()
@@ -66,7 +71,22 @@ start_link(Args) ->
 -spec init_ets() -> ok.
 init_ets() ->
     ?ETS = ets:new(?ETS, [public, named_table, set]),
+    ?UNFUNDED_ETS = ets:new(?UNFUNDED_ETS, [public, named_table, set]),
     ok.
+
+-spec add_unfunded(OrgID :: binary()) -> ok.
+add_unfunded(OrgID) ->
+    true = ets:insert(?UNFUNDED_ETS, {OrgID, 0}),
+    ok.
+
+-spec remove_unfunded(OrgID :: binary()) -> ok.
+remove_unfunded(OrgID) ->
+    true = ets:delete(?UNFUNDED_ETS, OrgID),
+    ok.
+
+-spec list_unfunded() -> [binary()].
+list_unfunded() ->
+    [OrgID || {OrgID, _} <- ets:tab2list(?UNFUNDED_ETS)].
 
 -spec refill(OrgID :: binary(), Nonce :: non_neg_integer(), Balance :: non_neg_integer()) -> ok.
 refill(OrgID, Nonce, Balance) ->

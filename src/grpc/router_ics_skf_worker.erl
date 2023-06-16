@@ -46,7 +46,6 @@
 ]).
 
 -define(SERVER, ?MODULE).
--define(INIT, init).
 -define(UPDATE, update).
 -define(SKF_UPDATE_BATCH_SIZE, 100).
 
@@ -410,26 +409,35 @@ list_skf(RouteID, Callback) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(RouteID) ->
     Devices = router_device_cache:get(),
+    UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
     lists:usort(
         lists:filtermap(
             fun(Device) ->
                 MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
+                OrgId = maps:get(organization_id, router_device:metadata(Device), udnefined),
+
                 case
                     {
+                        lists:member(OrgId, UnfundedOrgs),
                         router_device:is_active(Device),
                         router_device:devaddr(Device),
                         router_device:nwk_s_key(Device)
                     }
                 of
-                    %% We don not consider any device that is paused
-                    {false, _, _} ->
+                    %% Unfunded Org
+                    {true, _, _, _} ->
                         false;
-                    {true, undefined, _} ->
+                    %% Inactive/Paused device
+                    {_, false, _, _} ->
                         false;
-                    {true, _, undefined} ->
+                    %% Unjoined device
+                    {_, true, undefined, _} ->
+                        false;
+                    %% Unjoined device
+                    {_, true, _, undefined} ->
                         false;
                     %% devices store devaddrs reversed. Config service expects them BE.
-                    {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                    {_, true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                         {true, #iot_config_skf_v1_pb{
                             route_id = RouteID,
                             devaddr = DevAddr,

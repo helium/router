@@ -18,7 +18,8 @@ register_all_usage() ->
         [
             org_usage(),
             org_info_usage(),
-            org_update_usage()
+            org_update_usage(),
+            org_unfunded_usage()
         ]
     ).
 
@@ -28,7 +29,8 @@ register_all_cmds() ->
         [
             org_cmd(),
             org_info_cmd(),
-            org_update_cmd()
+            org_update_cmd(),
+            org_unfunded_cmd()
         ]
     ).
 
@@ -43,7 +45,8 @@ org_usage() ->
             "Organization commands\n\n",
             "  info all [--less 42] [--more 42]         - Display DC for all Orgs\n",
             "  info <org_id>                            - Display info for single Org\n",
-            "  update <org_id> -b <balance> [--commit]  - Refill Org\n\n"
+            "  update <org_id> -b <balance> [--commit]  - Refill Org\n\n",
+            "  unfunded                                 - Refetch unfunded orgs"
         ]
     ].
 
@@ -253,6 +256,29 @@ update_org(_OrgID, OldOrg, #{balance := Balance}) when Balance > 0 ->
     ]);
 update_org(_, _, _) ->
     usage.
+
+%%--------------------------------------------------------------------
+%% org unfunded
+%%--------------------------------------------------------------------
+
+org_unfunded_usage() ->
+    [
+        ["organization", "unfunded"],
+        [
+            "Fetches orgs that have zero DC balance and marks their devices to be ",
+            "  ignored when reconcilng/adding/removing EUIs and SKFs."
+        ]
+    ].
+
+org_unfunded_cmd() ->
+    Before = router_console_dc_tracker:list_unfunded(),
+    ok = router_console_dc_tracker:reset_unfunded_from_api(),
+    After = router_console_dc_tracker:list_unfunded(),
+
+    Removed = Before -- After,
+    Added = After -- Before,
+
+    c_table([{added, length(Added)}, {removed, length(Removed)}]).
 
 %%--------------------------------------------------------------------
 %% Private Utilities

@@ -19,7 +19,8 @@
     %%
     add_unfunded/1,
     remove_unfunded/1,
-    list_unfunded/0
+    list_unfunded/0,
+    reset_unfunded_from_api/0
 ]).
 
 %% ------------------------------------------------------------------
@@ -87,6 +88,13 @@ remove_unfunded(OrgID) ->
 -spec list_unfunded() -> [binary()].
 list_unfunded() ->
     [OrgID || {OrgID, _} <- ets:tab2list(?UNFUNDED_ETS)].
+
+-spec reset_unfunded_from_api() -> ok.
+reset_unfunded_from_api() ->
+    true = ets:delete_all_objects(?UNFUNDED_ETS),
+    {ok, OrgIDs} = router_console_api:get_unfunded_org_ids(),
+    true = ets:insert(?UNFUNDED_ETS, [{ID, 0} || ID <- OrgIDs]),
+    ok.
 
 -spec refill(OrgID :: binary(), Nonce :: non_neg_integer(), Balance :: non_neg_integer()) -> ok.
 refill(OrgID, Nonce, Balance) ->

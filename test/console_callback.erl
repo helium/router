@@ -298,6 +298,15 @@ handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req
         _:_ ->
             {400, [], <<"bad_body">>}
     end;
+handle('GET', [<<"api">>, <<"router">>, <<"organizations">>, <<"zero_dc">>], _Req, Args) ->
+    _Pid = maps:get(forward, Args),
+    Tab = maps:get(ets, Args),
+    OrgIDs =
+        case ets:lookup(Tab, unfunded_org_ids) of
+            [] -> [<<"no balance org">>];
+            [{unfunded_org_ids, IDs}] -> IDs
+        end,
+    {200, [], jsx:encode(#{<<"data">> => OrgIDs})};
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),

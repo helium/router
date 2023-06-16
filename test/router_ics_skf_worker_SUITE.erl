@@ -304,7 +304,14 @@ reconcile_ignore_unfunded_orgs_test(_Config) ->
 
     ok.
 
-add_remove_unfunded_orgs_on_ws_message(_Config) ->
+add_remove_unfunded_orgs_on_ws_message(Config) ->
+    %% Start out this test by removing predefined unfunded
+    %% orgs and resetting the console api worker.
+    Tab = proplists:get_value(ets, Config),
+    true = ets:insert(Tab, {unfunded_org_ids, []}),
+    router_console_dc_tracker:reset_unfunded_from_api(),
+
+
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
 
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),

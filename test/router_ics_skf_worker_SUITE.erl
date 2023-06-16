@@ -241,6 +241,7 @@ reconcile_skf_test(_Config) ->
     ok.
 
 reconcile_ignore_unfunded_orgs_test(_Config) ->
+    %% This test starts with the default unfunded org of <<"no balance org">>
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
 
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
@@ -263,21 +264,7 @@ reconcile_ignore_unfunded_orgs_test(_Config) ->
     %% Websocket
     {ok, WSPid} = test_utils:ws_init(),
 
-    %% First reconcile
-    Reconcile0 = router_ics_skf_worker:pre_reconcile(),
-    ok = router_ics_skf_worker:reconcile(Reconcile0, ReconcileFun),
-
-    Local0 = router_skf_reconcile:local(Reconcile0),
-    {ok, RemoteAfter0} = router_ics_skf_worker:remote_skf(),
-    ?assertEqual(length(Local0), length(RemoteAfter0)),
-
-    ?assertEqual(50, length(Local0)),
-    ?assertEqual(50, length(router_device_cache:get())),
-
-    %% Reconcile after org has been marked unfunded
-    WSPid ! {org_zero_dc, <<"no balance org">>},
-    timer:sleep(10),
-
+    %% Reconcile on startup should already put us in a state with ignored devices.
     Reconcile1 = router_ics_skf_worker:pre_reconcile(),
     ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
 

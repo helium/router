@@ -90,6 +90,7 @@ list_unfunded() ->
 
 -spec refill(OrgID :: binary(), Nonce :: non_neg_integer(), Balance :: non_neg_integer()) -> ok.
 refill(OrgID, Nonce, Balance) ->
+    ok = ?MODULE:remove_unfunded(OrgID),
     case lookup(OrgID) of
         {error, not_found} ->
             lager:info("refilling ~p with ~p @ epoch ~p", [OrgID, Balance, Nonce]),

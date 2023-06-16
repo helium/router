@@ -181,15 +181,30 @@ handle_info(
     WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(
+    {ws_message, <<"organization:all">>, <<"organization:all:zeroed:dc_balance">>, #{
+        <<"id">> := OrgID, <<"dc_balance">> := Balance
+    }},
+    #state{db = DB, cf = CF} = State
+) ->
+    lager:info("org ~p has reached a balance of ~p, disabling", [OrgID, Balance]),
+    ok = router_console_dc_tracker:add_unfunded(OrgID),
+
+    DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
+    catch router_ics_eui_worker:remove(DeviceIDs),
+    {noreply, State};
+handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{
         <<"id">> := OrgID,
         <<"dc_balance_nonce">> := Nonce,
         <<"dc_balance">> := Balance
     }},
-    State
+    #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
     ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
+
+    DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
+    catch router_ics_eui_worker:add(DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> := DeviceIDs}},
@@ -328,6 +343,18 @@ start_ws(WSEndpoint, Token) ->
         forward => self()
     }),
     Pid.
+
+-spec get_device_ids_for_org(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    OrgID :: binary()
+) -> [binary()].
+get_device_ids_for_org(DB, CF, OrgID) ->
+    Devices = router_device:get(DB, CF, fun(Device) ->
+        OrgID == maps:get(organization_id, router_device:metadata(Device), undefiend)
+    end),
+
+    [router_device:id(D) || D <- Devices].
 
 -spec update_devices(
     DB :: rocksdb:db_handle(),

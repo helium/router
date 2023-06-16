@@ -17,7 +17,7 @@
     list_skf_test/1,
     remove_all_skf_test/1,
     reconcile_skf_test/1,
-    reconcile_ignore_unfunded_orgs/1
+    reconcile_ignore_unfunded_orgs_test/1
 ]).
 
 %% To test against a real config service...
@@ -44,7 +44,7 @@ all() ->
         reconcile_multiple_updates_test,
         remove_all_skf_test,
         reconcile_skf_test,
-        reconcile_ignore_unfunded_orgs
+        reconcile_ignore_unfunded_orgs_test
     ].
 
 %%--------------------------------------------------------------------
@@ -238,7 +238,7 @@ reconcile_skf_test(_Config) ->
 
     ok.
 
-reconcile_ignore_unfunded_orgs(_Config) ->
+reconcile_ignore_unfunded_orgs_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
 
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
@@ -258,6 +258,9 @@ reconcile_ignore_unfunded_orgs(_Config) ->
             ct:print("reconcile progress: ~p", [Msg])
     end,
 
+    %% Websocket
+    {ok, WSPid} = test_utils:ws_init(),
+
     %% First reconcile
     Reconcile0 = router_ics_skf_worker:pre_reconcile(),
     ok = router_ics_skf_worker:reconcile(Reconcile0, ReconcileFun),
@@ -270,7 +273,9 @@ reconcile_ignore_unfunded_orgs(_Config) ->
     ?assertEqual(50, length(router_device_cache:get())),
 
     %% Reconcile after org has been marked unfunded
-    ok = router_console_dc_tracker:add_unfunded(<<"no balance org">>),
+    WSPid ! {org_zero_dc, <<"no balance org">>},
+    timer:sleep(10),
+
     Reconcile1 = router_ics_skf_worker:pre_reconcile(),
     ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
 
@@ -282,7 +287,9 @@ reconcile_ignore_unfunded_orgs(_Config) ->
     ?assertEqual(50, length(router_device_cache:get())),
 
     %% And after being refunded
-    ok = router_console_dc_tracker:remove_unfunded(<<"no balance org">>),
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+    timer:sleep(10),
+
     Reconcile2 = router_ics_skf_worker:pre_reconcile(),
     ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
 

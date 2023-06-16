@@ -413,6 +413,28 @@ websocket_info(_Req, {org_update, Topic}, State) ->
         Payload
     ),
     {reply, {text, Data}, State};
+websocket_info(_Req, {org_refill, OrgID, RefillAmount}, State) ->
+    Payload = #{
+        <<"id">> => OrgID,
+        <<"dc_balance_nonce">> => 1,
+        <<"dc_balance">> => RefillAmount
+    },
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"organization:all:refill:dc_balance">>,
+        Payload
+    ),
+    {reply, {text, Data}, State};
+websocket_info(_Req, {org_zero_dc, OrgID}, State) ->
+    Payload = #{<<"id">> => OrgID, <<"dc_balance">> => 0},
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"organization:all:zeroed:dc_balance">>,
+        Payload
+    ),
+    {reply, {text, Data}, State};
 websocket_info(_Req, refetch_router_address, State) ->
     Data = router_console_ws_handler:encode_msg(
         <<"0">>,

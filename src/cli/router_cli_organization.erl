@@ -271,6 +271,17 @@ org_unfunded_usage() ->
     ].
 
 org_unfunded_cmd() ->
+    [
+        [
+            ["organization", "unfunded"],
+            [],
+            [],
+            fun reset_unfunded/3
+        ]
+    ].
+
+
+reset_unfunded(_, _, _) ->
     Before = router_console_dc_tracker:list_unfunded(),
     ok = router_console_dc_tracker:reset_unfunded_from_api(),
     After = router_console_dc_tracker:list_unfunded(),

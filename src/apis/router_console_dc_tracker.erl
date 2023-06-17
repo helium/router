@@ -75,10 +75,9 @@ init_ets() ->
     ?UNFUNDED_ETS = ets:new(?UNFUNDED_ETS, [public, named_table, set]),
     ok.
 
--spec add_unfunded(OrgID :: binary()) -> ok.
+-spec add_unfunded(OrgID :: binary()) -> boolean().
 add_unfunded(OrgID) ->
-    true = ets:insert(?UNFUNDED_ETS, {OrgID, 0}),
-    ok.
+    ets:insert_new(?UNFUNDED_ETS, {OrgID, 0}).
 
 -spec remove_unfunded(OrgID :: binary()) -> ok.
 remove_unfunded(OrgID) ->

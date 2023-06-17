@@ -186,12 +186,16 @@ handle_info(
     }},
     #state{db = DB, cf = CF} = State
 ) ->
-    lager:info("org ~p has reached a balance of ~p, disabling", [OrgID, Balance]),
-    ok = router_console_dc_tracker:add_unfunded(OrgID),
-
-    DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
-    catch router_ics_eui_worker:remove(DeviceIDs),
-    catch router_ics_skf_worker:remove_device_ids(DeviceIDs),
+    case router_console_dc_tracker:add_unfunded(OrgID) of
+        true ->
+            lager:info("org ~p has reached a balance of ~p, disabling", [OrgID, Balance]),
+            DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
+            catch router_ics_eui_worker:remove(DeviceIDs),
+            catch router_ics_skf_worker:remove_device_ids(DeviceIDs);
+        false ->
+            lager:info("org ~p has reached a balance of ~p, already disabling", [OrgID, Balance]),
+            ok
+    end,
     {noreply, State};
 handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{

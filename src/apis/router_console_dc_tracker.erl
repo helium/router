@@ -77,7 +77,10 @@ init_ets() ->
 
 -spec add_unfunded(OrgID :: binary()) -> boolean().
 add_unfunded(OrgID) ->
-    ets:insert_new(?UNFUNDED_ETS, {OrgID, 0}).
+    Update = ets:update_counter(?UNFUNDED_ETS, OrgID, {2, 1}, {default, 0}),
+    Max = router_utils:get_env_int(max_unfunded_remove_retry, 15),
+    ShouldRemove = Update < Max,
+    ShouldRemove.
 
 -spec remove_unfunded(OrgID :: binary()) -> ok.
 remove_unfunded(OrgID) ->
@@ -318,7 +321,7 @@ insert(OrgID, Balance, Nonce) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
-delete_ets()->
+delete_ets() ->
     ets:delete(?ETS),
     ets:delete(?UNFUNDED_ETS).
 

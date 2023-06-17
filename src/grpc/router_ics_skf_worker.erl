@@ -432,7 +432,7 @@ list_skf(RouteID, Callback) ->
 get_local_devices_skfs(DeviceIDs, RouteID) ->
     Devices = lists:filtermap(
         fun(DeviceID) ->
-            case rotuer_device_cache:get(DeviceID) of
+            case router_device_cache:get(DeviceID) of
                 {error, _} -> false;
                 {ok, Device} -> {true, Device}
             end

@@ -926,15 +926,17 @@ enumerate_last_test_() ->
 trace_test() ->
     application:ensure_all_started(lager),
     application:set_env(lager, log_root, "log"),
-    ets:new(router_device_cache_ets, [public, named_table, set]),
-    ets:new(router_device_cache_devaddr_ets, [public, named_table, bag]),
+
+    Dir = test_utils:tmp_dir("router_utils_trace_test"),
+    {ok, Pid} = router_db:start_link([Dir]),
+    ok = router_device_cache:init(),
 
     DeviceID = <<"12345678910">>,
     Device = router_device:update(
         [
             {app_eui, <<"app_eui">>},
             {dev_eui, <<"dev_eui">>},
-            {devaddrs, [<<"devaddr">>]}
+            {devaddrs, [<<255, 7, 0, 72>>]}
         ],
         router_device:new(DeviceID)
     ),
@@ -947,8 +949,9 @@ trace_test() ->
     ok = stop_trace(DeviceID),
     ?assert([] == get_device_traces(DeviceID)),
 
+    gen_server:stop(Pid),
     ets:delete(router_device_cache_ets),
-    ets:delete(router_device_cache_devaddr_ets),
+    lists:foreach(fun ets:delete/1, persistent_term:get(router_device_cache_devaddr_tables, [])),
     application:stop(lager),
     ok.
 

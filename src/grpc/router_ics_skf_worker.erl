@@ -269,6 +269,8 @@ init(#{route_id := RouteID} = Args) ->
     case maps:get(reconcile_on_startup, Args, false) of
         true ->
             erlang:spawn(fun() ->
+                WaitSeconds = router_utils:get_env_int(reconcile_on_startup_wait_sec, 15),
+                timer:sleep(timer:seconds(WaitSeconds)),
                 lager:info("startup reconcile"),
                 startup_reconcile()
             end);
@@ -455,7 +457,7 @@ devices_to_skfs(Devices, RouteID) ->
         lists:filtermap(
             fun(Device) ->
                 MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
-                OrgId = maps:get(organization_id, router_device:metadata(Device), udnefined),
+                OrgId = maps:get(organization_id, router_device:metadata(Device), undefined),
 
                 case
                     {

@@ -185,6 +185,10 @@ reconcile_multiple_updates_test(_Config) ->
 
 remove_all_skf_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
+
     ok = application:set_env(router, update_skf_batch_size, 100),
 
     %% Fill config service with filters to be removed.
@@ -205,6 +209,9 @@ remove_all_skf_test(_Config) ->
 
 reconcile_skf_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
     ok = application:set_env(router, update_skf_batch_size, 100),
 
     %% Fill config service with filters to be removed.
@@ -243,6 +250,9 @@ reconcile_skf_test(_Config) ->
 reconcile_ignore_unfunded_orgs_test(_Config) ->
     %% This test starts with the default unfunded org of <<"no balance org">>
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
 
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
     Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
@@ -298,8 +308,10 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     true = ets:insert(Tab, {unfunded_org_ids, []}),
     router_console_dc_tracker:reset_unfunded_from_api(),
 
-
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
 
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
     Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),

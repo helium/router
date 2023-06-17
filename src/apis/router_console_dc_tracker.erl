@@ -319,15 +319,19 @@ insert(OrgID, Balance, Nonce) ->
 %% ------------------------------------------------------------------
 -ifdef(TEST).
 
+delete_ets()->
+    ets:delete(?ETS),
+    ets:delete(?UNFUNDED_ETS).
+
 refill_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
     ?assertEqual({error, not_found}, lookup(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({ok, Balance, Nonce}, lookup(OrgID)),
-    ets:delete(?ETS),
+    delete_ets(),
     ok.
 
 setup_meck() ->
@@ -349,7 +353,7 @@ teardown_meck() ->
     ok.
 
 has_enough_dc_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
     ok = setup_meck(),
 
     OrgID = <<"ORG_ID">>,
@@ -362,11 +366,11 @@ has_enough_dc_test() ->
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize)),
 
-    ets:delete(?ETS),
+    delete_ets(),
     ok = teardown_meck().
 
 charge_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
     ok = setup_meck(),
 
     OrgID = <<"ORG_ID">>,
@@ -380,11 +384,11 @@ charge_test() ->
     ?assertEqual({ok, 0, 1}, charge(OrgID, PayloadSize)),
     ?assertEqual({error, {not_enough_dc, 0, Balance}}, charge(OrgID, PayloadSize)),
 
-    ets:delete(?ETS),
+    delete_ets(),
     ok = teardown_meck().
 
 current_balance_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
     meck:new(router_console_api, [passthrough]),
     meck:expect(router_console_api, get_org, fun(_OrgID) -> {error, 0} end),
     OrgID = <<"ORG_ID">>,
@@ -395,22 +399,22 @@ current_balance_test() ->
     ?assertEqual({100, 1}, current_balance(OrgID)),
     ?assert(meck:validate(router_console_api)),
     meck:unload(router_console_api),
-    ets:delete(?ETS),
+    delete_ets(),
     ok.
 
 lookup_balance_less_than_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual(ok, refill(<<"ANOTHER_ORG">>, 1, 999)),
     ?assertEqual([{OrgID, {Balance, Nonce}}], lookup_balance_less_than(500)),
-    ets:delete(?ETS),
+    delete_ets(),
     ok.
 
 lookup_nonce_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
 
     ?assertEqual(ok, refill(<<"ONE">>, 1, 1)),
     ?assertEqual(ok, refill(<<"TWO">>, 2, 2)),
@@ -419,11 +423,11 @@ lookup_nonce_test() ->
     ?assertEqual([{<<"ONE">>, {1, 1}}, {<<"THREE">>, {2, 1}}], lookup_nonce(1)),
     ?assertEqual([{<<"TWO">>, {2, 2}}], lookup_nonce(2)),
 
-    ets:delete(?ETS),
+    delete_ets(),
     ok.
 
 lookup_balance_test() ->
-    _ = ets:new(?ETS, [public, named_table, set]),
+    ok = init_ets(),
 
     ?assertEqual(ok, refill(<<"ONE">>, 1, 1)),
     ?assertEqual(ok, refill(<<"TWO">>, 2, 2)),
@@ -432,7 +436,7 @@ lookup_balance_test() ->
     ?assertEqual([{<<"ONE">>, {1, 1}}], lookup_balance(1)),
     ?assertEqual([{<<"TWO">>, {2, 2}}, {<<"THREE">>, {2, 1}}], lookup_balance(2)),
 
-    ets:delete(?ETS),
+    delete_ets(),
     ok.
 
 -endif.

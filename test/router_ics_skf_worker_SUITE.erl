@@ -316,8 +316,11 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
     Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
 
-    meck:new(router_device_cache, [passthrough]),
-    meck:expect(router_device_cache, get, fun() -> Funded ++ Unfunded end),
+    %% Regular DB is used by websocket worker
+    {ok, DB, CF} = router_db:get_devices(),
+    [{ok, _} = router_device:save(DB, CF, D) || D <- Funded ++ Unfunded],
+    %% Cache is used by SKF worker
+    [{ok, _} = router_device_cache:save(D) || D <- Funded ++ Unfunded],
 
     ReconcileFun = fun
         ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->

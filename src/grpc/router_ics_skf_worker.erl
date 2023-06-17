@@ -303,13 +303,13 @@ handle_call(_Msg, _From, State) ->
 handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("adding devices: ~p", [DeviceIDs]),
     SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
-    Updates = ?MODULE:skf_to_remove_update(SKFs),
+    Updates = ?MODULE:skf_to_add_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
 handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("removing devices: ~p", [DeviceIDs]),
     SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
-    Updates = ?MODULE:skf_to_add_update(SKFs),
+    Updates = ?MODULE:skf_to_remove_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
 handle_cast(

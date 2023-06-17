@@ -250,7 +250,7 @@ main_test_ignore_unfunded_orgs_test(_Config) ->
     %% Start with unfunded org
     {ok, WSPid} = test_utils:ws_init(),
     %% add unfunded but don't trigger the ws logic
-    ok = router_console_dc_tracker:add_unfunded(<<"no balance org">>),
+    true = router_console_dc_tracker:add_unfunded(<<"no balance org">>),
 
     meck:expect(router_console_api, get_device, fun(DeviceID) ->
         lager:notice("router_console_api:get_device(~p)", [DeviceID]),

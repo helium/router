@@ -102,7 +102,7 @@ list_skf_test(_Config) ->
 
 main_test(Config) ->
     meck:new(router_device_cache, [passthrough]),
-    Devices = create_n_devices(2),
+    Devices = create_n_joined_devices(2),
 
     %% Add a device withotu any devaddr or session, it should be filtered out
     meck:expect(router_device_cache, get, fun() ->
@@ -221,7 +221,7 @@ reconcile_skf_test(_Config) ->
     ]),
 
     %% Fill the cache with devices that are not in the config service yet
-    Devices = create_n_devices(50),
+    Devices = create_n_joined_devices(50),
 
     meck:new(router_device_cache, [passthrough]),
     meck:expect(router_device_cache, get, fun() -> Devices end),
@@ -254,8 +254,8 @@ reconcile_ignore_unfunded_orgs_test(_Config) ->
         router_device_devaddr:get_devaddr_bases() =/= {ok, []}
     end),
 
-    Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
-    Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
+    Funded = create_n_joined_devices(25, #{organization_id => <<"big balance org">>}),
+    Unfunded = create_n_joined_devices(25, #{organization_id => <<"no balance org">>}),
 
     meck:new(router_device_cache, [passthrough]),
     meck:expect(router_device_cache, get, fun() -> Funded ++ Unfunded end),
@@ -313,8 +313,16 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
         router_device_devaddr:get_devaddr_bases() =/= {ok, []}
     end),
 
-    Funded = create_n_devices(25, #{organization_id => <<"big balance org">>}),
-    Unfunded = create_n_devices(25, #{organization_id => <<"no balance org">>}),
+    BigBalanceMeta = #{organization_id => <<"big balance org">>},
+    NoBalanceMeta = #{organization_id => <<"no balance org">>},
+    %% Create a mixture of joined/unjoined devices to make sure we're not
+    %% breaking on sending unjoined devices to the config-service.
+    Funded =
+        create_n_joined_devices(15, BigBalanceMeta) ++
+            create_n_unjoined_devices(10, BigBalanceMeta),
+    Unfunded =
+        create_n_joined_devices(15, NoBalanceMeta) ++
+            create_n_unjoined_devices(10, NoBalanceMeta),
 
     %% Regular DB is used by websocket worker
     {ok, DB, CF} = router_db:get_devices(),
@@ -344,7 +352,7 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     {ok, RemoteAfter0} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(length(Local0), length(RemoteAfter0)),
 
-    ?assertEqual(50, length(Local0)),
+    ?assertEqual(30, length(Local0)),
     ?assertEqual(50, length(router_device_cache:get())),
 
     %% Reconcile after org has been marked unfunded
@@ -361,7 +369,7 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     ?assertNotEqual(length(Local1), length(RemoteAfter1)),
 
     %% Unfunded are being filtered out of local, but they still exist in the cache.
-    ?assertEqual(25, length(Local1)),
+    ?assertEqual(15, length(Local1)),
     ?assertEqual(50, length(router_device_cache:get())),
 
     %% And after being refunded
@@ -376,7 +384,7 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
     ?assertEqual(length(Local2), length(RemoteAfter2)),
 
-    ?assertEqual(50, length(Local2)),
+    ?assertEqual(30, length(Local2)),
     ?assertEqual(50, length(router_device_cache:get())),
 
     ok.
@@ -393,10 +401,10 @@ device_to_skf(RouteID, Device) ->
         max_copies = maps:get(multi_buy, router_device:metadata(Device), 999)
     }.
 
-create_n_devices(N) ->
-    create_n_devices(N, #{}).
+create_n_joined_devices(N) ->
+    create_n_joined_devices(N, #{}).
 
-create_n_devices(N, Metadata) ->
+create_n_joined_devices(N, Metadata) ->
     lists:map(
         fun(Idx) ->
             ID = router_utils:uuid_v4(),
@@ -407,6 +415,18 @@ create_n_devices(N, Metadata) ->
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]},
                     {metadata, Metadata#{multi_buy => Idx}}
                 ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, N)
+    ).
+
+create_n_unjoined_devices(N, Metadata) ->
+    lists:map(
+        fun(Idx) ->
+            ID = router_utils:uuid_v4(),
+            router_device:update(
+                [{metadata, Metadata#{multi_buy => Idx}}],
                 router_device:new(ID)
             )
         end,

@@ -249,14 +249,17 @@ skf_to_remove_update(#iot_config_skf_v1_pb{
     }.
 
 -spec device_to_devaddr_nwk_key(router_device:device()) ->
-    {DevaddrInt :: non_neg_integer(), NwkSKey :: binary()}.
+    {ok, {DevaddrInt :: non_neg_integer(), NwkSKey :: binary()}} | {error, unjoined}.
 device_to_devaddr_nwk_key(Device) ->
-    DevAddr = router_device:devaddr(Device),
-    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-        DevAddr
-    ),
-    NwkSKey = router_device:nwk_s_key(Device),
-    {DevAddrInt, NwkSKey}.
+    case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+        {undefined, _} ->
+            {error, unjoined};
+        {_, undefined} ->
+            {error, unjoined};
+        {DevAddr, NwkSKey} ->
+            <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
+            {ok, {DevAddrInt, NwkSKey}}
+    end.
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions

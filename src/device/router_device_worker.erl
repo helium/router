@@ -367,7 +367,7 @@ handle_cast(
         {error, not_found} ->
             catch router_ics_eui_worker:remove([DeviceID]),
             ok =
-                case router_ics_skf_worker:device_to_devaddr_nwk_key(Device0) of
+                case router_device:devaddr_int_nwk_key(Device0) of
                     {ok, {DevAddrInt, NwkSKey}} ->
                         catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
                     _ ->
@@ -431,7 +431,7 @@ handle_cast(
                     ok
             end,
 
-            case router_ics_skf_worker:device_to_devaddr_nwk_key(Device1) of
+            case router_device:devaddr_int_nwk_key(Device1) of
                 {error, _} ->
                     ok;
                 {ok, {DevAddrInt, NwkSKey}} ->

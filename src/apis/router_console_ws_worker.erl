@@ -401,7 +401,7 @@ update_device_record(DB, CF, DeviceID) ->
             case router_device_cache:get(DeviceID) of
                 {ok, Device} ->
                     catch router_ics_eui_worker:remove([DeviceID]),
-                    case router_ics_skf_worker:device_to_devaddr_nwk_key(Device) of
+                    case router_device:devaddr_int_nwk_key(Device) of
                         {ok, {DevAddrInt, NwkSKey}} ->
                             catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
                         {error, _} ->
@@ -449,7 +449,7 @@ update_device_record(DB, CF, DeviceID) ->
                     ok
             end,
 
-            case router_ics_skf_worker:device_to_devaddr_nwk_key(Device) of
+            case router_device:devaddr_int_nwk_key(Device) of
                 {error, _} ->
                     ok;
                 {ok, {DevAddrInt, NwkSKey}} ->

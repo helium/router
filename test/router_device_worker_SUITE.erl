@@ -425,7 +425,7 @@ device_update_test(Config) ->
 
     receive
         {router_test_ics_route_service, update_skfs, Req1} ->
-            {DevAddrInt, NwkKey} = router_ics_skf_worker:device_to_devaddr_nwk_key(Device0),
+            {ok, {DevAddrInt, NwkKey}} = router_device:devaddr_int_nwk_key(Device0),
             SessionKey = erlang:binary_to_list(binary:encode_hex(NwkKey)),
             [Update] = Req1#iot_config_route_skf_update_req_v1_pb.updates,
 

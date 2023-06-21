@@ -48,7 +48,8 @@
 -export([
     can_queue_payload/3,
     credentials_to_evict/1,
-    limit_credentials/1
+    limit_credentials/1,
+    devaddr_int_nwk_key/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -523,6 +524,19 @@ credentials_to_evict(Creds) ->
 -spec limit_credentials(Creds :: list(any())) -> list(any()).
 limit_credentials(Creds) ->
     lists:sublist(Creds, ?MAX_CREDENTIAL_COUNT).
+
+-spec devaddr_int_nwk_key(router_device:device()) ->
+    {ok, {DevaddrInt :: non_neg_integer(), NwkSKey :: binary()}} | {error, unjoined}.
+devaddr_int_nwk_key(Device) ->
+    case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+        {undefined, _} ->
+            {error, unjoined};
+        {_, undefined} ->
+            {error, unjoined};
+        {DevAddr, NwkSKey} ->
+            <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
+            {ok, {DevAddrInt, NwkSKey}}
+    end.
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

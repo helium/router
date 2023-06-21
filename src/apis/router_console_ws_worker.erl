@@ -421,10 +421,31 @@ update_device_record(DB, CF, DeviceID) ->
                     {ok, D} -> D;
                     {error, _} -> router_device:new(DeviceID)
                 end,
+
+            DevAddrs =
+                case
+                    {
+                        {router_device:app_eui(Device0), router_device:app_eui(APIDevice)},
+                        {router_device:dev_eui(Device0), router_device:dev_eui(APIDevice)}
+                    }
+                of
+                    {{App, App}, {Dev, Dev}} ->
+                        router_device:devaddrs(Device0);
+                    {{undefined, _}, {undefined, _}} ->
+                        lager:info("udpating new to us device"),
+                        [];
+                    _ ->
+                        Updates = router_device:make_skf_removes(Device0),
+                        catch router_ics_skf_worker:update(Updates),
+                        lager:info("app_eui or dev_eui changed, unsetting devaddr"),
+                        []
+                end,
+
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
+                {devaddrs, DevAddrs},
                 {metadata, router_device:metadata(APIDevice)},
                 {is_active, router_device:is_active(APIDevice)}
             ],

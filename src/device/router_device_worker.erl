@@ -395,6 +395,8 @@ handle_cast(
                     {{App, App}, {Dev, Dev}} ->
                         router_device:devaddrs(Device0);
                     _ ->
+                        Updates = router_device:make_skf_removes(Device0),
+                        catch router_ics_skf_worker:update(Updates),
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),
                         []
                 end,
@@ -1422,28 +1424,16 @@ handle_join(
     MaxCopies :: non_neg_integer()
 ) -> ok.
 handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs, MaxCopies) ->
-    DevAddrToInt = fun(D) ->
-        <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
-        Int
-    end,
-
     %% remove evicted keys from the config service for every devaddr.
-    EvictedKeys = router_device:credentials_to_evict(NewKeys),
-    ToRemoveKeys = [
-        {remove, DevAddrToInt(D), NSK, MaxCopies}
-     || {NSK, _} <- EvictedKeys, D <- NewDevAddrs
-    ],
-
     %% remove evicted devaddrs from the config service for every nwkskey.
-    EvictedAddrs = router_device:credentials_to_evict(NewDevAddrs),
-    ToRemoveAddrs = [
-        {remove, DevAddrToInt(D), NSK, MaxCopies}
-     || {NSK, _} <- NewKeys, D <- EvictedAddrs
-    ],
+    Removes = router_device:make_skf_removes(
+        router_device:credentials_to_evict(NewKeys),
+        router_device:credentials_to_evict(NewDevAddrs)
+    ),
 
     %% add the new devaddr, nskwkey.
     <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(NewDevAddr),
-    Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ ToRemoveKeys ++ ToRemoveAddrs),
+    Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ Removes),
     ok = router_ics_skf_worker:update(Updates),
 
     lager:debug("sending update skf for join ~p ~p", [Updates]),

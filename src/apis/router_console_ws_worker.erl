@@ -154,9 +154,9 @@ handle_info(
 %% Device add
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:add:devices">>, #{<<"devices">> := DeviceIDs}},
-    State
+    #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_eui_worker:add(DeviceIDs),
+    update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device Update
 handle_info(

@@ -393,7 +393,7 @@ handle_cast(
                     }
                 of
                     {{App, App}, {Dev, Dev}} ->
-                        [router_device:devaddr(Device0)];
+                        router_device:devaddrs(Device0);
                     _ ->
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),
                         []

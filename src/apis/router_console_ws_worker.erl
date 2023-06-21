@@ -435,6 +435,7 @@ update_device_record(DB, CF, DeviceID) ->
                         lager:info("udpating new to us device"),
                         [];
                     _ ->
+                        catch router_ics_eui_worker:remove([DeviceID]),
                         Updates = router_device:make_skf_removes(Device0),
                         catch router_ics_skf_worker:update(Updates),
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),

@@ -395,6 +395,7 @@ handle_cast(
                     {{App, App}, {Dev, Dev}} ->
                         router_device:devaddrs(Device0);
                     _ ->
+                        catch router_ics_eui_worker:remove([DeviceID]),
                         Updates = router_device:make_skf_removes(Device0),
                         catch router_ics_skf_worker:update(Updates),
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),

@@ -460,7 +460,10 @@ update_device_record(DB, CF, DeviceID) ->
             OldMultiBuy = maps:get(multi_buy, router_device:metadata(Device0), 0),
             NewMultiBuy = maps:get(multi_buy, router_device:metadata(APIDevice), 0),
 
-            case {OldIsActive, IsActive} of
+            case {OldIsActive, IsActive, router_device:devaddrs(Device)} of
+                {_, true, []} ->
+                    catch router_ics_eui_worker:add([DeviceID]),
+                    lager:debug("device EUI maybe reset, sent EUI add");
                 {false, true} ->
                     catch router_ics_eui_worker:add([DeviceID]),
                     lager:debug("device un-paused, sent EUI add");

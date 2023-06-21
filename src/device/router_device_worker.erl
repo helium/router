@@ -423,11 +423,14 @@ handle_cast(
             ok = router_device_multibuy:max(router_device:id(Device1), NewMultiBuy),
             ok = save_and_update(DB, CF, ChannelsWorker, Device1),
 
-            case {OldIsActive, IsActive} of
-                {false, true} ->
+            case {OldIsActive, IsActive, router_device:devaddrs(Device1)} of
+                {_, true, []} ->
+                    catch router_ics_eui_worker:add([DeviceID]),
+                    lager:debug("device EUI maybe reset, sent EUI add");
+                {false, true, _} ->
                     catch router_ics_eui_worker:add([DeviceID]),
                     lager:debug("device un-paused, sent EUI add");
-                {true, false} ->
+                {true, false, _} ->
                     catch router_ics_eui_worker:remove([DeviceID]),
                     lager:debug("device paused, sent EUI remove");
                 _ ->

@@ -293,13 +293,13 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("adding devices: ~p", [DeviceIDs]),
-    SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
+    SKFs = get_local_devices_skfs(add, DeviceIDs, RouteID),
     Updates = ?MODULE:skf_to_add_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
 handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("removing devices: ~p", [DeviceIDs]),
-    SKFs = get_local_devices_skfs(DeviceIDs, RouteID),
+    SKFs = get_local_devices_skfs(remove, DeviceIDs, RouteID),
     Updates = ?MODULE:skf_to_remove_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
@@ -418,9 +418,9 @@ list_skf(RouteID, Callback) ->
     ),
     ok.
 
--spec get_local_devices_skfs(DeviceIDs :: [binary()], RouteID :: string()) ->
+-spec get_local_devices_skfs(Action :: add | remove, DeviceIDs :: [binary()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
-get_local_devices_skfs(DeviceIDs, RouteID) ->
+get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
     Devices = lists:filtermap(
         fun(DeviceID) ->
             case router_device_cache:get(DeviceID) of
@@ -430,46 +430,59 @@ get_local_devices_skfs(DeviceIDs, RouteID) ->
         end,
         DeviceIDs
     ),
-    devices_to_skfs(Devices, RouteID).
+    case Action of
+        add ->
+            %% Don't send adds for unfunded orgs devices
+            devices_to_skfs(remove_unfunded_devices(Devices), RouteID);
+        remove ->
+            %% Always send removes
+            devices_to_skfs(Devices, RouteID)
+    end.
 
 -spec get_local_skfs(RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(RouteID) ->
-    Devices = router_device_cache:get(),
-    devices_to_skfs(Devices, RouteID).
+    Devices0 = router_device_cache:get(),
+    Devices1 = remove_unfunded_devices(Devices0),
+    devices_to_skfs(Devices1, RouteID).
+
+-spec remove_unfunded_devices(list(router_device:device())) -> list(router_device:device()).
+remove_unfunded_devices(Devices) ->
+    UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
+    lists:filter(
+        fun(D) ->
+            OrgId = maps:get(organization_id, router_device:metadata(D), undefined),
+            not lists:member(OrgId, UnfundedOrgs)
+        end,
+        Devices
+    ).
 
 -spec devices_to_skfs(Devices :: [router_device:device()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 devices_to_skfs(Devices, RouteID) ->
-    UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
     lists:usort(
         lists:filtermap(
             fun(Device) ->
                 MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
-                OrgId = maps:get(organization_id, router_device:metadata(Device), undefined),
 
                 case
                     {
-                        lists:member(OrgId, UnfundedOrgs),
                         router_device:is_active(Device),
                         router_device:devaddr(Device),
                         router_device:nwk_s_key(Device)
                     }
                 of
-                    %% Unfunded Org
-                    {true, _, _, _} ->
-                        false;
                     %% Inactive/Paused device
-                    {_, false, _, _} ->
+                    {false, _, _} ->
                         false;
                     %% Unjoined device
-                    {_, true, undefined, _} ->
+                    {true, undefined, _} ->
                         false;
                     %% Unjoined device
-                    {_, true, _, undefined} ->
+                    {true, _, undefined} ->
                         false;
                     %% devices store devaddrs reversed. Config service expects them BE.
-                    {_, true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                    {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                         {true, #iot_config_skf_v1_pb{
                             route_id = RouteID,
                             devaddr = DevAddr,

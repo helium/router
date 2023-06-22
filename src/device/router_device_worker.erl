@@ -1429,15 +1429,20 @@ handle_join(
 ) -> ok.
 handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs, MaxCopies) ->
     %% remove evicted keys from the config service for every devaddr.
-    %% remove evicted devaddrs from the config service for every nwkskey.
-    Removes = router_device:make_skf_removes(
+
+    KeyRemoves = router_device:make_skf_removes(
         router_device:credentials_to_evict(NewKeys),
+        NewDevAddrs
+    ),
+    %% remove evicted devaddrs from the config service for every nwkskey.
+    AddrRemoves = router_device:make_skf_removes(
+        NewKeys,
         router_device:credentials_to_evict(NewDevAddrs)
     ),
 
     %% add the new devaddr, nskwkey.
     <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(NewDevAddr),
-    Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ Removes),
+    Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ KeyRemoves ++ AddrRemoves),
     ok = router_ics_skf_worker:update(Updates),
 
     lager:debug("sending update skf for join ~p ~p", [Updates]),

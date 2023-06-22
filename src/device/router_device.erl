@@ -541,9 +541,10 @@ devaddr_int_nwk_key(Device) ->
 
 -spec make_skf_removes(device()) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
 make_skf_removes(Device) ->
-    NwkKeys = [Key || {Key, _} <- ?MODULE:keys(Device)],
-    DevAddrs = ?MODULE:devaddrs(Device),
-    ?MODULE:make_skf_removes(NwkKeys, DevAddrs).
+    ?MODULE:make_skf_removes(
+        ?MODULE:keys(Device),
+        ?MODULE:devaddrs(Device)
+    ).
 
 -spec make_skf_removes(
     NwkKeys :: list({binary() | undefined, binary() | undefined}),

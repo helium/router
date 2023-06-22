@@ -64,7 +64,20 @@ add_skf(SKFs) ->
 
 -spec remove_skf(#iot_config_skf_v1_pb{}) -> ok.
 remove_skf(SKF) ->
-    true = ets:delete_object(?ETS_SKF, SKF),
+    %% Delete ignoring max_copies.
+    #iot_config_skf_v1_pb{route_id = R0, devaddr = D0, session_key = S0} = SKF,
+    %% Match = ets:fun2ms(fun({iot_config_skf_v1_pb, R1, D1, S1,_}) ->
+    %%     R0 == R1 andalso D0 == D1 andalso S0 == S1
+    %% end),
+    Match = [
+        {{iot_config_skf_v1_pb, '$1', '$2', '$3', '_'}, [], [
+            {'andalso', {'==', R0, '$1'},
+                {'andalso', {'==', D0, '$2'}, {'==', S0, '$3'}}}
+        ]}
+    ],
+    %% If more than 1 is deleted, we have entered a DB state that is not allwoed.
+    %% SKF are unique over (route, devaddr, session_key).
+    1 = ets:select_delete(?ETS_SKF, Match),
     ok.
 
 -spec clear_skf() -> ok.

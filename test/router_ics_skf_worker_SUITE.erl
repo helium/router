@@ -364,13 +364,13 @@ add_remove_unfunded_orgs_on_ws_message(Config) ->
     %% ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
 
     ct:print("checking local and remote after zero balance"),
-    {ok, Local1} = router_ics_skf_worker:local_skf(),
+    %% Local SKF _does not_ consider unfunded devices
+    Local1 = router_device_cache:get(),
     {ok, RemoteAfter1} = router_ics_skf_worker:remote_skf(),
     ?assertNotEqual(length(Local1), length(RemoteAfter1)),
 
     %% Unfunded are being filtered out of local, but they still exist in the cache.
-    ?assertEqual(15, length(Local1)),
-    ?assertEqual(50, length(router_device_cache:get())),
+    ?assertEqual(50, length(Local1)),
 
     %% And after being refunded
     WSPid ! {org_refill, <<"no balance org">>, 100},

@@ -547,7 +547,7 @@ make_skf_removes(Device) ->
 
 -spec make_skf_removes(
     NwkKeys :: list({binary() | undefined, binary() | undefined}),
-    DevAddrs :: binary()
+    DevAddrs :: list(binary())
 ) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
 make_skf_removes(NwkKeys, DevAddrs) ->
     DevAddrToInt = fun(D) ->

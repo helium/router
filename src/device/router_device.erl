@@ -558,7 +558,6 @@ make_skf_removes(NwkKeys, DevAddrs) ->
 
     [{remove, DevAddrToInt(D), NSK, 0} || {NSK, _} <- NwkKeys, D <- DevAddrs].
 
-
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions
 %% ------------------------------------------------------------------

@@ -447,7 +447,11 @@ unjoined_device_update_test(Config) ->
 
     {ok, _} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
     %% allow device update to take place
-    timer:sleep(250),
+    receive
+        {router_test_ics_route_service, update_euis, AddReq} ->
+            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
+    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
+    end,
 
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
@@ -458,11 +462,7 @@ unjoined_device_update_test(Config) ->
     ets:insert(Tab, {device_not_found, true}),
 
     %% Sending debug event from websocket
-    WSPid =
-        receive
-            {websocket_init, P} -> P
-        after 2500 -> ct:fail(websocket_init_timeout)
-        end,
+    {ok, WSPid} = test_utils:ws_init(),
     WSPid ! {device_update, <<"device:all">>},
 
     {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
@@ -504,7 +504,11 @@ stopped_unjoined_device_update_test(Config) ->
     %% Start the device to get it in the cache
     {ok, Pid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
     %% allow device update to take place
-    timer:sleep(250),
+    receive
+        {router_test_ics_route_service, update_euis, AddReq} ->
+            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
+    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
+    end,
     ok = gen_server:stop(Pid),
 
     %% Check that device is in cache now

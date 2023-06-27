@@ -48,7 +48,9 @@
 -export([
     can_queue_payload/3,
     credentials_to_evict/1,
-    limit_credentials/1
+    limit_credentials/1,
+    devaddr_int_nwk_key/1,
+    make_skf_removes/1, make_skf_removes/2
 ]).
 
 %% ------------------------------------------------------------------
@@ -523,6 +525,38 @@ credentials_to_evict(Creds) ->
 -spec limit_credentials(Creds :: list(any())) -> list(any()).
 limit_credentials(Creds) ->
     lists:sublist(Creds, ?MAX_CREDENTIAL_COUNT).
+
+-spec devaddr_int_nwk_key(router_device:device()) ->
+    {ok, {DevaddrInt :: non_neg_integer(), NwkSKey :: binary()}} | {error, unjoined}.
+devaddr_int_nwk_key(Device) ->
+    case {router_device:devaddr(Device), router_device:nwk_s_key(Device)} of
+        {undefined, _} ->
+            {error, unjoined};
+        {_, undefined} ->
+            {error, unjoined};
+        {DevAddr, NwkSKey} ->
+            <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(DevAddr),
+            {ok, {DevAddrInt, NwkSKey}}
+    end.
+
+-spec make_skf_removes(device()) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
+make_skf_removes(Device) ->
+    ?MODULE:make_skf_removes(
+        ?MODULE:keys(Device),
+        ?MODULE:devaddrs(Device)
+    ).
+
+-spec make_skf_removes(
+    NwkKeys :: list({binary() | undefined, binary() | undefined}),
+    DevAddrs :: list(binary())
+) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
+make_skf_removes(NwkKeys, DevAddrs) ->
+    DevAddrToInt = fun(D) ->
+        <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
+        Int
+    end,
+
+    [{remove, DevAddrToInt(D), NSK, 0} || {NSK, _} <- NwkKeys, D <- DevAddrs].
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

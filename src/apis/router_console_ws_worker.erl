@@ -154,16 +154,15 @@ handle_info(
 %% Device add
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:add:devices">>, #{<<"devices">> := DeviceIDs}},
-    State
+    #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_eui_worker:add(DeviceIDs),
+    update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device Update
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:refetch:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_eui_worker:update(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 %% Device remove
@@ -171,7 +170,6 @@ handle_info(
     {ws_message, <<"device:all">>, <<"device:all:delete:devices">>, #{<<"devices">> := DeviceIDs}},
     #state{db = DB, cf = CF} = State
 ) ->
-    catch router_ics_eui_worker:remove(DeviceIDs),
     update_devices(DB, CF, DeviceIDs),
     {noreply, State};
 handle_info(
@@ -183,15 +181,36 @@ handle_info(
     WSPid ! {ws_resp, Payload},
     {noreply, State};
 handle_info(
+    {ws_message, <<"organization:all">>, <<"organization:all:zeroed:dc_balance">>, #{
+        <<"id">> := OrgID, <<"dc_balance">> := Balance
+    }},
+    #state{db = DB, cf = CF} = State
+) ->
+    case router_console_dc_tracker:add_unfunded(OrgID) of
+        true ->
+            lager:info("org ~p has reached a balance of ~p, disabling", [OrgID, Balance]),
+            DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
+            catch router_ics_eui_worker:remove(DeviceIDs),
+            catch router_ics_skf_worker:remove_device_ids(DeviceIDs);
+        false ->
+            lager:info("org ~p has reached a balance of ~p, already disabling", [OrgID, Balance]),
+            ok
+    end,
+    {noreply, State};
+handle_info(
     {ws_message, <<"organization:all">>, <<"organization:all:refill:dc_balance">>, #{
         <<"id">> := OrgID,
         <<"dc_balance_nonce">> := Nonce,
         <<"dc_balance">> := Balance
     }},
-    State
+    #state{db = DB, cf = CF} = State
 ) ->
     lager:info("got an org balance refill for ~p of ~p (~p)", [OrgID, Balance, Nonce]),
     ok = router_console_dc_tracker:refill(OrgID, Nonce, Balance),
+
+    DeviceIDs = get_device_ids_for_org(DB, CF, OrgID),
+    catch router_ics_eui_worker:add(DeviceIDs),
+    catch router_ics_skf_worker:add_device_ids(DeviceIDs),
     {noreply, State};
 handle_info(
     {ws_message, <<"device:all">>, <<"device:all:active:devices">>, #{<<"devices">> := DeviceIDs}},
@@ -331,6 +350,18 @@ start_ws(WSEndpoint, Token) ->
     }),
     Pid.
 
+-spec get_device_ids_for_org(
+    DB :: rocksdb:db_handle(),
+    CF :: rocksdb:cf_handle(),
+    OrgID :: binary()
+) -> [binary()].
+get_device_ids_for_org(DB, CF, OrgID) ->
+    Devices = router_device:get(DB, CF, fun(Device) ->
+        OrgID == maps:get(organization_id, router_device:metadata(Device), undefiend)
+    end),
+
+    [router_device:id(D) || D <- Devices].
+
 -spec update_devices(
     DB :: rocksdb:db_handle(),
     CF :: rocksdb:cf_handle(),
@@ -367,6 +398,18 @@ update_devices(DB, CF, DeviceIDs) ->
 update_device_record(DB, CF, DeviceID) ->
     case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
+            case router_device_cache:get(DeviceID) of
+                {ok, Device} ->
+                    catch router_ics_eui_worker:remove([DeviceID]),
+                    case router_device:devaddr_int_nwk_key(Device) of
+                        {ok, {DevAddrInt, NwkSKey}} ->
+                            catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
+                        {error, _} ->
+                            ok
+                    end;
+                _ ->
+                    ok
+            end,
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             lager:info("device was removed, removing from DB and shutting down");
@@ -378,10 +421,32 @@ update_device_record(DB, CF, DeviceID) ->
                     {ok, D} -> D;
                     {error, _} -> router_device:new(DeviceID)
                 end,
+
+            DevAddrs =
+                case
+                    {
+                        {router_device:app_eui(Device0), router_device:app_eui(APIDevice)},
+                        {router_device:dev_eui(Device0), router_device:dev_eui(APIDevice)}
+                    }
+                of
+                    {{App, App}, {Dev, Dev}} ->
+                        router_device:devaddrs(Device0);
+                    {{undefined, _}, {undefined, _}} ->
+                        lager:info("udpating new to us device"),
+                        [];
+                    _ ->
+                        catch router_ics_eui_worker:remove([DeviceID]),
+                        Updates = router_device:make_skf_removes(Device0),
+                        catch router_ics_skf_worker:update(Updates),
+                        lager:info("app_eui or dev_eui changed, unsetting devaddr"),
+                        []
+                end,
+
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
+                {devaddrs, DevAddrs},
                 {metadata, router_device:metadata(APIDevice)},
                 {is_active, router_device:is_active(APIDevice)}
             ],
@@ -391,31 +456,50 @@ update_device_record(DB, CF, DeviceID) ->
 
             OldIsActive = router_device:is_active(Device0),
             IsActive = router_device:is_active(APIDevice),
-            case
-                OldIsActive =/= IsActive andalso router_device:devaddr(Device) =/= undefined andalso
-                    router_device:nwk_s_key(Device) =/= undefined
-            of
-                %% No status, no devaddr / nwk_s_key  changes we do nothing
-                false ->
+
+            OldMultiBuy = maps:get(multi_buy, router_device:metadata(Device0), 0),
+            NewMultiBuy = maps:get(multi_buy, router_device:metadata(APIDevice), 0),
+
+            case {OldIsActive, IsActive, router_device:devaddrs(Device)} of
+                {_, true, []} ->
+                    catch router_ics_eui_worker:add([DeviceID]),
+                    lager:debug("device EUI maybe reset, sent EUI add");
+                {false, true, _} ->
+                    catch router_ics_eui_worker:add([DeviceID]),
+                    lager:debug("device un-paused, sent EUI add");
+                {true, false, _} ->
+                    catch router_ics_eui_worker:remove([DeviceID]),
+                    lager:debug("device paused, sent EUI remove");
+                _ ->
+                    ok
+            end,
+
+            case router_device:devaddr_int_nwk_key(Device) of
+                {error, _} ->
                     ok;
-                true ->
-                    DevAddr = router_device:devaddr(Device),
-                    <<DevAddrInt:32/integer-unsigned-big>> = lorawan_utils:reverse(
-                        DevAddr
-                    ),
-                    NwkSKey = router_device:nwk_s_key(Device),
-                    MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
-                    case IsActive of
-                        true ->
-                            ok = router_ics_skf_worker:update([{add, DevAddrInt, NwkSKey, MultiBuy}]),
-                            catch router_ics_eui_worker:add([DeviceID]),
-                            lager:debug("device un-paused, sent SKF and EUI add", []);
-                        false ->
-                            ok = router_ics_skf_worker:update([
-                                {remove, DevAddrInt, NwkSKey, MultiBuy}
+                {ok, {DevAddrInt, NwkSKey}} ->
+                    case {OldIsActive, IsActive} of
+                        %% end state is active, multi-buy has changed.
+                        {_, true} when OldMultiBuy =/= NewMultiBuy ->
+                            catch router_ics_skf_worker:update([
+                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
                             ]),
-                            catch router_ics_eui_worker:remove([DeviceID]),
-                            lager:debug("device paused, sent SKF and EUI remove", [])
+                            lager:debug("device active, multi-buy changed, sent SKF add");
+                        %% inactive -> active.
+                        {false, true} ->
+                            catch router_ics_skf_worker:update([
+                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
+                            ]),
+                            lager:debug("device un-paused, sent SKF add");
+                        %% active -> inactive.
+                        {true, false} ->
+                            catch router_ics_skf_worker:update([
+                                {remove, DevAddrInt, NwkSKey, OldMultiBuy}
+                            ]),
+                            lager:debug("device paused, sent SKF remove");
+                        %% active state has not changed, multi-buy remains the same
+                        _ ->
+                            ok
                     end
             end,
             ok

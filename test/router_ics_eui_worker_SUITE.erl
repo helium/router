@@ -14,7 +14,9 @@
 
 -export([
     main_test/1,
+    main_test_ignore_unfunded_orgs_test/1,
     reconcile_test/1,
+    reconcile_ignore_unfunded_orgs_test/1,
     server_crash_test/1,
     ignore_start_when_no_route_id/1
 ]).
@@ -46,7 +48,9 @@ groups() ->
 all_tests() ->
     [
         main_test,
+        main_test_ignore_unfunded_orgs_test,
         reconcile_test,
+        reconcile_ignore_unfunded_orgs_test,
         server_crash_test,
         ignore_start_when_no_route_id
     ].
@@ -214,6 +218,210 @@ main_test(_Config) ->
 
     meck:unload(router_console_api),
     meck:unload(router_device_cache),
+    ok.
+
+main_test_ignore_unfunded_orgs_test(_Config) ->
+    meck:new(router_console_api, [passthrough]),
+    meck:new(router_device_cache, [passthrough]),
+
+    RouteID = ?ROUTE_ID,
+    ID1 = router_utils:uuid_v4(),
+    Device1 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<1:64/integer-unsigned-big>>},
+            {metadata, #{organization_id => <<"big balance org">>}}
+        ],
+        router_device:new(ID1)
+    ),
+    ID2 = router_utils:uuid_v4(),
+    Device2 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<2:64/integer-unsigned-big>>},
+            {metadata, #{organization_id => <<"no balance org">>}}
+        ],
+        router_device:new(ID2)
+    ),
+    Devices = #{
+        ID1 => Device1,
+        ID2 => Device2
+    },
+    %% Start with unfunded org
+    {ok, WSPid} = test_utils:ws_init(),
+    %% add unfunded but don't trigger the ws logic
+    true = router_console_dc_tracker:add_unfunded(<<"no balance org">>),
+
+    meck:expect(router_console_api, get_device, fun(DeviceID) ->
+        lager:notice("router_console_api:get_device(~p)", [DeviceID]),
+        {ok, maps:get(DeviceID, Devices)}
+    end),
+
+    %% Regular DB is used by websocket worker
+    {ok, DB, CF} = router_db:get_devices(),
+    {ok, _} = router_device:save(DB, CF, Device1),
+    {ok, _} = router_device:save(DB, CF, Device2),
+    %% Cache is used by EUI worker
+    {ok, _} = router_device_cache:save(Device1),
+    {ok, _} = router_device_cache:save(Device2),
+
+    %% Fake unknown device to kick off reconcile
+    ok = router_test_ics_route_service:eui_pair(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
+    ),
+
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}] = rcv_loop([]),
+    ?assertEqual(get_euis, Type1),
+    %% Remove fake unknown device
+    ?assertEqual(update_euis, Type2),
+    ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0},
+        Req2#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+    %% Add default JSON device
+    ?assertEqual(update_euis, Type3),
+    ?assertEqual(add, Req3#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 8589934593, dev_eui = 1},
+        Req3#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    %% Add good device
+    ok = router_ics_eui_worker:add([ID1]),
+
+    [{Type4, Req4}] = rcv_loop([]),
+    ?assertEqual(update_euis, Type4),
+    ?assertEqual(add, Req4#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 1, dev_eui = 1},
+        Req4#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    %% Add unfunded device, this should be ignored
+    ok = router_ics_eui_worker:add([ID2]),
+    [] = rcv_loop([]),
+
+    %% Fund the Org, old devices should be added back automatically
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+
+    [{Type5, Req5}] = rcv_loop([]),
+    ?assertEqual(update_euis, Type5),
+    ?assertEqual(add, Req5#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 1, dev_eui = 2},
+        Req5#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    %% Unfund the org, devices should be removed automatically
+    WSPid ! {org_zero_dc, <<"no balance org">>},
+
+    [{Type6, Req6}] = rcv_loop([]),
+    ?assertEqual(update_euis, Type6),
+    ?assertEqual(remove, Req6#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 1, dev_eui = 2},
+        Req6#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    meck:unload(router_console_api),
+    meck:unload(router_device_cache),
+    ok.
+
+reconcile_ignore_unfunded_orgs_test(_Config) ->
+    meck:new(router_console_api, [passthrough]),
+    meck:new(router_device_cache, [passthrough]),
+
+    RouteID = ?ROUTE_ID,
+    ID1 = router_utils:uuid_v4(),
+    Device1 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<1:64/integer-unsigned-big>>},
+            {metadata, #{organization_id => <<"big balance org">>}}
+        ],
+        router_device:new(ID1)
+    ),
+    ID2 = router_utils:uuid_v4(),
+    Device2 = router_device:update(
+        [
+            {app_eui, <<1:64/integer-unsigned-big>>},
+            {dev_eui, <<2:64/integer-unsigned-big>>},
+            {metadata, #{organization_id => <<"no balance org">>}}
+        ],
+        router_device:new(ID2)
+    ),
+    Devices = #{
+        ID1 => Device1,
+        ID2 => Device2
+    },
+    JsonDevices = [
+        #{
+            <<"app_eui">> => lorawan_utils:binary_to_hex(router_device:app_eui(D)),
+            <<"dev_eui">> => lorawan_utils:binary_to_hex(router_device:dev_eui(D)),
+            <<"organization_id">> => maps:get(organization_id, router_device:metadata(D))
+        }
+     || D <- maps:values(Devices)
+    ],
+
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% The EUI worker reconciles on startup, the "config service" won't move the
+    %% reconcile along until we give it eui_pairs to return to the worker. We
+    %% prime the endpoints and cache with devices. Then send the eui_pair we
+    %% expect from the config service to start the process.
+    meck:expect(router_console_api, get_json_devices, fun() -> {ok, JsonDevices} end),
+
+    WSPid ! {org_zero_dc, <<"no balance org">>},
+    timer:sleep(10),
+
+    ok = router_test_ics_route_service:eui_pair(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0}, true
+    ),
+
+    [{Type3, Req3}, {Type2, Req2}, {Type1, _Req1}] = rcv_loop([]),
+    %% get to start reconcile
+    ?assertEqual(get_euis, Type1),
+
+    %% remove the unknown device eui
+    ?assertEqual(update_euis, Type2),
+    ?assertEqual(remove, Req2#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 0, dev_eui = 0},
+        Req2#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    %% add only the funded device
+    ?assertEqual(update_euis, Type3),
+    ?assertEqual(add, Req3#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 1, dev_eui = 1},
+        Req3#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    %% The org has been funded, let's reconcile again
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+    timer:sleep(10),
+
+    ok = router_ics_eui_worker:reconcile(self(), true),
+    ok = router_test_ics_route_service:eui_pair(
+        Req3#iot_config_route_update_euis_req_v1_pb.eui_pair,
+        true
+    ),
+
+    %% The refunded org's device should be added now.
+    [{Type5, Req5}, {Type4, _Req4}] = rcv_loop([]),
+    ?assertEqual(get_euis, Type4),
+    ?assertEqual(update_euis, Type5),
+    ?assertEqual(add, Req5#iot_config_route_update_euis_req_v1_pb.action),
+    ?assertEqual(
+        #iot_config_eui_pair_v1_pb{route_id = RouteID, app_eui = 1, dev_eui = 2},
+        Req5#iot_config_route_update_euis_req_v1_pb.eui_pair
+    ),
+
+    meck:unload(router_console_api),
+    meck:unload(router_device_cache),
+
     ok.
 
 reconcile_test(_Config) ->

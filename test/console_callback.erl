@@ -298,6 +298,15 @@ handle('POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"burned">>], Req
         _:_ ->
             {400, [], <<"bad_body">>}
     end;
+handle('GET', [<<"api">>, <<"router">>, <<"organizations">>, <<"zero_dc">>], _Req, Args) ->
+    _Pid = maps:get(forward, Args),
+    Tab = maps:get(ets, Args),
+    OrgIDs =
+        case ets:lookup(Tab, unfunded_org_ids) of
+            [] -> [<<"no balance org">>];
+            [{unfunded_org_ids, IDs}] -> IDs
+        end,
+    {200, [], jsx:encode(#{<<"data">> => OrgIDs})};
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),
@@ -410,6 +419,28 @@ websocket_info(_Req, {org_update, Topic}, State) ->
         <<"0">>,
         Topic,
         <<"organization:all:refill:dc_balance">>,
+        Payload
+    ),
+    {reply, {text, Data}, State};
+websocket_info(_Req, {org_refill, OrgID, RefillAmount}, State) ->
+    Payload = #{
+        <<"id">> => OrgID,
+        <<"dc_balance_nonce">> => 1,
+        <<"dc_balance">> => RefillAmount
+    },
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"organization:all:refill:dc_balance">>,
+        Payload
+    ),
+    {reply, {text, Data}, State};
+websocket_info(_Req, {org_zero_dc, OrgID}, State) ->
+    Payload = #{<<"id">> => OrgID, <<"dc_balance">> => 0},
+    Data = router_console_ws_handler:encode_msg(
+        <<"0">>,
+        <<"organization:all">>,
+        <<"organization:all:zeroed:dc_balance">>,
         Payload
     ),
     {reply, {text, Data}, State};

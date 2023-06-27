@@ -22,6 +22,7 @@
     get_downlink_url/2,
     get_org/1,
     get_orgs/0,
+    get_unfunded_org_ids/0,
     org_manual_update_router_dc/2,
     organizations_burned/3,
     evict_org_from_cache/1,
@@ -166,6 +167,11 @@ get_org(OrgID) ->
 get_orgs() ->
     {Endpoint, Token} = token_lookup(),
     get_orgs(Endpoint, Token, [], undefined).
+
+-spec get_unfunded_org_ids() -> {ok, list()} | {error, any()}.
+get_unfunded_org_ids() ->
+    {Endpoint, Token} = token_lookup(),
+    get_unfunded_orgs(Endpoint, Token).
 
 -spec org_manual_update_router_dc(OrgID :: binary(), Balance :: non_neg_integer()) ->
     ok | {error, any()}.
@@ -478,6 +484,15 @@ init(Args) ->
     Token = get_token(Endpoint, Secret),
     ok = token_insert(Endpoint, DownlinkEndpoint, Token),
     {ok, DB, CF} = router_db:get_devices(),
+
+    case get_unfunded_org_ids() of
+        {ok, OrgIDs} ->
+            lager:info("inserting ~p unfunded orgs", [erlang:length(OrgIDs)]),
+            [router_console_dc_tracker:add_unfunded(OrgID) || OrgID <- OrgIDs];
+        {error, Err} ->
+            lager:error("fetching unfunded orgs failed: ~p", [Err])
+    end,
+
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
     {ok, P} = load_pending_burns(DB),
     Inflight = maybe_spawn_pending_burns(P, []),
@@ -654,6 +669,28 @@ get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
         Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_orgs, error, End - Start),
+            {error, Other}
+    end.
+
+-spec get_unfunded_orgs(Endpoint :: binary(), Token :: binary()) -> {ok, list()} | {error, any()}.
+get_unfunded_orgs(Endpoint, Token) ->
+    Url = <<Endpoint/binary, "/api/router/organizations/zero_dc">>,
+    Opts = [
+        with_body,
+        {pool, ?POOL},
+        {connect_timeout, timer:seconds(2)},
+        {recv_timeout, timer:seconds(2)}
+    ],
+    Start = erlang:system_time(millisecond),
+    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
+        {ok, 200, _Headers, Body} ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_unfunded_orgs, ok, End - Start),
+            #{<<"data">> := OrgIDs} = jsx:decode(Body, [return_maps]),
+            {ok, OrgIDs};
+        Other ->
+            End = erlang:system_time(millisecond),
+            ok = router_metrics:console_api_observe(get_unfunded_orgs, error, End - Start),
             {error, Other}
     end.
 

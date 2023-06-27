@@ -418,19 +418,27 @@ get_local_eui_pairs(RouteID) ->
         {error, _} = Error ->
             Error;
         {ok, APIDevices} ->
+            UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
             {ok,
                 lists:usort(
-                    lists:map(
+                    lists:filtermap(
                         fun(APIDevice) ->
-                            <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
-                                kvc:path([<<"app_eui">>], APIDevice)
-                            ),
-                            <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
-                                kvc:path([<<"dev_eui">>], APIDevice)
-                            ),
-                            #iot_config_eui_pair_v1_pb{
-                                route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                            }
+                            OrgId = kvc:path([<<"organization_id">>], APIDevice),
+
+                            case lists:member(OrgId, UnfundedOrgs) of
+                                true ->
+                                    false;
+                                false ->
+                                    <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
+                                        kvc:path([<<"app_eui">>], APIDevice)
+                                    ),
+                                    <<DevEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
+                                        kvc:path([<<"dev_eui">>], APIDevice)
+                                    ),
+                                    {true, #iot_config_eui_pair_v1_pb{
+                                        route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                                    }}
+                            end
                         end,
                         APIDevices
                     )
@@ -449,13 +457,18 @@ update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
     [{DeviceID :: binary(), iot_config_pb:iot_config_eui_pair_v1_pb()}].
 fetch_device_euis(apis, DeviceIDs, RouteID) ->
+    UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
     lists:filtermap(
         fun(DeviceID) ->
             case router_console_api:get_device(DeviceID) of
                 {error, _} ->
                     false;
                 {ok, Device} ->
-                    case router_device:is_active(Device) of
+                    OrgId = maps:get(organization_id, router_device:metadata(Device), undefined),
+                    case
+                        router_device:is_active(Device) andalso
+                            not lists:member(OrgId, UnfundedOrgs)
+                    of
                         false ->
                             false;
                         true ->

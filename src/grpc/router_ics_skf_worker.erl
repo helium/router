@@ -20,6 +20,8 @@
     pre_remove_all/0,
     remove_all/2,
     %% Worker
+    add_device_ids/1,
+    remove_device_ids/1,
     update/1,
     remote_skf/0,
     local_skf/0,
@@ -45,7 +47,6 @@
 ]).
 
 -define(SERVER, ?MODULE).
--define(INIT, init).
 -define(UPDATE, update).
 -define(SKF_UPDATE_BATCH_SIZE, 100).
 
@@ -171,6 +172,14 @@ update(Updates) ->
             gen_server:cast(?SERVER, {?UPDATE, Updates})
     end.
 
+-spec add_device_ids(DeviceIDs :: [binary()]) -> ok.
+add_device_ids(DeviceIDs) ->
+    gen_server:cast(?SERVER, {add_device_ids, DeviceIDs}).
+
+-spec remove_device_ids(DeviceIDs :: [binary()]) -> ok.
+remove_device_ids(DeviceIDs) ->
+    gen_server:cast(?SERVER, {remove_device_ids, DeviceIDs}).
+
 -spec remote_skf() -> {ok, skfs()} | {error, any()}.
 remote_skf() ->
     gen_server:call(?MODULE, remote_skf, timer:seconds(60)).
@@ -249,6 +258,8 @@ init(#{route_id := RouteID} = Args) ->
     case maps:get(reconcile_on_startup, Args, false) of
         true ->
             erlang:spawn(fun() ->
+                WaitSeconds = router_utils:get_env_int(reconcile_on_startup_wait_sec, 15),
+                timer:sleep(timer:seconds(WaitSeconds)),
                 lager:info("startup reconcile"),
                 startup_reconcile()
             end);
@@ -280,6 +291,18 @@ handle_call(_Msg, _From, State) ->
     lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
     {reply, ok, State}.
 
+handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    lager:info("adding devices: ~p", [DeviceIDs]),
+    SKFs = get_local_devices_skfs(add, DeviceIDs, RouteID),
+    Updates = ?MODULE:skf_to_add_update(SKFs),
+    ok = ?MODULE:update(Updates),
+    {noreply, State};
+handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
+    lager:info("removing devices: ~p", [DeviceIDs]),
+    SKFs = get_local_devices_skfs(remove, DeviceIDs, RouteID),
+    Updates = ?MODULE:skf_to_remove_update(SKFs),
+    ok = ?MODULE:update(Updates),
+    {noreply, State};
 handle_cast(
     {?UPDATE, Updates0},
     #state{route_id = RouteID} = State
@@ -395,14 +418,53 @@ list_skf(RouteID, Callback) ->
     ),
     ok.
 
+-spec get_local_devices_skfs(Action :: add | remove, DeviceIDs :: [binary()], RouteID :: string()) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
+    Devices = lists:filtermap(
+        fun(DeviceID) ->
+            case router_device_cache:get(DeviceID) of
+                {error, _} -> false;
+                {ok, Device} -> {true, Device}
+            end
+        end,
+        DeviceIDs
+    ),
+    case Action of
+        add ->
+            %% Don't send adds for unfunded orgs devices
+            devices_to_skfs(remove_unfunded_devices(Devices), RouteID);
+        remove ->
+            %% Always send removes
+            devices_to_skfs(Devices, RouteID)
+    end.
+
 -spec get_local_skfs(RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(RouteID) ->
-    Devices = router_device_cache:get(),
+    Devices0 = router_device_cache:get(),
+    Devices1 = remove_unfunded_devices(Devices0),
+    devices_to_skfs(Devices1, RouteID).
+
+-spec remove_unfunded_devices(list(router_device:device())) -> list(router_device:device()).
+remove_unfunded_devices(Devices) ->
+    UnfundedOrgs = router_console_dc_tracker:list_unfunded(),
+    lists:filter(
+        fun(D) ->
+            OrgId = maps:get(organization_id, router_device:metadata(D), undefined),
+            not lists:member(OrgId, UnfundedOrgs)
+        end,
+        Devices
+    ).
+
+-spec devices_to_skfs(Devices :: [router_device:device()], RouteID :: string()) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+devices_to_skfs(Devices, RouteID) ->
     lists:usort(
         lists:filtermap(
             fun(Device) ->
                 MultiBuy = maps:get(multi_buy, router_device:metadata(Device), 0),
+
                 case
                     {
                         router_device:is_active(Device),
@@ -410,11 +472,13 @@ get_local_skfs(RouteID) ->
                         router_device:nwk_s_key(Device)
                     }
                 of
-                    %% We don not consider any device that is paused
+                    %% Inactive/Paused device
                     {false, _, _} ->
                         false;
+                    %% Unjoined device
                     {true, undefined, _} ->
                         false;
+                    %% Unjoined device
                     {true, _, undefined} ->
                         false;
                     %% devices store devaddrs reversed. Config service expects them BE.

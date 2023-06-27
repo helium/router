@@ -11,6 +11,8 @@
 
 -export([
     device_update_test/1,
+    unjoined_device_update_test/1,
+    stopped_unjoined_device_update_test/1,
     device_update_app_eui_reset_devaddr_test/1,
     device_update_dev_eui_reset_devaddr_test/1,
     drop_downlink_test/1,
@@ -26,13 +28,12 @@
     evict_keys_join_test/1
 ]).
 
--include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
--include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -include("router_device_worker.hrl").
 -include("lorawan_vars.hrl").
 -include("console_test.hrl").
+-include("../src/grpc/autogen/iot_config_pb.hrl").
 
 -define(DECODE(A), jsx:decode(A, [return_maps])).
 -define(APPEUI, <<0, 0, 0, 2, 0, 0, 0, 1>>).
@@ -64,6 +65,8 @@ all_tests() ->
     [
         device_worker_stop_children_test,
         device_update_test,
+        unjoined_device_update_test,
+        stopped_unjoined_device_update_test,
         device_update_app_eui_reset_devaddr_test,
         device_update_dev_eui_reset_devaddr_test,
         drop_downlink_test,
@@ -381,10 +384,13 @@ device_update_test(Config) ->
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
 
+    %% We're going to make sure removes were sent.
+    ok = persistent_term:put(router_test_ics_route_service, self()),
+
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     DeviceID = ?CONSOLE_DEVICE_ID,
-    ?assertMatch({ok, _}, router_device:get_by_id(DB, CF, DeviceID)),
+    {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {device_not_found, true}),
@@ -400,6 +406,153 @@ device_update_test(Config) ->
     {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
 
     test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
+    ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
+
+    %% Make sure the device has removed itself from the config service after being deleted in Console.
+    receive
+        {router_test_ics_route_service, update_euis, Req} ->
+            AppEui = binary:decode_unsigned(router_device:app_eui(Device0), big),
+            DevEui = binary:decode_unsigned(router_device:dev_eui(Device0), big),
+
+            ?assertEqual(remove, Req#iot_config_route_update_euis_req_v1_pb.action),
+
+            EuiPair = Req#iot_config_route_update_euis_req_v1_pb.eui_pair,
+            ?assertEqual(AppEui, EuiPair#iot_config_eui_pair_v1_pb.app_eui),
+            ?assertEqual(DevEui, EuiPair#iot_config_eui_pair_v1_pb.dev_eui),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_update_euis)
+    end,
+
+    receive
+        {router_test_ics_route_service, update_skfs, Req1} ->
+            {ok, {DevAddrInt, NwkKey}} = router_device:devaddr_int_nwk_key(Device0),
+            SessionKey = erlang:binary_to_list(binary:encode_hex(NwkKey)),
+            [Update] = Req1#iot_config_route_skf_update_req_v1_pb.updates,
+
+            ?assertEqual(remove, Update#iot_config_route_skf_update_v1_pb.action),
+            ?assertEqual(DevAddrInt, Update#iot_config_route_skf_update_v1_pb.devaddr),
+            ?assertEqual(SessionKey, Update#iot_config_route_skf_update_v1_pb.session_key),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_skf_update)
+    end,
+
+    ok.
+
+unjoined_device_update_test(Config) ->
+    %% Do not join the test device
+    %% #{} = test_utils:join_device(Config),
+
+    %% We're going to make sure removes were sent.
+    ok = persistent_term:put(router_test_ics_route_service, self()),
+
+    {ok, _} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
+    %% allow device update to take place
+    receive
+        {router_test_ics_route_service, update_euis, AddReq} ->
+            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
+    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
+    end,
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {device_not_found, true}),
+
+    %% Sending debug event from websocket
+    {ok, WSPid} = test_utils:ws_init(),
+    WSPid ! {device_update, <<"device:all">>},
+
+    {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
+
+    test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
+    ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
+
+    %% Make sure the device has removed itself from the config service after being deleted in Console.
+    receive
+        {router_test_ics_route_service, update_euis, Req} ->
+            AppEui = binary:decode_unsigned(router_device:app_eui(Device0), big),
+            DevEui = binary:decode_unsigned(router_device:dev_eui(Device0), big),
+
+            ?assertEqual(remove, Req#iot_config_route_update_euis_req_v1_pb.action),
+
+            EuiPair = Req#iot_config_route_update_euis_req_v1_pb.eui_pair,
+            ?assertEqual(AppEui, EuiPair#iot_config_eui_pair_v1_pb.app_eui),
+            ?assertEqual(DevEui, EuiPair#iot_config_eui_pair_v1_pb.dev_eui),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_update_euis)
+    end,
+
+    receive
+        {router_test_ics_route_service, update_skfs, _Req1} ->
+            %% Device cannot update skf because it never joined
+            ct:fail(unexpected_skf_update)
+    after 250 -> ok
+    end,
+
+    ok.
+
+stopped_unjoined_device_update_test(Config) ->
+    %% Do not join the test device
+    %% #{} = test_utils:join_device(Config),
+
+    %% We're going to make sure removes were sent.
+    ok = persistent_term:put(router_test_ics_route_service, self()),
+
+    %% Start the device to get it in the cache
+    {ok, Pid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
+    %% allow device update to take place
+    receive
+        {router_test_ics_route_service, update_euis, AddReq} ->
+            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
+    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
+    end,
+    ok = gen_server:stop(Pid),
+
+    %% Check that device is in cache now
+    {ok, DB, CF} = router_db:get_devices(),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
+
+    Tab = proplists:get_value(ets, Config),
+    ets:insert(Tab, {device_not_found, true}),
+
+    Monitor = erlang:monitor(process, whereis(router_ics_skf_worker)),
+
+    %% Sending debug event from websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+    WSPid ! {device_update, <<"device:all">>},
+
+    %% Make sure the device has removed itself from the config service after being deleted in Console.
+    receive
+        {router_test_ics_route_service, update_euis, Req} ->
+            AppEui = binary:decode_unsigned(router_device:app_eui(Device0), big),
+            DevEui = binary:decode_unsigned(router_device:dev_eui(Device0), big),
+
+            ?assertEqual(remove, Req#iot_config_route_update_euis_req_v1_pb.action),
+
+            EuiPair = Req#iot_config_route_update_euis_req_v1_pb.eui_pair,
+            ?assertEqual(AppEui, EuiPair#iot_config_eui_pair_v1_pb.app_eui),
+            ?assertEqual(DevEui, EuiPair#iot_config_eui_pair_v1_pb.dev_eui),
+            ok
+    after timer:seconds(2) -> ct:fail(expected_update_euis)
+    end,
+
+    receive
+        {'DOWN', Monitor, process, _, Reason} ->
+            ct:fail({router_ics_skf_worker_died, Reason});
+        {router_test_ics_route_service, update_skfs, _Req1} ->
+            %% Device cannot update skf because it never joined
+            ct:fail(unexpected_skf_update)
+    after 250 -> ok
+    end,
+
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
 
     ok.
@@ -544,9 +697,10 @@ evict_keys_join_test(Config) ->
 
     #{} = test_utils:join_device(Config),
 
-    [{_Pid, {router_ics_skf_worker, update, [Updates] = _Args}, ok}] = meck:history(
-        router_ics_skf_worker
-    ),
+    [
+        {_Pid0, {router_ics_skf_worker, update, [Updates] = _Args0}, ok},
+        {_Pid1, {router_ics_skf_worker, handle_cast, _Args1}, _Return1}
+    ] = meck:history(router_ics_skf_worker),
 
     %% Expected updates
     %% 1 Add

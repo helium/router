@@ -16,7 +16,9 @@
     reconcile_multiple_updates_test/1,
     list_skf_test/1,
     remove_all_skf_test/1,
-    reconcile_skf_test/1
+    reconcile_skf_test/1,
+    reconcile_ignore_unfunded_orgs_test/1,
+    add_remove_unfunded_orgs_on_ws_message/1
 ]).
 
 %% To test against a real config service...
@@ -42,7 +44,9 @@ all() ->
         main_test,
         reconcile_multiple_updates_test,
         remove_all_skf_test,
-        reconcile_skf_test
+        reconcile_skf_test,
+        reconcile_ignore_unfunded_orgs_test,
+        add_remove_unfunded_orgs_on_ws_message
     ].
 
 %%--------------------------------------------------------------------
@@ -98,7 +102,7 @@ list_skf_test(_Config) ->
 
 main_test(Config) ->
     meck:new(router_device_cache, [passthrough]),
-    Devices = create_n_devices(2),
+    Devices = create_n_joined_devices(2),
 
     %% Add a device withotu any devaddr or session, it should be filtered out
     meck:expect(router_device_cache, get, fun() ->
@@ -181,6 +185,10 @@ reconcile_multiple_updates_test(_Config) ->
 
 remove_all_skf_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
+
     ok = application:set_env(router, update_skf_batch_size, 100),
 
     %% Fill config service with filters to be removed.
@@ -201,6 +209,9 @@ remove_all_skf_test(_Config) ->
 
 reconcile_skf_test(_Config) ->
     ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
     ok = application:set_env(router, update_skf_batch_size, 100),
 
     %% Fill config service with filters to be removed.
@@ -210,7 +221,7 @@ reconcile_skf_test(_Config) ->
     ]),
 
     %% Fill the cache with devices that are not in the config service yet
-    Devices = create_n_devices(50),
+    Devices = create_n_joined_devices(50),
 
     meck:new(router_device_cache, [passthrough]),
     meck:expect(router_device_cache, get, fun() -> Devices end),
@@ -236,6 +247,148 @@ reconcile_skf_test(_Config) ->
 
     ok.
 
+reconcile_ignore_unfunded_orgs_test(_Config) ->
+    %% This test starts with the default unfunded org of <<"no balance org">>
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
+
+    Funded = create_n_joined_devices(25, #{organization_id => <<"big balance org">>}),
+    Unfunded = create_n_joined_devices(25, #{organization_id => <<"no balance org">>}),
+
+    meck:new(router_device_cache, [passthrough]),
+    meck:expect(router_device_cache, get, fun() -> Funded ++ Unfunded end),
+
+    ReconcileFun = fun
+        ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+            ct:print("~p/~p failed(~p): ~p", [
+                Curr, Total, Status, uri_string:percent_decode(Message)
+            ]);
+        ({progress, {Curr, Total}, {ok, _Resp}}) ->
+            ct:print("~p/~p successful", [Curr, Total]);
+        (Msg) ->
+            ct:print("reconcile progress: ~p", [Msg])
+    end,
+
+    %% Websocket
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% Reconcile on startup should already put us in a state with ignored devices.
+    Reconcile1 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
+
+    Local1 = router_skf_reconcile:local(Reconcile1),
+    {ok, RemoteAfter1} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local1), length(RemoteAfter1)),
+
+    ?assertEqual(25, length(Local1)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% And after being refunded
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+    timer:sleep(10),
+
+    Reconcile2 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
+
+    Local2 = router_skf_reconcile:local(Reconcile2),
+    {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local2), length(RemoteAfter2)),
+
+    ?assertEqual(50, length(Local2)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    ok.
+
+add_remove_unfunded_orgs_on_ws_message(Config) ->
+    %% Start out this test by removing predefined unfunded
+    %% orgs and resetting the console api worker.
+    Tab = proplists:get_value(ets, Config),
+    true = ets:insert(Tab, {unfunded_org_ids, []}),
+    router_console_dc_tracker:reset_unfunded_from_api(),
+
+    ok = meck:delete(router_device_devaddr, allocate, 2, false),
+    ok = test_utils:wait_until(fun() ->
+        router_device_devaddr:get_devaddr_bases() =/= {ok, []}
+    end),
+
+    BigBalanceMeta = #{organization_id => <<"big balance org">>},
+    NoBalanceMeta = #{organization_id => <<"no balance org">>},
+    %% Create a mixture of joined/unjoined devices to make sure we're not
+    %% breaking on sending unjoined devices to the config-service.
+    Funded =
+        create_n_joined_devices(15, BigBalanceMeta) ++
+            create_n_unjoined_devices(10, BigBalanceMeta),
+    Unfunded =
+        create_n_joined_devices(15, NoBalanceMeta) ++
+            create_n_unjoined_devices(10, NoBalanceMeta),
+
+    %% Regular DB is used by websocket worker
+    {ok, DB, CF} = router_db:get_devices(),
+    [{ok, _} = router_device:save(DB, CF, D) || D <- Funded ++ Unfunded],
+    %% Cache is used by SKF worker
+    [{ok, _} = router_device_cache:save(D) || D <- Funded ++ Unfunded],
+
+    ReconcileFun = fun
+        ({progress, {Curr, Total}, {error, {{Status, Message}, _Meta}}}) ->
+            ct:print("~p/~p failed(~p): ~p", [
+                Curr, Total, Status, uri_string:percent_decode(Message)
+            ]);
+        ({progress, {Curr, Total}, {ok, _Resp}}) ->
+            ct:print("~p/~p successful", [Curr, Total]);
+        (Msg) ->
+            ct:print("reconcile progress: ~p", [Msg])
+    end,
+
+    %% Websocket
+    {ok, WSPid} = test_utils:ws_init(),
+
+    %% First reconcile
+    Reconcile0 = router_ics_skf_worker:pre_reconcile(),
+    ok = router_ics_skf_worker:reconcile(Reconcile0, ReconcileFun),
+
+    Local0 = router_skf_reconcile:local(Reconcile0),
+    {ok, RemoteAfter0} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local0), length(RemoteAfter0)),
+
+    ?assertEqual(30, length(Local0)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    %% Reconcile after org has been marked unfunded
+    WSPid ! {org_zero_dc, <<"no balance org">>},
+    timer:sleep(50),
+
+    %% Remove happens automatically
+    %% Reconcile1 = router_ics_skf_worker:pre_reconcile(),
+    %% ok = router_ics_skf_worker:reconcile(Reconcile1, ReconcileFun),
+
+    ct:print("checking local and remote after zero balance"),
+    %% Local SKF _does not_ consider unfunded devices
+    Local1 = router_device_cache:get(),
+    {ok, RemoteAfter1} = router_ics_skf_worker:remote_skf(),
+    ?assertNotEqual(length(Local1), length(RemoteAfter1)),
+
+    %% Unfunded are being filtered out of local, but they still exist in the cache.
+    ?assertEqual(50, length(Local1)),
+
+    %% And after being refunded
+    WSPid ! {org_refill, <<"no balance org">>, 100},
+    timer:sleep(50),
+
+    %% Add happens automatically
+    %% Reconcile2 = router_ics_skf_worker:pre_reconcile(),
+    %% ok = router_ics_skf_worker:reconcile(Reconcile2, ReconcileFun),
+
+    {ok, Local2} = router_ics_skf_worker:local_skf(),
+    {ok, RemoteAfter2} = router_ics_skf_worker:remote_skf(),
+    ?assertEqual(length(Local2), length(RemoteAfter2)),
+
+    ?assertEqual(30, length(Local2)),
+    ?assertEqual(50, length(router_device_cache:get())),
+
+    ok.
+
 %% ------------------------------------------------------------------
 %% Helper functions
 %% ------------------------------------------------------------------
@@ -248,7 +401,10 @@ device_to_skf(RouteID, Device) ->
         max_copies = maps:get(multi_buy, router_device:metadata(Device), 999)
     }.
 
-create_n_devices(N) ->
+create_n_joined_devices(N) ->
+    create_n_joined_devices(N, #{}).
+
+create_n_joined_devices(N, Metadata) ->
     lists:map(
         fun(Idx) ->
             ID = router_utils:uuid_v4(),
@@ -257,8 +413,20 @@ create_n_devices(N) ->
                 [
                     {devaddrs, [Devaddr]},
                     {keys, [{crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}]},
-                    {metadata, #{multi_buy => Idx}}
+                    {metadata, Metadata#{multi_buy => Idx}}
                 ],
+                router_device:new(ID)
+            )
+        end,
+        lists:seq(1, N)
+    ).
+
+create_n_unjoined_devices(N, Metadata) ->
+    lists:map(
+        fun(Idx) ->
+            ID = router_utils:uuid_v4(),
+            router_device:update(
+                [{metadata, Metadata#{multi_buy => Idx}}],
                 router_device:new(ID)
             )
         end,

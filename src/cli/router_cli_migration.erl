@@ -248,7 +248,7 @@ get_ouis() ->
                     [] -> Owner;
                     [Router1 | _] -> Router1
                 end,
-            Prefix = $H,
+            Prefix = router_utils:get_env_int(devaddr_prefix, $H),
             DevAddrRanges = lists:map(
                 fun(<<Base:25, Mask:23>> = _Subnet) ->
                     Size = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
@@ -341,7 +341,7 @@ devaddr_ranges(RoutingEntry) ->
     lists:foldl(
         fun(<<Base:25, Mask:23>>, {Acc, _}) ->
             Size = blockchain_ledger_routing_v1:subnet_mask_to_size(Mask),
-            Prefix = $H,
+            Prefix = router_utils:get_env_int(devaddr_prefix, $H),
             Min = lorawan_utils:reverse(<<Base:25/integer-unsigned-little, Prefix:7/integer>>),
             Max = lorawan_utils:reverse(<<
                 (Base + Size - 1):25/integer-unsigned-little, Prefix:7/integer

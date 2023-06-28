@@ -123,7 +123,8 @@ handle_info(
     #{<<"rxpk">> := [JSON]} = jsx:decode(JSONBin, [return_maps]),
     lager:info("got packet ~p", [JSON]),
     State#state.pid ! rx,
-    <<DevNum:32/integer-unsigned-little>> = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
+    Prefix = router_utils:get_env_int(devaddr_prefix, $H),
+    <<DevNum:32/integer-unsigned-little>> = <<33554431:25/integer-unsigned-little, Prefix:7/integer>>,
     HeliumPacket = #packet_pb{
         type = lorawan,
         payload = base64:decode(maps:get(<<"data">>, JSON)),

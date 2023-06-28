@@ -285,7 +285,8 @@ packet_from_known_device_no_downlink_gateway_test(Config) ->
     {ok, Device} = router_device:get_by_id(DB, CF, WorkerID),
 
     %% create an unconfirmed uplink
-    DevAddr = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
+    Prefix = router_utils:get_env_int(devaddr_prefix, $H),
+    DevAddr = <<33554431:25/integer-unsigned-little, Prefix:7/integer>>,
     DataPacket1 = #packet_router_packet_up_v1_pb{
         payload = test_utils:frame_payload(
             ?UNCONFIRMED_UP,
@@ -376,7 +377,8 @@ join_packet(PubKeyBin, SigFun, AppKey, DevNonce, RSSI) ->
     #blockchain_state_channel_message_v1_pb{msg = {packet, SignedSCPacket}}.
 
 data_packet_map(MType, Fcnt, PubKeyBin, Device, SigFun, Options) ->
-    DevAddr0 = <<33554431:25/integer-unsigned-little, $H:7/integer>>,
+    Prefix = router_utils:get_env_int(devaddr_prefix, $H),
+    DevAddr0 = <<33554431:25/integer-unsigned-little, Prefix:7/integer>>,
     <<DevAddr:32/integer-unsigned-little>> = DevAddr0,
     P = #packet_pb{
         oui = 0,

@@ -174,7 +174,7 @@ handle_call(
     CurrentIndex = maps:get(Parent, Keys, 0),
     DevaddrBase = lists:nth(CurrentIndex + 1, Numbers),
     NextIndex = (CurrentIndex + 1) rem length(Numbers),
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    DevAddrPrefix = router_utils:get_env_int(devaddr_prefix, $H),
 
     Reply = {ok, <<DevaddrBase:25/integer-unsigned-little, DevAddrPrefix:7/integer>>},
 
@@ -348,7 +348,7 @@ get_devaddrs(#state{route_id = RouteID}) ->
 
 -spec devaddr_num_to_base_num(non_neg_integer()) -> non_neg_integer().
 devaddr_num_to_base_num(DevaddrNum) ->
-    Prefix = application:get_env(blockchain, devaddr_prefix, $H),
+    Prefix = router_utils:get_env_int(devaddr_prefix, $H),
     <<Base:25/integer-unsigned-little, Prefix:7/integer>> = lorawan_utils:reverse(
         binary:encode_unsigned(DevaddrNum)
     ),

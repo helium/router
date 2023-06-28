@@ -99,7 +99,7 @@ allocate(Config) ->
     ),
     ?assertEqual(16, erlang:length(DevAddrs)),
 
-    DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+    DevAddrPrefix = router_utils:get_env_int(devaddr_prefix, $H),
     Expected = [
         <<(I - 1):25/integer-unsigned-little, DevAddrPrefix:7/integer>>
      || I <- lists:seq(1, 8)

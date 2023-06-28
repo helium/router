@@ -62,7 +62,7 @@ init_per_testcase(TestCase, Config) ->
     _ = persistent_term:erase(router_blockchain),
     meck:new(router_device_devaddr, [passthrough]),
     meck:expect(router_device_devaddr, allocate, fun(_, _) ->
-        DevAddrPrefix = application:get_env(blockchain, devaddr_prefix, $H),
+        DevAddrPrefix = router_utils:get_env_int(devaddr_prefix, $H),
         {ok, <<33554431:25/integer-unsigned-little, DevAddrPrefix:7/integer>>}
     end),
 

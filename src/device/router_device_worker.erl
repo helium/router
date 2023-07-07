@@ -366,13 +366,8 @@ handle_cast(
     case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
             catch router_ics_eui_worker:remove([DeviceID]),
-            ok =
-                case router_device:devaddr_int_nwk_key(Device0) of
-                    {ok, {DevAddrInt, NwkSKey}} ->
-                        catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
-                    _ ->
-                        ok
-                end,
+            Removes = router_device:make_skf_removes(Device0),
+            catch router_ics_skf_worker:update(Removes),
             %% Important to remove details about the device _before_ the device.
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),

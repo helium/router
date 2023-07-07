@@ -792,17 +792,11 @@ handle_cast(
                         MultiBuy = maps:get(multi_buy, router_device:metadata(D1), 0),
                         ToAdd = [{add, DevAddr0, UsedNwkSKey, MultiBuy}],
 
-                        DevAddrToInt = fun(D) ->
-                            <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
-                            Int
-                        end,
-
-                        %% We have to usort just in case DevAddr assigned is the same
-                        ToRemove0 = lists:usort([
-                            {remove, DevAddrToInt(DevAddr), NwkSKey, MultiBuy}
-                         || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
-                        ]),
-
+                        ToRemove0 = router_device:make_skf_removes(
+                            Keys,
+                            router_device:devaddrs(Device0),
+                            MultiBuy
+                        ),
                         %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
                         ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey, MultiBuy}],
                         ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),

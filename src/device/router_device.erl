@@ -50,7 +50,7 @@
     credentials_to_evict/1,
     limit_credentials/1,
     devaddr_int_nwk_key/1,
-    make_skf_removes/1, make_skf_removes/2
+    make_skf_removes/1, make_skf_removes/2, make_skf_removes/3
 ]).
 
 %% ------------------------------------------------------------------
@@ -551,12 +551,20 @@ make_skf_removes(Device) ->
     DevAddrs :: list(binary())
 ) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
 make_skf_removes(NwkKeys, DevAddrs) ->
+    make_skf_removes(NwkKeys, DevAddrs, 0).
+
+-spec make_skf_removes(
+    NwkKeys :: list({binary() | undefined, binary() | undefined}),
+    DevAddrs :: list(binary()),
+    MultiBuy :: non_neg_integer()
+) -> [{remove, non_neg_integer(), binary(), non_neg_integer()}].
+make_skf_removes(NwkKeys, DevAddrs, MultiBuy) ->
     DevAddrToInt = fun(D) ->
         <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
         Int
     end,
 
-    [{remove, DevAddrToInt(D), NSK, 0} || {NSK, _} <- NwkKeys, D <- DevAddrs].
+    [{remove, DevAddrToInt(D), NSK, MultiBuy} || {NSK, _} <- NwkKeys, D <- DevAddrs].
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

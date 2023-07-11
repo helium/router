@@ -366,13 +366,8 @@ handle_cast(
     case router_console_api:get_device(DeviceID) of
         {error, not_found} ->
             catch router_ics_eui_worker:remove([DeviceID]),
-            ok =
-                case router_device:devaddr_int_nwk_key(Device0) of
-                    {ok, {DevAddrInt, NwkSKey}} ->
-                        catch router_ics_skf_worker:update([{remove, DevAddrInt, NwkSKey, 0}]);
-                    _ ->
-                        ok
-                end,
+            Removes = router_device:make_skf_removes(Device0),
+            catch router_ics_skf_worker:update(Removes),
             %% Important to remove details about the device _before_ the device.
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
@@ -440,25 +435,19 @@ handle_cast(
             case router_device:devaddr_int_nwk_key(Device1) of
                 {error, _} ->
                     ok;
-                {ok, {DevAddrInt, NwkSKey}} ->
+                {ok, {_DevAddrInt, _NwkSKey}} ->
                     case {OldIsActive, IsActive} of
                         %% end state is active, multi-buy has changed.
                         {_, true} when OldMultiBuy =/= NewMultiBuy ->
-                            catch router_ics_skf_worker:update([
-                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:add_device_ids([DeviceID]),
                             lager:debug("device active, multi-buy changed, sent SKF add");
                         %% inactive -> active.
                         {false, true} ->
-                            catch router_ics_skf_worker:update([
-                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:add_device_ids([DeviceID]),
                             lager:debug("device un-paused, sent SKF add");
                         %% active -> inactive.
                         {true, false} ->
-                            catch router_ics_skf_worker:update([
-                                {remove, DevAddrInt, NwkSKey, OldMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:remove_device_ids([DeviceID]),
                             lager:debug("device paused, sent SKF remove");
                         %% active state has not changed, multi-buy remains the same
                         _ ->
@@ -797,17 +786,11 @@ handle_cast(
                         MultiBuy = maps:get(multi_buy, router_device:metadata(D1), 0),
                         ToAdd = [{add, DevAddr0, UsedNwkSKey, MultiBuy}],
 
-                        DevAddrToInt = fun(D) ->
-                            <<Int:32/integer-unsigned-big>> = lorawan_utils:reverse(D),
-                            Int
-                        end,
-
-                        %% We have to usort just in case DevAddr assigned is the same
-                        ToRemove0 = lists:usort([
-                            {remove, DevAddrToInt(DevAddr), NwkSKey, MultiBuy}
-                         || {NwkSKey, _} <- Keys, DevAddr <- router_device:devaddrs(Device0)
-                        ]),
-
+                        ToRemove0 = router_device:make_skf_removes(
+                            Keys,
+                            router_device:devaddrs(Device0),
+                            MultiBuy
+                        ),
                         %% Making sure that the pair that was added is not getting removed (just in case DevAddr assigned is the same)
                         ToRemove1 = ToRemove0 -- [{remove, DevAddr0, UsedNwkSKey, MultiBuy}],
                         ok = router_ics_skf_worker:update(ToAdd ++ ToRemove1),

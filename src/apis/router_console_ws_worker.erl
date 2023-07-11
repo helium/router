@@ -473,25 +473,19 @@ update_device_record(DB, CF, DeviceID) ->
             case router_device:devaddr_int_nwk_key(Device) of
                 {error, _} ->
                     ok;
-                {ok, {DevAddrInt, NwkSKey}} ->
+                {ok, {_DevAddrInt, _NwkSKey}} ->
                     case {OldIsActive, IsActive} of
                         %% end state is active, multi-buy has changed.
                         {_, true} when OldMultiBuy =/= NewMultiBuy ->
-                            catch router_ics_skf_worker:update([
-                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:add_device_ids([DeviceID]),
                             lager:debug("device active, multi-buy changed, sent SKF add");
                         %% inactive -> active.
                         {false, true} ->
-                            catch router_ics_skf_worker:update([
-                                {add, DevAddrInt, NwkSKey, NewMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:add_device_ids([DeviceID]),
                             lager:debug("device un-paused, sent SKF add");
                         %% active -> inactive.
                         {true, false} ->
-                            catch router_ics_skf_worker:update([
-                                {remove, DevAddrInt, NwkSKey, OldMultiBuy}
-                            ]),
+                            catch router_ics_skf_worker:remove_device_ids([DeviceID]),
                             lager:debug("device paused, sent SKF remove");
                         %% active state has not changed, multi-buy remains the same
                         _ ->

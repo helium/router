@@ -564,7 +564,7 @@ make_skf_removes(NwkKeys, DevAddrs, MultiBuy) ->
         Int
     end,
 
-    [{remove, DevAddrToInt(D), NSK, MultiBuy} || {NSK, _} <- NwkKeys, D <- DevAddrs].
+    lists:usort([{remove, DevAddrToInt(D), NSK, MultiBuy} || {NSK, _} <- NwkKeys, D <- DevAddrs]).
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

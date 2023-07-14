@@ -464,7 +464,7 @@ remove_unfunded_devices(Devices) ->
 
 -spec remove_inactive_devices(list(router_device:device())) -> list(router_device:device()).
 remove_inactive_devices(Devices) ->
-    lists:filter(fun(D) -> not router_device:is_active(D) end, Devices).
+    lists:filter(fun(D) -> router_device:is_active(D) end, Devices).
 
 -spec devices_to_skfs(Devices :: [router_device:device()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].

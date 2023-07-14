@@ -433,18 +433,23 @@ get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
     case Action of
         add ->
             %% Don't send adds for unfunded orgs devices
-            devices_to_skfs(remove_unfunded_devices(Devices), RouteID);
+            %% Or inactive devices
+            Devices0 = remove_unfunded_devices(Devices),
+            Devices1 = remove_inactive_devices(Devices0),
+            devices_to_skfs(Devices1, RouteID);
         remove ->
             %% Always send removes
             devices_to_skfs(Devices, RouteID)
     end.
 
+%% This is the list of devices that should exist in the config service.
 -spec get_local_skfs(RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 get_local_skfs(RouteID) ->
     Devices0 = router_device_cache:get(),
     Devices1 = remove_unfunded_devices(Devices0),
-    devices_to_skfs(Devices1, RouteID).
+    Devices2 = remove_inactive_devices(Devices1),
+    devices_to_skfs(Devices2, RouteID).
 
 -spec remove_unfunded_devices(list(router_device:device())) -> list(router_device:device()).
 remove_unfunded_devices(Devices) ->
@@ -457,6 +462,10 @@ remove_unfunded_devices(Devices) ->
         Devices
     ).
 
+-spec remove_inactive_devices(list(router_device:device())) -> list(router_device:device()).
+remove_inactive_devices(Devices) ->
+    lists:filter(fun(D) -> not router_device:is_active(D) end, Devices).
+
 -spec devices_to_skfs(Devices :: [router_device:device()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
 devices_to_skfs(Devices, RouteID) ->
@@ -467,22 +476,18 @@ devices_to_skfs(Devices, RouteID) ->
 
                 case
                     {
-                        router_device:is_active(Device),
                         router_device:devaddr(Device),
                         router_device:nwk_s_key(Device)
                     }
                 of
-                    %% Inactive/Paused device
-                    {false, _, _} ->
+                    %% Unjoined device
+                    {undefined, _} ->
                         false;
                     %% Unjoined device
-                    {true, undefined, _} ->
-                        false;
-                    %% Unjoined device
-                    {true, _, undefined} ->
+                    {_, undefined} ->
                         false;
                     %% devices store devaddrs reversed. Config service expects them BE.
-                    {true, <<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
+                    {<<DevAddr:32/integer-unsigned-little>>, SessionKey} ->
                         {true, #iot_config_skf_v1_pb{
                             route_id = RouteID,
                             devaddr = DevAddr,

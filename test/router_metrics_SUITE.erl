@@ -115,7 +115,9 @@ metrics_test(Config) ->
     %% Hold Time is hard coded to 100ms in tests
     ?assertEqual(100, HoldTime),
 
-    {_, ConsoleAPITime} = prometheus_histogram:value(?METRICS_CONSOLE_API_TIME, [report_status, ok]),
+    {_, ConsoleAPITime} = prometheus_histogram:value(?METRICS_CONSOLE_API, [
+        report_status, ok
+    ]),
     ?assert(ConsoleAPITime < 100),
 
     ?assertEqual(true, prometheus_boolean:value(?METRICS_WS)),

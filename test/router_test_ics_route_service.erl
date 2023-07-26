@@ -71,8 +71,7 @@ remove_skf(SKF) ->
     %% end),
     Match = [
         {{iot_config_skf_v1_pb, '$1', '$2', '$3', '_'}, [], [
-            {'andalso', {'==', R0, '$1'},
-                {'andalso', {'==', D0, '$2'}, {'==', S0, '$3'}}}
+            {'andalso', {'==', R0, '$1'}, {'andalso', {'==', D0, '$2'}, {'==', S0, '$3'}}}
         ]}
     ],
     %% If more than 1 is deleted, we have entered a DB state that is not allwoed.

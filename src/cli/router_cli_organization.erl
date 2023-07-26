@@ -280,7 +280,6 @@ org_unfunded_cmd() ->
         ]
     ].
 
-
 reset_unfunded(_, _, _) ->
     Before = router_console_dc_tracker:list_unfunded(),
     ok = router_console_dc_tracker:reset_unfunded_from_api(),

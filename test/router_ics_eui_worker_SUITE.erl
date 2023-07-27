@@ -357,6 +357,7 @@ reconcile_ignore_unfunded_orgs_test(_Config) ->
     },
     JsonDevices = [
         #{
+            <<"active">> => true,
             <<"app_eui">> => lorawan_utils:binary_to_hex(router_device:app_eui(D)),
             <<"dev_eui">> => lorawan_utils:binary_to_hex(router_device:dev_eui(D)),
             <<"organization_id">> => maps:get(organization_id, router_device:metadata(D))
@@ -493,6 +494,7 @@ reconcile_test(_Config) ->
         JSONDevices = lists:map(
             fun(X) ->
                 #{
+                    <<"active">> => true,
                     <<"app_eui">> => lorawan_utils:binary_to_hex(<<X:64/integer-unsigned-big>>),
                     <<"dev_eui">> => lorawan_utils:binary_to_hex(<<X:64/integer-unsigned-big>>)
                 }

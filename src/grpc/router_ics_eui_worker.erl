@@ -424,11 +424,12 @@ get_local_eui_pairs(RouteID) ->
                     lists:filtermap(
                         fun(APIDevice) ->
                             OrgId = kvc:path([<<"organization_id">>], APIDevice),
+                            Active = kvc:path([<<"active">>], APIDevice, false),
 
-                            case lists:member(OrgId, UnfundedOrgs) of
-                                true ->
-                                    false;
+                            case Active andalso not lists:member(OrgId, UnfundedOrgs) of
                                 false ->
+                                    false;
+                                true ->
                                     <<AppEUI:64/integer-unsigned-big>> = lorawan_utils:hex_to_binary(
                                         kvc:path([<<"app_eui">>], APIDevice)
                                     ),

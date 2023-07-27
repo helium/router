@@ -1113,9 +1113,6 @@ craft_update_filter_txn(PubKey, SignFun, OUI, Filter, Nonce, Index) ->
 
 -spec submit_txn(Txn :: blockchain_txn_routing_v1:txn_routing()) -> blockchain_txn:hash().
 submit_txn(Txn) ->
-    Cost = router_blockchain:calculate_routing_txn_fee(Txn),
-    ok = router_metrics:xor_filter_update(Cost),
-
     Hash = blockchain_txn_routing_v1:hash(Txn),
     Self = self(),
     Callback = fun(Return) -> Self ! {?SUBMIT_RESULT, Hash, Return} end,

@@ -125,11 +125,9 @@ handle_offer(Offer, HandlerPid) ->
         false ->
             {error, deprecated};
         true ->
-            Start = erlang:system_time(millisecond),
             Routing = blockchain_state_channel_offer_v1:routing(Offer),
-            {OfferCheckTime, OfferCheck} = timer:tc(fun offer_check/1, [Offer]),
             Resp =
-                case OfferCheck of
+                case offer_check(Offer) of
                     {error, _} = Error0 ->
                         Error0;
                     ok ->
@@ -140,18 +138,8 @@ handle_offer(Offer, HandlerPid) ->
                                 packet_offer(Offer)
                         end
                 end,
-            End = erlang:system_time(millisecond),
             erlang:spawn(fun() ->
-                ok = router_metrics:function_observe(
-                    'router_device_routing:offer_check', OfferCheckTime
-                ),
-                ok = router_metrics:packet_trip_observe_start(
-                    blockchain_state_channel_offer_v1:packet_hash(Offer),
-                    blockchain_state_channel_offer_v1:hotspot(Offer),
-                    Start
-                ),
-                ok = print_handle_offer_resp(Offer, HandlerPid, Resp),
-                ok = handle_offer_metrics(Routing, Resp, End - Start)
+                ok = print_handle_offer_resp(Offer, HandlerPid, Resp)
             end),
             case Resp of
                 {ok, Device} ->
@@ -906,7 +894,6 @@ packet(
                     end
             end;
         {error, api_not_found} ->
-            router_metrics:packet_routing_error(join, api_not_found),
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "no key for ~p ~p received by ~s",
@@ -918,7 +905,6 @@ packet(
             ),
             {error, undefined_app_key};
         {error, _Reason} ->
-            router_metrics:packet_routing_error(join, bad_mic),
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
                 "Device ~s with AppEUI ~s tried to join through ~s " ++
@@ -1050,7 +1036,6 @@ send_to_device_worker(
             undefined ->
                 case find_device(PubKeyBin, DevAddr, MIC, Payload) of
                     {error, unknown_device} ->
-                        router_metrics:packet_routing_error(packet, device_not_found),
                         lager:warning(
                             "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
                             [
@@ -1219,10 +1204,8 @@ get_device_for_offer(Offer, DevAddr, PubKeyBin) ->
     PubKeyBin :: libp2p_crypto:pubkey_bin()
 ) -> [router_device:device()].
 get_and_sort_devices(DevAddr, PubKeyBin) ->
-    {Time1, Devices0} = timer:tc(router_device_cache, get_by_devaddr, [DevAddr]),
-    router_metrics:function_observe('router_device_cache:get_by_devaddr', Time1),
-    Devices1 = router_device_devaddr:sort_devices(Devices0, PubKeyBin),
-    Devices1.
+    Devices0 = router_device_cache:get_by_devaddr(DevAddr),
+    router_device_devaddr:sort_devices(Devices0, PubKeyBin).
 
 -spec get_device_by_mic(binary(), binary(), [router_device:device()]) ->
     {router_device:device(), binary(), non_neg_integer()} | undefined.
@@ -1384,26 +1367,6 @@ maybe_start_worker(DeviceID) ->
     WorkerID = router_devices_sup:id(DeviceID),
     router_devices_sup:maybe_start_worker(WorkerID, #{}).
 
--spec handle_offer_metrics(
-    #routing_information_pb{},
-    {ok, router_device:device()} | {error, any()},
-    non_neg_integer()
-) -> ok.
-handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {ok, _}, Time) ->
-    ok = router_metrics:routing_offer_observe(join, accepted, accepted, Time);
-handle_offer_metrics(#routing_information_pb{data = {eui, _}}, {error, Reason}, Time) ->
-    ok = router_metrics:routing_offer_observe(join, rejected, Reason, Time);
-handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {ok, _}, Time) ->
-    ok = router_metrics:routing_offer_observe(packet, accepted, accepted, Time);
-handle_offer_metrics(
-    #routing_information_pb{data = {devaddr, _}},
-    {error, ?DEVADDR_NOT_IN_SUBNET},
-    Time
-) ->
-    ok = router_metrics:routing_offer_observe(packet, rejected, ?DEVADDR_NOT_IN_SUBNET, Time);
-handle_offer_metrics(#routing_information_pb{data = {devaddr, _}}, {error, Reason}, Time) ->
-    ok = router_metrics:routing_offer_observe(packet, rejected, Reason, Time).
-
 -spec reason_to_single_atom(any()) -> any().
 reason_to_single_atom(Reason) ->
     case Reason of
@@ -1502,9 +1465,6 @@ handle_join_offer_test() ->
     meck:expect(blockchain_worker, blockchain, fun() -> chain end),
     meck:new(router_console_dc_tracker, [passthrough]),
     meck:expect(router_console_dc_tracker, has_enough_dc, fun(_, _) -> {ok, orgid, 0, 1} end),
-    meck:new(router_metrics, [passthrough]),
-    meck:expect(router_metrics, routing_offer_observe, fun(_, _, _, _) -> ok end),
-    meck:expect(router_metrics, function_observe, fun(_, _) -> ok end),
     meck:new(router_devices_sup, [passthrough]),
     meck:expect(router_devices_sup, maybe_start_worker, fun(_, _) -> {ok, self()} end),
 
@@ -1527,8 +1487,6 @@ handle_join_offer_test() ->
     meck:unload(blockchain_worker),
     ?assert(meck:validate(router_console_dc_tracker)),
     meck:unload(router_console_dc_tracker),
-    ?assert(meck:validate(router_metrics)),
-    meck:unload(router_metrics),
     ?assert(meck:validate(router_devices_sup)),
     meck:unload(router_devices_sup),
     ets:delete(?BF_ETS),

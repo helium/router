@@ -81,20 +81,13 @@ delete(ID) ->
     UplinkDetails :: map()
 ) -> {ok, any()} | {error, any()}.
 decode(DecoderID, Payload, Port, UplinkDetails) ->
-    Start = erlang:system_time(millisecond),
     try decode_(DecoderID, Payload, Port, UplinkDetails) of
-        {Type, {ok, _} = OK} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:decoder_observe(Type, ok, End - Start),
+        {_Type, {ok, _} = OK} ->
             OK;
-        {Type, {error, _} = Err} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:decoder_observe(Type, error, End - Start),
+        {_Type, {error, _} = Err} ->
             Err
     catch
         _Class:_Reason:_Stacktrace ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:decoder_observe(decoder_crashed, error, End - Start),
             lager:error("decoder ~p crashed: ~p (~p) stacktrace ~p", [
                 DecoderID,
                 _Reason,

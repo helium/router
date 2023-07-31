@@ -455,6 +455,12 @@ update_euis_failed(Reason, #state{conn_backoff = Backoff0} = State) ->
         conn_backoff = Backoff1
     }.
 
+%% NOTE:
+%% `api' contains the state we _want_ to achieve.
+%% `cache' is the state we currently have.
+%%
+%% That means we perform any filtering of devices on `api' only, then we can
+%% compare it to the current state (`cache') to get the diff.
 -spec fetch_device_euis(apis | cache, DeviceIDs :: list(binary()), RouteID :: string()) ->
     [{DeviceID :: binary(), iot_config_pb:iot_config_eui_pair_v1_pb()}].
 fetch_device_euis(apis, DeviceIDs, RouteID) ->
@@ -491,17 +497,12 @@ fetch_device_euis(cache, DeviceIDs, RouteID) ->
                 {error, _} ->
                     false;
                 {ok, Device} ->
-                    case router_device:is_active(Device) of
-                        false ->
-                            false;
-                        true ->
-                            <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
-                            <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
-                            {true,
-                                {DeviceID, #iot_config_eui_pair_v1_pb{
-                                    route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
-                                }}}
-                    end
+                    <<AppEUI:64/integer-unsigned-big>> = router_device:app_eui(Device),
+                    <<DevEUI:64/integer-unsigned-big>> = router_device:dev_eui(Device),
+                    {true,
+                        {DeviceID, #iot_config_eui_pair_v1_pb{
+                            route_id = RouteID, app_eui = AppEUI, dev_eui = DevEUI
+                        }}}
             end
         end,
         DeviceIDs

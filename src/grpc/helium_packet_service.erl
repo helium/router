@@ -31,12 +31,10 @@ route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
             Self = self(),
             erlang:spawn(fun() ->
                 SCPacket = to_sc_packet(PacketUp),
-                {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
+                router_device_routing:handle_free_packet(
                     SCPacket, erlang:system_time(millisecond), Self
-                ]),
-                router_metrics:function_observe('router_device_routing:handle_free_packet', Time)
+                )
             end),
-
             {ok, StreamState}
     end;
 route(_EnvUp, StreamState) ->

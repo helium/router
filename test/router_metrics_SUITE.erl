@@ -69,7 +69,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 
 metrics_test(Config) ->
-    StartTime = erlang:system_time(seconds),
     #{
         pubkey_bin := _PubKeyBin,
         stream := _Stream,
@@ -78,28 +77,6 @@ metrics_test(Config) ->
 
     router_metrics ! ?METRICS_TICK,
     ok = timer:sleep(timer:seconds(1)),
-
-    case router_blockchain:is_chain_dead() of
-        false ->
-            ?assertEqual(5000, prometheus_gauge:value(?METRICS_DC)),
-            BlockAge = prometheus_gauge:value(?METRICS_CHAIN_BLOCKS),
-            ct:pal("[~p:~p:~p] MARKER ~p~n", [
-                ?MODULE,
-                ?FUNCTION_NAME,
-                ?LINE,
-                {StartTime, BlockAge, erlang:system_time(seconds)}
-            ]),
-            ?assert(BlockAge > StartTime andalso BlockAge < erlang:system_time(seconds));
-        true ->
-            ?assertEqual(0, prometheus_gauge:value(?METRICS_DC))
-    end,
-
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_OPENED_COUNT)),
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_OVERSPENT_COUNT)),
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_ACTIVE_COUNT)),
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_ACTIVE_BALANCE)),
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_ACTIVE_ACTORS)),
-    ?assertEqual(0, prometheus_gauge:value(?METRICS_SC_CLOSE_CONFLICT)),
 
     {_, RoutingPacketTime} = prometheus_histogram:value(?METRICS_ROUTING_PACKET, [
         join,
@@ -111,25 +88,13 @@ metrics_test(Config) ->
     ct:pal("[~p:~p:~p] MARKER ~p~n", [?MODULE, ?FUNCTION_NAME, ?LINE, RoutingPacketTime]),
     ?assert(RoutingPacketTime > 1999 andalso RoutingPacketTime < 2025),
 
-    {_, HoldTime} = prometheus_histogram:value(?METRICS_PACKET_HOLD_TIME, [join]),
-    %% Hold Time is hard coded to 100ms in tests
-    ?assertEqual(100, HoldTime),
-
-    {_, ConsoleAPITime} = prometheus_histogram:value(?METRICS_CONSOLE_API_TIME, [report_status, ok]),
+    {_, ConsoleAPITime} = prometheus_histogram:value(?METRICS_CONSOLE_API, [
+        report_status, ok
+    ]),
     ?assert(ConsoleAPITime < 100),
 
     ?assertEqual(true, prometheus_boolean:value(?METRICS_WS)),
 
     ?assert(prometheus_gauge:value(?METRICS_VM_CPU, [1]) > 0),
 
-    %% When run with the grpc suite this value will be 1. When running tests
-    %% without that suite, it will be 0.
-    GRPCCount = prometheus_gauge:value(?METRICS_GRPC_CONNECTION_COUNT),
-    ?assert(GRPCCount == 0 orelse GRPCCount == 1),
-
-    ok = router_sc_worker:sc_hook_close_submit(ok, txn),
-    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [ok]) > 0),
-
-    ok = router_sc_worker:sc_hook_close_submit(error, txn),
-    ?assert(prometheus_counter:value(?METRICS_SC_CLOSE_SUBMIT, [error]) > 0),
     ok.

@@ -28,10 +28,9 @@ route(Ctx, #blockchain_state_channel_message_v1_pb{msg = {packet, SCPacket}} = _
         true ->
             %% handle the packet and then await a response
             %% if no response within given time, then give up and return error
-            {Time, _} = timer:tc(router_device_routing, handle_free_packet, [
+            router_device_routing:handle_free_packet(
                 SCPacket, erlang:system_time(millisecond), self()
-            ]),
-            router_metrics:function_observe('router_device_routing:handle_free_packet', Time),
+            ),
             wait_for_response(Ctx)
     end.
 

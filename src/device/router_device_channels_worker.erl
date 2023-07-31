@@ -105,10 +105,8 @@ frame_timeout(Pid, UUID, BalanceNonce) ->
 
 -spec handle_console_downlink(binary(), map(), router_channel:channel(), first | last) -> ok.
 handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
-    {ChannelHandler, _} = router_channel:handler(Channel),
     case router_devices_sup:maybe_start_worker(DeviceID, #{}) of
         {error, _Reason} ->
-            ok = router_metrics:downlink_inc(ChannelHandler, error),
             Desc = io_lib:format("Failed to queue downlink (worker failed): ~p", [_Reason]),
             ok = maybe_report_downlink_dropped(DeviceID, Desc, Channel),
             lager:info("failed to start/find device ~p: ~p", [DeviceID, _Reason]);
@@ -118,7 +116,6 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                     lager:info("clearing device queue because downlink payload from console"),
                     router_device_worker:clear_queue(Pid);
                 {ok, {Confirmed, Port, Region, Payload}} ->
-                    ok = router_metrics:downlink_inc(ChannelHandler, ok),
                     router_device_worker:queue_downlink(
                         Pid,
                         #downlink{
@@ -135,7 +132,6 @@ handle_console_downlink(DeviceID, MapPayload, Channel, Position) ->
                         _Reason
                     ]),
                     ok = maybe_report_downlink_dropped(DeviceID, Desc, Channel),
-                    ok = router_metrics:downlink_inc(ChannelHandler, error),
                     lager:debug("could not parse json downlink message ~p for ~p", [
                         _Reason,
                         DeviceID
@@ -264,13 +260,11 @@ handle_cast(
     {handle_downlink, BinaryPayload, Channel},
     #state{device_worker = DeviceWorker} = State
 ) ->
-    {ChannelHandler, _} = router_channel:handler(Channel),
     case downlink_decode(BinaryPayload) of
         {ok, clear_queue} ->
             lager:info("clearing device queue because downlink payload"),
             router_device_worker:clear_queue(DeviceWorker);
         {ok, {Confirmed, Port, Region, Payload}} ->
-            ok = router_metrics:downlink_inc(ChannelHandler, ok),
             ok = router_device_worker:queue_downlink(DeviceWorker, #downlink{
                 confirmed = Confirmed,
                 port = Port,
@@ -279,7 +273,6 @@ handle_cast(
                 region = Region
             });
         {error, _Reason} ->
-            ok = router_metrics:downlink_inc(ChannelHandler, error),
             lager:debug("could not parse json downlink message ~p", [_Reason])
     end,
     {noreply, State};

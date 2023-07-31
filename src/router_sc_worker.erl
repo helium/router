@@ -129,10 +129,8 @@ counts() ->
     blockchain_txn_state_channel_close_v1:txn_state_channel_close()
 ) -> ok.
 sc_hook_close_submit(ok, _SignedTxn) ->
-    ok = router_metrics:sc_close_submit_inc(ok),
     lager:info("txn accepted");
 sc_hook_close_submit(Error, SignedTxn) ->
-    ok = router_metrics:sc_close_submit_inc(error),
     lager:error("failed to submit txn ~p", [Error]),
     lager:error("~p", [SignedTxn]).
 

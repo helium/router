@@ -23,20 +23,14 @@ route(eos, StreamState) ->
     lager:debug("got eos"),
     {ok, StreamState};
 route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
-    case verify(PacketUp) of
-        false ->
-            lager:debug("failed to verify ~p", [PacketUp]),
-            {grpc_error, {grpcbox_stream:code_to_status(7), <<"bad signature">>}};
-        true ->
-            Self = self(),
-            erlang:spawn(fun() ->
-                SCPacket = to_sc_packet(PacketUp),
-                router_device_routing:handle_free_packet(
-                    SCPacket, erlang:system_time(millisecond), Self
-                )
-            end),
-            {ok, StreamState}
-    end;
+    Self = self(),
+    erlang:spawn(fun() ->
+        SCPacket = to_sc_packet(PacketUp),
+        router_device_routing:handle_free_packet(
+            SCPacket, erlang:system_time(millisecond), Self
+        )
+    end),
+    {ok, StreamState};
 route(_EnvUp, StreamState) ->
     lager:warning("unknown ~p", [_EnvUp]),
     {ok, StreamState}.
@@ -69,25 +63,6 @@ handle_info(_Msg, StreamState) ->
 %% ------------------------------------------------------------------
 %% Helper Functions
 %% ------------------------------------------------------------------
--spec verify(Packet :: packet_router_pb:packet_router_packet_up_v1_pb()) -> boolean().
-verify(Packet) ->
-    try
-        BasePacket = Packet#packet_router_packet_up_v1_pb{signature = <<>>},
-        EncodedPacket = packet_router_pb:encode_msg(BasePacket),
-        #packet_router_packet_up_v1_pb{
-            signature = Signature,
-            gateway = PubKeyBin
-        } = Packet,
-        PubKey = libp2p_crypto:bin_to_pubkey(PubKeyBin),
-        libp2p_crypto:verify(EncodedPacket, Signature, PubKey)
-    of
-        Bool -> Bool
-    catch
-        _E:_R ->
-            false
-    end.
-
-%% ===================================================================
 
 -spec to_sc_packet(packet_router_pb:packet_router_packet_up_v1_pb()) ->
     router_pb:blockchain_state_channel_packet_v1_pb().

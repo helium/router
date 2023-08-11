@@ -380,6 +380,7 @@ send_update_request(RouteID, Updates) ->
     SignedRequest = Request#iot_config_route_skf_update_req_v1_pb{
         signature = SigFun(EncodedRequest)
     },
+    lager:info("sending skf req ~p", [SignedRequest]),
     Res =
         case
             helium_iot_config_route_client:update_skfs(

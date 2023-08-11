@@ -66,6 +66,12 @@
 -type skfs() :: list(skf()).
 -type skf_update() :: #iot_config_route_skf_update_v1_pb{}.
 -type skf_updates() :: list(#iot_config_route_skf_update_v1_pb{}).
+-type skf_update_tuple() :: {
+    Action :: add | remove,
+    DevaddrInt :: non_neg_integer(),
+    NwkSKey :: binary(),
+    MultiBuy :: non_neg_integer()
+}.
 
 -type reconcile_progress_fun() :: fun(
     (
@@ -163,14 +169,15 @@ update([]) ->
     ok;
 update(Updates0) ->
     Limit = skf_update_batch_size(),
-    Updates1 = dedup_updates(Updates0),
-    case erlang:length(Updates1) > Limit of
+    Updates1 = ensure_skf_update(Updates0),
+    Updates2 = dedup_updates(Updates1),
+    case erlang:length(Updates2) > Limit of
         true ->
-            {Update, Rest} = lists:split(Limit, Updates1),
+            {Update, Rest} = lists:split(Limit, Updates2),
             gen_server:cast(?SERVER, {?UPDATE, Update}),
             ?MODULE:update(Rest);
         false ->
-            gen_server:cast(?SERVER, {?UPDATE, Updates1})
+            gen_server:cast(?SERVER, {?UPDATE, Updates2})
     end.
 
 -spec add_device_ids(DeviceIDs :: [binary()]) -> ok.
@@ -248,6 +255,22 @@ skf_to_remove_update(#iot_config_skf_v1_pb{
         max_copies = MaxCopies
     }.
 
+-spec ensure_skf_update
+    (skf_update_tuple()) -> skf_update();
+    (skf_update()) -> skf_update();
+    (list(skf_update_tuple())) -> skf_updates().
+ensure_skf_update(Updates) when erlang:is_list(Updates) ->
+    lists:map(fun ensure_skf_update/1, Updates);
+ensure_skf_update(#iot_config_route_skf_update_v1_pb{} = Update) ->
+    Update;
+ensure_skf_update({Action, Devaddr, SessionKey, MaxCopies}) ->
+    #iot_config_route_skf_update_v1_pb{
+        action = Action,
+        devaddr = Devaddr,
+        session_key = binary:encode_hex(SessionKey),
+        max_copies = MaxCopies
+    }.
+
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
@@ -305,26 +328,11 @@ handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) 
     ok = ?MODULE:update(Updates),
     {noreply, State};
 handle_cast(
-    {?UPDATE, Updates0},
+    {?UPDATE, Updates},
     #state{route_id = RouteID} = State
 ) ->
-    Updates1 = lists:map(
-        fun
-            (#iot_config_route_skf_update_v1_pb{} = Update) ->
-                Update;
-            ({Action, Devaddr, Key, MaxCopies}) ->
-                #iot_config_route_skf_update_v1_pb{
-                    action = Action,
-                    devaddr = Devaddr,
-                    session_key = binary:encode_hex(Key),
-                    max_copies = MaxCopies
-                }
-        end,
-        Updates0
-    ),
-
     %% logging is already done in send_update_request/2
-    _ = send_update_request(RouteID, Updates1),
+    _ = send_update_request(RouteID, Updates),
     {noreply, State};
 handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
@@ -505,18 +513,21 @@ devices_to_skfs(Devices, RouteID) ->
 skf_update_batch_size() ->
     router_utils:get_env_int(update_skf_batch_size, ?SKF_UPDATE_BATCH_SIZE).
 
--spec dedup_updates(Updates :: list(Update)) -> list(Update) when
-    Update :: {
-        add | remove,
-        DevaddrInt :: non_neg_integer(),
-        NwkSKey :: binary(),
-        MultiBuy :: non_neg_integer()
-    }.
+-spec dedup_updates(skf_updates()) -> skf_updates().
 dedup_updates(Updates) ->
-    {Adds, Removes} = lists:partition(fun({Action, _, _, _}) -> Action == add end, Updates),
+    #{to_add := Adds, to_remove := Removes} = partition_updates_by_action(Updates),
 
-    AddMap = maps:from_list([{{DI, Key}, X} || {_, DI, Key, _} = X <- Adds]),
-    RemoveMap = maps:from_list([{{DI, Key}, X} || {_, DI, Key, _} = X <- Removes]),
+    Keyed = fun(
+        #iot_config_route_skf_update_v1_pb{
+            devaddr = Devaddr,
+            session_key = SessionKey
+        } = Update
+    ) ->
+        {{Devaddr, SessionKey}, Update}
+    end,
+
+    AddMap = maps:from_list([Keyed(Update) || Update <- Adds]),
+    RemoveMap = maps:from_list([Keyed(Update) || Update <- Removes]),
 
     Deduped = maps:merge(RemoveMap, AddMap),
     maps:values(Deduped).

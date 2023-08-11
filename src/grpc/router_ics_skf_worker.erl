@@ -161,15 +161,16 @@ startup_reconcile() ->
     ok.
 update([]) ->
     ok;
-update(Updates) ->
+update(Updates0) ->
     Limit = skf_update_batch_size(),
-    case erlang:length(Updates) > Limit of
+    Updates1 = dedup_updates(Updates0),
+    case erlang:length(Updates1) > Limit of
         true ->
-            {Update, Rest} = lists:split(Limit, Updates),
+            {Update, Rest} = lists:split(Limit, Updates1),
             gen_server:cast(?SERVER, {?UPDATE, Update}),
             ?MODULE:update(Rest);
         false ->
-            gen_server:cast(?SERVER, {?UPDATE, Updates})
+            gen_server:cast(?SERVER, {?UPDATE, Updates1})
     end.
 
 -spec add_device_ids(DeviceIDs :: [binary()]) -> ok.
@@ -503,3 +504,45 @@ devices_to_skfs(Devices, RouteID) ->
 -spec skf_update_batch_size() -> non_neg_integer().
 skf_update_batch_size() ->
     router_utils:get_env_int(update_skf_batch_size, ?SKF_UPDATE_BATCH_SIZE).
+
+-spec dedup_updates(Updates :: list(Update)) -> list(Update) when
+    Update :: {
+        add | remove,
+        DevaddrInt :: non_neg_integer(),
+        NwkSKey :: binary(),
+        MultiBuy :: non_neg_integer()
+    }.
+dedup_updates(Updates) ->
+    {Adds, Removes} = lists:partition(fun({Action, _, _, _}) -> Action == add end, Updates),
+
+    AddMap = maps:from_list([{{DI, Key}, X} || {_, DI, Key, _} = X <- Adds]),
+    RemoveMap = maps:from_list([{{DI, Key}, X} || {_, DI, Key, _} = X <- Removes]),
+
+    Deduped = maps:merge(RemoveMap, AddMap),
+    maps:values(Deduped).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+dedup_updates_test() ->
+    ?assertEqual(
+        [{add, 1, <<>>, 5}],
+        dedup_updates([{add, 1, <<>>, 5}]),
+        "adds are untouched"
+    ),
+
+    ?assertEqual(
+        [{add, 1, <<>>, 5}],
+        dedup_updates([{add, 1, <<>>, 5}, {remove, 1, <<>>, 9999}]),
+        "removes that match an add are removed"
+    ),
+
+    ?assertEqual(
+        [{add, 1, <<>>, 5}],
+        dedup_updates([{remove, 1, <<>>, 9999}, {add, 1, <<>>, 5}]),
+        "removes that match an add are removed regardless of order"
+    ),
+
+    ok.
+
+-endif.

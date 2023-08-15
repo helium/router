@@ -837,6 +837,7 @@ handle_cast(
             lager:debug("packet not validated: ~p", [Reason]),
             case Reason of
                 late_packet ->
+                    ok = charge_and_update_org(Packet0, Device1),
                     ok = router_utils:event_uplink_dropped_late_packet(
                         PacketTime,
                         HoldTime,
@@ -1794,6 +1795,35 @@ validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCach
 ) -> {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
 maybe_charge(Device, PayloadSize, _PubKeyBin, _PHash, _OfferCache) ->
     router_console_dc_tracker:charge(Device, PayloadSize).
+
+-spec charge_and_update_org(
+    Packet :: blockchain_helium_packet_v1:packet(), Device :: router_device:device()
+) -> ok.
+charge_and_update_org(Packet, Device) ->
+    case router_utils:get_env_bool(charge_late_packets, false) of
+        false ->
+            lager:debug("not charing for late packets");
+        true ->
+            <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1,
+                _RFU:1, FOptsLen:4, _FCnt:16, _FOpts:FOptsLen/binary,
+                PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+            {_FPort, FRMPayload} = lorawan_utils:extract_frame_port_payload(PayloadAndMIC),
+            PayloadSize = erlang:byte_size(FRMPayload),
+            case router_console_dc_tracker:charge(Device, PayloadSize) of
+                {error, _Reason} ->
+                    lager:warning("failed to charge ~p", [_Reason]);
+                {ok, Balance, _Nonce} ->
+                    OrgID = maps:get(organization_id, router_device:metadata(Device), undefined),
+                    case router_console_api:org_manual_update_router_dc(OrgID, Balance) of
+                        {error, _Reason} ->
+                            lager:warning("failed to update org(~w) to ~w: ~p", [
+                                OrgID, Balance, _Reason
+                            ]);
+                        ok ->
+                            lager:debug("org ~s updated to ~w", [OrgID, Balance])
+                    end
+            end
+    end.
 
 %%%-------------------------------------------------------------------
 %% @doc

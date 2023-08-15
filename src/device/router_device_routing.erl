@@ -274,6 +274,7 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
         {error, Reason} = Err ->
             lager:debug("packet from ~p discarded ~p", [HotspotName, Reason]),
             Pid ! {error, reason_to_single_atom(Reason)},
+            ok = handle_packet_metrics(Packet, reason_to_single_atom(Reason), Start),
             Err
     end.
 

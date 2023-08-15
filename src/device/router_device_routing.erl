@@ -39,6 +39,12 @@
     force_evict_packet_hash/1
 ]).
 
+-export([
+    b0_from_payload/2,
+    payload_mic/1,
+    payload_fcnt_low/1
+]).
+
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
 -define(MODULO_16_BITS, 16#10000).
@@ -1261,9 +1267,30 @@ find_right_key(B0, MIC, Payload, Device, [{undefined, _} | Keys]) ->
     find_right_key(B0, MIC, Payload, Device, Keys);
 find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
     case key_matches_mic(NwkSKey, B0, MIC) of
-        true -> {Device, NwkSKey};
-        false -> find_right_key(B0, MIC, Payload, Device, Keys)
+        true ->
+            {Device, NwkSKey};
+        false ->
+            case key_matches_any_fcnt(NwkSKey, MIC, Payload) of
+                false -> find_right_key(B0, MIC, Payload, Device, Keys);
+                true -> {Device, NwkSKey}
+            end
     end.
+
+-spec key_matches_any_fcnt(binary(), binary(), binary()) -> boolean().
+key_matches_any_fcnt(NwkSKey, ExpectedMIC, Payload) ->
+    FCntLow = payload_fcnt_low(Payload),
+    lists:any(
+        fun(HighBits) ->
+            FCnt = binary:decode_unsigned(
+                <<FCntLow:16/integer-unsigned-little, HighBits:16/integer-unsigned-little>>,
+                little
+            ),
+            B0 = b0_from_payload(Payload, FCnt),
+            ComputedMIC = crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4),
+            ComputedMIC =:= ExpectedMIC
+        end,
+        lists:seq(2#000, 2#111)
+    ).
 
 -spec key_matches_mic(binary(), binary(), binary()) -> boolean().
 key_matches_mic(Key, B0, ExpectedMIC) ->

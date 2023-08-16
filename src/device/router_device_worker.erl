@@ -836,12 +836,12 @@ handle_cast(
         {error, Reason} ->
             lager:debug("packet not validated: ~p", [Reason]),
             case Reason of
-                late_packet ->
+                {late_packet, LateFcnt} ->
                     ok = charge_and_update_org(Packet0, Device1),
                     ok = router_utils:event_uplink_dropped_late_packet(
                         PacketTime,
                         HoldTime,
-                        PacketFCnt,
+                        LateFcnt,
                         Device1,
                         PubKeyBin
                     );
@@ -1575,7 +1575,7 @@ validate_frame(
                         PacketFCnt,
                         LastSeenFCnt
                     ]),
-                    {error, late_packet};
+                    {error, {late_packet, PacketFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window < ?RX_MAX_WINDOW
@@ -1584,7 +1584,7 @@ validate_frame(
                         "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
                         [PacketFCnt, DownlinkHandledAtFCnt, Window]
                     ),
-                    {error, late_packet};
+                    {error, {late_packet, PacketFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window >= ?RX_MAX_WINDOW
@@ -1607,7 +1607,7 @@ validate_frame(
                         "we got a replay packet [verified: ~p] [device: ~p]",
                         [VerifiedFCnt, DeviceFCnt]
                     ),
-                    {error, late_packet};
+                    {error, {late_packet, VerifiedFCnt}};
                 undefined ->
                     lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
                     validate_frame_(
@@ -1802,7 +1802,7 @@ maybe_charge(Device, PayloadSize, _PubKeyBin, _PHash, _OfferCache) ->
 charge_and_update_org(Packet, Device) ->
     case router_utils:get_env_bool(charge_late_packets, false) of
         false ->
-            lager:debug("not charing for late packets");
+            lager:debug("not charging for late packets");
         true ->
             <<_MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1,
                 _RFU:1, FOptsLen:4, _FCnt:16, _FOpts:FOptsLen/binary,

@@ -82,7 +82,6 @@
                 grpc_opts => #{
                     service_protos => [router_pb, packet_router_pb],
                     services => #{
-                        'helium.router' => helium_router_service,
                         'helium.packet_router.packet' => helium_packet_service
                     }
                 },
@@ -156,7 +155,6 @@
             {{lager_file_backend, "router.log"}, [{module, router_device_routing}], info},
 
             {{lager_file_backend, "router.log"}, [{module, helium_packet_service}], info},
-            {{lager_file_backend, "router.log"}, [{module, helium_router_service}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_eui_worker}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_route_get_euis_handler}], info},
             {{lager_file_backend, "router.log"}, [{module, router_ics_skf_list_handler}], info},

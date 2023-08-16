@@ -21,7 +21,7 @@ init(_Rpc, Stream) ->
     {ok, grpcbox_stream:t()} | grpcbox_stream:grpc_error_response().
 route(eos, StreamState) ->
     lager:debug("got eos"),
-    {ok, StreamState};
+    {stop, StreamState};
 route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
     Self = self(),
     erlang:spawn(fun() ->

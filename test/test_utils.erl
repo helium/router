@@ -28,7 +28,6 @@
     wait_state_channel_message/3,
     wait_state_channel_message/8,
     wait_organizations_burned/1,
-    wait_manual_update_router_dc/1,
     wait_state_channel_packet/1,
     join_payload/2,
     join_packet/3, join_packet/4,
@@ -924,25 +923,6 @@ wait_organizations_burned(Expected) ->
         _Class:_Reason:_Stacktrace ->
             ct:pal("wait_organizations_burned stacktrace ~n~p", [{_Reason, _Stacktrace}]),
             ct:fail("wait_organizations_burned failed")
-    end.
-
-wait_manual_update_router_dc(Expected) ->
-    try
-        receive
-            {manual_update_router_dc, Got} ->
-                case match_map(Expected, Got) of
-                    true ->
-                        ok;
-                    {false, Reason} ->
-                        ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_manual_update_router_dc failed ~p", [Reason])
-                end
-        after 1250 -> ct:fail("wait_manual_update_router_dc timeout")
-        end
-    catch
-        _Class:_Reason:_Stacktrace ->
-            ct:pal("wait_manual_update_router_dc stacktrace ~n~p", [{_Reason, _Stacktrace}]),
-            ct:fail("wait_manual_update_router_dc failed")
     end.
 
 join_packet(PubKeyBin, AppKey, DevNonce) ->

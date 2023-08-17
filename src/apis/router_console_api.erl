@@ -178,7 +178,7 @@ get_unfunded_org_ids() ->
 org_manual_update_router_dc(OrgID, Balance) ->
     {Endpoint, Token} = token_lookup(),
     Url = <<Endpoint/binary, "/api/router/organizations/manual_update_router_dc">>,
-    lager:debug("post ~p", [Url]),
+    lager:debug("get ~p", [Url]),
     Opts = [
         with_body,
         {pool, ?POOL},

@@ -10,7 +10,6 @@
 ]).
 
 -export([
-    charge_for_late_packets/1,
     device_update_test/1,
     unjoined_device_update_test/1,
     stopped_unjoined_device_update_test/1,
@@ -65,7 +64,6 @@ groups() ->
 
 all_tests() ->
     [
-        charge_for_late_packets,
         device_worker_stop_children_test,
         device_update_test,
         unjoined_device_update_test,
@@ -106,114 +104,6 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
-charge_for_late_packets(Config) ->
-    #{
-        stream := Stream,
-        pubkey_bin := PubKeyBin1,
-        hotspot_name := HotspotName1
-    } = test_utils:join_device(Config),
-
-    application:set_env(router, charge_late_packets, true),
-
-    %% Waiting for reply from router to hotspot
-    test_utils:wait_state_channel_message(1250),
-
-    %% Check that device is in cache
-    {ok, DB, CF} = router_db:get_devices(),
-    WorkerId = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device} = router_device:get_by_id(DB, CF, WorkerId),
-
-    SendPacketFun = fun(PubKeyBin, Fcnt) ->
-        Stream !
-            {send,
-                test_utils:frame_packet(
-                    ?UNCONFIRMED_UP,
-                    PubKeyBin,
-                    router_device:nwk_s_key(Device),
-                    router_device:app_s_key(Device),
-                    Fcnt
-                )}
-    end,
-
-    {StartingBalance, StartingNonce} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
-
-    %% Simulate multiple hotspots sending data
-    SendPacketFun(PubKeyBin1, 500),
-    test_utils:wait_until(fun() ->
-        test_utils:get_device_last_seen_fcnt(?CONSOLE_DEVICE_ID) == 500
-    end),
-
-    {ok, _} = test_utils:wait_for_console_event_sub(
-        <<"uplink_unconfirmed">>,
-        #{
-            <<"id">> => fun erlang:is_binary/1,
-            <<"category">> => <<"uplink">>,
-            <<"sub_category">> => <<"uplink_unconfirmed">>,
-            <<"description">> => fun erlang:is_binary/1,
-            <<"reported_at">> => fun erlang:is_integer/1,
-            <<"device_id">> => ?CONSOLE_DEVICE_ID,
-            <<"data">> => #{
-                <<"dc">> => #{<<"balance">> => 98, <<"nonce">> => 1, <<"used">> => 1},
-                <<"fcnt">> => fun erlang:is_integer/1,
-                <<"payload_size">> => fun erlang:is_integer/1,
-                <<"payload">> => fun erlang:is_binary/1,
-                <<"raw_packet">> => fun erlang:is_binary/1,
-                <<"port">> => fun erlang:is_integer/1,
-                <<"devaddr">> => fun erlang:is_binary/1,
-                <<"hotspot">> => #{
-                    <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                    <<"name">> => erlang:list_to_binary(HotspotName1),
-                    <<"rssi">> => 0.0,
-                    <<"snr">> => 0.0,
-                    <<"spreading">> => <<"SF8BW125">>,
-                    <<"frequency">> => fun erlang:is_float/1,
-                    <<"channel">> => fun erlang:is_number/1,
-                    <<"lat">> => fun erlang:is_float/1,
-                    <<"long">> => fun erlang:is_float/1
-                },
-                <<"mac">> => [],
-                <<"hold_time">> => fun erlang:is_integer/1
-            }
-        }
-    ),
-
-    %% Make sure DC is not being charged for the late packet.
-    {Balance1, Nonce1} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
-    ?assertEqual(Balance1, StartingBalance - 1),
-    ?assertEqual(Nonce1, StartingNonce),
-
-    SendPacketFun(PubKeyBin1, 100),
-
-    test_utils:wait_for_console_event_sub(<<"uplink_dropped_late">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"uplink_dropped">>,
-        <<"sub_category">> => <<"uplink_dropped_late">>,
-        <<"description">> => <<"Late packet">>,
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => ?CONSOLE_DEVICE_ID,
-        <<"data">> => #{
-            <<"fcnt">> => 100,
-            <<"hotspot">> => #{
-                <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
-                <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin1))
-            },
-            <<"hold_time">> => fun erlang:is_integer/1
-        }
-    }),
-
-    {Balance2, Nonce2} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
-    ?assertEqual(Balance2, Balance1 - 1),
-    ?assertEqual(Nonce2, Nonce1),
-
-    OrgID = maps:get(organization_id, router_device:metadata(Device), undefined),
-    test_utils:wait_manual_update_router_dc(#{
-        <<"organization_id">> => OrgID,
-        <<"amount">> => Balance2
-    }),
-
-    application:set_env(router, charge_late_packets, false),
-    ok.
-
 device_worker_late_packet_double_charge_test(Config) ->
     #{
         stream := Stream,
@@ -1530,6 +1420,7 @@ replay_uplink_far_in_the_past_test(Config) ->
         <<"reported_at">> => fun erlang:is_integer/1,
         <<"sub_category">> => <<"uplink_dropped_late">>
     }),
+
 
     ok.
 

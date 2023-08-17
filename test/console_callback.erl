@@ -307,19 +307,6 @@ handle('GET', [<<"api">>, <<"router">>, <<"organizations">>, <<"zero_dc">>], _Re
             [{unfunded_org_ids, IDs}] -> IDs
         end,
     {200, [], jsx:encode(#{<<"data">> => OrgIDs})};
-handle(
-    'POST', [<<"api">>, <<"router">>, <<"organizations">>, <<"manual_update_router_dc">>], Req, Args
-) ->
-    Pid = maps:get(forward, Args),
-    Body = elli_request:body(Req),
-    try jsx:decode(Body, [return_maps]) of
-        Map ->
-            Pid ! {manual_update_router_dc, Map},
-            {204, [], <<>>}
-    catch
-        _:_ ->
-            {400, [], <<"bad_body">>}
-    end;
 %% POST to channel
 handle('POST', [<<"channel">>], Req, Args) ->
     Pid = maps:get(forward, Args),

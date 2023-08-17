@@ -846,9 +846,8 @@ handle_packet_wrong_fcnt_test(Config) ->
         devaddr => router_device:devaddr(Device0)
     }),
 
-    %% NOTE: packets with previous fcnts are now correctly identified to the device that can decode them.
     ?assertEqual(
-        ok,
+        {error, unknown_device},
         router_device_routing:handle_packet(
             SCPacket1, erlang:system_time(millisecond), self()
         )

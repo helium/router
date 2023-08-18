@@ -1265,35 +1265,30 @@ validate_join(
     #packet_pb{
         payload =
             <<MType:3, _MHDRRFU:3, _Major:2, _AppEUI0:8/binary, _DevEUI0:8/binary,
-                DevNonce:2/binary, _MIC:4/binary>> = Payload
+                DevNonce:2/binary, _MIC:4/binary>>
     } = Packet,
     PubKeyBin,
     Region,
     APIDevice,
     AppKey,
     Device,
-    OfferCache
+    _OfferCache
 ) when MType == ?JOIN_REQ ->
     case lists:member(DevNonce, router_device:dev_nonces(Device)) of
         true ->
             {error, bad_nonce};
         false ->
-            PayloadSize = erlang:byte_size(Payload),
-            PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-            case maybe_charge(Device, PayloadSize, PubKeyBin, PHash, OfferCache) of
-                {error, _} = Error ->
-                    Error;
-                {ok, Balance, Nonce} ->
-                    {ok, UpdatedDevice, JoinAcceptArgs} = handle_join(
-                        Packet,
-                        PubKeyBin,
-                        Region,
-                        APIDevice,
-                        AppKey,
-                        Device
-                    ),
-                    {ok, UpdatedDevice, DevNonce, JoinAcceptArgs, {Balance, Nonce}}
-            end
+            OrgID = maps:get(organization_id, router_device:metadata(Device), undefined),
+            {Balance, Nonce} = router_console_dc_tracker:current_balance(OrgID),
+            {ok, UpdatedDevice, JoinAcceptArgs} = handle_join(
+                Packet,
+                PubKeyBin,
+                Region,
+                APIDevice,
+                AppKey,
+                Device
+            ),
+            {ok, UpdatedDevice, DevNonce, JoinAcceptArgs, {Balance, Nonce}}
     end;
 validate_join(
     _Packet,

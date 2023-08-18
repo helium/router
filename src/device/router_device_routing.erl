@@ -87,10 +87,6 @@
 %% 25/second: After analysis it seems that in best condition a hotspot
 %% cannot really support more than 25 uplinks per second
 -define(DEFAULT_HOTSPOT_THROTTLE, 25).
--define(DEVICE_THROTTLE, router_device_routing_device_throttle).
-%% 1/second is the default (note: this is 1/second per device/hotspot pair combo)
-%% 1/second was picked as rx windows are minimum 1s
--define(DEFAULT_DEVICE_THROTTLE, 1).
 
 -define(POC_DENYLIST_ERROR, poc_denylist_denied).
 -define(ROUTER_DENYLIST_ERROR, router_denylist_denied).
@@ -114,9 +110,7 @@ init() ->
     ),
     true = ets:insert(?BF_ETS, {?BF_KEY, BloomJoinRef}),
     HotspotRateLimit = application:get_env(router, hotspot_rate_limit, ?DEFAULT_HOTSPOT_THROTTLE),
-    DeviceRateLimit = application:get_env(router, device_rate_limit, ?DEFAULT_DEVICE_THROTTLE),
     ok = throttle:setup(?HOTSPOT_THROTTLE, HotspotRateLimit, per_second),
-    ok = throttle:setup(?DEVICE_THROTTLE, DeviceRateLimit, per_second),
     ok.
 
 -spec handle_offer(blockchain_state_channel_offer_v1:offer(), pid()) -> ok | {error, any()}.
@@ -549,27 +543,22 @@ join_offer_(Offer, _Pid) ->
     PHash :: binary()
 ) -> {ok, router_device:device()} | {error, any()}.
 maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
-    case check_device_rate(Hotspot, Device) of
+    case check_device_is_active(Device, Hotspot) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            case check_device_is_active(Device, Hotspot) of
+            case check_device_balance(PayloadSize, Device, Hotspot) of
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    case check_device_balance(PayloadSize, Device, Hotspot) of
-                        {error, _Reason} = Error ->
-                            Error;
-                        ok ->
-                            case check_device_preferred_hotspots(Device, Hotspot) of
-                                none_preferred ->
-                                    maybe_multi_buy_offer(Device, PHash);
-                                preferred ->
-                                    % Device has preferred hotspots, so multibuy is not
-                                    {ok, Device};
-                                not_preferred_hotspot ->
-                                    {error, not_preferred_hotspot}
-                            end
+                    case check_device_preferred_hotspots(Device, Hotspot) of
+                        none_preferred ->
+                            maybe_multi_buy_offer(Device, PHash);
+                        preferred ->
+                            % Device has preferred hotspots, so multibuy is not
+                            {ok, Device};
+                        not_preferred_hotspot ->
+                            {error, not_preferred_hotspot}
                     end
             end
     end.
@@ -598,17 +587,6 @@ check_device_preferred_hotspots(Device, Hotspot) ->
                 _ ->
                     not_preferred_hotspot
             end
-    end.
-
--spec check_device_rate(Hotspot :: libp2p_crypto:pubkey_bin(), Device :: router_device:device()) ->
-    ok | {error, ?DEVICE_THROTTLE_ERROR}.
-check_device_rate(Hotspot, Device) ->
-    DeviceID = router_device:id(Device),
-    case throttle:check(?DEVICE_THROTTLE, {Hotspot, DeviceID}) of
-        {limit_exceeded, _, _} ->
-            {error, ?DEVICE_THROTTLE_ERROR};
-        _ ->
-            ok
     end.
 
 -spec packet_offer(blockchain_state_channel_offer_v1:offer()) ->
@@ -725,18 +703,13 @@ validate_packet_offer(Offer) ->
 -spec check_device_all(router_device:device(), non_neg_integer(), libp2p_crypto:pubkey_bin()) ->
     {ok, router_device:device()} | {error, any()}.
 check_device_all(Device, PayloadSize, Hotspot) ->
-    case check_device_rate(Hotspot, Device) of
+    case check_device_is_active(Device, Hotspot) of
         {error, _Reason} = Error ->
             Error;
         ok ->
-            case check_device_is_active(Device, Hotspot) of
-                {error, _Reason} = Error ->
-                    Error;
-                ok ->
-                    case check_device_balance(PayloadSize, Device, Hotspot) of
-                        {error, _Reason} = Error -> Error;
-                        ok -> {ok, Device}
-                    end
+            case check_device_balance(PayloadSize, Device, Hotspot) of
+                {error, _Reason} = Error -> Error;
+                ok -> {ok, Device}
             end
     end.
 

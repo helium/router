@@ -344,8 +344,13 @@ device_worker_late_packet_double_charge_test(Config) ->
 
     %% Make sure DC is not being charged for the late packet.
     {EndingBalance, EndingNonce} = router_console_dc_tracker:current_balance(?CONSOLE_ORG_ID),
+    ChargedPackets =
+        case router_utils:get_env_bool(charge_late_packets, false) of
+            true -> 2;
+            false -> 1
+        end,
 
-    ?assertEqual(EndingBalance, StartingBalance - 1),
+    ?assertEqual(EndingBalance, StartingBalance - ChargedPackets),
     ?assertEqual(EndingNonce, StartingNonce),
 
     ok.
@@ -1601,7 +1606,8 @@ offer_cache_test(Config) ->
                 <<"id">> => erlang:list_to_binary(libp2p_crypto:bin_to_b58(PubKeyBin1)),
                 <<"name">> => erlang:list_to_binary(blockchain_utils:addr2name(PubKeyBin1))
             },
-            <<"hold_time">> => fun erlang:is_integer/1
+            <<"hold_time">> => fun erlang:is_integer/1,
+            <<"dc">> => fun erlang:is_map/1
         }
     }),
 

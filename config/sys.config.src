@@ -69,7 +69,8 @@
         {metrics_port, "${ROUTER_METRICS_PORT}"},
         {denylist_keys, ["1SbEYKju337P6aYsRd9DT2k4qgK5ZK62kXbSvnJgqeaxK3hqQrYURZjL"]},
         {denylist_url, "https://api.github.com/repos/helium/denylist/releases/latest"},
-        {charge_joins, "${ROUTER_CHARGE_JOINS}"}
+        {charge_joins, "${ROUTER_CHARGE_JOINS}"},
+        {charge_late_packets, "${ROUTER_CHARGE_LATE_PACKETS}"}
     ]},
     {grpcbox, [
         {client, #{

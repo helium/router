@@ -837,11 +837,11 @@ handle_cast(
         {error, Reason} ->
             lager:debug("packet not validated: ~p", [Reason]),
             case Reason of
-                late_packet ->
+                {late_packet, VerifiedFCnt} ->
                     ok = router_utils:event_uplink_dropped_late_packet(
                         PacketTime,
                         HoldTime,
-                        PacketFCnt,
+                        VerifiedFCnt,
                         Device1,
                         PubKeyBin,
                         Packet0
@@ -1591,7 +1591,7 @@ validate_frame(
                         PacketFCnt,
                         LastSeenFCnt
                     ]),
-                    {error, late_packet};
+                    {error, {late_packet, VerifiedFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window < ?RX_MAX_WINDOW
@@ -1600,7 +1600,7 @@ validate_frame(
                         "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
                         [PacketFCnt, DownlinkHandledAtFCnt, Window]
                     ),
-                    {error, late_packet};
+                    {error, {late_packet, VerifiedFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window >= ?RX_MAX_WINDOW
@@ -1623,7 +1623,7 @@ validate_frame(
                         "we got a replay packet [verified: ~p] [device: ~p]",
                         [VerifiedFCnt, DeviceFCnt]
                     ),
-                    {error, late_packet};
+                    {error, {late_packet, VerifiedFCnt}};
                 undefined ->
                     lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
                     validate_frame_(

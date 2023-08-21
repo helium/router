@@ -39,6 +39,12 @@
     force_evict_packet_hash/1
 ]).
 
+-export([
+    payload_b0/2,
+    payload_mic/1,
+    payload_fcnt_low/1
+]).
+
 %% biggest unsigned number in 23 bits
 -define(BITS_23, 8388607).
 -define(MODULO_16_BITS, 16#10000).
@@ -221,24 +227,15 @@ handle_free_packet(SCPacket, PacketTime, Pid) when is_pid(Pid) ->
                 ok = lager:md([{device_id, router_device:id(Device)}]),
                 case validate_payload_for_device(Device, Payload, PHash, PubKeyBin, PacketFCnt) of
                     ok ->
-                        Offer = blockchain_state_channel_offer_v1:from_packet(
-                            Packet, PubKeyBin, Region
-                        ),
-                        case offer_check(Offer) of
-                            ok ->
-                                erlang:spawn(router_blockchain, track_offer, [Offer, Pid]),
-                                {ok, Device};
-                            {error, _} ->
-                                lager:debug("packet accepted even if on denylist"),
-                                {ok, Device}
-                        end;
+                        {ok, Device};
                     {error, ?LATE_PACKET} = E2 ->
                         ok = router_utils:event_uplink_dropped_late_packet(
                             PacketTime,
                             HoldTime,
                             PacketFCnt,
                             Device,
-                            PubKeyBin
+                            PubKeyBin,
+                            Packet
                         ),
                         E2;
                     {error, _} = E3 ->
@@ -1187,7 +1184,7 @@ get_device_by_mic(_MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(ExpectedMIC, Payload, [Device | Devices]) ->
     ExpectedFCnt = expected_fcnt(Device, Payload),
-    B0 = b0_from_payload(Payload, ExpectedFCnt),
+    B0 = payload_b0(Payload, ExpectedFCnt),
     DeviceID = router_device:id(Device),
     case router_device:nwk_s_key(Device) of
         undefined ->
@@ -1235,9 +1232,30 @@ find_right_key(B0, MIC, Payload, Device, [{undefined, _} | Keys]) ->
     find_right_key(B0, MIC, Payload, Device, Keys);
 find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
     case key_matches_mic(NwkSKey, B0, MIC) of
-        true -> {Device, NwkSKey};
-        false -> find_right_key(B0, MIC, Payload, Device, Keys)
+        true ->
+            {Device, NwkSKey};
+        false ->
+            case key_matches_any_fcnt(NwkSKey, MIC, Payload) of
+                false -> find_right_key(B0, MIC, Payload, Device, Keys);
+                true -> {Device, NwkSKey}
+            end
     end.
+
+-spec key_matches_any_fcnt(binary(), binary(), binary()) -> boolean().
+key_matches_any_fcnt(NwkSKey, ExpectedMIC, Payload) ->
+    FCntLow = payload_fcnt_low(Payload),
+    lists:any(
+        fun(HighBits) ->
+            FCnt = binary:decode_unsigned(
+                <<FCntLow:16/integer-unsigned-little, HighBits:16/integer-unsigned-little>>,
+                little
+            ),
+            B0 = payload_b0(Payload, FCnt),
+            ComputedMIC = crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4),
+            ComputedMIC =:= ExpectedMIC
+        end,
+        lists:seq(2#000, 2#111)
+    ).
 
 -spec key_matches_mic(binary(), binary(), binary()) -> boolean().
 key_matches_mic(Key, B0, ExpectedMIC) ->
@@ -1316,8 +1334,8 @@ expected_fcnt(Device, Payload) ->
             binary:decode_unsigned(<<NewHigh:16, PayloadFCntLow:16>>)
     end.
 
--spec b0_from_payload(binary(), non_neg_integer()) -> binary().
-b0_from_payload(Payload, ExpectedFCnt) ->
+-spec payload_b0(binary(), non_neg_integer()) -> binary().
+payload_b0(Payload, ExpectedFCnt) ->
     <<MType:3, _:5, DevAddr:4/binary, _:4, FOptsLen:4, _:16, _FOpts:FOptsLen/binary, _/binary>> =
         Payload,
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),

@@ -16,6 +16,7 @@
     has_enough_dc/2,
     charge/2,
     current_balance/1,
+    maybe_charge_late/2,
     %%
     add_unfunded/1,
     remove_unfunded/1,
@@ -175,6 +176,27 @@ current_balance(OrgID) ->
             fetch_and_save_org_balance(OrgID);
         {ok, Balance, Nonce} ->
             {Balance, Nonce}
+    end.
+
+-spec maybe_charge_late(
+    Device :: router_device:device(),
+    Packet :: blockchain_helium_packet_v1:packet()
+) -> {ok, non_neg_integer(), non_neg_integer()} | {error, any()}.
+maybe_charge_late(Device, Packet) ->
+    OrgID = router_device:organization_id(Device),
+    case router_utils:get_env_bool(charge_late_packets, false) of
+        false ->
+            {Balance, Nonce} = current_balance(OrgID),
+            {ok, Balance, Nonce};
+        true ->
+            Payload = blockchain_helium_packet_v1:payload(Packet),
+            PayloadSize = erlang:byte_size(Payload),
+            case charge(Device, PayloadSize) of
+                {error, _} = E ->
+                    E;
+                Res ->
+                    Res
+            end
     end.
 
 %% ------------------------------------------------------------------

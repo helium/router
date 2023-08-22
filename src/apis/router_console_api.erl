@@ -325,7 +325,7 @@ event(Device, Map) ->
                             fcnt => maps:get(fcnt, Map),
                             hotspot => maps:get(hotspot, Map),
                             hold_time => maps:get(hold_time, Map),
-                            dc => maps:get(dc, Map, #{})
+                            dc => maps:get(dc, Map)
                         };
                     {uplink_dropped, _SC} ->
                         #{

@@ -88,9 +88,15 @@ event_join_request(ID, Timestamp, Device, PubKeyBin, Packet, Region, {Balance, N
     DevEUI = router_device:dev_eui(Device),
     AppEUI = router_device:app_eui(Device),
 
-    Payload = blockchain_helium_packet_v1:payload(Packet),
-    PayloadSize = erlang:byte_size(Payload),
-    Used = router_blockchain:calculate_dc_amount(PayloadSize),
+    Used =
+        case router_utils:get_env_bool(charge_joins, true) of
+            false ->
+                0;
+            true ->
+                Payload = blockchain_helium_packet_v1:payload(Packet),
+                PayloadSize = erlang:byte_size(Payload),
+                router_blockchain:calculate_dc_amount(PayloadSize)
+        end,
 
     Map = #{
         id => ID,

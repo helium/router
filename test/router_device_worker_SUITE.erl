@@ -1339,6 +1339,9 @@ replay_uplink_far_in_the_past_test(Config) ->
         hotspot_name := HotspotName
     } = test_utils:join_device(Config),
 
+    %% Callout this setting
+    ok = application:set_env(router, charge_late_packets, true),
+
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),

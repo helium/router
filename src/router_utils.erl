@@ -39,8 +39,7 @@
     enumerate_last/1,
     metadata_fun/0,
     random_non_miner_predicate/1,
-    get_swarm_key_location/0,
-    calculate_dc_amount_for_packet/1
+    get_swarm_key_location/0
 ]).
 
 -type uuid_v4() :: binary().
@@ -75,13 +74,6 @@ metadata_fun() ->
         _:_ ->
             #{}
     end.
-
--spec calculate_dc_amount_for_packet(blockchain_helium_packet_v1:packet()) -> non_neg_integer().
-calculate_dc_amount_for_packet(Packet) ->
-    Payload = blockchain_helium_packet_v1:payload(Packet),
-    PayloadSize = erlang:byte_size(Payload),
-    Used = router_blockchain:calculate_dc_amount(PayloadSize),
-    Used.
 
 -spec event_join_request(
     ID :: uuid_v4(),
@@ -285,7 +277,7 @@ event_uplink_dropped_late_packet(
 ) ->
     {Balance, Nonce, Used} =
         case router_console_dc_tracker:maybe_charge_late(Device, Packet) of
-            {ok, B, N} -> {B, N, ?MODULE:calculate_dc_amount_for_packet(Packet)};
+            {ok, B, N, U} -> {B, N, U};
             {error, _E} -> {0, 0, 0}
         end,
     Map = #{

@@ -280,6 +280,11 @@ event_uplink_dropped_late_packet(
             {ok, B, N, U} -> {B, N, U};
             {error, _E} -> {0, 0, 0}
         end,
+    Payload =
+        case ?MODULE:get_env_bool(charge_late_packets, false) of
+            true -> blockchain_helium_packet_v1:payload(Packet);
+            false -> <<>>
+        end,
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
@@ -288,8 +293,8 @@ event_uplink_dropped_late_packet(
         reported_at => Timestamp,
         hold_time => HoldTime,
         fcnt => FCnt,
-        payload_size => 0,
-        payload => <<>>,
+        payload_size => erlang:byte_size(Payload),
+        payload => base64:encode(Payload),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
         hotspot => format_uncharged_hotspot(PubKeyBin),

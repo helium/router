@@ -688,6 +688,7 @@ get_env_int(Key, Default) ->
 -spec get_env_bool(atom(), boolean()) -> boolean().
 get_env_bool(Key, Default) ->
     case application:get_env(router, Key, Default) of
+        [] -> Default;
         "true" -> true;
         true -> true;
         _ -> false

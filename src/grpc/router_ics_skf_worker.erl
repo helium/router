@@ -323,7 +323,7 @@ handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     {noreply, State};
 handle_cast({remove_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("removing devices: ~p", [DeviceIDs]),
-    SKFs = get_local_devices_skfs(remove, DeviceIDs, RouteID),
+    SKFs = get_remove_local_devices_skfs(DeviceIDs, RouteID),
     Updates = ?MODULE:skf_to_remove_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
@@ -450,6 +450,31 @@ get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
             %% Always send removes
             devices_to_skfs(Devices, RouteID)
     end.
+
+-spec get_remove_local_devices_skfs(DeviceIDs :: [binary()], RouteID :: string()) ->
+    [iot_config_pb:iot_config_session_key_filter_v1_pb()].
+get_remove_local_devices_skfs(DeviceIDs, RouteID) ->
+    Devices = lists:filtermap(
+        fun(DeviceID) ->
+            case router_device_cache:get(DeviceID) of
+                {error, _} -> false;
+                {ok, Device} -> {true, Device}
+            end
+        end,
+        DeviceIDs
+    ),
+    Removes = lists:flatmap(fun router_device:make_skf_removes/1, Devices),
+    lists:map(
+        fun({remove, DevAddrInt, NwkSKeyBin, MaxCopies}) ->
+            #iot_config_skf_v1_pb{
+                route_id = RouteID,
+                devaddr = DevAddrInt,
+                session_key = erlang:binary_to_list(binary:encode_hex(NwkSKeyBin)),
+                max_copies = MaxCopies
+            }
+        end,
+        Removes
+    ).
 
 %% This is the list of devices that should exist in the config service.
 -spec get_local_skfs(RouteID :: string()) ->

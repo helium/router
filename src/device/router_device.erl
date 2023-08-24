@@ -50,7 +50,8 @@
     credentials_to_evict/1,
     limit_credentials/1,
     devaddr_int_nwk_key/1,
-    make_skf_removes/1, make_skf_removes/2, make_skf_removes/3
+    make_skf_removes/1, make_skf_removes/2, make_skf_removes/3,
+    organization_id/1
 ]).
 
 %% ------------------------------------------------------------------
@@ -565,6 +566,10 @@ make_skf_removes(NwkKeys, DevAddrs, MultiBuy) ->
     end,
 
     lists:usort([{remove, DevAddrToInt(D), NSK, MultiBuy} || {NSK, _} <- NwkKeys, D <- DevAddrs]).
+
+-spec organization_id(device()) -> undefined | binary().
+organization_id(#device_v7{metadata = Metadata}) ->
+    maps:get(organization_id, Metadata, undefined).
 
 %% ------------------------------------------------------------------
 %% RocksDB Device Functions

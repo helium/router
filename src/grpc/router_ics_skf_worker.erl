@@ -536,21 +536,29 @@ dedup_updates(Updates) ->
 -include_lib("eunit/include/eunit.hrl").
 
 dedup_updates_test() ->
+    MakeUpdate = fun(Action, Devaddr, SessionKey, MaxCopies) ->
+        #iot_config_route_skf_update_v1_pb{
+            action = Action,
+            devaddr = Devaddr,
+            session_key = SessionKey,
+            max_copies = MaxCopies
+        }
+    end,
     ?assertEqual(
-        [{add, 1, <<>>, 5}],
-        dedup_updates([{add, 1, <<>>, 5}]),
+        [MakeUpdate(add, 1, <<>>, 5)],
+        dedup_updates([MakeUpdate(add, 1, <<>>, 5)]),
         "adds are untouched"
     ),
 
     ?assertEqual(
-        [{add, 1, <<>>, 5}],
-        dedup_updates([{add, 1, <<>>, 5}, {remove, 1, <<>>, 9999}]),
+        [MakeUpdate(add, 1, <<>>, 5)],
+        dedup_updates([MakeUpdate(add, 1, <<>>, 5), MakeUpdate(remove, 1, <<>>, 9999)]),
         "removes that match an add are removed"
     ),
 
     ?assertEqual(
-        [{add, 1, <<>>, 5}],
-        dedup_updates([{remove, 1, <<>>, 9999}, {add, 1, <<>>, 5}]),
+        [MakeUpdate(add, 1, <<>>, 5)],
+        dedup_updates([MakeUpdate(remove, 1, <<>>, 9999), MakeUpdate(add, 1, <<>>, 5)]),
         "removes that match an add are removed regardless of order"
     ),
 

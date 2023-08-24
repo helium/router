@@ -639,10 +639,7 @@ wait_for_console_event_sub(SubCategory, Expected) ->
                         {ok, Got};
                     {false, Reason} ->
                         ct:pal("FAILED got: ~n~p~n expected: ~n~p", [Got, Expected]),
-                        ct:fail("wait_for_console_event_sub ~p data failed ~p", [
-                            SubCategory,
-                            Reason
-                        ])
+                        ct:fail(Reason)
                 end
         after 4250 -> ct:fail("wait_for_console_event_sub ~p timeout", [SubCategory])
         end
@@ -652,7 +649,12 @@ wait_for_console_event_sub(SubCategory, Expected) ->
                 SubCategory,
                 {_Reason, _Stacktrace}
             ]),
-            ct:fail("wait_for_console_event_sub ~p failed", [SubCategory])
+            ct:fail(
+                {wait_for_console_event_sub, [
+                    {sub_category, SubCategory},
+                    {reason, _Reason}
+                ]}
+            )
     end.
 
 wait_for_join_resp(PubKeyBin, AppKey, DevNonce) ->

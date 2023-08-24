@@ -9,7 +9,7 @@
     event_uplink/9,
     event_uplink_dropped_device_inactive/4,
     event_uplink_dropped_not_enough_dc/4,
-    event_uplink_dropped_late_packet/5,
+    event_uplink_dropped_late_packet/6,
     event_uplink_dropped_invalid_packet/7,
     event_downlink/9,
     event_downlink_dropped_payload_size_exceeded/5,
@@ -264,9 +264,27 @@ event_uplink_dropped_not_enough_dc(Timestamp, FCnt, Device, PubKeyBin) ->
     HoldTime :: non_neg_integer(),
     FCnt :: non_neg_integer(),
     Device :: router_device:device(),
-    PubKeyBin :: libp2p_crypto:pubkey_bin()
+    PubKeyBin :: libp2p_crypto:pubkey_bin(),
+    Packet :: blockchain_helium_packet_v1:packet()
 ) -> ok.
-event_uplink_dropped_late_packet(Timestamp, HoldTime, FCnt, Device, PubKeyBin) ->
+event_uplink_dropped_late_packet(
+    Timestamp,
+    HoldTime,
+    FCnt,
+    Device,
+    PubKeyBin,
+    Packet
+) ->
+    {Balance, Nonce, Used} =
+        case router_console_dc_tracker:maybe_charge_late(Device, Packet) of
+            {ok, B, N, U} -> {B, N, U};
+            {error, _E} -> {0, 0, 0}
+        end,
+    Payload =
+        case ?MODULE:get_env_bool(charge_late_packets, false) of
+            true -> blockchain_helium_packet_v1:payload(Packet);
+            false -> <<>>
+        end,
     Map = #{
         id => router_utils:uuid_v4(),
         category => uplink_dropped,
@@ -275,11 +293,16 @@ event_uplink_dropped_late_packet(Timestamp, HoldTime, FCnt, Device, PubKeyBin) -
         reported_at => Timestamp,
         hold_time => HoldTime,
         fcnt => FCnt,
-        payload_size => 0,
-        payload => <<>>,
+        payload_size => erlang:byte_size(Payload),
+        payload => base64:encode(Payload),
         port => 0,
         devaddr => lorawan_utils:binary_to_hex(router_device:devaddr(Device)),
-        hotspot => format_uncharged_hotspot(PubKeyBin)
+        hotspot => format_uncharged_hotspot(PubKeyBin),
+        dc => #{
+            balance => Balance,
+            nonce => Nonce,
+            used => Used
+        }
     },
     ok = router_console_api:event(Device, Map).
 
@@ -665,6 +688,7 @@ get_env_int(Key, Default) ->
 -spec get_env_bool(atom(), boolean()) -> boolean().
 get_env_bool(Key, Default) ->
     case application:get_env(router, Key, Default) of
+        [] -> Default;
         "true" -> true;
         true -> true;
         _ -> false

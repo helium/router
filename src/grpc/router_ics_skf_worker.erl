@@ -317,7 +317,7 @@ handle_call(_Msg, _From, State) ->
 
 handle_cast({add_device_ids, DeviceIDs}, #state{route_id = RouteID} = State) ->
     lager:info("adding devices: ~p", [DeviceIDs]),
-    SKFs = get_local_devices_skfs(add, DeviceIDs, RouteID),
+    SKFs = get_add_local_devices_skfs(DeviceIDs, RouteID),
     Updates = ?MODULE:skf_to_add_update(SKFs),
     ok = ?MODULE:update(Updates),
     {noreply, State};
@@ -427,9 +427,9 @@ list_skf(RouteID, Callback) ->
     ),
     ok.
 
--spec get_local_devices_skfs(Action :: add | remove, DeviceIDs :: [binary()], RouteID :: string()) ->
+-spec get_add_local_devices_skfs(DeviceIDs :: [binary()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].
-get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
+get_add_local_devices_skfs(DeviceIDs, RouteID) ->
     Devices = lists:filtermap(
         fun(DeviceID) ->
             case router_device_cache:get(DeviceID) of
@@ -439,17 +439,11 @@ get_local_devices_skfs(Action, DeviceIDs, RouteID) ->
         end,
         DeviceIDs
     ),
-    case Action of
-        add ->
-            %% Don't send adds for unfunded orgs devices
-            %% Or inactive devices
-            Devices0 = remove_unfunded_devices(Devices),
-            Devices1 = remove_inactive_devices(Devices0),
-            devices_to_skfs(Devices1, RouteID);
-        remove ->
-            %% Always send removes
-            devices_to_skfs(Devices, RouteID)
-    end.
+    %% Don't send adds for unfunded orgs devices
+    %% Or inactive devices
+    Devices0 = remove_unfunded_devices(Devices),
+    Devices1 = remove_inactive_devices(Devices0),
+    devices_to_skfs(Devices1, RouteID).
 
 -spec get_remove_local_devices_skfs(DeviceIDs :: [binary()], RouteID :: string()) ->
     [iot_config_pb:iot_config_session_key_filter_v1_pb()].

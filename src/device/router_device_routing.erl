@@ -332,10 +332,7 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
                         {ok, _} ->
                             case check_device_preferred_hotspots(Device, PubKeyBin) of
                                 none_preferred ->
-                                    case maybe_multi_buy_offer(Device, PHash) of
-                                        {ok, _} -> ok;
-                                        E -> E
-                                    end;
+                                    ok;
                                 preferred ->
                                     ok;
                                 not_preferred_hotspot ->

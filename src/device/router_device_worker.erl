@@ -698,7 +698,7 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, PacketFCnt, Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, PacketFCnt, _Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         db = DB,
@@ -747,9 +747,7 @@ handle_cast(
     Device1 =
         case LastDevNonce == undefined of
             true ->
-                D1 = router_device:update([{fcnt, PacketFCnt}], Device0),
-                ok = save_device(DB, CF, D1),
-                D1;
+                Device0;
             %% this is our first good uplink after join lets cleanup keys and update dev_nonces
             false ->
                 %% if our keys are not matching we can assume that last dev nonce is bad

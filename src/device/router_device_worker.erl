@@ -706,8 +706,6 @@ handle_cast(
         is_active = false
     } = State
 ) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    ok = router_device_multibuy:max(PHash, 0),
     ok = router_utils:event_uplink_dropped_device_inactive(
         PacketTime,
         PacketFCnt,
@@ -825,7 +823,6 @@ handle_cast(
                 PubKeyBin
             ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
-            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,
@@ -857,7 +854,6 @@ handle_cast(
                         Region
                     )
             end,
-            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,

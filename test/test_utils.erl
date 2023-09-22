@@ -31,6 +31,7 @@
     wait_state_channel_packet/1,
     join_payload/2,
     join_packet/3, join_packet/4,
+    send_device_join/1, send_device_join/2,
     join_device/1, join_device/2,
     frame_payload/6,
     frame_packet/5, frame_packet/6,
@@ -328,10 +329,10 @@ add_oui(Config) ->
             [{oui, OUI} | Config]
     end.
 
-join_device(Config) ->
-    join_device(Config, #{}).
+send_device_join(Config) ->
+    send_device_join(Config, #{}).
 
-join_device(Config, JoinOpts) ->
+send_device_join(Config, JoinOpts) ->
     AppKey = proplists:get_value(app_key, Config),
     DevNonce = crypto:strong_rand_bytes(2),
 
@@ -377,7 +378,25 @@ join_device(Config, JoinOpts) ->
             blockchain_state_channel_v1_pb:encode_msg(#blockchain_state_channel_message_v1_pb{
                 msg = {packet, SCPacket}
             })},
+    #{
+        app_key => AppKey,
+        dev_nonce => DevNonce,
+        hotspot_name => HotspotName,
+        stream => Stream,
+        pubkey_bin => PubKeyBin,
+        sc_packet => SCPacket
+    }.
 
+join_device(Config) ->
+    join_device(Config, #{}).
+
+join_device(Config, JoinOpts) ->
+    JoinRes =
+        #{
+            hotspot_name := HotspotName,
+            sc_packet := SCPacket,
+            pubkey_bin := PubKeyBin
+        } = send_device_join(Config, JoinOpts),
     timer:sleep(router_utils:join_timeout()),
 
     %% Waiting for report device status on that join request
@@ -441,13 +460,7 @@ join_device(Config, JoinOpts) ->
             }
         }
     }),
-    #{
-        app_key => AppKey,
-        dev_nonce => DevNonce,
-        hotspot_name => HotspotName,
-        stream => Stream,
-        pubkey_bin => PubKeyBin
-    }.
+    JoinRes.
 
 get_device_channels_worker(DeviceID) ->
     {ok, WorkerPid} = router_devices_sup:lookup_device_worker(DeviceID),

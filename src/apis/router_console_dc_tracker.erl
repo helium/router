@@ -127,23 +127,28 @@ has_enough_dc(OrgID, PayloadSize) when is_binary(OrgID) ->
             lager:warning("failed to calculate dc amount ~p", [_Reason]),
             {error, failed_calculate_dc};
         DCAmount ->
-            {Balance0, Nonce} =
+            MaybeBalance =
                 case lookup(OrgID) of
                     {error, not_found} ->
                         fetch_and_save_org_balance(OrgID);
-                    {ok, 0, _N} ->
-                        fetch_and_save_org_balance(OrgID);
+                    %% {ok, 0, _N} ->
+                    %%     fetch_and_save_org_balance(OrgID);
                     {ok, B, N} ->
-                        {B, N}
+                        {ok, {B, N}}
                 end,
-            Balance1 = Balance0 - DCAmount,
-            case {Balance1 >= 0, Nonce > 0} of
-                {false, _} ->
-                    {error, {not_enough_dc, Balance0, DCAmount}};
-                {_, false} ->
-                    {error, bad_nonce};
-                {true, true} ->
-                    {ok, OrgID, Balance1, Nonce}
+            case MaybeBalance of
+                {error, _} = Err ->
+                    Err;
+                {ok, {Balance0, Nonce}} ->
+                    Balance1 = Balance0 - DCAmount,
+                    case {Balance1 >= 0, Nonce > 0} of
+                        {false, _} ->
+                            {error, {not_enough_dc, Balance0, DCAmount}};
+                        {_, false} ->
+                            {error, bad_nonce};
+                        {true, true} ->
+                            {ok, OrgID, Balance1, Nonce}
+                    end
             end
     end;
 has_enough_dc(Device, PayloadSize) ->
@@ -209,6 +214,7 @@ init(Args) ->
     lager:info("~p init with ~p", [?SERVER, Args]),
     {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
+    _ = erlang:send_after(0, self(), prefetch_orgs),
     _ = erlang:send_after(500, self(), post_init),
     {ok, #state{pubkey_bin = PubkeyBin}}.
 
@@ -220,6 +226,25 @@ handle_cast(_Msg, State) ->
     lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
     {noreply, State}.
 
+handle_info(prefetch_orgs, #state{} = State) ->
+    case router_console_api:get_orgs() of
+        {ok, OrgList} ->
+            lists:foreach(
+                fun(
+                    #{
+                        <<"id">> := OrgID,
+                        <<"dc_balance">> := Balance,
+                        <<"dc_balance_nonce">> := Nonce
+                    }
+                ) ->
+                    insert(OrgID, Balance, Nonce)
+                end,
+                OrgList
+            );
+        {error, _Reason} ->
+            lager:warning("failed to prefetch orgs: ~p", [_Reason])
+    end,
+    {noreply, State};
 handle_info(post_init, #state{} = State) ->
     case router_blockchain:privileged_maybe_get_blockchain() of
         undefined ->
@@ -293,19 +318,19 @@ txn_filter_fun(PubKeyBin, Txn) ->
             Payee == PubKeyBin andalso Memo =/= 0
     end.
 
--spec fetch_and_save_org_balance(binary()) -> {non_neg_integer(), non_neg_integer()}.
+-spec fetch_and_save_org_balance(binary()) -> {ok, {non_neg_integer(), non_neg_integer()}} | {error, any()}.
 fetch_and_save_org_balance(OrgID) ->
     case router_console_api:get_org(OrgID) of
-        {error, _} ->
-            {0, 0};
+        {error, _} = Err ->
+            Err;
         {ok, Map} ->
             Balance = maps:get(<<"dc_balance">>, Map, 0),
             case maps:get(<<"dc_balance_nonce">>, Map, 0) of
                 0 ->
-                    {0, 0};
+                    {ok, {0, 0}};
                 Nonce ->
                     ok = insert(OrgID, Balance, Nonce),
-                    {Balance, Nonce}
+                    {ok, {Balance, Nonce}}
             end
     end.
 
@@ -388,7 +413,7 @@ has_enough_dc_test() ->
     Balance = 2,
     PayloadSize = 48,
     ?assertEqual(
-        {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize)
+        {error, deal_with_it}, has_enough_dc(OrgID, PayloadSize)
     ),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({ok, OrgID, 0, 1}, has_enough_dc(OrgID, PayloadSize)),
@@ -405,7 +430,7 @@ charge_test() ->
     Balance = 2,
     PayloadSize = 48,
     ?assertEqual(
-        {error, {not_enough_dc, 0, Balance}}, has_enough_dc(OrgID, PayloadSize)
+        {error, deal_with_it}, has_enough_dc(OrgID, PayloadSize)
     ),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({ok, 0, 1}, charge(OrgID, PayloadSize)),
@@ -417,11 +442,11 @@ charge_test() ->
 current_balance_test() ->
     ok = init_ets(),
     meck:new(router_console_api, [passthrough]),
-    meck:expect(router_console_api, get_org, fun(_OrgID) -> {error, 0} end),
+    meck:expect(router_console_api, get_org, fun(_OrgID) -> {error, deal_with_it} end),
     OrgID = <<"ORG_ID">>,
     Nonce = 1,
     Balance = 100,
-    ?assertEqual({0, 0}, current_balance(OrgID)),
+    ?assertEqual({error, deal_with_it}, current_balance(OrgID)),
     ?assertEqual(ok, refill(OrgID, Nonce, Balance)),
     ?assertEqual({100, 1}, current_balance(OrgID)),
     ?assert(meck:validate(router_console_api)),

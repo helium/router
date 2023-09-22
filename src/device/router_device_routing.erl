@@ -781,7 +781,7 @@ check_device_is_active(Device, PubKeyBin) ->
 ) -> ok | {error, ?DEVICE_NO_DC}.
 check_device_balance(PayloadSize, Device, PubKeyBin) ->
     try router_console_dc_tracker:has_enough_dc(Device, PayloadSize) of
-        {error, _Reason} ->
+        {error, {not_enough_dc, _, _}} ->
             ok = router_utils:event_uplink_dropped_not_enough_dc(
                 erlang:system_time(millisecond),
                 router_device:fcnt(Device),
@@ -789,6 +789,8 @@ check_device_balance(PayloadSize, Device, PubKeyBin) ->
                 PubKeyBin
             ),
             {error, ?DEVICE_NO_DC};
+        {error, _} = Err ->
+            Err;
         {ok, _OrgID, _Balance, _Nonce} ->
             ok
     catch

@@ -6,7 +6,12 @@
     end_per_testcase/2
 ]).
 
--export([dc_test/1, burned_test/1]).
+-export([
+    dc_test/1,
+    join_cannot_fetch_org_balance_test/1,
+    data_cannot_fetch_org_balance_test/1,
+    burned_test/1
+]).
 
 -include_lib("helium_proto/include/blockchain_state_channel_v1_pb.hrl").
 -include_lib("common_test/include/ct.hrl").
@@ -31,7 +36,12 @@
 %% @end
 %%--------------------------------------------------------------------
 all() ->
-    [dc_test, burned_test].
+    [
+        dc_test,
+        join_cannot_fetch_org_balance_test,
+        data_cannot_fetch_org_balance_test,
+        burned_test
+    ].
 
 %%--------------------------------------------------------------------
 %% TEST CASE SETUP
@@ -48,6 +58,71 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+join_cannot_fetch_org_balance_test(Config) ->
+    true = ets:delete(router_console_dc_tracker_ets, ?CONSOLE_ORG_ID),
+
+    % Send two joins to cache the get_org return value.
+    _ = test_utils:send_device_join(Config),
+    _ = test_utils:send_device_join(Config),
+
+    receive
+        {console_event, <<"uplink_dropped">>, <<"uplink_dropped_not_enough_dc">>, _} ->
+            ct:fail(do_not_drop_failed_dc)
+    after 1250 ->
+        ok
+    end,
+
+    ok.
+
+data_cannot_fetch_org_balance_test(Config) ->
+
+    #{
+        pubkey_bin := PubKeyBin1,
+        stream := Stream
+    } = test_utils:join_device(Config),
+
+
+    {ok, DB, CF} = router_db:get_devices(),
+    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
+    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
+
+    %% The device has a session, remove the org so it needs to be fetched and
+    %% will not be found.
+    true = ets:delete(router_console_dc_tracker_ets, ?CONSOLE_ORG_ID),
+
+    %% Simulate multiple hotspot sending data
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin1,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    #{public := PubKey2} = libp2p_crypto:generate_keys(ecc_compact),
+    PubKeyBin2 = libp2p_crypto:pubkey_to_bin(PubKey2),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin2,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    receive
+        {console_event, <<"uplink_dropped">>, <<"uplink_dropped_not_enough_dc">>, _} ->
+            ct:fail(do_not_drop_failed_dc)
+    after 1250 ->
+        ok
+    end,
+
+    ok.
 
 dc_test(Config) ->
     #{

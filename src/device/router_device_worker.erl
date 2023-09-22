@@ -1669,16 +1669,21 @@ validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCach
     PHash = blockchain_helium_packet_v1:packet_hash(Packet),
     case maybe_charge(Device0, PayloadSize, PubKeyBin, PHash, OfferCache) of
         {error, Reason} ->
-            %% REVIEW: Do we want to update region and datarate for an uncharged packet?
-            DeviceUpdates = [{fcnt, PacketFCnt}, {location, PubKeyBin}],
-            Device1 = router_device:update(DeviceUpdates, Device0),
-            case FPort of
-                0 when FOptsLen == 0 ->
-                    {error, {not_enough_dc, Reason, Device1}};
-                0 when FOptsLen /= 0 ->
-                    {error, {not_enough_dc, Reason, Device0}};
-                _N ->
-                    {error, {not_enough_dc, Reason, Device1}}
+            case Reason of
+                {not_enough_dc, _, _} ->
+                    %% REVIEW: Do we want to update region and datarate for an uncharged packet?
+                    DeviceUpdates = [{fcnt, PacketFCnt}, {location, PubKeyBin}],
+                    Device1 = router_device:update(DeviceUpdates, Device0),
+                    case FPort of
+                        0 when FOptsLen == 0 ->
+                            {error, {not_enough_dc, Reason, Device1}};
+                        0 when FOptsLen /= 0 ->
+                            {error, {not_enough_dc, Reason, Device0}};
+                        _N ->
+                            {error, {not_enough_dc, Reason, Device1}}
+                    end;
+                _ ->
+                    {error, Reason}
             end;
         {ok, Balance, Nonce} ->
             case FPort of

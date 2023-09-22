@@ -1044,7 +1044,7 @@ get_org_(OrgID) ->
             lager:debug("org ~p not found", [OrgID]),
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_org, not_found, End - Start),
-            {error, not_found};
+            {error, org_not_found};
         _Other ->
             End = erlang:system_time(millisecond),
             ok = router_metrics:console_api_observe(get_org, error, End - Start),

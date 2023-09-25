@@ -302,7 +302,7 @@ get_device_for_payload(Payload, PubKeyBin) ->
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
             MIC = payload_mic(Payload),
-            case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+            case find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) of
                 {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
                 E2 -> E2
             end
@@ -959,22 +959,22 @@ get_device(DevEUI, AppEUI, Msg, MIC) ->
         [] ->
             {error, api_not_found};
         KeysAndDevices ->
-            find_device(Msg, MIC, KeysAndDevices)
+            find_device_for_join(Msg, MIC, KeysAndDevices)
     end.
 
--spec find_device(
+-spec find_device_for_join(
     Msg :: binary(),
     MIC :: binary(),
     [{binary(), router_device:device()}]
 ) -> {ok, Device :: router_device:device(), AppKey :: binary()} | {error, not_found}.
-find_device(_Msg, _MIC, []) ->
+find_device_for_join(_Msg, _MIC, []) ->
     {error, not_found};
-find_device(Msg, MIC, [{AppKey, Device} | T]) ->
+find_device_for_join(Msg, MIC, [{AppKey, Device} | T]) ->
     case crypto:macN(cmac, aes_128_cbc, AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
-            find_device(Msg, MIC, T)
+            find_device_for_join(Msg, MIC, T)
     end.
 
 -spec send_to_device_worker(
@@ -1004,7 +1004,7 @@ send_to_device_worker(
     DeviceInfo =
         case Device0 of
             undefined ->
-                case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+                case find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) of
                     {error, unknown_device} ->
                         lager:warning(
                             "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1099,13 +1099,13 @@ send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Regio
             end
     end.
 
--spec find_device(
+-spec find_device_for_data(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     DevAddr :: binary(),
     MIC :: binary(),
     Payload :: binary()
 ) -> {ok, {router_device:device(), binary(), non_neg_integer()}} | {error, unknown_device}.
-find_device(PubKeyBin, DevAddr, MIC, Payload) ->
+find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin),
     case get_device_by_mic(MIC, Payload, Devices) of
         undefined ->

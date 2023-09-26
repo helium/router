@@ -766,6 +766,13 @@ check_device_is_active(Device, PubKeyBin) ->
                 Device,
                 PubKeyBin
             ),
+            spawn(fun() ->
+                DeviceID = router_device:id(Device),
+                lager:warning("routing for inactive device ~p, removing", [DeviceID]),
+                ok = router_ics_skf_worker:remove_device_ids([DeviceID]),
+                ok = router_ics_eui_worker:remove([DeviceID])
+            end),
+
             {error, ?DEVICE_INACTIVE};
         true ->
             ok

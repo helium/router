@@ -42,7 +42,8 @@
 -export([
     payload_b0/2,
     payload_mic/1,
-    payload_fcnt_low/1
+    payload_fcnt_low/1,
+    get_device_for_payload/2
 ]).
 
 %% biggest unsigned number in 23 bits

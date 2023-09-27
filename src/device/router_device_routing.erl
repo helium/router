@@ -303,7 +303,7 @@ get_device_for_payload(Payload, PubKeyBin) ->
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
             MIC = payload_mic(Payload),
-            case find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) of
+            case find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) of
                 {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
                 E2 -> E2
             end
@@ -1012,7 +1012,7 @@ send_to_device_worker(
     DeviceInfo =
         case Device0 of
             undefined ->
-                case find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) of
+                case find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) of
                     {error, unknown_device} ->
                         lager:warning(
                             "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1107,13 +1107,13 @@ send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Regio
             end
     end.
 
--spec find_device_for_data(
+-spec find_device_for_uplink(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     DevAddr :: binary(),
     MIC :: binary(),
     Payload :: binary()
 ) -> {ok, {router_device:device(), binary(), non_neg_integer()}} | {error, unknown_device}.
-find_device_for_data(PubKeyBin, DevAddr, MIC, Payload) ->
+find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin),
     case get_device_by_mic(MIC, Payload, Devices) of
         undefined ->

@@ -76,12 +76,10 @@ join_cannot_fetch_org_balance_test(Config) ->
     ok.
 
 data_cannot_fetch_org_balance_test(Config) ->
-
     #{
         pubkey_bin := PubKeyBin1,
         stream := Stream
     } = test_utils:join_device(Config),
-
 
     {ok, DB, CF} = router_db:get_devices(),
     WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),

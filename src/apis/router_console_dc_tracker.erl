@@ -318,7 +318,8 @@ txn_filter_fun(PubKeyBin, Txn) ->
             Payee == PubKeyBin andalso Memo =/= 0
     end.
 
--spec fetch_and_save_org_balance(binary()) -> {ok, {non_neg_integer(), non_neg_integer()}} | {error, any()}.
+-spec fetch_and_save_org_balance(binary()) ->
+    {ok, {non_neg_integer(), non_neg_integer()}} | {error, any()}.
 fetch_and_save_org_balance(OrgID) ->
     case router_console_api:get_org(OrgID) of
         {error, _} = Err ->

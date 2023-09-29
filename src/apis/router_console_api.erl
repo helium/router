@@ -50,8 +50,8 @@
 -define(REQ_OPTS(Pool), [
     with_body,
     {pool, Pool},
-    {connect_timeout, timer:seconds(2)},
-    {recv_timeout, timer:seconds(2)}
+    {connect_timeout, timer:seconds(5)},
+    {recv_timeout, timer:seconds(5)}
 ]).
 
 -define(ETS, router_console_api_ets).

@@ -44,7 +44,16 @@
 ]).
 
 -define(SERVER, ?MODULE).
--define(POOL, router_console_api_pool).
+-define(DEFAULT_POOL, router_console_api_pool).
+-define(EVENT_POOL, router_console_api_event_pool).
+
+-define(REQ_OPTS(Pool), [
+    with_body,
+    {pool, Pool},
+    {connect_timeout, timer:seconds(5)},
+    {recv_timeout, timer:seconds(5)}
+]).
+
 -define(ETS, router_console_api_ets).
 -define(TOKEN_CACHE_TIME, timer:hours(23)).
 -define(TICK_INTERVAL, 1000).
@@ -179,12 +188,7 @@ org_manual_update_router_dc(OrgID, Balance) ->
     {Endpoint, Token} = token_lookup(),
     Url = <<Endpoint/binary, "/api/router/organizations/manual_update_router_dc">>,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Body = #{
         organization_id => OrgID,
         amount => Balance
@@ -396,7 +400,7 @@ event(Device, Map) ->
                     Url,
                     [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                     jsx:encode(Body),
-                    [with_body, {pool, ?POOL}]
+                    [with_body, {pool, ?EVENT_POOL}]
                 )
             of
                 {ok, 200, _Headers, _Body} ->
@@ -461,7 +465,7 @@ xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
             Url,
             [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
             jsx:encode(Body),
-            [with_body, {pool, ?POOL}]
+            [with_body, {pool, ?DEFAULT_POOL}]
         )
     of
         {ok, 200, _Headers, _Body} ->
@@ -478,7 +482,12 @@ xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
 init(Args) ->
     erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
-    ok = hackney_pool:start_pool(?POOL, [{timeout, timer:seconds(60)}, {max_connections, 100}]),
+    ok = hackney_pool:start_pool(?DEFAULT_POOL, [
+        {timeout, timer:seconds(60)}, {max_connections, 5000}
+    ]),
+    ok = hackney_pool:start_pool(?EVENT_POOL, [
+        {timeout, timer:seconds(60)}, {max_connections, 100}
+    ]),
     DownlinkEndpoint = maps:get(downlink_endpoint, Args),
     Endpoint = maps:get(endpoint, Args),
     Secret = maps:get(secret, Args),
@@ -607,12 +616,7 @@ get_devices(Endpoint, Token, AccDevices, ResourceID) ->
                 <<Endpoint/binary, "/api/router/devices?after=", ResourceID/binary>>
         end,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -650,12 +654,7 @@ get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
                 <<Endpoint/binary, "/api/router/organizations?after=", ResourceID/binary>>
         end,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -676,12 +675,7 @@ get_orgs(Endpoint, Token, AccOrgs, ResourceID) ->
 -spec get_unfunded_orgs(Endpoint :: binary(), Token :: binary()) -> {ok, list()} | {error, any()}.
 get_unfunded_orgs(Endpoint, Token) ->
     Url = <<Endpoint/binary, "/api/router/organizations/zero_dc">>,
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -938,7 +932,7 @@ get_token(Endpoint, Secret) ->
             <<Endpoint/binary, "/api/router/sessions">>,
             [?HEADER_JSON],
             jsx:encode(#{secret => Secret}),
-            [with_body, {pool, ?POOL}]
+            [with_body, {pool, ?DEFAULT_POOL}]
         )
     of
         {ok, 201, _Headers, Body} ->
@@ -959,12 +953,7 @@ get_device_(Endpoint, Token, Device) ->
     DeviceId = router_device:id(Device),
     Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -992,12 +981,7 @@ get_devices_by_deveui_appeui_(DevEui, AppEui) ->
             (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
             (lorawan_utils:binary_to_hex(AppEui))/binary>>,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -1027,12 +1011,7 @@ get_org_(OrgID) ->
     {Endpoint, Token} = token_lookup(),
     Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
     lager:debug("get ~p", [Url]),
-    Opts = [
-        with_body,
-        {pool, ?POOL},
-        {connect_timeout, timer:seconds(2)},
-        {recv_timeout, timer:seconds(2)}
-    ],
+    Opts = ?REQ_OPTS(?DEFAULT_POOL),
     Start = erlang:system_time(millisecond),
     case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
         {ok, 200, _Headers, Body} ->
@@ -1241,7 +1220,7 @@ do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
             Url,
             [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
             jsx:encode(Body),
-            [with_body, {pool, ?POOL}]
+            [with_body, {pool, ?DEFAULT_POOL}]
         )
     of
         {ok, 204, _Headers, _Reply} ->

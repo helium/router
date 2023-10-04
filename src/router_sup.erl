@@ -75,6 +75,8 @@ init([]) ->
 
     {ok, _} = application:ensure_all_started(ranch),
     {ok, _} = application:ensure_all_started(lager),
+    %% This is needed by grpcbox
+    {ok, _} = application:ensure_all_started(gproc),
 
     SeedNodes =
         case application:get_env(blockchain, seed_nodes) of
@@ -162,18 +164,26 @@ init([]) ->
     {ok,
         {?FLAGS,
             [
+                %% Deprecated
                 ?WORKER(ru_poc_denylist, [POCDenyListArgs]),
                 ?WORKER(router_metrics, [MetricsOpts]),
                 ?WORKER(router_db, [DBOpts])
             ] ++ ChainWorkers ++
                 [
-                    ?WORKER(router_device_devaddr, [ICSOpts]),
                     ?SUP(router_devices_sup, []),
-                    ?SUP(router_console_sup, []),
                     ?SUP(router_decoder_sup, []),
+                    ?SUP(router_console_sup, []),
+
+                    ?SUP(grpcbox_sup, []),
+                    ?WORKER(router_grpc_client_worker, []),
+
+                    %% Anything under here needs CS to work
+                    ?WORKER(router_device_devaddr, [ICSOpts]),
                     ?WORKER(router_ics_eui_worker, [ICSOpts]),
                     ?WORKER(router_ics_skf_worker, [ICSOpts]),
-                    ?WORKER(router_ics_gateway_location_worker, [ICSOpts])
+
+                    %% This will open the flood gates
+                    ?WORKER(router_grpc_server_worker, [])
                 ]}}.
 
 %%====================================================================

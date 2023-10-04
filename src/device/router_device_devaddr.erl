@@ -188,7 +188,7 @@ handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0} = State) ->
         {error, _Reason} ->
             {Delay, Backoff1} = backoff:fail(Backoff0),
             _ = timer:apply_after(Delay, ?MODULE, reconcile, []),
-            lager:warning("fail to get_devaddrs ~p, retrying in ~wms", [
+            lager:error("fail to get_devaddrs ~p, retrying in ~wms", [
                 _Reason, Delay
             ]),
             {noreply, State#state{conn_backoff = Backoff1}};
@@ -200,7 +200,7 @@ handle_cast(?RECONCILE_START, #state{conn_backoff = Backoff0} = State) ->
 handle_cast({?RECONCILE_END, {error, Reason}}, #state{conn_backoff = Backoff0} = State) ->
     {Delay, Backoff1} = backoff:fail(Backoff0),
     _ = timer:apply_after(Delay, ?MODULE, reconcile, []),
-    lager:warning("fail to get_devaddrs ~p, retrying in ~wms", [
+    lager:error("fail to get_devaddrs ~p, retrying in ~wms", [
         Reason, Delay
     ]),
     {noreply, State#state{conn_backoff = Backoff1}};

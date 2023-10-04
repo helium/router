@@ -215,7 +215,10 @@ init(Args) ->
     {PubKey, _, _} = router_blockchain:get_key(),
     PubkeyBin = libp2p_crypto:pubkey_to_bin(PubKey),
     _ = erlang:send_after(0, self(), prefetch_orgs),
-    _ = erlang:send_after(500, self(), post_init),
+    case router_blockchain:is_chain_dead() of
+        true -> ok;
+        false -> _ = erlang:send_after(500, self(), chain_init)
+    end,
     {ok, #state{pubkey_bin = PubkeyBin}}.
 
 handle_call(_Msg, _From, State) ->
@@ -245,10 +248,10 @@ handle_info(prefetch_orgs, #state{} = State) ->
             lager:warning("failed to prefetch orgs: ~p", [_Reason])
     end,
     {noreply, State};
-handle_info(post_init, #state{} = State) ->
+handle_info(chain_init, #state{} = State) ->
     case router_blockchain:privileged_maybe_get_blockchain() of
         undefined ->
-            erlang:send_after(500, self(), post_init),
+            erlang:send_after(500, self(), chain_init),
             {noreply, State};
         _Chain ->
             ok = blockchain_event:add_handler(self()),

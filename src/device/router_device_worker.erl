@@ -196,7 +196,6 @@ handle_continue({?INIT_ASYNC, ID}, #state{db = DB, cf = CF} = State) ->
     Device = get_device(DB, CF, ID),
     IsActive = router_device:is_active(Device),
     ok = router_utils:lager_md(Device),
-    ok = ?MODULE:device_update(self()),
     {ok, Pid} = router_device_channels_worker:start_link(#{
         device_worker => self(), device => Device
     }),

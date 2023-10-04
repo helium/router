@@ -5,34 +5,14 @@
 %%%-------------------------------------------------------------------
 -module(router_ics_gateway_location_worker).
 
--behavior(gen_server).
-
 -include("./autogen/iot_config_pb.hrl").
 
-%% ------------------------------------------------------------------
-%% API Function Exports
-%% ------------------------------------------------------------------
 -export([
-    start_link/1,
     init_ets/0,
     get/1
 ]).
 
-%% ------------------------------------------------------------------
-%% gen_server Function Exports
-%% ------------------------------------------------------------------
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
-
--define(SERVER, ?MODULE).
 -define(ETS, router_ics_gateway_location_worker_ets).
--define(INIT, init).
 -ifdef(TEST).
 -define(BACKOFF_MIN, 100).
 -else.
@@ -41,25 +21,11 @@
 -define(BACKOFF_MAX, timer:minutes(5)).
 -define(CACHED_NOT_FOUND, cached_not_found).
 
--record(state, {
-    pubkey_bin :: libp2p_crypto:pubkey_bin(),
-    sig_fun :: function()
-}).
-
 -record(location, {
     gateway :: libp2p_crypto:pubkey_bin(),
     timestamp :: non_neg_integer(),
     h3_index :: h3:index() | undefined
 }).
-
-%% -type state() :: #state{}.
-
-%% ------------------------------------------------------------------
-%% API Function Definitions
-%% ------------------------------------------------------------------
-
-start_link(Args) ->
-    gen_server:start_link({local, ?SERVER}, ?SERVER, Args, []).
 
 -spec init_ets() -> ok.
 init_ets() ->
@@ -100,39 +66,6 @@ get(PubKeyBin) ->
                     OK
             end
     end.
-
-%% ------------------------------------------------------------------
-%% gen_server Function Definitions
-%% ------------------------------------------------------------------
-init(
-    #{
-        pubkey_bin := PubKeyBin,
-        sig_fun := SigFun
-    } = Args
-) ->
-    lager:info("~p init with ~p", [?SERVER, Args]),
-    {ok, #state{
-        pubkey_bin = PubKeyBin,
-        sig_fun = SigFun
-    }}.
-
-handle_call(_Msg, _From, State) ->
-    lager:warning("rcvd unknown call msg: ~p from: ~p", [_Msg, _From]),
-    {reply, ok, State}.
-
-handle_cast(_Msg, State) ->
-    lager:warning("rcvd unknown cast msg: ~p", [_Msg]),
-    {noreply, State}.
-
-handle_info(_Msg, State) ->
-    lager:warning("rcvd unknown info msg: ~p", [_Msg]),
-    {noreply, State}.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
-
-terminate(_Reason, _State) ->
-    ok.
 
 %% ------------------------------------------------------------------
 %% Internal Function Definitions

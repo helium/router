@@ -184,7 +184,7 @@ init_per_testcase(TestCase, Config) ->
         }},
         {port, 3000}
     ],
-    {ok, Pid} = elli:start_link(ElliOpts),
+    {ok, ElliPid} = elli:start_link(ElliOpts),
     application:ensure_all_started(gun),
 
     {ok, _} = application:ensure_all_started(router),
@@ -213,10 +213,12 @@ init_per_testcase(TestCase, Config) ->
 
     ok = router_console_dc_tracker:refill(?CONSOLE_ORG_ID, 1, 100),
 
+    % timer:sleep(5000),
+
     [
         {app_key, AppKey},
         {ets, Tab},
-        {elli, Pid},
+        {elli, ElliPid},
         {base_dir, BaseDir},
         {swarm, HotspotSwarm},
         {keys, HotspotKeys}
@@ -227,18 +229,18 @@ end_per_testcase(_TestCase, Config) ->
     %% Clean up router_blockchain to avoid old chain from previous test
     _ = persistent_term:erase(router_blockchain),
     catch libp2p_swarm:stop(proplists:get_value(swarm, Config)),
-    Pid = proplists:get_value(elli, Config),
-    {ok, Acceptors} = elli:get_acceptors(Pid),
-    ok = elli:stop(Pid),
+    ElliPid = proplists:get_value(elli, Config),
+    {ok, Acceptors} = elli:get_acceptors(ElliPid),
+    ok = elli:stop(ElliPid),
     timer:sleep(500),
     [catch erlang:exit(A, kill) || A <- Acceptors],
     ok = application:stop(router),
     ok = application:stop(lager),
+    e2qc:teardown(router_console_api_get_device),
     e2qc:teardown(router_console_api_get_devices_by_deveui_appeui),
     e2qc:teardown(router_console_api_get_org),
     e2qc:teardown(devaddr_subnets_cache),
     e2qc:teardown(phash_to_device_cache),
-    ok = application:stop(grpcbox),
     ok = application:stop(e2qc),
     ok = application:stop(throttle),
     Tab = proplists:get_value(ets, Config),

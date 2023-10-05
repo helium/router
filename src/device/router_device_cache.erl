@@ -119,7 +119,7 @@ make_devaddr_table(DevAddr) ->
         {keypos, 2},
         {heir, whereis(router_db), DevAddr}
     ]),
-    ets:insert(?DEVADDR_ETS, {DevAddr, Ref}),
+    true = ets:insert(?DEVADDR_ETS, {DevAddr, Ref}),
     Ref.
 
 -spec init_from_db() -> ok.

@@ -542,6 +542,7 @@ get_device_queue(DeviceID) ->
     router_device:queue(Device).
 
 force_refresh_channels(DeviceID) ->
+    _ = e2qc:evict(router_console_api_get_device, DeviceID),
     Pid = get_device_channels_worker(DeviceID),
     Pid ! refresh_channels,
     timer:sleep(250),

@@ -258,25 +258,6 @@ remove_channel_backoff_when_channel_changed_test(Config) ->
         }
     }),
 
-    %% NOTE: We get this second message because a device worker refreshes
-    %% channels _and_ a channels worker refreshes its own channels.
-    test_utils:wait_for_console_event(<<"misc">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"misc">>,
-        <<"sub_category">> => <<"misc_integration_error">>,
-        <<"description">> => fun erlang:is_binary/1,
-
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => DeviceID,
-        <<"data">> => #{
-            <<"integration">> => #{
-                <<"id">> => maps:get(<<"id">>, Channel),
-                <<"name">> => maps:get(<<"name">>, Channel),
-                <<"status">> => <<"error">>
-            }
-        }
-    }),
-
     %% ===================================================================
     %% Change the channels for the device.
     ets:insert(Tab, {channels, [?CONSOLE_HTTP_CHANNEL]}),
@@ -360,30 +341,10 @@ remove_channel_backoff_when_all_channels_removed_test(Config) ->
         }
     }),
 
-    %% NOTE: We get this second message because a device worker refreshes
-    %% channels _and_ a channels worker refreshes its own channels.
-    test_utils:wait_for_console_event(<<"misc">>, #{
-        <<"id">> => fun erlang:is_binary/1,
-        <<"category">> => <<"misc">>,
-        <<"sub_category">> => <<"misc_integration_error">>,
-        <<"description">> => fun erlang:is_binary/1,
-
-        <<"reported_at">> => fun erlang:is_integer/1,
-        <<"device_id">> => DeviceID,
-        <<"data">> => #{
-            <<"integration">> => #{
-                <<"id">> => maps:get(<<"id">>, Channel),
-                <<"name">> => maps:get(<<"name">>, Channel),
-                <<"status">> => <<"error">>
-            }
-        }
-    }),
-
     %% ===================================================================
     %% Remove all channels for this device
     ets:insert(Tab, {channels, []}),
     test_utils:force_refresh_channels(DeviceID),
-
     %% The bad channel should not try to connect again.
     ?assertException(
         exit,

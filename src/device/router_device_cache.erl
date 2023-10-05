@@ -72,7 +72,7 @@ all_devaddrs_tables() ->
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
-    _ = erlang:spawn_link(fun() ->
+    _ = erlang:spawn_monitor(fun() ->
         AddrsEtsMap = maps:from_list(all_devaddrs_tables()),
         CurrentDevaddrs = router_device:devaddrs(Device),
 

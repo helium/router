@@ -61,8 +61,18 @@ get(DeviceID) ->
 -spec get_by_devaddr(binary()) -> [router_device:device()].
 get_by_devaddr(DevAddr) ->
     case ets:lookup(?DEVADDR_ETS, DevAddr) of
-        [] -> [];
-        [{_, Ref}] -> ets:tab2list(Ref)
+        [] ->
+            [];
+        [{_, Ref}] ->
+            lists:filtermap(
+                fun({ID, _}) ->
+                    case ?MODULE:get(ID) of
+                        {ok, D} -> {true, D};
+                        _ -> false
+                    end
+                end,
+                ets:tab2list(Ref)
+            )
     end.
 
 all_devaddrs_tables() ->
@@ -87,7 +97,7 @@ save(Device) ->
                         Ref -> Ref
                     end,
                 case lists:member(Addr, CurrentDevaddrs) of
-                    true -> ets:insert(EtsRef, Device);
+                    true -> ets:insert(EtsRef, {DeviceID, 0});
                     false -> ets:delete(EtsRef, DeviceID)
                 end
             end,
@@ -114,9 +124,7 @@ make_devaddr_table(DevAddr) ->
     Ref = ets:new(devaddr_table, [
         public,
         set,
-        %% items are router_device:device()
-        %% keypos is the id field of the record.
-        {keypos, 2},
+        %% items are {DeviceID, 0}
         {heir, whereis(router_db), DevAddr}
     ]),
     ets:insert(?DEVADDR_ETS, {DevAddr, Ref}),

@@ -45,7 +45,7 @@
 
 -define(SERVER, ?MODULE).
 -define(DEFAULT_POOL, router_console_api_pool).
--define(EVENT_POOL, arouter_console_api_event_pool).
+-define(EVENT_POOL, router_console_api_event_pool).
 
 -define(REQ_OPTS(Pool), [
     with_body,

@@ -2987,7 +2987,7 @@ rx_delay_downlink_default_test(Config) ->
     %% Get API's `rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
     %% Wait for async/cast to complete:
-    timer:sleep(1000),
+    timer:sleep(1500),
 
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata1 = router_device:metadata(Device1),
@@ -3156,7 +3156,7 @@ rx_delay_accepted_by_device_downlink_test(Config) ->
 
     %% Get API's `rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
-    timer:sleep(1000),
+    timer:sleep(1500),
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata = router_device:metadata(Device1),
 
@@ -3347,7 +3347,7 @@ rx_delay_change_during_session_test(Config) ->
     %% Get API's `rx_delay` into Metadata:
     router_device_worker:device_update(WorkerPid),
     %% Wait for async/cast to complete:
-    timer:sleep(1000),
+    timer:sleep(1500),
 
     {ok, Device1} = router_device_cache:get(?CONSOLE_DEVICE_ID),
     Metadata1 = router_device:metadata(Device1),

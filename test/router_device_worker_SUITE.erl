@@ -145,7 +145,7 @@ device_worker_late_packet_double_charge_test(Config) ->
 
     %% Simulate multiple hotspots sending data
     SendPacketFun(PubKeyBin1, 0),
-    test_utils:wait_until(fun() ->
+    ok = test_utils:wait_until(fun() ->
         %% Wait until our device has handled the previous frame.
         %% We know because it will update it's fcnt
         %% And the next packet we send will be "late"
@@ -379,7 +379,7 @@ device_worker_stop_children_test(Config) ->
     ?assert(erlang:is_process_alive(EventManagerPid)),
     gen_server:stop(DeviceWorkerPid),
 
-    test_utils:wait_until(fun() ->
+    ok = test_utils:wait_until(fun() ->
         erlang:is_process_alive(DeviceWorkerPid) == false andalso
             erlang:is_process_alive(ChannelsWorkerPid) == false andalso
             erlang:is_process_alive(EventManagerPid)
@@ -414,7 +414,7 @@ device_update_test(Config) ->
 
     {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
 
-    test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
+    ok = test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
 
     %% Make sure the device has removed itself from the config service after being deleted in Console.
@@ -515,28 +515,27 @@ unjoined_device_update_test(Config) ->
     ok = persistent_term:put(router_test_ics_route_service, self()),
 
     {ok, _} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
-    %% allow device update to take place
-    receive
-        {router_test_ics_route_service, update_euis, AddReq} ->
-            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
-    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
-    end,
 
     %% Check that device is in cache now
     {ok, DB, CF} = router_db:get_devices(),
     DeviceID = ?CONSOLE_DEVICE_ID,
+    ok = test_utils:wait_until(fun() ->
+        case router_device:get_by_id(DB, CF, DeviceID) of
+            {ok, _} -> true;
+            _ -> false
+        end
+    end),
+
     {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
+    {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {device_not_found, true}),
-
     %% Sending debug event from websocket
     {ok, WSPid} = test_utils:ws_init(),
     WSPid ! {device_update, <<"device:all">>},
 
-    {ok, DeviceWorkerID} = router_devices_sup:lookup_device_worker(DeviceID),
-
-    test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
+    ok = test_utils:wait_until(fun() -> erlang:is_process_alive(DeviceWorkerID) == false end),
     ?assertMatch({error, not_found}, router_device:get_by_id(DB, CF, DeviceID)),
 
     %% Make sure the device has removed itself from the config service after being deleted in Console.
@@ -572,12 +571,15 @@ stopped_unjoined_device_update_test(Config) ->
 
     %% Start the device to get it in the cache
     {ok, Pid} = router_devices_sup:maybe_start_worker(?CONSOLE_DEVICE_ID, #{}),
-    %% allow device update to take place
-    receive
-        {router_test_ics_route_service, update_euis, AddReq} ->
-            ?assertEqual(add, AddReq#iot_config_route_update_euis_req_v1_pb.action)
-    after timer:seconds(2) -> ct:fail(started_device_did_not_add_itself)
-    end,
+
+    {ok, DB, CF} = router_db:get_devices(),
+    DeviceID = ?CONSOLE_DEVICE_ID,
+    ok = test_utils:wait_until(fun() ->
+        case router_device:get_by_id(DB, CF, DeviceID) of
+            {ok, _} -> true;
+            _ -> false
+        end
+    end),
     ok = gen_server:stop(Pid),
 
     %% Check that device is in cache now

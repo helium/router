@@ -34,7 +34,8 @@
     ws :: pid(),
     ws_endpoint :: binary(),
     db :: rocksdb:db_handle(),
-    cf :: rocksdb:cf_handle()
+    cf :: rocksdb:cf_handle(),
+    check_devices_pid = undefiend :: undefined | pid()
 }).
 
 %% ------------------------------------------------------------------
@@ -70,13 +71,18 @@ handle_cast(_Msg, State) ->
 
 handle_info(
     {'EXIT', WSPid0, _Reason},
-    #state{ws = WSPid0, ws_endpoint = WSEndpoint, db = DB, cf = CF} = State
+    #state{ws = WSPid0, ws_endpoint = WSEndpoint, db = DB, cf = CF, check_devices_pid = OldPid} =
+        State
 ) ->
     lager:error("websocket connetion went down: ~p, restarting", [_Reason]),
     Token = router_console_api:get_token(),
     WSPid1 = start_ws(WSEndpoint, Token),
-    check_devices(DB, CF),
-    {noreply, State#state{ws = WSPid1}};
+    case erlang:is_pid(OldPid) andalso erlang:is_process_alive(OldPid) of
+        true -> erlang:exit(OldPid, kill);
+        false -> ok
+    end,
+    Pid = check_devices(DB, CF),
+    {noreply, State#state{ws = WSPid1, check_devices_pid = Pid}};
 handle_info(ws_joined, #state{ws = WSPid} = State) ->
     lager:info("joined, sending router address to console", []),
     Payload = get_router_address_msg(),
@@ -374,6 +380,7 @@ update_devices(DB, CF, DeviceIDs) ->
             lager:info("got update for ~p devices: ~p from WS", [Total, DeviceIDs]),
             lists:foreach(
                 fun({Index, DeviceID}) ->
+                    _ = e2qc:evict(router_console_api_get_device, DeviceID),
                     case router_devices_sup:lookup_device_worker(DeviceID) of
                         {error, not_found} ->
                             lager:info(

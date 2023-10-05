@@ -69,7 +69,13 @@
 %% E2QC durations are in seconds while our eviction handling is milliseconds
 -define(GET_ORG_LIFETIME, 300).
 -define(GET_DEVICES_LIFETIME, 10).
+
+-ifdef(TEST).
+-define(GET_DEVICE_LIFETIME, 1).
+-else.
 -define(GET_DEVICE_LIFETIME, 10).
+-endif.
+
 -define(GET_ORG_EVICTION_TIMEOUT, timer:seconds(10)).
 
 -type request_body() :: maps:map().

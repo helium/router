@@ -388,6 +388,7 @@ websocket_info(_Req, clear_queue, State) ->
         <<"device:all:clear_downlink_queue:devices">>,
         #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, {downlink, Payload}, State) ->
     Data = router_console_ws_handler:encode_msg(
@@ -400,6 +401,7 @@ websocket_info(_Req, {downlink, Payload}, State) ->
             <<"channel_name">> => ?CONSOLE_HTTP_CHANNEL_NAME
         }
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, {device_update, Topic}, State) ->
     Data = router_console_ws_handler:encode_msg(
@@ -408,6 +410,7 @@ websocket_info(_Req, {device_update, Topic}, State) ->
         <<"device:all:refetch:devices">>,
         #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, {org_update, Topic}, State) ->
     Payload = #{
@@ -459,6 +462,7 @@ websocket_info(_Req, {is_active, true}, State) ->
         <<"device:all:active:devices">>,
         #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, {is_active, false}, State) ->
     Data = router_console_ws_handler:encode_msg(
@@ -467,6 +471,7 @@ websocket_info(_Req, {is_active, false}, State) ->
         <<"device:all:inactive:devices">>,
         #{<<"devices">> => [?CONSOLE_DEVICE_ID]}
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, get_router_address, State) ->
     Data = router_console_ws_handler:encode_msg(
@@ -486,6 +491,7 @@ websocket_info(_Req, {label_fetch_queue, LabelID}, State) ->
             <<"devices">> => [?CONSOLE_DEVICE_ID]
         }
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, device_fetch_queue, State) ->
     Data = router_console_ws_handler:encode_msg(
@@ -496,6 +502,7 @@ websocket_info(_Req, device_fetch_queue, State) ->
             <<"device">> => ?CONSOLE_DEVICE_ID
         }
     ),
+    _ = e2qc:evict(router_console_api_get_device, ?CONSOLE_DEVICE_ID),
     {reply, {text, Data}, State};
 websocket_info(_Req, {discovery, Map}, State) ->
     Data = router_console_ws_handler:encode_msg(

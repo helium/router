@@ -117,7 +117,7 @@ make_devaddr_table(DevAddr) ->
         %% items are router_device:device()
         %% keypos is the id field of the record.
         {keypos, 2},
-        {heir, whereis(router_db), DevAddr}
+        {heir, whereis(router_sup), DevAddr}
     ]),
     true = ets:insert(?DEVADDR_ETS, {DevAddr, Ref}),
     Ref.

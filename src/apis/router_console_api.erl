@@ -551,7 +551,7 @@ init(Args) ->
     case get_unfunded_org_ids() of
         {ok, OrgIDs} ->
             lager:info("inserting ~p unfunded orgs", [erlang:length(OrgIDs)]),
-            %% This does not require router_console_dc_tracker to bev started, only the ETS.
+            %% This does not require router_console_dc_tracker to be started, only the ETS.
             [router_console_dc_tracker:add_unfunded(OrgID) || OrgID <- OrgIDs];
         {error, Err} ->
             lager:error("fetching unfunded orgs failed: ~p", [Err])

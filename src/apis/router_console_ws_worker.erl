@@ -35,7 +35,7 @@
     ws_endpoint :: binary(),
     db :: rocksdb:db_handle(),
     cf :: rocksdb:cf_handle(),
-    check_devices_pid = undefiend :: undefined | pid()
+    check_devices_pid = undefined :: undefined | pid()
 }).
 
 %% ------------------------------------------------------------------

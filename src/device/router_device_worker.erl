@@ -1441,7 +1441,7 @@ handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs, Ma
     Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ KeyRemoves ++ AddrRemoves),
     ok = router_ics_skf_worker:update(Updates),
 
-    lager:debug("sending update skf for join ~p ~p", [Updates]),
+    lager:debug("sending update skf for join ~p", [Updates]),
     ok.
 
 %% Dual-Plan Code

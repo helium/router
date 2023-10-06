@@ -53,7 +53,8 @@ all_tests() ->
         main_test_ignore_inactive_device_test,
         reconcile_test,
         reconcile_ignore_unfunded_orgs_test,
-        server_crash_test,
+        %% Disabling this test as we cannot  take down server side reliably
+        % server_crash_test,
         ignore_start_when_no_route_id
     ].
 

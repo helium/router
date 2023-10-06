@@ -382,7 +382,7 @@ device_worker_stop_children_test(Config) ->
     ok = test_utils:wait_until(fun() ->
         erlang:is_process_alive(DeviceWorkerPid) == false andalso
             erlang:is_process_alive(ChannelsWorkerPid) == false andalso
-            erlang:is_process_alive(EventManagerPid)
+            erlang:is_process_alive(EventManagerPid) == false
     end),
 
     ok.

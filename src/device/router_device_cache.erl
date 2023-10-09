@@ -40,7 +40,7 @@ init() ->
     _ = ets:new(?DEVADDR_ETS, [
         public,
         named_table,
-        bag,
+        set,
         {write_concurrency, true},
         {read_concurrency, true}
     ]),
@@ -62,43 +62,36 @@ get(DeviceID) ->
 get_by_devaddr(DevAddr) ->
     case ets:lookup(?DEVADDR_ETS, DevAddr) of
         [] -> [];
-        List -> [Device || {_DevAddr, Device} <- List]
+        [{_, Ref}] -> ets:tab2list(Ref)
     end.
+
+all_devaddrs_tables() ->
+    ets:tab2list(?DEVADDR_ETS).
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
-    _ = erlang:spawn(fun() ->
-        % MS = ets:fun2ms(fun({_, D}=O) when D#device_v7.id == DeviceID -> O end),
-        MS = [{{'_', '$1'}, [{'==', {element, 2, '$1'}, {const, DeviceID}}], ['$_']}],
+    _ = erlang:spawn_monitor(fun() ->
+        AddrsEtsMap = maps:from_list(all_devaddrs_tables()),
         CurrentDevaddrs = router_device:devaddrs(Device),
-        SelectResult = ets:select(?DEVADDR_ETS, MS),
-        %% We remove devaddrs that are not in use by the device and update existing ones
+
+        %% Build a list of all DevAddrs we can know about.
+        AllAddrs = lists:usort(maps:keys(AddrsEtsMap) ++ CurrentDevaddrs),
+
         lists:foreach(
-            fun({DevAddr, _} = Obj) ->
-                true = ets:delete_object(?DEVADDR_ETS, Obj),
-                case lists:member(DevAddr, CurrentDevaddrs) of
-                    true ->
-                        true = ets:insert(?DEVADDR_ETS, {DevAddr, Device});
-                    false ->
-                        noop
+            fun(Addr) ->
+                EtsRef =
+                    case maps:get(Addr, AddrsEtsMap, undefined) of
+                        undefined -> make_devaddr_table(Addr);
+                        Ref -> Ref
+                    end,
+                case lists:member(Addr, CurrentDevaddrs) of
+                    true -> ets:insert(EtsRef, Device);
+                    false -> ets:delete(EtsRef, DeviceID)
                 end
             end,
-            SelectResult
-        ),
-        SelectDevaddrs = [DevAddr || {DevAddr, _} <- SelectResult],
-        %% We add devaddrs that are in use by the device and missing from ETS
-        lists:foreach(
-            fun(DevAddr) ->
-                case lists:member(DevAddr, SelectDevaddrs) of
-                    true ->
-                        noop;
-                    false ->
-                        true = ets:insert(?DEVADDR_ETS, {DevAddr, Device})
-                end
-            end,
-            CurrentDevaddrs
+            AllAddrs
         )
     end),
     {ok, Device}.
@@ -115,6 +108,19 @@ size() ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-spec make_devaddr_table(binary()) -> ets:tab().
+make_devaddr_table(DevAddr) ->
+    Ref = ets:new(devaddr_table, [
+        public,
+        set,
+        %% items are router_device:device()
+        %% keypos is the id field of the record.
+        {keypos, 2},
+        {heir, whereis(router_sup), DevAddr}
+    ]),
+    true = ets:insert(?DEVADDR_ETS, {DevAddr, Ref}),
+    Ref.
 
 -spec init_from_db() -> ok.
 init_from_db() ->

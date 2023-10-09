@@ -697,7 +697,7 @@ handle_cast(
             end
     end;
 handle_cast(
-    {frame, _NwkSKey, PacketFCnt, Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
+    {frame, _NwkSKey, PacketFCnt, _Packet, PacketTime, _HoldTime, PubKeyBin, _Region, _Pid},
     #state{
         device = Device,
         db = DB,
@@ -705,8 +705,6 @@ handle_cast(
         is_active = false
     } = State
 ) ->
-    PHash = blockchain_helium_packet_v1:packet_hash(Packet),
-    ok = router_device_multibuy:max(PHash, 0),
     ok = router_utils:event_uplink_dropped_device_inactive(
         PacketTime,
         PacketFCnt,
@@ -824,7 +822,6 @@ handle_cast(
                 PubKeyBin
             ),
             lager:debug("did not have enough dc (~p) to send data", [_Reason]),
-            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,
@@ -856,7 +853,6 @@ handle_cast(
                         Region
                     )
             end,
-            ok = router_device_multibuy:max(PHash, 0),
             ok = router_metrics:packet_trip_observe_end(
                 PHash,
                 PubKeyBin,
@@ -1546,17 +1542,10 @@ validate_frame(
     FrameCache,
     OfferCache
 ) ->
-    Payload =
-        <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
-            _FOptsLen:4, _FCnt:16, _FOpts:_FOptsLen/binary,
-            _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
+    <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+        _FOptsLen:4, _FCnt:16, _FOpts:_FOptsLen/binary,
+        _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
-    VerifiedFCnt = verified_fcnt_from_payload(
-        router_device_routing:payload_fcnt_low(Payload),
-        router_device:nwk_s_key(Device0),
-        router_device_routing:payload_mic(Payload),
-        Payload
-    ),
     DeviceFCnt = router_device:fcnt(Device0),
 
     case MType of
@@ -1590,7 +1579,7 @@ validate_frame(
                         PacketFCnt,
                         LastSeenFCnt
                     ]),
-                    {error, {late_packet, VerifiedFCnt}};
+                    {error, {late_packet, PacketFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window < ?RX_MAX_WINDOW
@@ -1599,7 +1588,7 @@ validate_frame(
                         "we got a late confirmed up packet for ~p: DownlinkHandledAt: ~p within window ~p",
                         [PacketFCnt, DownlinkHandledAtFCnt, Window]
                     ),
-                    {error, {late_packet, VerifiedFCnt}};
+                    {error, {late_packet, PacketFCnt}};
                 undefined when
                     FrameAck == 1 andalso PacketFCnt == DownlinkHandledAtFCnt andalso
                         Window >= ?RX_MAX_WINDOW
@@ -1617,12 +1606,12 @@ validate_frame(
                         OfferCache,
                         true
                     );
-                undefined when VerifiedFCnt < DeviceFCnt ->
+                undefined when PacketFCnt < DeviceFCnt ->
                     lager:info(
                         "we got a replay packet [verified: ~p] [device: ~p]",
-                        [VerifiedFCnt, DeviceFCnt]
+                        [PacketFCnt, DeviceFCnt]
                     ),
-                    {error, {late_packet, VerifiedFCnt}};
+                    {error, {late_packet, PacketFCnt}};
                 undefined ->
                     lager:debug("we got a fresh packet [fcnt: ~p]", [PacketFCnt]),
                     validate_frame_(
@@ -2438,32 +2427,6 @@ maybe_will_downlink(Device, #frame{mtype = MType, adrackreq = ADRAckReqBit}) ->
     ChannelCorrection = router_device:channel_correction(Device),
     ADR = ADRAllowed andalso ADRAckReqBit == 1,
     DeviceQueue =/= [] orelse ACK == 1 orelse ADR orelse ChannelCorrection == false.
-
--spec verified_fcnt_from_payload(non_neg_integer(), binary(), binary(), binary()) ->
-    non_neg_integer().
-verified_fcnt_from_payload(FCntLow, NwkSKey, ExpectedMIC, Payload) ->
-    find_first(
-        fun(HighBits) ->
-            FCnt = binary:decode_unsigned(
-                <<FCntLow:16/integer-unsigned-little, HighBits:16/integer-unsigned-little>>,
-                little
-            ),
-            B0 = router_device_routing:payload_b0(Payload, FCnt),
-            ComputedMIC = crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4),
-            {ComputedMIC =:= ExpectedMIC, FCnt}
-        end,
-        lists:seq(2#000, 2#111)
-    ).
-
--spec find_first(
-    FN :: fun((HighBit :: non_neg_integer()) -> {Verified :: boolean(), FCnt :: non_neg_integer()}),
-    HighBits :: list(non_neg_integer())
-) -> non_neg_integer().
-find_first(Fn, [FCntHigh | Rest]) ->
-    case Fn(FCntHigh) of
-        {true, Found} -> Found;
-        _ -> find_first(Fn, Rest)
-    end.
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").

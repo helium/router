@@ -42,7 +42,8 @@
 -export([
     payload_b0/2,
     payload_mic/1,
-    payload_fcnt_low/1
+    payload_fcnt_low/1,
+    get_device_for_payload/2
 ]).
 
 %% biggest unsigned number in 23 bits
@@ -302,7 +303,7 @@ get_device_for_payload(Payload, PubKeyBin) ->
             end;
         <<_MType:3, _MHDRRFU:3, _Major:2, DevAddr:4/binary, _/binary>> ->
             MIC = payload_mic(Payload),
-            case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+            case find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) of
                 {ok, {Device, _NwkSKey, FCnt}} -> {ok, Device, FCnt};
                 E2 -> E2
             end
@@ -332,10 +333,7 @@ validate_payload_for_device(Device, Payload, PHash, PubKeyBin, Fcnt) ->
                         {ok, _} ->
                             case check_device_preferred_hotspots(Device, PubKeyBin) of
                                 none_preferred ->
-                                    case maybe_multi_buy_offer(Device, PHash) of
-                                        {ok, _} -> ok;
-                                        E -> E
-                                    end;
+                                    ok;
                                 preferred ->
                                     ok;
                                 not_preferred_hotspot ->
@@ -769,6 +767,13 @@ check_device_is_active(Device, PubKeyBin) ->
                 Device,
                 PubKeyBin
             ),
+            spawn(fun() ->
+                DeviceID = router_device:id(Device),
+                lager:warning("routing for inactive device ~p, removing", [DeviceID]),
+                ok = router_ics_skf_worker:remove_device_ids([DeviceID]),
+                ok = router_ics_eui_worker:remove([DeviceID])
+            end),
+
             {error, ?DEVICE_INACTIVE};
         true ->
             ok
@@ -962,22 +967,22 @@ get_device(DevEUI, AppEUI, Msg, MIC) ->
         [] ->
             {error, api_not_found};
         KeysAndDevices ->
-            find_device(Msg, MIC, KeysAndDevices)
+            find_device_for_join(Msg, MIC, KeysAndDevices)
     end.
 
--spec find_device(
+-spec find_device_for_join(
     Msg :: binary(),
     MIC :: binary(),
     [{binary(), router_device:device()}]
 ) -> {ok, Device :: router_device:device(), AppKey :: binary()} | {error, not_found}.
-find_device(_Msg, _MIC, []) ->
+find_device_for_join(_Msg, _MIC, []) ->
     {error, not_found};
-find_device(Msg, MIC, [{AppKey, Device} | T]) ->
+find_device_for_join(Msg, MIC, [{AppKey, Device} | T]) ->
     case crypto:macN(cmac, aes_128_cbc, AppKey, Msg, 4) of
         MIC ->
             {ok, Device, AppKey};
         _ ->
-            find_device(Msg, MIC, T)
+            find_device_for_join(Msg, MIC, T)
     end.
 
 -spec send_to_device_worker(
@@ -1007,7 +1012,7 @@ send_to_device_worker(
     DeviceInfo =
         case Device0 of
             undefined ->
-                case find_device(PubKeyBin, DevAddr, MIC, Payload) of
+                case find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) of
                     {error, unknown_device} ->
                         lager:warning(
                             "unable to find device for packet [devaddr: ~p / ~p] [gateway: ~p]",
@@ -1102,13 +1107,13 @@ send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Regio
             end
     end.
 
--spec find_device(
+-spec find_device_for_uplink(
     PubKeyBin :: libp2p_crypto:pubkey_bin(),
     DevAddr :: binary(),
     MIC :: binary(),
     Payload :: binary()
 ) -> {ok, {router_device:device(), binary(), non_neg_integer()}} | {error, unknown_device}.
-find_device(PubKeyBin, DevAddr, MIC, Payload) ->
+find_device_for_uplink(PubKeyBin, DevAddr, MIC, Payload) ->
     Devices = get_and_sort_devices(DevAddr, PubKeyBin),
     case get_device_by_mic(MIC, Payload, Devices) of
         undefined ->
@@ -1185,79 +1190,65 @@ get_and_sort_devices(DevAddr, PubKeyBin) ->
 get_device_by_mic(_MIC, _Payload, []) ->
     undefined;
 get_device_by_mic(ExpectedMIC, Payload, [Device | Devices]) ->
-    ExpectedFCnt = expected_fcnt(Device, Payload),
-    B0 = payload_b0(Payload, ExpectedFCnt),
     DeviceID = router_device:id(Device),
-    case router_device:nwk_s_key(Device) of
-        undefined ->
+    case router_device:nwk_s_keys(Device) of
+        [] ->
             lager:warning([{device_id, DeviceID}], "device did not have a nwk_s_key, deleting"),
             {ok, DB, [_DefaultCF, CF]} = router_db:get(),
             ok = router_device:delete(DB, CF, DeviceID),
             ok = router_device_cache:delete(DeviceID),
             get_device_by_mic(ExpectedMIC, Payload, Devices);
-        NwkSKey ->
-            case key_matches_mic(NwkSKey, B0, ExpectedMIC) of
-                true ->
-                    lager:debug("device ~p NwkSKey matches FCnt ~b.", [DeviceID, ExpectedFCnt]),
-                    {Device, NwkSKey, ExpectedFCnt};
+        Keys ->
+            case find_right_key(ExpectedMIC, Payload, Keys) of
                 false ->
-                    lager:debug(
-                        "device ~p NwkSKey does not match FCnt ~b.  Searching device's other keys.",
-                        [DeviceID, ExpectedFCnt]
-                    ),
-                    Keys = router_device:keys(Device),
-                    case find_right_key(B0, ExpectedMIC, Payload, Device, Keys) of
-                        false ->
-                            lager:debug("Device does not match FCnt ~b.  Searching next device.", [
-                                ExpectedFCnt
-                            ]),
-                            get_device_by_mic(ExpectedMIC, Payload, Devices);
-                        {D, K} ->
-                            lager:debug("Device ~p matches FCnt ~b.", [
-                                router_device:id(D), ExpectedFCnt
-                            ]),
-                            {D, K, ExpectedFCnt}
-                    end
+                    lager:debug("Device does not match any FCnt. Searching next device."),
+                    get_device_by_mic(ExpectedMIC, Payload, Devices);
+                {true, NwkSKey, VerifiedFCnt} ->
+                    lager:debug("Device ~p matches FCnt ~b.", [DeviceID, VerifiedFCnt]),
+                    {Device, NwkSKey, VerifiedFCnt}
             end
     end.
 
 -spec find_right_key(
-    B0 :: binary(),
     MIC :: binary(),
     Payload :: binary(),
-    Device :: router_device:device(),
-    Keys :: list({binary() | undefined, binary() | undefined})
-) -> false | {error, any()} | {router_device:device(), binary()}.
-find_right_key(_B0, _MIC, _Payload, _Device, []) ->
+    Keys :: list(binary())
+) -> false | {true, VerifiedNwkSKey :: binary(), VerifiedFCnt :: non_neg_integer()}.
+find_right_key(_MIC, _Payload, []) ->
     false;
-find_right_key(B0, MIC, Payload, Device, [{undefined, _} | Keys]) ->
-    find_right_key(B0, MIC, Payload, Device, Keys);
-find_right_key(B0, MIC, Payload, Device, [{NwkSKey, _} | Keys]) ->
-    case key_matches_mic(NwkSKey, B0, MIC) of
-        true ->
-            {Device, NwkSKey};
-        false ->
-            case key_matches_any_fcnt(NwkSKey, MIC, Payload) of
-                false -> find_right_key(B0, MIC, Payload, Device, Keys);
-                true -> {Device, NwkSKey}
-            end
+find_right_key(MIC, Payload, [NwkSKey | Keys]) ->
+    case key_matches_any_fcnt(NwkSKey, MIC, Payload) of
+        false -> find_right_key(MIC, Payload, Keys);
+        {true, FCnt} -> {true, NwkSKey, FCnt}
     end.
 
--spec key_matches_any_fcnt(binary(), binary(), binary()) -> boolean().
+-spec key_matches_any_fcnt(binary(), binary(), binary()) ->
+    false | {true, VerifiedFCnt :: non_neg_integer()}.
 key_matches_any_fcnt(NwkSKey, ExpectedMIC, Payload) ->
     FCntLow = payload_fcnt_low(Payload),
-    lists:any(
+    find_first(
         fun(HighBits) ->
             FCnt = binary:decode_unsigned(
                 <<FCntLow:16/integer-unsigned-little, HighBits:16/integer-unsigned-little>>,
                 little
             ),
             B0 = payload_b0(Payload, FCnt),
-            ComputedMIC = crypto:macN(cmac, aes_128_cbc, NwkSKey, B0, 4),
-            ComputedMIC =:= ExpectedMIC
+            {key_matches_mic(NwkSKey, B0, ExpectedMIC), FCnt}
         end,
         lists:seq(2#000, 2#111)
     ).
+
+-spec find_first(
+    Fn :: fun((T) -> {boolean(), T}),
+    Els :: list(T)
+) -> {true, T} | false.
+find_first(_Fn, []) ->
+    false;
+find_first(Fn, [Head | Tail]) ->
+    case Fn(Head) of
+        {true, _} = Val -> Val;
+        _ -> find_first(Fn, Tail)
+    end.
 
 -spec key_matches_mic(binary(), binary(), binary()) -> boolean().
 key_matches_mic(Key, B0, ExpectedMIC) ->
@@ -1269,72 +1260,6 @@ payload_fcnt_low(Payload) ->
     <<_Mhdr:1/binary, _DevAddr:4/binary, _FCtrl:1/binary, FCntLow:16/integer-unsigned-little,
         _/binary>> = Payload,
     FCntLow.
-
--spec expected_fcnt(
-    Device :: router_device:device(),
-    Payload :: binary()
-) -> non_neg_integer().
-expected_fcnt(Device, Payload) ->
-    %% This is a heuristic for handling replayed packets and one
-    %% (arguably incorrect) edge case.
-
-    %% We need a 32-bit frame counter in order to compute the MIC.
-
-    %% The payload contains only the 16 low-order bits of the the frame counter.
-
-    %% If the bits from the payload are slightly less than, equal to,
-    %% or greater than the low order bits of our device's frame
-    %% counter, then our device's high bits are /probably/ the same as
-    %% the ones held by the end device.  We will join our high bits to
-    %% the packets's low bits and hope that is the correct FCntUp.
-
-    %% On the other hand, if the bits from the payload are
-    %% significantly less than the low order bits from the device's
-    %% frame counter, then there's a good chance the end device's low
-    %% bits have rolled back to zero.  In this case, we're going to
-    %% increment our internal counter's high bits by one and join them
-    %% to the packet's low bits.
-
-    PayloadFCntLow = payload_fcnt_low(Payload),
-    {PrevFCntLow, PrevFCntHigh, LowDiff} =
-        case router_device:fcnt(Device) of
-            undefined ->
-                {undefined, undefined, undefined};
-            I when is_integer(I) ->
-                <<Low:16/integer-unsigned-little, High:16/integer-unsigned-little>> = <<
-                    I:32/integer-unsigned-little
-                >>,
-                {Low, High, abs(Low - PayloadFCntLow)}
-        end,
-
-    if
-        PrevFCntLow =:= undefined andalso LowDiff =:= undefined ->
-            %% This is the first frame we've seen, so we're going to
-            %% assume the upper bits of the frame counter are all 0
-            %% and we'll take the lower bits as-is; this will be the
-            %% new FCntUp.
-            PayloadFCntLow;
-        PayloadFCntLow >= PrevFCntLow ->
-            %% The FCnt on this packet is gte the last packet, meaning
-            %% it hasn't rolled back to 0.  We're going to prepend the
-            %% high bits from our internal counter and assume that is
-            %% the correct FCntUp.
-            binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
-        PayloadFCntLow < PrevFCntLow andalso LowDiff =< 10 ->
-            %% The FCnt on this packet appears to be slightly lower
-            %% than our internal counter.  We're going to append the
-            %% upper bits of our internal counter to the packet's
-            %% lower bits and take that as the new FCntUp.
-            binary:decode_unsigned(<<PrevFCntHigh:16, PayloadFCntLow:16>>);
-        PayloadFCntLow < PrevFCntLow andalso LowDiff > 10 ->
-            %% The FCnt on this packets is significantly less than our
-            %% internal counter.  We're goint to assume the lower 16
-            %% bits have rolled back to zero.  We'll increment the
-            %% upper bits and append them to the lower bits and take
-            %% that as the new FCntUp.
-            NewHigh = (PrevFCntHigh + 1) rem ?MODULO_16_BITS,
-            binary:decode_unsigned(<<NewHigh:16, PayloadFCntLow:16>>)
-    end.
 
 -spec payload_b0(binary(), non_neg_integer()) -> binary().
 payload_b0(Payload, ExpectedFCnt) ->

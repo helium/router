@@ -23,6 +23,7 @@
     dev_eui/1, dev_eui/2,
     keys/1, keys/2,
     nwk_s_key/1,
+    nwk_s_keys/1,
     app_s_key/1,
     devaddr/1,
     devaddrs/1, devaddrs/2,
@@ -124,6 +125,10 @@ nwk_s_key(#device_v7{keys = []}) ->
     undefined;
 nwk_s_key(#device_v7{keys = [{NwkSKey, _AppSKey} | _]}) ->
     NwkSKey.
+
+-spec nwk_s_keys(device()) -> list(binary()).
+nwk_s_keys(#device_v7{keys = Keys}) ->
+    [NwkSKey || {NwkSKey, _AppSKey} <- Keys].
 
 -spec app_s_key(device()) -> binary() | undefined.
 app_s_key(#device_v7{keys = []}) ->

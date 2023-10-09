@@ -1100,8 +1100,20 @@ replay_joins_test(Config) ->
     ok.
 
 ddos_joins_test(Config) ->
-    meck:delete(router_device_devaddr, allocate, 2, false),
     _ = test_utils:add_oui(Config),
+    meck:delete(router_device_devaddr, allocate, 2, false),
+    %% We're going to use the actual devaddr allocation, make sure we have a
+    %% chain before starting this test.
+    ok = test_utils:wait_until(
+        fun() ->
+            case whereis(router_device_devaddr) of
+                undefined -> false;
+                Pid -> element(5, sys:get_state(Pid)) =/= []
+            end
+        end,
+        10,
+        3000
+    ),
 
     #{
         app_key := AppKey,

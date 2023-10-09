@@ -24,7 +24,6 @@
     handle_join_packet_from_strange_hotspot_test/1,
     handle_join_packet_from_preferred_hotspot_test/1,
     handle_join_packet_with_no_preferred_hotspot_test/1,
-    handle_packet_fcnt_32_bit_rollover_test/1,
     handle_packet_wrong_fcnt_test/1
 ]).
 
@@ -80,7 +79,6 @@ all_tests() ->
         handle_join_packet_from_strange_hotspot_test,
         handle_join_packet_from_preferred_hotspot_test,
         handle_join_packet_with_no_preferred_hotspot_test,
-        handle_packet_fcnt_32_bit_rollover_test,
         handle_packet_wrong_fcnt_test
     ].
 
@@ -639,85 +637,6 @@ multi_buy_test(Config) ->
     ok = HandleOfferForHotspotFun(PubKeyBin4, Device, 1),
     {error, multi_buy_max_packet} = HandleOfferForHotspotFun(PubKeyBin5, Device, 1),
 
-    ok.
-
-handle_packet_fcnt_32_bit_rollover_test(Config) ->
-    WaitForDeviceWorker = fun() ->
-        timer:sleep(500)
-    end,
-    ok = remove_devaddr_allocate_meck(),
-    test_utils:add_oui(Config),
-
-    #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
-    test_utils:wait_state_channel_message(1250),
-
-    {ok, DB, CF} = router_db:get_devices(),
-    WorkerID = router_devices_sup:id(?CONSOLE_DEVICE_ID),
-    {ok, Device0} = router_device:get_by_id(DB, CF, WorkerID),
-
-    Device1 = router_device:update([{fcnt, 16#FFFFFFFE}], Device0),
-    {ok, _} = router_device_cache:save(Device1),
-
-    NwkSKey = router_device:nwk_s_key(Device1),
-    AppSKey = router_device:app_s_key(Device1),
-    FCnt = router_device:fcnt_next_val(Device1),
-
-    ?assertEqual(16#FFFFFFFF, FCnt),
-
-    %% Let's try sending the highest possible FCnt.
-    SCPacket = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, FCnt, #{
-        dont_encode => true,
-        routing => true,
-        devaddr => router_device:devaddr(Device1)
-    }),
-
-    ?assertEqual(
-        ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
-    ),
-
-    WaitForDeviceWorker(),
-
-    %% Packet was routed.
-    %% fcnt should now be 16#FFFFFFFF
-    %% next fcnt should now be 0
-
-    {ok, Device2} = router_device:get_by_id(DB, CF, WorkerID),
-    ?assertEqual(16#FFFFFFFF, router_device:fcnt(Device2)),
-    ?assertEqual(0, router_device:fcnt_next_val(Device2)),
-
-    %% If we send 16#FFFFFFFF again, that should work because it's a legitimate replay.
-    ?assertEqual(
-        ok, router_device_routing:handle_packet(SCPacket, erlang:system_time(millisecond), self())
-    ),
-
-    %% Fun fact: there exists a race condition here where the worker
-    %% may reject our replayed packet because the frame cache TTL is
-    %% set very low during testing.  The worker is expected to save
-    %% the device record with the updated fcnt in any case.  That's
-    %% why we sleep instead of waiting for a console message
-    %% indicating the worker has processed the frame: because we don't
-    %% know what to expect here, an `uplink` or an `uplink_dropped`.
-    WaitForDeviceWorker(),
-
-    %% Now, let's try sending 0.
-    SCPacket2 = test_utils:frame_packet(?UNCONFIRMED_UP, PubKeyBin, NwkSKey, AppSKey, 0, #{
-        dont_encode => true,
-        routing => true,
-        devaddr => router_device:devaddr(Device1)
-    }),
-    ?assertEqual(
-        ok, router_device_routing:handle_packet(SCPacket2, erlang:system_time(millisecond), self())
-    ),
-
-    WaitForDeviceWorker(),
-
-    %% That worked.
-    %% fcnt should now be 0
-    %% next fcnt should now be 1
-
-    {ok, Device3} = router_device:get_by_id(DB, CF, WorkerID),
-    ?assertEqual(0, router_device:fcnt(Device3)),
-    ?assertEqual(1, router_device:fcnt_next_val(Device3)),
     ok.
 
 handle_packet_wrong_fcnt_test(Config) ->

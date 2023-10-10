@@ -253,7 +253,7 @@ handle_cast(
             lager:debug("frame_timeout for ~p data: ~p", [UUID, Map]),
             {noreply, State#state{data_cache = DataCache1}};
         error ->
-            lager:debug("frame_timeout unknown UUID", [UUID]),
+            lager:debug("frame_timeout unknown UUID ~p", [UUID]),
             {noreply, State}
     end;
 handle_cast(

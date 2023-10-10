@@ -196,7 +196,6 @@ handle_continue({?INIT_ASYNC, ID}, #state{db = DB, cf = CF} = State) ->
     Device = get_device(DB, CF, ID),
     IsActive = router_device:is_active(Device),
     ok = router_utils:lager_md(Device),
-    ok = ?MODULE:device_update(self()),
     {ok, Pid} = router_device_channels_worker:start_link(#{
         device_worker => self(), device => Device
     }),
@@ -1438,7 +1437,7 @@ handle_join_skf([{NwkSKey, _} | _] = NewKeys, [NewDevAddr | _] = NewDevAddrs, Ma
     Updates = lists:usort([{add, DevAddrInt, NwkSKey, MaxCopies}] ++ KeyRemoves ++ AddrRemoves),
     ok = router_ics_skf_worker:update(Updates),
 
-    lager:debug("sending update skf for join ~p ~p", [Updates]),
+    lager:debug("sending update skf for join ~p", [Updates]),
     ok.
 
 %% Dual-Plan Code
@@ -2254,7 +2253,9 @@ get_device(DB, CF, DeviceID) ->
                         )},
                     {is_active, IsActive}
                 ],
-                router_device:update(DeviceUpdates, Device0)
+                Device2 = router_device:update(DeviceUpdates, Device0),
+                ok = save_device(DB, CF, Device2),
+                Device2
         end,
     MultiBuyValue = maps:get(multi_buy, router_device:metadata(Device1), 1),
     ok = router_device_multibuy:max(router_device:id(Device1), MultiBuyValue),

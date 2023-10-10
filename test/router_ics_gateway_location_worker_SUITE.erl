@@ -81,7 +81,7 @@ main_test(_Config) ->
     Before = erlang:system_time(millisecond),
 
     %% Let worker start
-    test_utils:wait_until(fun() ->
+    ok = test_utils:wait_until(fun() ->
         try router_ics_gateway_location_worker:get(PubKeyBin1) of
             {ok, ExpectedIndex} -> true;
             _ -> false

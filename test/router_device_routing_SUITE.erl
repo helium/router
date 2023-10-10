@@ -114,13 +114,12 @@ test_join_offer(Config, PreferredHotspots, ExpectedResult) ->
             [] -> fun(_, _) -> ok end;
             _ -> fun(_, _) -> throw("Multibuy isn't allowed here!") end
         end,
-
+    test_utils:add_oui(Config),
     ok = remove_devaddr_allocate_meck(),
 
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultibuyFun),
 
-    test_utils:add_oui(Config),
     Swarm = proplists:get_value(swarm, Config),
     PubKeyBin = libp2p_swarm:pubkey_bin(Swarm),
 
@@ -179,11 +178,9 @@ test_packet_offer(Config, PreferredHotspots, ExpectedResult) ->
             [] -> fun(_, _) -> ok end;
             _ -> fun(_, _) -> throw("MultiBuy shouldn't happen here!") end
         end,
-
+    test_utils:add_oui(Config),
     ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
-
-    test_utils:add_oui(Config),
 
     #{pubkey_bin := StrangerPubKeyBin} = test_utils:join_device(Config),
     test_utils:wait_state_channel_message(1250),
@@ -255,11 +252,10 @@ test_frame_packet(Config, PreferredHotspots, PacketHotspot, ExpectedResult) ->
             _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
         end,
 
+    test_utils:add_oui(Config),
     ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
-
-    test_utils:add_oui(Config),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {preferred_hotspots, PreferredHotspots}),
@@ -326,11 +322,10 @@ test_join_packet(Config, PreferredHotspots, ExpectedResult) ->
             _ -> fun(_, _) -> throw("Multibuy shouldn't happen here!") end
         end,
 
+    test_utils:add_oui(Config),
     ok = remove_devaddr_allocate_meck(),
     meck:new(router_device_multibuy, [passthrough]),
     meck:expect(router_device_multibuy, maybe_buy, MultiBuyFun),
-
-    test_utils:add_oui(Config),
 
     Tab = proplists:get_value(ets, Config),
     ets:insert(Tab, {preferred_hotspots, PreferredHotspots}),
@@ -475,8 +470,6 @@ packet_hash_cache_test(Config) ->
     ok.
 
 multi_buy_test(Config) ->
-    ok = remove_devaddr_allocate_meck(),
-
     AppKey = proplists:get_value(app_key, Config),
     {Stream, PubKeyBin1} =
         case router_blockchain:is_chain_dead() of
@@ -506,6 +499,7 @@ multi_buy_test(Config) ->
                 ),
                 {Pid, PubKeyBin01}
         end,
+    ok = remove_devaddr_allocate_meck(),
     {ok, HotspotName} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(PubKeyBin1)),
 
     %% device should join under OUI 1
@@ -640,8 +634,8 @@ multi_buy_test(Config) ->
     ok.
 
 handle_packet_wrong_fcnt_test(Config) ->
-    ok = remove_devaddr_allocate_meck(),
     test_utils:add_oui(Config),
+    ok = remove_devaddr_allocate_meck(),
 
     #{pubkey_bin := PubKeyBin} = test_utils:join_device(Config),
     test_utils:wait_state_channel_message(1250),
@@ -693,10 +687,14 @@ remove_devaddr_allocate_meck() ->
     meck:delete(router_device_devaddr, allocate, 2, false),
     %% We're going to use the actual devaddr allocation, make sure we have a
     %% chain before starting this test.
-    ok = test_utils:wait_until(fun() ->
-        case whereis(router_device_devaddr) of
-            undefined -> false;
-            Pid -> element(2, sys:get_state(Pid)) /= undefined
-        end
-    end),
+    ok = test_utils:wait_until(
+        fun() ->
+            case whereis(router_device_devaddr) of
+                undefined -> false;
+                Pid -> element(5, sys:get_state(Pid)) =/= []
+            end
+        end,
+        10,
+        3000
+    ),
     ok.

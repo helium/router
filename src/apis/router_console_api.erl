@@ -64,10 +64,18 @@
 -define(DOWNLINK_TOOL_CHANNEL_NAME, <<"Console downlink tool">>).
 
 -define(GET_ORG_CACHE_NAME, router_console_api_get_org).
+-define(GET_DEVICE_CACHE_NAME, router_console_api_get_device).
 -define(GET_DEVICES_CACHE_NAME, router_console_api_get_devices_by_deveui_appeui).
 %% E2QC durations are in seconds while our eviction handling is milliseconds
 -define(GET_ORG_LIFETIME, 300).
 -define(GET_DEVICES_LIFETIME, 10).
+
+-ifdef(TEST).
+-define(GET_DEVICE_LIFETIME, 1).
+-else.
+-define(GET_DEVICE_LIFETIME, 10).
+-endif.
+
 -define(GET_ORG_EVICTION_TIMEOUT, timer:seconds(10)).
 
 -type request_body() :: maps:map().
@@ -83,7 +91,7 @@
     cf :: rocksdb:cf_handle(),
     pending_burns = #{} :: pending(),
     inflight = [] :: [inflight()],
-    tref :: reference()
+    tref = undefined :: reference() | undefined
 }).
 
 %% ------------------------------------------------------------------
@@ -100,47 +108,59 @@ init_ets() ->
 
 -spec get_device(DeviceID :: binary()) -> {ok, router_device:device()} | {error, any()}.
 get_device(DeviceID) ->
-    {Endpoint, Token} = token_lookup(),
-    Device = router_device:new(DeviceID),
-    case get_device_(Endpoint, Token, Device) of
-        {error, _Reason} = Error ->
-            Error;
-        {ok, JSONDevice} ->
-            {ok, json_device_to_record(JSONDevice, use_meta_defaults)}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Device = router_device:new(DeviceID),
+            case get_device_(Endpoint, Token, Device) of
+                {error, _Reason} = Error ->
+                    Error;
+                {ok, JSONDevice} ->
+                    {ok, json_device_to_record(JSONDevice, use_meta_defaults)}
+            end
     end.
 
 -spec get_devices() -> {ok, [router_device:device()]} | {error, any()}.
 get_devices() ->
-    {Endpoint, Token} = token_lookup(),
-    case get_devices(Endpoint, Token, [], undefined) of
-        {ok, JSONDevices} ->
-            FilterMapFun = fun(JSONDevice) ->
-                try json_device_to_record(JSONDevice, ignore_meta_defaults) of
-                    Device -> {true, Device}
-                catch
-                    _E:_R ->
-                        lager:error("failed to create record for device ~p: ~p", [
-                            JSONDevice,
-                            {_E, _R}
-                        ]),
-                        false
-                end
-            end,
-            {ok,
-                lists:filtermap(
-                    FilterMapFun,
-                    JSONDevices
-                )};
-        Other ->
-            {error, Other}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            case get_devices(Endpoint, Token, [], undefined) of
+                {ok, JSONDevices} ->
+                    FilterMapFun = fun(JSONDevice) ->
+                        try json_device_to_record(JSONDevice, ignore_meta_defaults) of
+                            Device -> {true, Device}
+                        catch
+                            _E:_R ->
+                                lager:error("failed to create record for device ~p: ~p", [
+                                    JSONDevice,
+                                    {_E, _R}
+                                ]),
+                                false
+                        end
+                    end,
+                    {ok,
+                        lists:filtermap(
+                            FilterMapFun,
+                            JSONDevices
+                        )};
+                Other ->
+                    {error, Other}
+            end
     end.
 
 -spec get_json_devices() -> {ok, list()} | {error, any()}.
 get_json_devices() ->
-    {Endpoint, Token} = token_lookup(),
-    case get_devices(Endpoint, Token, [], undefined) of
-        {ok, _JSONDevices} = OK -> OK;
-        Other -> {error, Other}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            case get_devices(Endpoint, Token, [], undefined) of
+                {ok, _JSONDevices} = OK -> OK;
+                Other -> {error, Other}
+            end
     end.
 
 -spec get_devices_by_deveui_appeui(DevEui :: binary(), AppEui :: binary()) ->
@@ -174,65 +194,83 @@ get_org(OrgID) ->
 
 -spec get_orgs() -> {ok, list()} | {error, any()}.
 get_orgs() ->
-    {Endpoint, Token} = token_lookup(),
-    get_orgs(Endpoint, Token, [], undefined).
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            get_orgs(Endpoint, Token, [], undefined)
+    end.
 
 -spec get_unfunded_org_ids() -> {ok, list()} | {error, any()}.
 get_unfunded_org_ids() ->
-    {Endpoint, Token} = token_lookup(),
-    get_unfunded_orgs(Endpoint, Token).
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            get_unfunded_orgs(Endpoint, Token)
+    end.
 
 -spec org_manual_update_router_dc(OrgID :: binary(), Balance :: non_neg_integer()) ->
     ok | {error, any()}.
 org_manual_update_router_dc(OrgID, Balance) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations/manual_update_router_dc">>,
-    lager:debug("get ~p", [Url]),
-    Opts = ?REQ_OPTS(?DEFAULT_POOL),
-    Body = #{
-        organization_id => OrgID,
-        amount => Balance
-    },
-    Start = erlang:system_time(millisecond),
-    case
-        hackney:post(
-            Url,
-            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-            jsx:encode(Body),
-            Opts
-        )
-    of
-        {ok, 204, _Headers, _Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(org_manual_update_router_dc, ok, End - Start),
-            lager:debug("Body for ~p ~p", [Url, _Body]),
-            ok;
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(
-                org_manual_update_router_dc,
-                error,
-                End - Start
-            ),
-            {error, {org_manual_update_router_dc_failed, _Other}}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Url = <<Endpoint/binary, "/api/router/organizations/manual_update_router_dc">>,
+            lager:debug("get ~p", [Url]),
+            Opts = ?REQ_OPTS(?DEFAULT_POOL),
+            Body = #{
+                organization_id => OrgID,
+                amount => Balance
+            },
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:post(
+                    Url,
+                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                    jsx:encode(Body),
+                    Opts
+                )
+            of
+                {ok, 204, _Headers, _Body} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(
+                        org_manual_update_router_dc, ok, End - Start
+                    ),
+                    lager:debug("Body for ~p ~p", [Url, _Body]),
+                    ok;
+                _Other ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(
+                        org_manual_update_router_dc,
+                        error,
+                        End - Start
+                    ),
+                    {error, {org_manual_update_router_dc_failed, _Other}}
+            end
     end.
 
 -spec get_channels(Device :: router_device:device(), DeviceWorkerPid :: pid()) ->
     {ok, [router_channel:channel()]} | {error, any()}.
 get_channels(Device, DeviceWorkerPid) ->
-    {Endpoint, Token} = token_lookup(),
-    case get_device_(Endpoint, Token, Device) of
-        {error, _Reason} = Error ->
-            Error;
-        {ok, JSON} ->
-            Channels0 = kvc:path([<<"channels">>], JSON),
-            Channels1 = lists:filtermap(
-                fun(JSONChannel) ->
-                    convert_channel(Device, DeviceWorkerPid, JSONChannel)
-                end,
-                Channels0
-            ),
-            {ok, Channels1}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            case get_device_(Endpoint, Token, Device) of
+                {error, _Reason} = Error ->
+                    Error;
+                {ok, JSON} ->
+                    Channels0 = kvc:path([<<"channels">>], JSON),
+                    Channels1 = lists:filtermap(
+                        fun(JSONChannel) ->
+                            convert_channel(Device, DeviceWorkerPid, JSONChannel)
+                        end,
+                        Channels0
+                    ),
+                    {ok, Channels1}
+            end
     end.
 
 -spec event(Device :: router_device:device(), Map :: map()) -> ok.
@@ -241,181 +279,192 @@ event(Device, Map) ->
         fun() ->
             ok = router_utils:lager_md(Device),
             lager:debug("event ~p", [Map]),
-            {Endpoint, Token} = token_lookup(),
-            DeviceID = router_device:id(Device),
-            Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
-            Category = maps:get(category, Map),
-            true = lists:member(Category, [
-                uplink,
-                uplink_dropped,
-                downlink,
-                downlink_dropped,
-                join_request,
-                join_accept,
-                misc
-            ]),
-            SubCategory = maps:get(sub_category, Map, undefined),
-            true = lists:member(SubCategory, [
-                undefined,
-                uplink_confirmed,
-                uplink_unconfirmed,
-                uplink_integration_req,
-                uplink_integration_res,
-                uplink_dropped_device_inactive,
-                uplink_dropped_not_enough_dc,
-                uplink_dropped_late,
-                uplink_dropped_invalid,
-                downlink_confirmed,
-                downlink_unconfirmed,
-                downlink_dropped_payload_size_exceeded,
-                downlink_dropped_misc,
-                downlink_queued,
-                downlink_ack,
-                misc_integration_error
-            ]),
-            Data =
-                case {Category, SubCategory} of
-                    {downlink, SC} when SC == downlink_queued ->
+            case token_lookup() of
+                {error, not_found} ->
+                    {error, no_token};
+                {ok, Endpoint, Token} ->
+                    DeviceID = router_device:id(Device),
+                    Url = <<Endpoint/binary, "/api/router/devices/", DeviceID/binary, "/event">>,
+                    Category = maps:get(category, Map),
+                    true = lists:member(Category, [
+                        uplink,
+                        uplink_dropped,
+                        downlink,
+                        downlink_dropped,
+                        join_request,
+                        join_accept,
+                        misc
+                    ]),
+                    SubCategory = maps:get(sub_category, Map, undefined),
+                    true = lists:member(SubCategory, [
+                        undefined,
+                        uplink_confirmed,
+                        uplink_unconfirmed,
+                        uplink_integration_req,
+                        uplink_integration_res,
+                        uplink_dropped_device_inactive,
+                        uplink_dropped_not_enough_dc,
+                        uplink_dropped_late,
+                        uplink_dropped_invalid,
+                        downlink_confirmed,
+                        downlink_unconfirmed,
+                        downlink_dropped_payload_size_exceeded,
+                        downlink_dropped_misc,
+                        downlink_queued,
+                        downlink_ack,
+                        misc_integration_error
+                    ]),
+                    Data =
+                        case {Category, SubCategory} of
+                            {downlink, SC} when SC == downlink_queued ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    payload_size => maps:get(payload_size, Map),
+                                    payload => maps:get(payload, Map),
+                                    port => maps:get(port, Map),
+                                    devaddr => maps:get(devaddr, Map),
+                                    hotspot => maps:get(hotspot, Map),
+                                    integration => #{
+                                        id => maps:get(channel_id, Map),
+                                        name => maps:get(channel_name, Map),
+                                        status => maps:get(channel_status, Map)
+                                    }
+                                };
+                            {downlink, SC} when
+                                SC == downlink_confirmed orelse SC == downlink_unconfirmed
+                            ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    payload_size => maps:get(payload_size, Map),
+                                    payload => maps:get(payload, Map),
+                                    port => maps:get(port, Map),
+                                    devaddr => maps:get(devaddr, Map),
+                                    hotspot => maps:get(hotspot, Map),
+                                    integration => #{
+                                        id => maps:get(channel_id, Map),
+                                        name => maps:get(channel_name, Map),
+                                        status => maps:get(channel_status, Map)
+                                    }
+                                };
+                            {_C, SC} when
+                                SC == uplink_integration_req orelse
+                                    SC == uplink_integration_res orelse
+                                    SC == downlink_dropped_payload_size_exceeded orelse
+                                    SC == downlink_dropped_misc orelse
+                                    SC == misc_integration_error
+                            ->
+                                Report = #{
+                                    integration => #{
+                                        id => maps:get(channel_id, Map),
+                                        name => maps:get(channel_name, Map),
+                                        status => maps:get(channel_status, Map)
+                                    }
+                                },
+                                case SC of
+                                    uplink_integration_req ->
+                                        Report#{req => maps:get(request, Map)};
+                                    uplink_integration_res ->
+                                        Report#{res => maps:get(response, Map)};
+                                    _ ->
+                                        Report
+                                end;
+                            {uplink_dropped, uplink_dropped_late} ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    hotspot => maps:get(hotspot, Map),
+                                    hold_time => maps:get(hold_time, Map),
+                                    dc => maps:get(dc, Map)
+                                };
+                            {uplink_dropped, _SC} ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    hotspot => maps:get(hotspot, Map)
+                                };
+                            {uplink, SC} when
+                                SC == uplink_confirmed orelse SC == uplink_unconfirmed
+                            ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    payload_size => maps:get(payload_size, Map),
+                                    payload => maps:get(payload, Map),
+                                    raw_packet => maps:get(raw_packet, Map),
+                                    port => maps:get(port, Map),
+                                    devaddr => maps:get(devaddr, Map),
+                                    hotspot => maps:get(hotspot, Map),
+                                    dc => maps:get(dc, Map),
+                                    hold_time => maps:get(hold_time, Map)
+                                };
+                            {join_request, _SC} ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    payload_size => maps:get(payload_size, Map),
+                                    payload => maps:get(payload, Map),
+                                    raw_packet => maps:get(raw_packet, Map),
+                                    port => maps:get(port, Map),
+                                    devaddr => maps:get(devaddr, Map),
+                                    hotspot => maps:get(hotspot, Map),
+                                    dc => maps:get(dc, Map)
+                                };
+                            {C, _SC} when
+                                %% TODO: join_request guard never applies; see prev arm
+                                C == uplink orelse
+                                    C == downlink orelse
+                                    C == join_request orelse
+                                    C == join_accept
+                            ->
+                                #{
+                                    fcnt => maps:get(fcnt, Map),
+                                    payload_size => maps:get(payload_size, Map),
+                                    payload => maps:get(payload, Map),
+                                    port => maps:get(port, Map),
+                                    devaddr => maps:get(devaddr, Map),
+                                    hotspot => maps:get(hotspot, Map)
+                                }
+                        end,
+
+                    %% Always merge available mac commands into Data
+                    MAC =
+                        case maps:get(mac, Map, undefined) of
+                            undefined -> #{};
+                            M -> #{mac => M}
+                        end,
+                    Body =
                         #{
-                            fcnt => maps:get(fcnt, Map),
-                            payload_size => maps:get(payload_size, Map),
-                            payload => maps:get(payload, Map),
-                            port => maps:get(port, Map),
-                            devaddr => maps:get(devaddr, Map),
-                            hotspot => maps:get(hotspot, Map),
-                            integration => #{
-                                id => maps:get(channel_id, Map),
-                                name => maps:get(channel_name, Map),
-                                status => maps:get(channel_status, Map)
-                            }
-                        };
-                    {downlink, SC} when
-                        SC == downlink_confirmed orelse SC == downlink_unconfirmed
-                    ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            payload_size => maps:get(payload_size, Map),
-                            payload => maps:get(payload, Map),
-                            port => maps:get(port, Map),
-                            devaddr => maps:get(devaddr, Map),
-                            hotspot => maps:get(hotspot, Map),
-                            integration => #{
-                                id => maps:get(channel_id, Map),
-                                name => maps:get(channel_name, Map),
-                                status => maps:get(channel_status, Map)
-                            }
-                        };
-                    {_C, SC} when
-                        SC == uplink_integration_req orelse
-                            SC == uplink_integration_res orelse
-                            SC == downlink_dropped_payload_size_exceeded orelse
-                            SC == downlink_dropped_misc orelse
-                            SC == misc_integration_error
-                    ->
-                        Report = #{
-                            integration => #{
-                                id => maps:get(channel_id, Map),
-                                name => maps:get(channel_name, Map),
-                                status => maps:get(channel_status, Map)
-                            }
+                            id => maps:get(id, Map),
+                            category => Category,
+                            sub_category => SubCategory,
+                            description => maps:get(description, Map),
+                            reported_at => maps:get(reported_at, Map),
+                            device_id => router_device:id(Device),
+                            data => maps:merge(Data, MAC)
                         },
-                        case SC of
-                            uplink_integration_req -> Report#{req => maps:get(request, Map)};
-                            uplink_integration_res -> Report#{res => maps:get(response, Map)};
-                            _ -> Report
-                        end;
-                    {uplink_dropped, uplink_dropped_late} ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            hotspot => maps:get(hotspot, Map),
-                            hold_time => maps:get(hold_time, Map),
-                            dc => maps:get(dc, Map)
-                        };
-                    {uplink_dropped, _SC} ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            hotspot => maps:get(hotspot, Map)
-                        };
-                    {uplink, SC} when SC == uplink_confirmed orelse SC == uplink_unconfirmed ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            payload_size => maps:get(payload_size, Map),
-                            payload => maps:get(payload, Map),
-                            raw_packet => maps:get(raw_packet, Map),
-                            port => maps:get(port, Map),
-                            devaddr => maps:get(devaddr, Map),
-                            hotspot => maps:get(hotspot, Map),
-                            dc => maps:get(dc, Map),
-                            hold_time => maps:get(hold_time, Map)
-                        };
-                    {join_request, _SC} ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            payload_size => maps:get(payload_size, Map),
-                            payload => maps:get(payload, Map),
-                            raw_packet => maps:get(raw_packet, Map),
-                            port => maps:get(port, Map),
-                            devaddr => maps:get(devaddr, Map),
-                            hotspot => maps:get(hotspot, Map),
-                            dc => maps:get(dc, Map)
-                        };
-                    {C, _SC} when
-                        %% TODO: join_request guard never applies; see prev arm
-                        C == uplink orelse
-                            C == downlink orelse
-                            C == join_request orelse
-                            C == join_accept
-                    ->
-                        #{
-                            fcnt => maps:get(fcnt, Map),
-                            payload_size => maps:get(payload_size, Map),
-                            payload => maps:get(payload, Map),
-                            port => maps:get(port, Map),
-                            devaddr => maps:get(devaddr, Map),
-                            hotspot => maps:get(hotspot, Map)
-                        }
-                end,
 
-            %% Always merge available mac commands into Data
-            MAC =
-                case maps:get(mac, Map, undefined) of
-                    undefined -> #{};
-                    M -> #{mac => M}
-                end,
-            Body =
-                #{
-                    id => maps:get(id, Map),
-                    category => Category,
-                    sub_category => SubCategory,
-                    description => maps:get(description, Map),
-                    reported_at => maps:get(reported_at, Map),
-                    device_id => router_device:id(Device),
-                    data => maps:merge(Data, MAC)
-                },
-
-            lager:debug("post ~p with ~p", [Url, Body]),
-            Start = erlang:system_time(millisecond),
-            case
-                hackney:post(
-                    Url,
-                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-                    jsx:encode(Body),
-                    [with_body, {pool, ?EVENT_POOL}]
-                )
-            of
-                {ok, 200, _Headers, _Body} ->
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(report_status, ok, End - Start);
-                {ok, 404, _ResponseHeaders, _ResposnseBody} ->
-                    {ok, DB, CF} = router_db:get_devices(),
-                    ok = router_device:delete(DB, CF, DeviceID),
-                    ok = router_device_cache:delete(DeviceID),
-                    lager:info("device was removed, removing from DB and cache"),
-                    ok;
-                _Other ->
-                    lager:warning("got non 200 resp ~p", [_Other]),
-                    End = erlang:system_time(millisecond),
-                    ok = router_metrics:console_api_observe(report_status, error, End - Start)
+                    lager:debug("post ~p with ~p", [Url, Body]),
+                    Start = erlang:system_time(millisecond),
+                    case
+                        hackney:post(
+                            Url,
+                            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                            jsx:encode(Body),
+                            [with_body, {pool, ?EVENT_POOL}]
+                        )
+                    of
+                        {ok, 200, _Headers, _Body} ->
+                            End = erlang:system_time(millisecond),
+                            ok = router_metrics:console_api_observe(report_status, ok, End - Start);
+                        {ok, 404, _ResponseHeaders, _ResposnseBody} ->
+                            {ok, DB, CF} = router_db:get_devices(),
+                            ok = router_device:delete(DB, CF, DeviceID),
+                            ok = router_device_cache:delete(DeviceID),
+                            lager:info("device was removed, removing from DB and cache"),
+                            ok;
+                        _Other ->
+                            lager:warning("got non 200 resp ~p", [_Other]),
+                            End = erlang:system_time(millisecond),
+                            ok = router_metrics:console_api_observe(
+                                report_status, error, End - Start
+                            )
+                    end
             end
         end
     ),
@@ -457,23 +506,27 @@ get_token() ->
 
 -spec xor_filter_updates(AddedDeviceIDs :: [binary()], RemovedDeviceIDs :: [binary()]) -> ok.
 xor_filter_updates(AddedDeviceIDs, RemovedDeviceIDs) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/devices/update_in_xor_filter">>,
-    Body = #{added => AddedDeviceIDs, removed => RemovedDeviceIDs},
-    case
-        hackney:post(
-            Url,
-            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-            jsx:encode(Body),
-            [with_body, {pool, ?DEFAULT_POOL}]
-        )
-    of
-        {ok, 200, _Headers, _Body} ->
-            lager:info("Send filter updates to console ~p", [Body]),
-            ok;
-        _Other ->
-            lager:warning("got non 200 resp for filter update ~p", [_Other]),
-            ok
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Url = <<Endpoint/binary, "/api/router/devices/update_in_xor_filter">>,
+            Body = #{added => AddedDeviceIDs, removed => RemovedDeviceIDs},
+            case
+                hackney:post(
+                    Url,
+                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                    jsx:encode(Body),
+                    [with_body, {pool, ?DEFAULT_POOL}]
+                )
+            of
+                {ok, 200, _Headers, _Body} ->
+                    lager:info("Send filter updates to console ~p", [Body]),
+                    ok;
+                _Other ->
+                    lager:warning("got non 200 resp for filter update ~p", [_Other]),
+                    ok
+            end
     end.
 
 %% ------------------------------------------------------------------
@@ -498,26 +551,40 @@ init(Args) ->
     case get_unfunded_org_ids() of
         {ok, OrgIDs} ->
             lager:info("inserting ~p unfunded orgs", [erlang:length(OrgIDs)]),
+            %% This does not require router_console_dc_tracker to be started, only the ETS.
             [router_console_dc_tracker:add_unfunded(OrgID) || OrgID <- OrgIDs];
         {error, Err} ->
             lager:error("fetching unfunded orgs failed: ~p", [Err])
     end,
 
     _ = erlang:send_after(?TOKEN_CACHE_TIME, self(), refresh_token),
-    {ok, P} = load_pending_burns(DB),
-    Inflight = maybe_spawn_pending_burns(P, []),
-    Tref = schedule_next_tick(),
-    {ok, #state{
-        endpoint = Endpoint,
-        downlink_endpoint = DownlinkEndpoint,
-        secret = Secret,
-        token = Token,
-        db = DB,
-        cf = CF,
-        pending_burns = P,
-        tref = Tref,
-        inflight = Inflight
-    }}.
+
+    case router_blockchain:is_chain_dead() of
+        true ->
+            {ok, #state{
+                endpoint = Endpoint,
+                downlink_endpoint = DownlinkEndpoint,
+                secret = Secret,
+                token = Token,
+                db = DB,
+                cf = CF
+            }};
+        false ->
+            {ok, P} = load_pending_burns(DB),
+            Inflight = maybe_spawn_pending_burns(P, []),
+            Tref = schedule_next_tick(),
+            {ok, #state{
+                endpoint = Endpoint,
+                downlink_endpoint = DownlinkEndpoint,
+                secret = Secret,
+                token = Token,
+                db = DB,
+                cf = CF,
+                pending_burns = P,
+                tref = Tref,
+                inflight = Inflight
+            }}
+    end.
 
 handle_call(get_token, _From, #state{token = Token} = State) ->
     {reply, Token, State};
@@ -932,7 +999,12 @@ get_token(Endpoint, Secret) ->
             <<Endpoint/binary, "/api/router/sessions">>,
             [?HEADER_JSON],
             jsx:encode(#{secret => Secret}),
-            [with_body, {pool, ?DEFAULT_POOL}]
+            [
+                with_body,
+                {pool, ?DEFAULT_POOL},
+                {connect_timeout, timer:seconds(10)},
+                {recv_timeout, timer:seconds(10)}
+            ]
         )
     of
         {ok, 201, _Headers, Body} ->
@@ -951,83 +1023,106 @@ get_token(Endpoint, Secret) ->
     {ok, map()} | {error, any()}.
 get_device_(Endpoint, Token, Device) ->
     DeviceId = router_device:id(Device),
-    Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
-    lager:debug("get ~p", [Url]),
-    Opts = ?REQ_OPTS(?DEFAULT_POOL),
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_device, ok, End - Start),
-            lager:debug("Body for ~p ~p", [Url, Body]),
-            {ok, jsx:decode(Body, [return_maps])};
-        {ok, 404, _ResponseHeaders, _ResponseBody} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_device, not_found, End - Start),
-            lager:debug("device ~p not found", [DeviceId]),
-            {error, not_found};
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_device, error, End - Start),
-            {error, {get_device_failed, _Other}}
-    end.
+    e2qc:cache(
+        ?GET_DEVICE_CACHE_NAME,
+        DeviceId,
+        ?GET_DEVICE_LIFETIME,
+        fun() ->
+            Url = <<Endpoint/binary, "/api/router/devices/", DeviceId/binary>>,
+            lager:debug("get ~p", [Url]),
+            Opts = ?REQ_OPTS(?DEFAULT_POOL),
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts)
+            of
+                {ok, 200, _Headers, Body} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_device, ok, End - Start),
+                    lager:debug("Body for ~p ~p", [Url, Body]),
+                    {ok, jsx:decode(Body, [return_maps])};
+                {ok, 404, _ResponseHeaders, _ResponseBody} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_device, not_found, End - Start),
+                    lager:debug("device ~p not found", [DeviceId]),
+                    {error, not_found};
+                _Other ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_device, error, End - Start),
+                    {error, {get_device_failed, _Other}}
+            end
+        end
+    ).
 
 -spec get_devices_by_deveui_appeui_(DevEui :: binary(), AppEui :: binary()) ->
     [{binary(), router_device:device()}].
 get_devices_by_deveui_appeui_(DevEui, AppEui) ->
-    {Endpoint, Token} = token_lookup(),
-    Url =
-        <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
-            (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
-            (lorawan_utils:binary_to_hex(AppEui))/binary>>,
-    lager:debug("get ~p", [Url]),
-    Opts = ?REQ_OPTS(?DEFAULT_POOL),
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_devices_by_deveui_appeui, ok, End - Start),
-            lists:map(
-                fun(JSONDevice) ->
-                    AppKey = lorawan_utils:hex_to_binary(
-                        kvc:path([<<"app_key">>], JSONDevice)
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Url =
+                <<Endpoint/binary, "/api/router/devices/unknown?dev_eui=",
+                    (lorawan_utils:binary_to_hex(DevEui))/binary, "&app_eui=",
+                    (lorawan_utils:binary_to_hex(AppEui))/binary>>,
+            lager:debug("get ~p", [Url]),
+            Opts = ?REQ_OPTS(?DEFAULT_POOL),
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts)
+            of
+                {ok, 200, _Headers, Body} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(
+                        get_devices_by_deveui_appeui, ok, End - Start
                     ),
-                    {AppKey, json_device_to_record(JSONDevice, ignore_meta_defaults)}
-                end,
-                jsx:decode(Body, [return_maps])
-            );
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(
-                get_devices_by_deveui_appeui,
-                error,
-                End - Start
-            ),
-            []
+                    lists:map(
+                        fun(JSONDevice) ->
+                            AppKey = lorawan_utils:hex_to_binary(
+                                kvc:path([<<"app_key">>], JSONDevice)
+                            ),
+                            {AppKey, json_device_to_record(JSONDevice, ignore_meta_defaults)}
+                        end,
+                        jsx:decode(Body, [return_maps])
+                    );
+                _Other ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(
+                        get_devices_by_deveui_appeui,
+                        error,
+                        End - Start
+                    ),
+                    []
+            end
     end.
 
 -spec get_org_(OrgID :: binary()) -> {ok, map()} | {error, any()}.
 get_org_(OrgID) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
-    lager:debug("get ~p", [Url]),
-    Opts = ?REQ_OPTS(?DEFAULT_POOL),
-    Start = erlang:system_time(millisecond),
-    case hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts) of
-        {ok, 200, _Headers, Body} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_org, ok, End - Start),
-            lager:debug("Body for ~p ~p", [Url, Body]),
-            {ok, jsx:decode(Body, [return_maps])};
-        {ok, 404, _ResponseHeaders, _ResponseBody} ->
-            lager:debug("org ~p not found", [OrgID]),
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_org, not_found, End - Start),
-            {error, org_not_found};
-        _Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(get_org, error, End - Start),
-            {error, {get_org_failed, _Other}}
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Url = <<Endpoint/binary, "/api/router/organizations/", OrgID/binary>>,
+            lager:debug("get ~p", [Url]),
+            Opts = ?REQ_OPTS(?DEFAULT_POOL),
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:get(Url, [{<<"Authorization">>, <<"Bearer ", Token/binary>>}], <<>>, Opts)
+            of
+                {ok, 200, _Headers, Body} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_org, ok, End - Start),
+                    lager:debug("Body for ~p ~p", [Url, Body]),
+                    {ok, jsx:decode(Body, [return_maps])};
+                {ok, 404, _ResponseHeaders, _ResponseBody} ->
+                    lager:debug("org ~p not found", [OrgID]),
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_org, not_found, End - Start),
+                    {error, org_not_found};
+                _Other ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(get_org, error, End - Start),
+                    {error, {get_org_failed, _Other}}
+            end
     end.
 
 %%%-------------------------------------------------------------------
@@ -1100,11 +1195,11 @@ downlink_token_lookup() ->
         [{token, {_Endpoing, DownlinkEndpoint, Token}}] -> {DownlinkEndpoint, Token}
     end.
 
--spec token_lookup() -> {Endpoint :: binary(), Token :: binary()}.
+-spec token_lookup() -> {ok, Endpoint :: binary(), Token :: binary()} | {error, not_found}.
 token_lookup() ->
     case ets:lookup(?ETS, token) of
-        [] -> {<<>>, <<>>};
-        [{token, {Endpoint, _Downlink, Token}}] -> {Endpoint, Token}
+        [] -> {error, not_found};
+        [{token, {Endpoint, _Downlink, Token}}] -> {ok, Endpoint, Token}
     end.
 
 -spec token_insert(Endpoint :: binary(), DownlinkEndpoint :: binary(), Token :: binary()) -> ok.
@@ -1211,33 +1306,37 @@ spawn_pending_burn(Uuid, Body) ->
 do_hnt_burn_post(Uuid, ReplyPid, _Body, _Delay, _Next, 0) ->
     ReplyPid ! {hnt_burn, fail, Uuid};
 do_hnt_burn_post(Uuid, ReplyPid, Body, Delay, Next, Retries) ->
-    {Endpoint, Token} = token_lookup(),
-    Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
-    lager:debug("post ~p to ~p", [Body, Url]),
-    Start = erlang:system_time(millisecond),
-    case
-        hackney:post(
-            Url,
-            [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
-            jsx:encode(Body),
-            [with_body, {pool, ?DEFAULT_POOL}]
-        )
-    of
-        {ok, 204, _Headers, _Reply} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(org_burn, ok, End - Start),
-            lager:debug("Burn notification successful"),
-            ReplyPid ! {hnt_burn, success, Uuid};
-        {ok, 404, _Headers, _Reply} ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(org_burn, not_found, End - Start),
-            lager:debug("Memo not found in console database; drop"),
-            ReplyPid ! {hnt_burn, drop, Uuid};
-        Other ->
-            End = erlang:system_time(millisecond),
-            ok = router_metrics:console_api_observe(org_burn, error, End - Start),
-            lager:debug("Burn notification failed ~p", [Other]),
-            timer:sleep(Delay),
-            %% fibonacci delay timer
-            do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)
+    case token_lookup() of
+        {error, not_found} ->
+            {error, no_token};
+        {ok, Endpoint, Token} ->
+            Url = <<Endpoint/binary, "/api/router/organizations/burned">>,
+            lager:debug("post ~p to ~p", [Body, Url]),
+            Start = erlang:system_time(millisecond),
+            case
+                hackney:post(
+                    Url,
+                    [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
+                    jsx:encode(Body),
+                    [with_body, {pool, ?DEFAULT_POOL}]
+                )
+            of
+                {ok, 204, _Headers, _Reply} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(org_burn, ok, End - Start),
+                    lager:debug("Burn notification successful"),
+                    ReplyPid ! {hnt_burn, success, Uuid};
+                {ok, 404, _Headers, _Reply} ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(org_burn, not_found, End - Start),
+                    lager:debug("Memo not found in console database; drop"),
+                    ReplyPid ! {hnt_burn, drop, Uuid};
+                Other ->
+                    End = erlang:system_time(millisecond),
+                    ok = router_metrics:console_api_observe(org_burn, error, End - Start),
+                    lager:debug("Burn notification failed ~p", [Other]),
+                    timer:sleep(Delay),
+                    %% fibonacci delay timer
+                    do_hnt_burn_post(Uuid, ReplyPid, Body, Next, Delay + Next, Retries - 1)
+            end
     end.

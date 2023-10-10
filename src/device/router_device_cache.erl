@@ -126,6 +126,7 @@ make_devaddr_table(DevAddr) ->
 init_from_db() ->
     {ok, DB, [_DefaultCF, DevicesCF]} = router_db:get(),
     Devices = router_device:get(DB, DevicesCF),
+    %% TODO: improve this maybe?
     lists:foreach(fun(Device) -> ?MODULE:save(Device) end, Devices).
 
 %% ------------------------------------------------------------------

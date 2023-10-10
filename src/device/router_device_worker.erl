@@ -1210,6 +1210,12 @@ handle_info(
                 fcnt = FCnt
             }}
     end;
+handle_info({{'DOWN', device_save}, _Ref, process, _Pid, normal}, State) ->
+    lager:debug("device saved"),
+    {noreply, State};
+handle_info({{'DOWN', device_save}, _Ref, process, _Pid, Reason}, State) ->
+    lager:error("device failed to save ~p", [Reason]),
+    {noreply, State};
 handle_info(_Msg, State) ->
     lager:warning("rcvd unknown info msg: ~p", [_Msg]),
     {noreply, State}.

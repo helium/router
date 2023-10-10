@@ -72,28 +72,33 @@ all_devaddrs_tables() ->
 save(Device) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
-    _ = erlang:spawn_monitor(fun() ->
-        AddrsEtsMap = maps:from_list(all_devaddrs_tables()),
-        CurrentDevaddrs = router_device:devaddrs(Device),
+    _ = erlang:spawn_opt(
+        fun() ->
+            AddrsEtsMap = maps:from_list(all_devaddrs_tables()),
+            CurrentDevaddrs = router_device:devaddrs(Device),
 
-        %% Build a list of all DevAddrs we can know about.
-        AllAddrs = lists:usort(maps:keys(AddrsEtsMap) ++ CurrentDevaddrs),
+            %% Build a list of all DevAddrs we can know about.
+            AllAddrs = lists:usort(maps:keys(AddrsEtsMap) ++ CurrentDevaddrs),
 
-        lists:foreach(
-            fun(Addr) ->
-                EtsRef =
-                    case maps:get(Addr, AddrsEtsMap, undefined) of
-                        undefined -> make_devaddr_table(Addr);
-                        Ref -> Ref
-                    end,
-                case lists:member(Addr, CurrentDevaddrs) of
-                    true -> ets:insert(EtsRef, Device);
-                    false -> ets:delete(EtsRef, DeviceID)
-                end
-            end,
-            AllAddrs
-        )
-    end),
+            lists:foreach(
+                fun(Addr) ->
+                    EtsRef =
+                        case maps:get(Addr, AddrsEtsMap, undefined) of
+                            undefined -> make_devaddr_table(Addr);
+                            Ref -> Ref
+                        end,
+                    case lists:member(Addr, CurrentDevaddrs) of
+                        true -> ets:insert(EtsRef, Device);
+                        false -> ets:delete(EtsRef, DeviceID)
+                    end
+                end,
+                AllAddrs
+            )
+        end,
+        [
+            {monitor, [{tag, {'DOWN', device_save}}]}
+        ]
+    ),
     {ok, Device}.
 
 -spec delete(binary()) -> ok.

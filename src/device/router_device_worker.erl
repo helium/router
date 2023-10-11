@@ -1548,11 +1548,26 @@ validate_frame(
     FrameCache,
     OfferCache
 ) ->
-    <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, _ACK:1, _RFU:1,
+    <<MType:3, _MHDRRFU:3, _Major:2, _DevAddr:4/binary, _ADR:1, _ADRACKReq:1, ACK:1, _RFU:1,
         _FOptsLen:4, _FCnt:16, _FOpts:_FOptsLen/binary,
         _PayloadAndMIC/binary>> = blockchain_helium_packet_v1:payload(Packet),
 
     DeviceFCnt = router_device:fcnt(Device0),
+
+    %% This only applies when it's the first packet we see
+    %% If frame countain ACK=1 we should clear message from queue and go on next
+    QueueDeviceUpdates =
+        case {ACK, router_device:queue(Device0)} of
+            %% Check if acknowledging confirmed downlink
+            {1, [#downlink{confirmed = true} | T]} ->
+                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
+            {1, _} ->
+                lager:warning("got ack when no confirmed downlinks in queue"),
+                [];
+            _ ->
+                []
+        end,
+    QueueUpdatedDevice = router_device:update(QueueDeviceUpdates, Device0),
 
     case MType of
         MType when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
@@ -1576,7 +1591,7 @@ validate_frame(
                         Packet,
                         PubKeyBin,
                         Region,
-                        Device0,
+                        QueueUpdatedDevice,
                         OfferCache,
                         false
                     );
@@ -1625,7 +1640,7 @@ validate_frame(
                         Packet,
                         PubKeyBin,
                         Region,
-                        Device0,
+                        QueueUpdatedDevice,
                         OfferCache,
                         false
                     )
@@ -1703,22 +1718,7 @@ validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCach
                         {region, Region},
                         {last_known_datarate, DRIdx}
                     ],
-                    %% If frame countain ACK=1 we should clear message from queue and go on next
-                    QueueDeviceUpdates =
-                        case {ACK, router_device:queue(Device0)} of
-                            %% Check if acknowledging confirmed downlink
-                            {1, [#downlink{confirmed = true} | T]} ->
-                                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
-                            {1, _} ->
-                                lager:warning("got ack when no confirmed downlinks in queue"),
-                                [];
-                            _ ->
-                                []
-                        end,
-                    Device1 = router_device:update(
-                        QueueDeviceUpdates ++ BaseDeviceUpdates,
-                        Device0
-                    ),
+                    Device1 = router_device:update(BaseDeviceUpdates, Device0),
                     Frame = #frame{
                         mtype = MType,
                         devaddr = DevAddr,
@@ -1769,22 +1769,7 @@ validate_frame_(PacketFCnt, Packet, PubKeyBin, HotspotRegion, Device0, OfferCach
                         {region, Region},
                         {last_known_datarate, DRIdx}
                     ],
-                    %% If frame countain ACK=1 we should clear message from queue and go on next
-                    QueueDeviceUpdates =
-                        case {ACK, router_device:queue(Device0)} of
-                            %% Check if acknowledging confirmed downlink
-                            {1, [#downlink{confirmed = true} | T]} ->
-                                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
-                            {1, _} ->
-                                lager:warning("got ack when no confirmed downlinks in queue"),
-                                [];
-                            _ ->
-                                []
-                        end,
-                    Device1 = router_device:update(
-                        QueueDeviceUpdates ++ BaseDeviceUpdates,
-                        Device0
-                    ),
+                    Device1 = router_device:update(BaseDeviceUpdates, Device0),
                     Frame = #frame{
                         mtype = MType,
                         devaddr = DevAddr,

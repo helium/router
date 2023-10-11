@@ -10,6 +10,7 @@
 ]).
 
 -export([
+    the_k3nt_test/1,
     http_downlink_test/1,
     console_tool_downlink_test/1,
     console_tool_downlink_order_test/1,
@@ -57,6 +58,7 @@ groups() ->
 
 all_tests() ->
     [
+        the_k3nt_test,
         http_downlink_test,
         console_tool_downlink_test,
         console_tool_downlink_order_test,
@@ -88,6 +90,98 @@ end_per_testcase(TestCase, Config) ->
 %%--------------------------------------------------------------------
 %% TEST CASES
 %%--------------------------------------------------------------------
+
+%% AKA double donwlink queued before join
+the_k3nt_test(Config) ->
+    Payload1 = <<"httpdownlink1">>,
+    Message1 = #{payload_raw => base64:encode(Payload1), region => <<"US915">>},
+    Payload2 = <<"httpdownlink2">>,
+    Message2 = #{payload_raw => base64:encode(Payload2), region => <<"US915">>},
+    %% Sending debug event from websocket
+    WSPid =
+        receive
+            {websocket_init, P} -> P
+        after 2500 -> ct:fail(websocket_init_timeout)
+        end,
+    WSPid ! {downlink, Message1},
+    WSPid ! {downlink, Message2},
+
+    ok = test_utils:wait_until(fun() ->
+        case router_device_cache:get(?CONSOLE_DEVICE_ID) of
+            {error, not_found} -> false;
+            {ok, Device} -> 2 == length(router_device:queue(Device))
+        end
+    end),
+
+    #{
+        pubkey_bin := PubKeyBin,
+        stream := Stream,
+        hotspot_name := _HotspotName
+    } = test_utils:join_device(Config),
+
+    %% Waiting for reply from router to hotspot
+    test_utils:wait_state_channel_message(1250),
+
+    {ok, Device0} = router_device_cache:get(?CONSOLE_DEVICE_ID),
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                0
+            )},
+
+    %% Waiting for donwlink message on the hotspot
+    {ok, _} = test_utils:wait_state_channel_message(
+        {false, 1, Payload1},
+        Device0,
+        Payload1,
+        ?UNCONFIRMED_DOWN,
+        1,
+        0,
+        1,
+        0
+    ),
+
+    ok = test_utils:wait_until(fun() ->
+        case router_device_cache:get(?CONSOLE_DEVICE_ID) of
+            {error, not_found} -> false;
+            {ok, Device} -> 1 == length(router_device:queue(Device))
+        end
+    end),
+
+    Stream !
+        {send,
+            test_utils:frame_packet(
+                ?UNCONFIRMED_UP,
+                PubKeyBin,
+                router_device:nwk_s_key(Device0),
+                router_device:app_s_key(Device0),
+                1
+            )},
+
+    %% Waiting for donwlink message on the hotspot
+    {ok, _} = test_utils:wait_state_channel_message(
+        {false, 1, Payload2},
+        Device0,
+        Payload2,
+        ?UNCONFIRMED_DOWN,
+        0,
+        0,
+        1,
+        1
+    ),
+
+    ok = test_utils:wait_until(fun() ->
+        case router_device_cache:get(?CONSOLE_DEVICE_ID) of
+            {error, not_found} -> false;
+            {ok, Device} -> 0 == length(router_device:queue(Device))
+        end
+    end),
+
+    ok.
 
 http_downlink_test(Config) ->
     Payload = <<"httpdownlink">>,

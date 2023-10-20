@@ -572,15 +572,20 @@ maybe_multi_buy_offer(Device, PHash) ->
     Hotspot :: libp2p_crypto:pubkey_bin()
 ) -> none_preferred | preferred | not_preferred_hotspot.
 check_device_preferred_hotspots(Device, Hotspot) ->
-    case router_device:preferred_hotspots(Device) of
-        [] ->
+    case router_utils:get_env_bool(disable_preferred_hotspot, false) of
+        true ->
             none_preferred;
-        PreferredHotspots when is_list(PreferredHotspots) ->
-            case lists:member(Hotspot, PreferredHotspots) of
-                true ->
-                    preferred;
-                _ ->
-                    not_preferred_hotspot
+        false ->
+            case router_device:preferred_hotspots(Device) of
+                [] ->
+                    none_preferred;
+                PreferredHotspots when is_list(PreferredHotspots) ->
+                    case lists:member(Hotspot, PreferredHotspots) of
+                        true ->
+                            preferred;
+                        _ ->
+                            not_preferred_hotspot
+                    end
             end
     end.
 

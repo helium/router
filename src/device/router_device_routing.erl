@@ -854,28 +854,9 @@ packet(
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     case get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->
-            case router_device:preferred_hotspots(APIDevice) of
-                [] ->
-                    maybe_start_worker_and_handle_join(
-                        APIDevice, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
-                    );
-                PreferredHotspots when is_list(PreferredHotspots) ->
-                    case lists:member(PubKeyBin, PreferredHotspots) of
-                        true ->
-                            maybe_start_worker_and_handle_join(
-                                APIDevice,
-                                Packet,
-                                PacketTime,
-                                HoldTime,
-                                PubKeyBin,
-                                Region,
-                                AppKey,
-                                Pid
-                            );
-                        _ ->
-                            {error, not_preferred_hotspot}
-                    end
-            end;
+            maybe_start_worker_and_handle_join(
+                APIDevice, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
+            );
         {error, api_not_found} ->
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
@@ -1042,39 +1023,17 @@ send_to_device_worker(
             Err;
         {Device1, NwkSKey, FCnt} ->
             ok = router_device_stats:track_packet(Packet, PubKeyBin, Device1),
-            case router_device:preferred_hotspots(Device1) of
-                [] ->
-                    send_to_device_worker_(
-                        FCnt,
-                        Packet,
-                        PacketTime,
-                        HoldTime,
-                        Pid,
-                        PubKeyBin,
-                        Region,
-                        Device1,
-                        NwkSKey
-                    );
-                PreferredHotspots when
-                    is_list(PreferredHotspots)
-                ->
-                    case lists:member(PubKeyBin, PreferredHotspots) of
-                        true ->
-                            send_to_device_worker_(
-                                FCnt,
-                                Packet,
-                                PacketTime,
-                                HoldTime,
-                                Pid,
-                                PubKeyBin,
-                                Region,
-                                Device1,
-                                NwkSKey
-                            );
-                        _ ->
-                            {error, not_preferred_hotspot}
-                    end
-            end
+            send_to_device_worker_(
+                FCnt,
+                Packet,
+                PacketTime,
+                HoldTime,
+                Pid,
+                PubKeyBin,
+                Region,
+                Device1,
+                NwkSKey
+            )
     end.
 
 send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey) ->

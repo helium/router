@@ -537,7 +537,7 @@ join_offer_(Offer, _Pid) ->
     Hotspot :: libp2p_crypto:pubkey_bin(),
     PHash :: binary()
 ) -> {ok, router_device:device()} | {error, any()}.
-maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
+maybe_buy_join_offer(Device, PayloadSize, Hotspot, _PHash) ->
     case check_device_is_active(Device, Hotspot) of
         {error, _Reason} = Error ->
             Error;
@@ -546,15 +546,7 @@ maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    case check_device_preferred_hotspots(Device, Hotspot) of
-                        none_preferred ->
-                            maybe_multi_buy_offer(Device, PHash);
-                        preferred ->
-                            % Device has preferred hotspots, so multibuy is not
-                            {ok, Device};
-                        not_preferred_hotspot ->
-                            {error, not_preferred_hotspot}
-                    end
+                    {ok, Device}
             end
     end.
 

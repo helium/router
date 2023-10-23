@@ -19,7 +19,7 @@
     init/0,
     get/0, get/1,
     get_by_devaddr/1,
-    save/1,
+    save/1, save/2,
     delete/1,
     size/0
 ]).
@@ -70,6 +70,12 @@ all_devaddrs_tables() ->
 
 -spec save(router_device:device()) -> {ok, router_device:device()}.
 save(Device) ->
+    save(Device, [
+        {monitor, [{tag, {'DOWN', device_save}}]}
+    ]).
+
+-spec save(Device :: router_device:device(), Opts :: list()) -> {ok, router_device:device()}.
+save(Device, Opts) ->
     DeviceID = router_device:id(Device),
     true = ets:insert(?ETS, {DeviceID, Device}),
     _ = erlang:spawn_opt(
@@ -95,9 +101,7 @@ save(Device) ->
                 AllAddrs
             )
         end,
-        [
-            {monitor, [{tag, {'DOWN', device_save}}]}
-        ]
+        Opts
     ),
     {ok, Device}.
 

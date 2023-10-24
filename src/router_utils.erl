@@ -597,7 +597,7 @@ lager_md(Device) ->
         {device_id, router_device:id(Device)},
         {app_eui, router_device:app_eui(Device)},
         {dev_eui, router_device:dev_eui(Device)},
-        {devaddr, router_device:devaddr(Device)}
+        {devaddr, lorawan_utils:reverse(router_device:devaddr(Device))}
     ]).
 
 -spec trace(DeviceID :: binary()) -> ok.
@@ -624,7 +624,7 @@ trace(DeviceID) ->
         FileName,
         [
             {module, router_device_routing},
-            {devaddr, router_device:devaddr(Device)}
+            {devaddr, lorawan_utils:reverse(router_device:devaddr(Device))}
         ],
         debug
     ),

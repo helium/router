@@ -465,7 +465,7 @@ format_device_for_list(D) ->
         name,
         {app_eui, lorawan_utils:binary_to_hex(router_device:app_eui(D))},
         {dev_eui, lorawan_utils:binary_to_hex(router_device:dev_eui(D))},
-        {devaddr, lorawan_utils:binary_to_hex(router_device:devaddr(D))},
+        {devaddr, lorawan_utils:binary_to_hex(lorawan_utils:reverse(router_device:devaddr(D)))},
         fcnt,
         fcntdown,
         queue,

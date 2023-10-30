@@ -859,9 +859,42 @@ packet(
     Msg = binary:part(Payload, {0, erlang:byte_size(Payload) - 4}),
     case get_device(DevEUI, AppEUI, Msg, MIC) of
         {ok, APIDevice, AppKey} ->
-            maybe_start_worker_and_handle_join(
-                APIDevice, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
-            );
+            case router_utils:get_env_bool(disable_preferred_hotspot, false) of
+                true ->
+                    maybe_start_worker_and_handle_join(
+                        APIDevice, Packet, PacketTime, HoldTime, PubKeyBin, Region, AppKey, Pid
+                    );
+                false ->
+                    case router_device:preferred_hotspots(APIDevice) of
+                        [] ->
+                            maybe_start_worker_and_handle_join(
+                                APIDevice,
+                                Packet,
+                                PacketTime,
+                                HoldTime,
+                                PubKeyBin,
+                                Region,
+                                AppKey,
+                                Pid
+                            );
+                        PreferredHotspots when is_list(PreferredHotspots) ->
+                            case lists:member(PubKeyBin, PreferredHotspots) of
+                                true ->
+                                    maybe_start_worker_and_handle_join(
+                                        APIDevice,
+                                        Packet,
+                                        PacketTime,
+                                        HoldTime,
+                                        PubKeyBin,
+                                        Region,
+                                        AppKey,
+                                        Pid
+                                    );
+                                _ ->
+                                    {error, not_preferred_hotspot}
+                            end
+                    end
+            end;
         {error, api_not_found} ->
             lager:debug(
                 [{app_eui, AppEUI}, {dev_eui, DevEUI}],
@@ -1028,17 +1061,54 @@ send_to_device_worker(
             Err;
         {Device1, NwkSKey, FCnt} ->
             ok = router_device_stats:track_packet(Packet, PubKeyBin, Device1),
-            send_to_device_worker_(
-                FCnt,
-                Packet,
-                PacketTime,
-                HoldTime,
-                Pid,
-                PubKeyBin,
-                Region,
-                Device1,
-                NwkSKey
-            )
+            case router_utils:get_env_bool(disable_preferred_hotspot, false) of
+                true ->
+                    send_to_device_worker_(
+                        FCnt,
+                        Packet,
+                        PacketTime,
+                        HoldTime,
+                        Pid,
+                        PubKeyBin,
+                        Region,
+                        Device1,
+                        NwkSKey
+                    );
+                false ->
+                    case router_device:preferred_hotspots(Device1) of
+                        [] ->
+                            send_to_device_worker_(
+                                FCnt,
+                                Packet,
+                                PacketTime,
+                                HoldTime,
+                                Pid,
+                                PubKeyBin,
+                                Region,
+                                Device1,
+                                NwkSKey
+                            );
+                        PreferredHotspots when
+                            is_list(PreferredHotspots)
+                        ->
+                            case lists:member(PubKeyBin, PreferredHotspots) of
+                                true ->
+                                    send_to_device_worker_(
+                                        FCnt,
+                                        Packet,
+                                        PacketTime,
+                                        HoldTime,
+                                        Pid,
+                                        PubKeyBin,
+                                        Region,
+                                        Device1,
+                                        NwkSKey
+                                    );
+                                _ ->
+                                    {error, not_preferred_hotspot}
+                            end
+                    end
+            end
     end.
 
 send_to_device_worker_(FCnt, Packet, PacketTime, HoldTime, Pid, PubKeyBin, Region, Device, NwkSKey) ->

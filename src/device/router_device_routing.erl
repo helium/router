@@ -546,10 +546,10 @@ maybe_buy_join_offer(Device, PayloadSize, Hotspot, PHash) ->
                 {error, _Reason} = Error ->
                     Error;
                 ok ->
-                    case router_utils:get_env_bool(disable_preferred_hotspot, true) of
-                        false ->
-                            {ok, Device};
+                    case router_utils:get_env_bool(disable_preferred_hotspot, false) of
                         true ->
+                            {ok, Device};
+                        false ->
                             case check_device_preferred_hotspots(Device, Hotspot) of
                                 none_preferred ->
                                     maybe_multi_buy_offer(Device, PHash);

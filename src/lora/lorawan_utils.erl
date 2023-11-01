@@ -38,7 +38,8 @@ hex_to_binary(undefined) ->
 hex_to_binary(Id) ->
     <<<<Z>> || <<X:8, Y:8>> <= Id, Z <- [binary_to_integer(<<X, Y>>, 16)]>>.
 
-reverse(Bin) -> reverse(Bin, <<>>).
+reverse(Bin) when is_binary(Bin) -> reverse(Bin, <<>>);
+reverse(Other) -> Other.
 
 reverse(<<>>, Acc) -> Acc;
 reverse(<<H:1/binary, Rest/binary>>, Acc) -> reverse(Rest, <<H/binary, Acc/binary>>).

@@ -1068,7 +1068,7 @@ handle_info(
         join_cache = maps:remove(DevNonce, JoinCache)
     }};
 handle_info(
-    {frame_timeout, FCnt, PacketTime, BalanceNonce},
+    {frame_timeout, FCnt, _PacketTime, BalanceNonce},
     #state{
         db = DB,
         cf = CF,
@@ -1100,7 +1100,6 @@ handle_info(
     ok = router_device_channels_worker:frame_timeout(ChannelsWorker, UUID, BalanceNonce),
     lager:debug("frame timeout for ~p / device ~p", [FCnt, lager:pr(Device0, router_device)]),
     {ADREngine1, ADRAdjustment} = maybe_track_adr_packet(Device0, ADREngine0, FrameCache),
-    DeviceID = router_device:id(Device0),
     %% NOTE: Disco-mode has a special frame_timeout well above what we're trying
     %% to achieve here. We ignore those packets in metrics so they don't skew
     %% our alerting.
@@ -1550,21 +1549,23 @@ validate_frame(
 
     %% This only applies when it's the first packet we see
     %% If frame countain ACK=1 we should clear message from queue and go on next
+    MaybeUpdateDeviceQueue = fun(Ack, Device) ->
+        case {Ack, router_device:queue(Device)} of
+            %% Check if acknowledging confirmed downlink
+            {1, [#downlink{confirmed = true} | T]} ->
+                router_device:update(
+                    [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device)}], Device
+                );
+            {1, _} ->
+                lager:warning("got ack when no confirmed downlinks in queue"),
+                Device;
+            _ ->
+                Device
+        end
+    end,
 
     %% Bug here when multiple uplinks from diff gateways might clear more downlinks than we need to
     %% This should be move to frame timeout? so that we avoid that warning all the time
-    QueueDeviceUpdates =
-        case {ACK, router_device:queue(Device0)} of
-            %% Check if acknowledging confirmed downlink
-            {1, [#downlink{confirmed = true} | T]} ->
-                [{queue, T}, {fcntdown, router_device:fcntdown_next_val(Device0)}];
-            {1, _} ->
-                lager:warning("got ack when no confirmed downlinks in queue"),
-                [];
-            _ ->
-                []
-        end,
-    QueueUpdatedDevice = router_device:update(QueueDeviceUpdates, Device0),
 
     case MType of
         MType when MType == ?CONFIRMED_UP orelse MType == ?UNCONFIRMED_UP ->
@@ -1588,7 +1589,7 @@ validate_frame(
                         Packet,
                         PubKeyBin,
                         Region,
-                        QueueUpdatedDevice,
+                        MaybeUpdateDeviceQueue(ACK, Device0),
                         OfferCache,
                         false
                     );
@@ -1637,7 +1638,7 @@ validate_frame(
                         Packet,
                         PubKeyBin,
                         Region,
-                        QueueUpdatedDevice,
+                        MaybeUpdateDeviceQueue(ACK, Device0),
                         OfferCache,
                         false
                     )

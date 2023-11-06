@@ -1127,7 +1127,6 @@ handle_info(
                 Pid,
                 blockchain_state_channel_response_v1:new(true)
             ),
-            router_device_routing:clear_replay(DeviceID),
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -1161,10 +1160,6 @@ handle_info(
                 FOpts
             ),
             ok = maybe_send_queue_update(Device2, State),
-            case router_utils:mtype_to_ack(Frame#frame.mtype) of
-                1 -> router_device_routing:allow_replay(Packet, DeviceID, PacketTime);
-                _ -> router_device_routing:clear_replay(DeviceID)
-            end,
             ok = save_and_update(DB, CF, ChannelsWorker, Device2),
             lager:debug("sending downlink for fcnt: ~p, ~p", [FCnt, DownlinkPacket]),
             catch blockchain_state_channel_common:send_response(
@@ -1192,7 +1187,6 @@ handle_info(
                 Pid,
                 blockchain_state_channel_response_v1:new(true)
             ),
-            router_device_routing:clear_replay(DeviceID),
             ok = router_metrics:packet_trip_observe_end(
                 blockchain_helium_packet_v1:packet_hash(Packet),
                 PubKeyBin,
@@ -1556,6 +1550,9 @@ validate_frame(
 
     %% This only applies when it's the first packet we see
     %% If frame countain ACK=1 we should clear message from queue and go on next
+
+    %% Bug here when multiple uplinks from diff gateways might clear more downlinks than we need to
+    %% This should be move to frame timeout? so that we avoid that warning all the time
     QueueDeviceUpdates =
         case {ACK, router_device:queue(Device0)} of
             %% Check if acknowledging confirmed downlink

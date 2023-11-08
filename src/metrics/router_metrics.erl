@@ -150,7 +150,8 @@ handle_info(
             ok = record_vm_stats(),
             ok = record_ets(),
             ok = record_queues(),
-            ok = record_devices()
+            ok = record_devices(),
+            ok = record_pools()
         end,
         [
             {fullsweep_after, 0},
@@ -219,6 +220,23 @@ record_vm_stats() ->
             _ = prometheus_gauge:set(?METRICS_VM_CPU, [Num], Usage)
         end,
         proplists:get_value(scheduler_usage, CPU, [])
+    ),
+    ok.
+
+-spec record_pools() -> ok.
+record_pools() ->
+    lists:foreach(
+        fun(Pool) ->
+            try hackney_pool:get_stats(Pool) of
+                Stats ->
+                    InUse = proplists:get_value(in_use_count, Stats, 0),
+                    _ = prometheus_gauge:set(?METRICS_CONSOLE_POOL, [Pool], InUse)
+            catch
+                _E:_R ->
+                    lager:error("failed to get stats for pool ~p ~p ~p", [Pool, _E, _R])
+            end
+        end,
+        [router_console_api_pool, router_console_api_event_pool]
     ),
     ok.
 

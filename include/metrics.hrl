@@ -9,6 +9,7 @@
 -define(METRICS_VM_ETS_MEMORY, "router_vm_ets_memory").
 -define(METRICS_DEVICE_TOTAL, "router_device_total_gauge").
 -define(METRICS_DEVICE_RUNNING, "router_device_running_gauge").
+-define(METRICS_CONSOLE_POOL, "router_console_pool_gauge").
 
 -define(METRICS, [
     {?METRICS_ROUTING_PACKET, prometheus_histogram, [type, status, reason, downlink],
@@ -19,5 +20,6 @@
     {?METRICS_VM_PROC_Q, prometheus_gauge, [name], "Router process queue"},
     {?METRICS_VM_ETS_MEMORY, prometheus_gauge, [name], "Router ets memory"},
     {?METRICS_DEVICE_TOTAL, prometheus_gauge, [], "Device total gauge"},
-    {?METRICS_DEVICE_RUNNING, prometheus_gauge, [], "Device running gauge"}
+    {?METRICS_DEVICE_RUNNING, prometheus_gauge, [], "Device running gauge"},
+    {?METRICS_CONSOLE_POOL, prometheus_gauge, [name], "Console pool gauge"}
 ]).

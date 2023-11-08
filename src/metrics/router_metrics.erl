@@ -230,7 +230,9 @@ record_pools() ->
             try hackney_pool:get_stats(Pool) of
                 Stats ->
                     InUse = proplists:get_value(in_use_count, Stats, 0),
-                    _ = prometheus_gauge:set(?METRICS_CONSOLE_POOL, [Pool], InUse)
+                    Free = proplists:get_value(free_count, Stats, 0),
+                    _ = prometheus_gauge:set(?METRICS_CONSOLE_POOL, [Pool, in_use], InUse),
+                    _ = prometheus_gauge:set(?METRICS_CONSOLE_POOL, [Pool, free], Free)
             catch
                 _E:_R ->
                     lager:error("failed to get stats for pool ~p ~p ~p", [Pool, _E, _R])

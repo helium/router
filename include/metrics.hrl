@@ -21,5 +21,5 @@
     {?METRICS_VM_ETS_MEMORY, prometheus_gauge, [name], "Router ets memory"},
     {?METRICS_DEVICE_TOTAL, prometheus_gauge, [], "Device total gauge"},
     {?METRICS_DEVICE_RUNNING, prometheus_gauge, [], "Device running gauge"},
-    {?METRICS_CONSOLE_POOL, prometheus_gauge, [name], "Console pool gauge"}
+    {?METRICS_CONSOLE_POOL, prometheus_gauge, [name, type], "Console pool gauge"}
 ]).

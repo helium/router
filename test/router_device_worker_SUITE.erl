@@ -451,7 +451,6 @@ device_inactive_update_test(Config) ->
     #{} = test_utils:join_device(Config),
     #{} = test_utils:join_device(Config),
     #{} = test_utils:join_device(Config),
-    #{} = test_utils:join_device(Config),
 
     %% Waiting for reply from router to hotspot
     test_utils:wait_state_channel_message(1250),
@@ -464,8 +463,8 @@ device_inactive_update_test(Config) ->
     DeviceID = ?CONSOLE_DEVICE_ID,
     {ok, Device0} = router_device:get_by_id(DB, CF, DeviceID),
 
-    ?assertEqual(4, length(router_device:keys(Device0))),
-    ?assertEqual(4, length(router_device:devaddrs(Device0))),
+    ?assertEqual(3, length(router_device:keys(Device0))),
+    ?assertEqual(3, length(router_device:devaddrs(Device0))),
 
     %% Deactivate the device in Console
     Tab = proplists:get_value(ets, Config),
@@ -498,9 +497,8 @@ device_inactive_update_test(Config) ->
     receive
         {router_test_ics_route_service, update_skfs, Req1} ->
             Updates = Req1#iot_config_route_skf_update_req_v1_pb.updates,
-            %% The 4 join attempts were removed
-            ?assertEqual(4, length(Updates)),
-
+            %% The 3 join attempts were removed
+            ?assertEqual(3, length(Updates)),
             ok
     after timer:seconds(2) -> ct:fail(expected_skf_update)
     end,
@@ -731,9 +729,9 @@ drop_downlink_test(Config) ->
     ok.
 
 evict_keys_join_test(Config) ->
-    %% If a device get's stuck in a join loop, we will only keep the last 25
+    %% If a device get's stuck in a join loop, we will only keep the last 3
     %% devaddrs and key sets. When there is a successful uplink after joining,
-    %% all the keys not used will be removed. But if there were more than 25
+    %% all the keys not used will be removed. But if there were more than 3
     %% attempts, we cannot remove keys that have been cycled out.
     #{} = test_utils:join_device(Config),
 
@@ -748,9 +746,9 @@ evict_keys_join_test(Config) ->
         [
             {keys, [
                 {crypto:strong_rand_bytes(16), crypto:strong_rand_bytes(16)}
-             || _ <- lists:seq(1, 25)
+             || _ <- lists:seq(1, 3)
             ]},
-            {devaddrs, [crypto:strong_rand_bytes(4) || _ <- lists:seq(1, 25)]}
+            {devaddrs, [crypto:strong_rand_bytes(4) || _ <- lists:seq(1, 3)]}
         ],
         Device0
     ),
@@ -776,9 +774,9 @@ evict_keys_join_test(Config) ->
     %% Expected updates
     %% 1 Add
     %% 1 Remove {EvictedKey, EvictedDevaddr}
-    %% 25 Remove {EvictedKey, RemainingDevaddr}
-    %% 25 Remove {RemainingKey, EvictedDevaddr}
-    ?assertEqual(1 + 1 + 25 + 25, length(Updates)),
+    %% 3 Remove {EvictedKey, RemainingDevaddr}
+    %% 3 Remove {RemainingKey, EvictedDevaddr}
+    ?assertEqual(1 + 1 + 3 + 3, length(Updates)),
 
     ok = meck:unload(router_ics_skf_worker),
     ok.

@@ -67,7 +67,7 @@
 
 -define(QUEUE_SIZE_LIMIT, 20).
 -define(MAX_32_BITS, 16#100000000).
--define(MAX_CREDENTIAL_COUNT, 25).
+-define(MAX_CREDENTIAL_COUNT, 3).
 
 -type device() :: #device_v7{}.
 

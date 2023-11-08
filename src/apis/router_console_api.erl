@@ -536,10 +536,10 @@ init(Args) ->
     erlang:process_flag(trap_exit, true),
     lager:info("~p init with ~p", [?SERVER, Args]),
     ok = hackney_pool:start_pool(?DEFAULT_POOL, [
-        {timeout, timer:seconds(60)}, {max_connections, 5000}
+        {timeout, timer:seconds(60)}, {max_connections, 1000}
     ]),
     ok = hackney_pool:start_pool(?EVENT_POOL, [
-        {timeout, timer:seconds(60)}, {max_connections, 100}
+        {timeout, timer:seconds(60)}, {max_connections, 1000}
     ]),
     DownlinkEndpoint = maps:get(downlink_endpoint, Args),
     Endpoint = maps:get(endpoint, Args),

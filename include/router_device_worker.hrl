@@ -36,7 +36,7 @@
 -record(join_cache, {
     uuid :: router_utils:uuid_v4(),
     rssi :: float(),
-    join_accept_args :: #join_accept_args{},
+    app_key :: binary(),
     packet_selected ::
         {
             Packet :: blockchain_helium_packet_v1:packet(),
@@ -54,7 +54,6 @@
             HoldTime :: non_neg_integer()
         }
     ],
-    device :: router_device:device(),
     pid :: pid()
 }).
 

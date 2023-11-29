@@ -553,14 +553,11 @@ handle_cast(
             {noreply, State}
     end;
 handle_cast(
-    {join, Packet0, PacketTime, HoldTime, PubKeyBin, Region, APIDevice, AppKey, Pid},
+    {join, Packet0, PacketTime, HoldTime, PubKeyBin, Region, _APIDevice, AppKey, Pid},
     #state{
-        db = DB,
-        cf = CF,
         device = Device0,
         join_cache = Cache0,
         offer_cache = OfferCache,
-        channels_worker = ChannelsWorker,
         last_dev_nonce = LastDevNonce
     } = State
 ) ->
@@ -573,9 +570,6 @@ handle_cast(
         validate_join(
             Packet0,
             PubKeyBin,
-            Region,
-            APIDevice,
-            AppKey,
             Device0,
             OfferCache
         )
@@ -583,7 +577,7 @@ handle_cast(
         {error, _Reason} ->
             lager:debug("failed to validate join ~p", [_Reason]),
             {noreply, State};
-        {ok, Device1, DevNonce, JoinAcceptArgs, BalanceNonce} ->
+        {ok, DevNonce, BalanceNonce} ->
             NewRSSI = blockchain_helium_packet_v1:signal_strength(Packet0),
             case maps:get(DevNonce, Cache0, undefined) of
                 undefined when LastDevNonce == DevNonce ->
@@ -594,13 +588,11 @@ handle_cast(
                     JoinCache = #join_cache{
                         uuid = router_utils:uuid_v4(),
                         rssi = NewRSSI,
-                        join_accept_args = JoinAcceptArgs,
+                        app_key = AppKey,
                         packet_selected = {Packet0, PubKeyBin, Region, PacketTime, HoldTime},
-                        device = Device1,
                         pid = Pid
                     },
                     Cache1 = maps:put(DevNonce, JoinCache, Cache0),
-                    ok = save_and_update(DB, CF, ChannelsWorker, Device1),
                     Timeout = max(
                         0,
                         router_utils:join_timeout() -
@@ -614,14 +606,13 @@ handle_cast(
                     ok = router_utils:event_join_request(
                         JoinCache#join_cache.uuid,
                         PacketTime,
-                        Device1,
+                        Device0,
                         PubKeyBin,
                         Packet0,
                         Region,
                         BalanceNonce
                     ),
                     {noreply, State#state{
-                        device = Device1,
                         join_cache = Cache1,
                         adr_engine = undefined,
                         downlink_handled_at = {undefined, erlang:system_time(millisecond)},
@@ -637,7 +628,7 @@ handle_cast(
                     ok = router_utils:event_join_request(
                         UUID,
                         PacketTime,
-                        Device1,
+                        Device0,
                         PubKeyBin,
                         Packet0,
                         Region,
@@ -1014,36 +1005,41 @@ handle_info(stop_queue_updates, State) ->
 handle_info(
     {join_timeout, DevNonce},
     #state{
+        db = DB,
+        cf = CF,
         channels_worker = ChannelsWorker,
-        device = Device,
+        device = Device0,
         join_cache = JoinCache
     } = State
 ) ->
     Join =
         #join_cache{
-            join_accept_args = JoinAcceptArgs,
             packet_selected = PacketSelected,
             packets = Packets,
-            device = Device0,
-            pid = Pid
+            pid = Pid,
+            app_key = AppKey
         } = maps:get(DevNonce, JoinCache),
-    #join_accept_args{
-        region = Region,
-        app_nonce = _N,
-        dev_addr = _D,
-        app_key = _K
-    } = JoinAcceptArgs,
-    {Packet, PubKeyBin, _Region, _PacketTime, _HoldTime} = PacketSelected,
+
+    {Packet, PubKeyBin, Region, _PacketTime, _HoldTime} = PacketSelected,
+
+    {ok, Device1, JoinAcceptArgs} = handle_join(
+        Packet,
+        PubKeyBin,
+        Region,
+        AppKey,
+        Device0
+    ),
+
     lager:debug("join timeout for ~p / selected ~p out of ~p", [
         DevNonce,
         lager:pr(Packet, blockchain_helium_packet_v1),
         erlang:length(Packets) + 1
     ]),
     Plan = lora_plan:region_to_plan(Region),
-    Metadata = lorawan_rxdelay:adjust_on_join(Device),
-    Device1 = router_device:metadata(Metadata, Device),
+    Metadata = lorawan_rxdelay:adjust_on_join(Device1),
+    Device2 = router_device:metadata(Metadata, Device1),
     DownlinkPacket = new_join_downlink(
-        craft_join_reply(Device1, JoinAcceptArgs),
+        craft_join_reply(Device2, JoinAcceptArgs),
         Packet,
         Plan
     ),
@@ -1061,11 +1057,13 @@ handle_info(
         true
     ),
     ok = router_device_channels_worker:handle_join(ChannelsWorker, Join),
-    _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device0)]),
-    ok = router_utils:event_join_accept(Device0, PubKeyBin, DownlinkPacket, Region),
+    _ = erlang:spawn(router_utils, maybe_update_trace, [router_device:id(Device2)]),
+    ok = router_utils:event_join_accept(Device2, PubKeyBin, DownlinkPacket, Region),
+    ok = save_and_update(DB, CF, ChannelsWorker, Device2),
     {noreply, State#state{
         last_dev_nonce = DevNonce,
-        join_cache = maps:remove(DevNonce, JoinCache)
+        join_cache = maps:remove(DevNonce, JoinCache),
+        device = Device2
     }};
 handle_info(
     {frame_timeout, FCnt, _PacketTime, BalanceNonce},
@@ -1247,15 +1245,10 @@ maybe_send_queue_update(Device, #state{queue_updates = {ForwardPid, LabelID, _}}
 -spec validate_join(
     Packet :: blockchain_helium_packet_v1:packet(),
     PubKeyBin :: libp2p_crypto:pubkey_to_bin(),
-    Region :: atom(),
-    APIDevice :: router_device:device(),
-    AppKey :: binary(),
     Device :: router_device:device(),
     OfferCache :: map()
 ) ->
-    {ok, router_device:device(), binary(), #join_accept_args{}, {
-        Balance :: non_neg_integer(), Nonce :: non_neg_integer()
-    }}
+    {ok, binary(), {Balance :: non_neg_integer(), Nonce :: non_neg_integer()}}
     | {error, any()}.
 validate_join(
     #packet_pb{
@@ -1264,9 +1257,6 @@ validate_join(
                 DevNonce:2/binary, _MIC:4/binary>> = Payload
     } = Packet,
     PubKeyBin,
-    Region,
-    APIDevice,
-    AppKey,
     Device,
     OfferCache
 ) when MType == ?JOIN_REQ ->
@@ -1282,36 +1272,17 @@ validate_join(
                         {error, _} = Error ->
                             Error;
                         {ok, Balance, Nonce} ->
-                            {ok, UpdatedDevice, JoinAcceptArgs} = handle_join(
-                                Packet,
-                                PubKeyBin,
-                                Region,
-                                APIDevice,
-                                AppKey,
-                                Device
-                            ),
-                            {ok, UpdatedDevice, DevNonce, JoinAcceptArgs, {Balance, Nonce}}
+                            {ok, DevNonce, {Balance, Nonce}}
                     end;
                 false ->
                     OrgID = maps:get(organization_id, router_device:metadata(Device), undefined),
                     {Balance, Nonce} = router_console_dc_tracker:current_balance(OrgID),
-                    {ok, UpdatedDevice, JoinAcceptArgs} = handle_join(
-                        Packet,
-                        PubKeyBin,
-                        Region,
-                        APIDevice,
-                        AppKey,
-                        Device
-                    ),
-                    {ok, UpdatedDevice, DevNonce, JoinAcceptArgs, {Balance, Nonce}}
+                    {ok, DevNonce, {Balance, Nonce}}
             end
     end;
 validate_join(
     _Packet,
     _PubKeyBin,
-    _Region,
-    _APIDevice,
-    _AppKey,
     _Device,
     _OfferCache
 ) ->
@@ -1327,7 +1298,6 @@ validate_join(
     blockchain_helium_packet_v1:packet(),
     libp2p_crypto:pubkey_to_bin(),
     atom(),
-    router_device:device(),
     binary(),
     router_device:device()
 ) -> {ok, router_device:device(), #join_accept_args{}}.
@@ -1339,7 +1309,6 @@ handle_join(
     } = Packet,
     PubKeyBin,
     HotspotRegion,
-    APIDevice,
     AppKey,
     Device0
 ) ->
@@ -1358,7 +1327,6 @@ handle_join(
     ),
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
 
-    DeviceName = router_device:name(APIDevice),
     %% don't set the join nonce here yet as we have not chosen the best join request yet
     {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     Region = dualplan_region(Packet, HotspotRegion),
@@ -1368,7 +1336,6 @@ handle_join(
     NewDevaddrs = [DevAddr | router_device:devaddrs(Device0)],
 
     DeviceUpdates = [
-        {name, DeviceName},
         {dev_eui, DevEUI},
         {app_eui, AppEUI},
         {keys, NewKeys},
@@ -1378,13 +1345,6 @@ handle_join(
         %% only do channel correction for 915 right now
         {channel_correction, Region /= 'US915'},
         {location, PubKeyBin},
-        {metadata,
-            lorawan_rxdelay:bootstrap(
-                maps:merge(
-                    router_device:metadata(Device0),
-                    router_device:metadata(APIDevice)
-                )
-            )},
         {last_known_datarate, DRIdx},
         {region, Region}
     ],

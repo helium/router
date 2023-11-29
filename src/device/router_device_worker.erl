@@ -396,22 +396,12 @@ handle_cast(
                         lager:info("app_eui or dev_eui changed, unsetting devaddr"),
                         []
                 end,
-
-            BootstrappedMeta = lorawan_rxdelay:bootstrap(
-                maps:merge(
-                    router_device:metadata(Device0),
-                    router_device:metadata(APIDevice)
-                )
-            ),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
                 {devaddrs, DevAddrs},
-                {metadata,
-                    lorawan_rxdelay:maybe_update(
-                        APIDevice, router_device:metadata(BootstrappedMeta, Device0)
-                    )},
+                {metadata, lorawan_rxdelay:maybe_update(APIDevice, Device0)},
                 {is_active, IsActive}
             ],
 
@@ -2195,13 +2185,21 @@ get_device(DB, CF, DeviceID) ->
             {ok, APIDevice} ->
                 lager:info("got device: ~p", [APIDevice]),
                 IsActive = router_device:is_active(APIDevice),
+                BootstrappedMeta = lorawan_rxdelay:bootstrap(
+                    maps:merge(
+                        router_device:metadata(Device0),
+                        router_device:metadata(APIDevice)
+                    )
+                ),
                 DeviceUpdates = [
                     {name, router_device:name(APIDevice)},
                     {dev_eui, router_device:dev_eui(APIDevice)},
                     {app_eui, router_device:app_eui(APIDevice)},
                     {metadata,
                         maps:merge(
-                            lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                            lorawan_rxdelay:maybe_update(
+                                APIDevice, router_device:metadata(BootstrappedMeta, Device0)
+                            ),
                             router_device:metadata(APIDevice)
                         )},
                     {is_active, IsActive}

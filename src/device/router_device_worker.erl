@@ -397,15 +397,20 @@ handle_cast(
                         []
                 end,
 
+            BootstrappedMeta = lorawan_rxdelay:bootstrap(
+                maps:merge(
+                    router_device:metadata(Device0),
+                    router_device:metadata(APIDevice)
+                )
+            ),
             DeviceUpdates = [
                 {name, router_device:name(APIDevice)},
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
                 {devaddrs, DevAddrs},
                 {metadata,
-                    maps:merge(
-                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
-                        router_device:metadata(APIDevice)
+                    lorawan_rxdelay:maybe_update(
+                        APIDevice, router_device:metadata(BootstrappedMeta, Device0)
                     )},
                 {is_active, IsActive}
             ],
@@ -1328,7 +1333,7 @@ handle_join(
     {ok, DevAddr} = router_device_devaddr:allocate(Device0, PubKeyBin),
 
     %% don't set the join nonce here yet as we have not chosen the best join request yet
-    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
+
     Region = dualplan_region(Packet, HotspotRegion),
     DRIdx = packet_datarate_index(Region, Packet),
 
@@ -1336,8 +1341,6 @@ handle_join(
     NewDevaddrs = [DevAddr | router_device:devaddrs(Device0)],
 
     DeviceUpdates = [
-        {dev_eui, DevEUI},
-        {app_eui, AppEUI},
         {keys, NewKeys},
         {devaddrs, NewDevaddrs},
         {fcnt, undefined},
@@ -1353,6 +1356,7 @@ handle_join(
 
     ok = handle_join_skf(NewKeys, NewDevaddrs, MultiBuy),
 
+    {AppEUI, DevEUI} = {lorawan_utils:reverse(AppEUI0), lorawan_utils:reverse(DevEUI0)},
     lager:debug(
         "Join DevEUI ~s with AppEUI ~s tried to join with nonce ~p region ~p via ~s",
         [

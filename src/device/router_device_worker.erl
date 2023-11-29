@@ -401,7 +401,11 @@ handle_cast(
                 {dev_eui, router_device:dev_eui(APIDevice)},
                 {app_eui, router_device:app_eui(APIDevice)},
                 {devaddrs, DevAddrs},
-                {metadata, lorawan_rxdelay:maybe_update(APIDevice, Device0)},
+                {metadata,
+                    maps:merge(
+                        lorawan_rxdelay:maybe_update(APIDevice, Device0),
+                        router_device:metadata(APIDevice)
+                    )},
                 {is_active, IsActive}
             ],
 

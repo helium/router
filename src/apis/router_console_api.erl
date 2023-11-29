@@ -446,12 +446,7 @@ event(Device, Map) ->
                             Url,
                             [{<<"Authorization">>, <<"Bearer ", Token/binary>>}, ?HEADER_JSON],
                             jsx:encode(Body),
-                            [
-                                with_body,
-                                {pool, ?EVENT_POOL},
-                                {connect_timeout, timer:seconds(15)},
-                                {recv_timeout, timer:seconds(15)}
-                            ]
+                            [with_body, {pool, ?EVENT_POOL}]
                         )
                     of
                         {ok, 200, _Headers, _Body} ->

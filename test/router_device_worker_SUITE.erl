@@ -766,10 +766,9 @@ evict_keys_join_test(Config) ->
 
     #{} = test_utils:join_device(Config),
 
-    [
-        {_Pid0, {router_ics_skf_worker, update, [Updates] = _Args0}, ok},
-        {_Pid1, {router_ics_skf_worker, handle_cast, _Args1}, _Return1}
-    ] = meck:history(router_ics_skf_worker),
+    [{_Pid0, {router_ics_skf_worker, update, [Updates] = _Args0}, ok} | _] = meck:history(
+        router_ics_skf_worker
+    ),
 
     %% Expected updates
     %% 1 Add

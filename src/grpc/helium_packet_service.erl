@@ -7,6 +7,13 @@
 
 -define(JOIN_REQUEST, 2#000).
 
+%% Close any inbound packet stream that has not received an uplink in this long.
+%% HPRs keep healthy streams busy continuously (one stream per gateway), so a
+%% multi-hour silence means the HPR side is gone but never sent END_STREAM.
+-define(DEFAULT_IDLE_TIMEOUT_MS, timer:hours(12)).
+-define(IDLE_TIMER_KEY, '$packet_service_idle_timer').
+-define(IDLE_TIMEOUT_MSG, '$packet_service_idle_timeout').
+
 -export([
     init/2,
     route/2,
@@ -15,6 +22,7 @@
 
 -spec init(atom(), grpcbox_stream:t()) -> grpcbox_stream:t().
 init(_Rpc, Stream) ->
+    ok = arm_idle_timer(),
     Stream.
 
 -spec route(packet_router_pb:envelope_up_v1_pb(), grpcbox_stream:t()) ->
@@ -23,6 +31,7 @@ route(eos, StreamState) ->
     lager:debug("got eos"),
     {stop, StreamState};
 route(#envelope_up_v1_pb{data = {packet, PacketUp}}, StreamState) ->
+    ok = arm_idle_timer(),
     Self = self(),
     erlang:spawn(fun() ->
         SCPacket = to_sc_packet(PacketUp),
@@ -36,6 +45,14 @@ route(_EnvUp, StreamState) ->
     {ok, StreamState}.
 
 -spec handle_info(Msg :: any(), StreamState :: grpcbox_stream:t()) -> grpcbox_stream:t().
+handle_info(?IDLE_TIMEOUT_MSG, _StreamState) ->
+    lager:info("closing idle inbound packet stream"),
+    %% Raises an exit; grpcbox_stream's handle_info try/catch turns this
+    %% into end_stream + stop_stream (trailers with END_STREAM, then RST_STREAM).
+    grpcbox_stream:error(
+        grpcbox_stream:code_to_status(0),
+        <<"idle timeout">>
+    );
 handle_info(
     {send_purchase, _PurchaseSC, Hotspot, _PacketHash, _Region, _OwnerSigFun}, StreamState
 ) ->
@@ -63,6 +80,31 @@ handle_info(_Msg, StreamState) ->
 %% ------------------------------------------------------------------
 %% Helper Functions
 %% ------------------------------------------------------------------
+
+-spec arm_idle_timer() -> ok.
+arm_idle_timer() ->
+    case erlang:erase(?IDLE_TIMER_KEY) of
+        undefined ->
+            ok;
+        OldRef ->
+            case erlang:cancel_timer(OldRef) of
+                false ->
+                    %% Already fired before we could cancel — drain the message
+                    %% so it doesn't kill the stream immediately after re-arming.
+                    receive
+                        ?IDLE_TIMEOUT_MSG -> ok
+                    after 0 -> ok
+                    end;
+                _Remaining ->
+                    ok
+            end
+    end,
+    Timeout = application:get_env(
+        router, packet_service_idle_timeout_ms, ?DEFAULT_IDLE_TIMEOUT_MS
+    ),
+    NewRef = erlang:send_after(Timeout, self(), ?IDLE_TIMEOUT_MSG),
+    _ = erlang:put(?IDLE_TIMER_KEY, NewRef),
+    ok.
 
 -spec to_sc_packet(packet_router_pb:packet_router_packet_up_v1_pb()) ->
     router_pb:blockchain_state_channel_packet_v1_pb().

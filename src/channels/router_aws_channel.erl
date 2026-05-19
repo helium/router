@@ -42,7 +42,6 @@
     uplink_topic :: binary(),
     downlink_topic :: binary(),
     ping :: reference() | undefined,
-    aws :: pid(),
     key :: map(),
     cert :: string()
 }).
@@ -60,7 +59,7 @@ init({[Channel, Device], _}) ->
     case setup_aws(Channel, Device) of
         {error, Reason} ->
             {error, Reason};
-        {ok, AWS, Endpoint, Keys, Cert} ->
+        {ok, Endpoint, Keys, Cert} ->
             Backoff = backoff:type(backoff:init(?BACKOFF_MIN, ?BACKOFF_MAX), normal),
             send_connect_after(ChannelID, 0),
             {ok, #state{
@@ -71,7 +70,6 @@ init({[Channel, Device], _}) ->
                 endpoint = Endpoint,
                 uplink_topic = UplinkTopic,
                 downlink_topic = DownlinkTopic,
-                aws = AWS,
                 key = Keys,
                 cert = Cert
             }}
@@ -371,9 +369,21 @@ der_encode_cert(PEMCert) ->
 -spec setup_aws(
     router_channel:channel(),
     router_device:device()
-) -> {ok, AWSPid :: pid(), Endpoint :: binary(), Key :: map(), Cert :: any()} | {error, any()}.
+) -> {ok, Endpoint :: binary(), Key :: map(), Cert :: any()} | {error, any()}.
 setup_aws(Channel, Device) ->
     {ok, AWS} = httpc_aws:start_link(),
+    try
+        setup_aws_(AWS, Channel, Device)
+    after
+        _ = (catch gen_server:stop(AWS))
+    end.
+
+-spec setup_aws_(
+    AWS :: pid(),
+    router_channel:channel(),
+    router_device:device()
+) -> {ok, Endpoint :: binary(), Key :: map(), Cert :: any()} | {error, any()}.
+setup_aws_(AWS, Channel, Device) ->
     #{
         aws_access_key := AccessKey,
         aws_secret_key := SecretKey,
@@ -404,7 +414,7 @@ setup_aws(Channel, Device) ->
                         {error, _} = Error ->
                             Error;
                         {ok, Keys, Cert} ->
-                            {ok, AWS, erlang:list_to_binary(Endpoint), Keys, Cert}
+                            {ok, erlang:list_to_binary(Endpoint), Keys, Cert}
                     end
             end
     end.

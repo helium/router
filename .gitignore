@@ -25,3 +25,5 @@ prometheus.yml
 doc/
 .DS_Store
 *.coverdata
+CLAUDE.md
+.claude/
